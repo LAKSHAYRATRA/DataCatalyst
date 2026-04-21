@@ -110,8 +110,12 @@ const globalLimiter = rateLimit({
 });
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, 
-  max: 5, // 5 Requests MAX per 15 mins for OTP/Login preventing SMTP Spam
-  message: { error: "Security Lockout: Wait 15 minutes before sending another OTP." },
+  max: 5, // 5 Requests MAX per 15 mins for OTP/Login per user
+  message: { error: "Security Lockout: Wait 15 minutes before sending another OTP for this email." },
+  keyGenerator: (req) => {
+    // Isolate limit strictly to the specific email being requested bypassing NGINX proxy masking
+    return req.body?.email || req.ip; 
+  }
 });
 app.use("/api/", globalLimiter); // Protect generic /api hooks
 
