@@ -1053,12 +1053,16 @@ router.get("/users/:userId/intro", async (req, res) => {
                 Key: user.introRecordingFile
             });
             const response = await s3Client.send(command);
+            
+            if (response.ContentLength) {
+                res.setHeader("Content-Length", response.ContentLength);
+            }
             res.setHeader("Content-Type", response.ContentType || "audio/webm");
             res.setHeader("Accept-Ranges", "bytes");
             response.Body.pipe(res);
         } catch (s3error) {
             console.error("Intro admin streaming S3 error:", s3error);
-            return res.status(404).json({ error: "Audio file not found in cloud storage." });
+            return res.status(404).json({ error: `Audio file cloud error: ${s3error.message}` });
         }
     } catch (error) {
         res.status(500).json({ error: error.message });
