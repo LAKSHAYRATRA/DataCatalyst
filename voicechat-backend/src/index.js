@@ -98,6 +98,9 @@ if (!JWT_SECRET) throw new Error("JWT_SECRET is required");
 // ─── Express setup ────────────────────────────────────────────────────────────
 const app = express();
 
+// Trust the NGINX reverse proxy for correct IP rate limiting
+app.set("trust proxy", 1);
+
 // Application Security Routing Shields
 app.use(helmet()); 
 const globalLimiter = rateLimit({
