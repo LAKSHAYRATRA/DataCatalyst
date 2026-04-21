@@ -162,8 +162,8 @@ export default function AdminMedia() {
 
                   <div className="flex justify-between border-t border-neutral-200 dark:border-neutral-700 pt-3">
                     {user?.isAdmin && (
-                      <a href={`${import.meta.env.VITE_BACKEND_URL || "http://localhost:3001"}/api/admin/s3-download?key=${encodeURIComponent(f.key)}&dl=1`} className="text-xs flex items-center gap-1 text-primary-600 hover:text-primary-700 bg-primary-50 hover:bg-primary-100 dark:bg-primary-900/20 px-3 py-1 rounded">
-                        <Download className="w-3 h-3" /> Download
+                      <a href={`${import.meta.env.VITE_BACKEND_URL || "http://localhost:3001"}/api/admin/s3-download-wav?key=${encodeURIComponent(f.key)}`} className="text-xs flex items-center gap-1 text-primary-600 hover:text-primary-700 bg-primary-50 hover:bg-primary-100 dark:bg-primary-900/20 px-3 py-1 rounded">
+                        <Download className="w-3 h-3" /> Download WAV
                       </a>
                     )}
                     <button onClick={() => handleDelete(f.key)} className="text-xs flex items-center gap-1 text-error-600 hover:text-error-700 bg-error-50 hover:bg-error-100 dark:bg-error-900/20 px-3 py-1 rounded">
