@@ -2,10 +2,10 @@ import React, { useEffect, useState } from "react";
 import { Folder, FileAudio, Trash2, ChevronRight, HardDrive, RefreshCw, Download, FileText } from "lucide-react";
 import Swal from "sweetalert2";
 import { apiGet, apiFetch } from "../lib/api.js";
-import { useAuth } from "../context/AuthContext";
+import { getUserInfo } from "../lib/auth.js";
 
 export default function AdminMedia() {
-  const { user } = useAuth();
+  const user = getUserInfo();
   const [folders, setFolders] = useState([]);
   const [files, setFiles] = useState([]);
   const [loading, setLoading] = useState(true);
