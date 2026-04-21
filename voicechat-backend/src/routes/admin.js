@@ -1047,12 +1047,19 @@ router.get("/users/:userId/intro", async (req, res) => {
         if (!user) return res.status(404).json({ error: "User not found" });
         if (!user.introRecordingFile) return res.status(404).json({ error: "No intro recording" });
 
-        const filePath = path.join(process.cwd(), "recordings", user.introRecordingFile);
-        if (!fs.existsSync(filePath)) return res.status(404).json({ error: "File not found" });
-
-        res.setHeader("Content-Type", "audio/webm");
-        res.setHeader("Accept-Ranges", "bytes");
-        fs.createReadStream(filePath).pipe(res);
+        try {
+            const command = new GetObjectCommand({
+                Bucket: BUCKET_NAME,
+                Key: user.introRecordingFile
+            });
+            const response = await s3Client.send(command);
+            res.setHeader("Content-Type", response.ContentType || "audio/webm");
+            res.setHeader("Accept-Ranges", "bytes");
+            response.Body.pipe(res);
+        } catch (s3error) {
+            console.error("Intro admin streaming S3 error:", s3error);
+            return res.status(404).json({ error: "Audio file not found in cloud storage." });
+        }
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
