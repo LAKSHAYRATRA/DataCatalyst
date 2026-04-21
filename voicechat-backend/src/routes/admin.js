@@ -17,6 +17,7 @@ import { Company } from "../models/Company.js";
 import { getPayoutOverview, getSingleUserPayout } from "../services/payouts.js";
 import { ListObjectsV2Command, DeleteObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
 import { s3Client, BUCKET_NAME } from "../config/s3.js";
+import { streamS3ToWav } from "../utils/ffmpeg-stream.js";
 
 const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET;
@@ -1466,6 +1467,26 @@ router.get("/s3-download", async (req, res) => {
         s3Doc.Body.pipe(res);
     } catch (e) {
         console.error("S3 Download Error:", e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+router.get("/s3-download-wav", async (req, res) => {
+    try {
+        const { key } = req.query;
+        if (!key) return res.status(400).json({ error: "S3 Object Key required" });
+
+        const command = new GetObjectCommand({
+            Bucket: BUCKET_NAME,
+            Key: key
+        });
+        const s3Doc = await s3Client.send(command);
+        
+        const filename = key.split("/").pop().split(".")[0];
+        // JIT Pipe logic streams natively executing FFMPEG bridging
+        streamS3ToWav(s3Doc.Body, res, filename);
+    } catch (e) {
+        console.error("S3 WAV Transcode Download Error:", e);
         res.status(500).json({ error: e.message });
     }
 });
