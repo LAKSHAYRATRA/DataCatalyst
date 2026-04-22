@@ -7,7 +7,9 @@ import { Language } from "../models/Language.js";
 import { isNonEmptyString } from "../util/validators.js";
 import { getSingleUserPayout } from "../services/payouts.js";
 import { GetObjectCommand } from "@aws-sdk/client-s3";
+import { Upload } from "@aws-sdk/lib-storage";
 import { s3Client, BUCKET_NAME } from "../config/s3.js";
+import ffmpeg from "fluent-ffmpeg";
 
 const RECORDINGS_DIR = process.env.RECORDINGS_DIR || "recordings";
 
@@ -33,7 +35,6 @@ export async function uploadIntroRecording(req, res) {
 
   try {
     const flacPath = req.file.path.replace(".wav", ".flac");
-    const ffmpeg = require("fluent-ffmpeg");
     await new Promise((resolve, reject) => {
       ffmpeg(req.file.path)
         .audioChannels(1)
@@ -44,7 +45,6 @@ export async function uploadIntroRecording(req, res) {
         .run();
     });
 
-    const { Upload } = require("@aws-sdk/lib-storage");
     const s3Key = `intros/${req.user._id}_${Date.now()}.flac`;
 
     const uploader = new Upload({
@@ -131,7 +131,6 @@ export async function submitLanguageApplication(req, res) {
 
   try {
     const flacPath = req.file.path.replace(".wav", ".flac");
-    const ffmpeg = require("fluent-ffmpeg");
     await new Promise((resolve, reject) => {
       ffmpeg(req.file.path)
         .audioChannels(1)
@@ -142,7 +141,6 @@ export async function submitLanguageApplication(req, res) {
         .run();
     });
 
-    const { Upload } = require("@aws-sdk/lib-storage");
     const s3Key = `language-apps/${req.user._id}_${languageCode}_${Date.now()}.flac`;
 
     const uploader = new Upload({

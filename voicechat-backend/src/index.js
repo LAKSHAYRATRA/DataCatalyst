@@ -339,7 +339,6 @@ async function cleanupRecording(socket) {
         if (tempPath.endsWith(".pcm")) {
           const flacPath = tempPath.replace(".pcm", ".flac");
           await new Promise((res, rej) => {
-            const ffmpeg = require("fluent-ffmpeg");
             ffmpeg()
               .input(tempPath)
               .inputFormat('s16le')
@@ -459,7 +458,6 @@ async function executeMergeRecordings(callId, offsetA, offsetB) {
       ]);
 
       // 2. Perform native Fluent-FFMPEG Concatenation securely!
-      const ffmpeg = require("fluent-ffmpeg");
       await new Promise((resolve, reject) => {
         ffmpeg()
           .input(localA)

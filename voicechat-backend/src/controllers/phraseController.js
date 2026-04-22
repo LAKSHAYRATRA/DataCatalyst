@@ -4,7 +4,9 @@ import { Phrase } from "../models/Phrase.js";
 import { User } from "../models/User.js";
 import { Company } from "../models/Company.js";
 import { GetObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
+import { Upload } from "@aws-sdk/lib-storage";
 import { s3Client, BUCKET_NAME } from "../config/s3.js";
+import ffmpeg from "fluent-ffmpeg";
 
 const PHRASE_RECORDINGS_DIR = path.join(process.cwd(), "recordings", "phrases");
 
@@ -150,7 +152,6 @@ export async function submitPhraseRecording(req, res) {
 
     // 1. Convert local WAV to FLAC
     const flacPath = req.file.path.replace(".wav", ".flac");
-    const ffmpeg = require("fluent-ffmpeg");
     await new Promise((res, rej) => {
         ffmpeg(req.file.path)
             .audioChannels(1)
@@ -162,8 +163,6 @@ export async function submitPhraseRecording(req, res) {
     });
 
     // 2. Upload FLAC to S3
-    const { Upload } = require("@aws-sdk/lib-storage");
-    const { s3Client, BUCKET_NAME } = require("../config/s3.js");
     const companyFolder = phrase.companyId ? String(phrase.companyId).replace(/[^a-zA-Z0-9_\-\ ]/g, "").trim() : "No Company";
     const s3Key = `phrases/${companyFolder}/${req.user._id}_${phraseId}_${Date.now()}.flac`;
 
