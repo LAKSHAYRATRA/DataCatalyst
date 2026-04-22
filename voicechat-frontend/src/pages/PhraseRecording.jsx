@@ -68,6 +68,7 @@ export default function PhraseRecording() {
   const isRecordingRef = useRef(false);
   const audioCtxRef = useRef(null);
   const workletNodeRef = useRef(null);
+  const streamRef = useRef(null);
 
   async function startRecording() {
     try {
