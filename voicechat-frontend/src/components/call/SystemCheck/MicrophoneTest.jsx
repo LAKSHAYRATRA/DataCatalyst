@@ -29,7 +29,7 @@ function isUsbMic(label) {
 
 async function getUsbMics() {
     // Request permission so labels become visible
-    const tempStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const tempStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, sampleRate: 48000, channelCount: 1 } });
     tempStream.getTracks().forEach((t) => t.stop());
 
     const devices = await navigator.mediaDevices.enumerateDevices();
@@ -73,9 +73,14 @@ export default function MicrophoneTest({ onSuccess }) {
     const startRecording = async () => {
         try {
             const constraints = {
-                audio: selectedMicId
-                    ? { deviceId: { exact: selectedMicId } }
-                    : true,
+                audio: {
+                    echoCancellation: false,
+                    noiseSuppression: false,
+                    autoGainControl: false,
+                    sampleRate: 48000,
+                    channelCount: 1,
+                    ...(selectedMicId ? { deviceId: { exact: selectedMicId } } : {})
+                }
             };
             const stream = await navigator.mediaDevices.getUserMedia(constraints);
 
@@ -84,7 +89,7 @@ export default function MicrophoneTest({ onSuccess }) {
                 ? 'audio/webm;codecs=opus'
                 : 'audio/webm';
 
-            const mediaRecorder = new MediaRecorder(stream, { mimeType });
+            const mediaRecorder = new MediaRecorder(stream, { mimeType, audioBitsPerSecond: 128000 });
             mediaRecorderRef.current = mediaRecorder;
             audioChunksRef.current = [];
 

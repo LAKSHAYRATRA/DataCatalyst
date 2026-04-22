@@ -11,5 +11,5 @@ export const blobToBase64 = (blob) => {
 };
 
 export const getMediaStream = async () => {
-    return await navigator.mediaDevices.getUserMedia({ audio: true });
+    return await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, sampleRate: 48000, channelCount: 1 } });
 };

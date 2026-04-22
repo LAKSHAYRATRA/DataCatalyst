@@ -141,7 +141,7 @@ const SystemCheck = () => {
     const startRecording = async () => {
         try {
             const stream = await getMediaStream(); // Get fresh stream
-            const mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+            const mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm', audioBitsPerSecond: 128000 });
             mediaRecorderRef.current = mediaRecorder;
             audioChunksRef.current = [];
 

@@ -54,7 +54,7 @@ let startedRecording = false;
 async function ensureLocalStream() {
   if (localStream) return localStream;
 
-  localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  localStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, sampleRate: 48000, channelCount: 1 } });
   return localStream;
 }
 

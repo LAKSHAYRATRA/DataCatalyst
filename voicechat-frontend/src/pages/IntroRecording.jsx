@@ -91,7 +91,7 @@ export default function IntroRecording() {
 
     async function loadMics(autoSelect = false) {
         try {
-            const tmp = await navigator.mediaDevices.getUserMedia({ audio: true });
+            const tmp = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, sampleRate: 48000, channelCount: 1 } });
             tmp.getTracks().forEach((t) => t.stop());
 
             const devices = await navigator.mediaDevices.enumerateDevices();
@@ -194,8 +194,14 @@ export default function IntroRecording() {
     async function startRecording() {
         setError("");
         try {
-            const audioConstraints =
-                selectedMicId ? { deviceId: { exact: selectedMicId } } : true;
+            const audioConstraints = {
+                echoCancellation: false,
+                noiseSuppression: false,
+                autoGainControl: false,
+                sampleRate: 48000,
+                channelCount: 1,
+                ...(selectedMicId ? { deviceId: { exact: selectedMicId } } : {})
+            };
 
             const stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
             streamRef.current = stream;
@@ -211,7 +217,7 @@ export default function IntroRecording() {
                 ? "audio/webm;codecs=opus"
                 : "audio/webm";
 
-            const mr = new MediaRecorder(stream, { mimeType });
+            const mr = new MediaRecorder(stream, { mimeType, audioBitsPerSecond: 128000 });
             mediaRecorderRef.current = mr;
             chunksRef.current = [];
 

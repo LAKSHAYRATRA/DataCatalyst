@@ -54,9 +54,9 @@ export default function LanguageApply() {
 
     async function startRecording() {
         try {
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, sampleRate: 48000, channelCount: 1 } });
             chunksRef.current = [];
-            const mr = new MediaRecorder(stream);
+            const mr = new MediaRecorder(stream, { audioBitsPerSecond: 128000 });
             mediaRecorderRef.current = mr;
             mr.ondataavailable = e => { if (e.data.size > 0) chunksRef.current.push(e.data); };
             mr.onstop = () => {

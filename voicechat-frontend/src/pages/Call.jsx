@@ -324,7 +324,7 @@ export default function Call() {
 
   async function ensureLocalStream() {
     if (localStreamRef.current) return localStreamRef.current;
-    localStreamRef.current = await navigator.mediaDevices.getUserMedia({ audio: true });
+    localStreamRef.current = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, sampleRate: 48000, channelCount: 1 } });
     return localStreamRef.current;
   }
 
@@ -345,7 +345,7 @@ export default function Call() {
             ? "audio/ogg;codecs=opus"
             : "audio/webm";
 
-    const mr = new MediaRecorder(stream, { mimeType });
+    const mr = new MediaRecorder(stream, { mimeType, audioBitsPerSecond: 128000 });
     mediaRecorderRef.current = mr;
 
     // Tell backend to open the file with the precise start timestamp
