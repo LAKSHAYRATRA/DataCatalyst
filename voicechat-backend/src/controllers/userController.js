@@ -27,19 +27,54 @@ export async function uploadIntroRecording(req, res) {
 
   const status = req.user.accountStatus;
   if (status !== "pending_intro" && status !== "rejected") {
+    try { fs.unlinkSync(req.file.path); } catch (e) {}
     return res.status(409).json({ error: "already_submitted" });
   }
 
-  const relPath = req.file.key || path.posix.join("intros", req.file.filename);
-  await User.updateOne(
-    { _id: req.user._id },
-    {
-      accountStatus: "pending_approval",
-      introRecordingFile: relPath,
-      rejectionReason: null,
-    }
-  );
-  res.json({ ok: true, accountStatus: "pending_approval" });
+  try {
+    const flacPath = req.file.path.replace(".wav", ".flac");
+    const ffmpeg = require("fluent-ffmpeg");
+    await new Promise((resolve, reject) => {
+      ffmpeg(req.file.path)
+        .audioChannels(1)
+        .audioFrequency(48000)
+        .output(flacPath)
+        .on("end", resolve)
+        .on("error", reject)
+        .run();
+    });
+
+    const { Upload } = require("@aws-sdk/lib-storage");
+    const s3Key = `intros/${req.user._id}_${Date.now()}.flac`;
+
+    const uploader = new Upload({
+      client: s3Client,
+      params: {
+        Bucket: BUCKET_NAME,
+        Key: s3Key,
+        Body: fs.createReadStream(flacPath),
+        ContentType: "audio/flac",
+      },
+    });
+    await uploader.done();
+
+    try { fs.unlinkSync(req.file.path); } catch (e) {}
+    try { fs.unlinkSync(flacPath); } catch (e) {}
+
+    await User.updateOne(
+      { _id: req.user._id },
+      {
+        accountStatus: "pending_approval",
+        introRecordingFile: s3Key,
+        rejectionReason: null,
+      }
+    );
+    res.json({ ok: true, accountStatus: "pending_approval" });
+  } catch (err) {
+    console.error("Intro upload error:", err);
+    try { if (req.file.path) fs.unlinkSync(req.file.path); } catch (e) {}
+    res.status(500).json({ error: "server error" });
+  }
 }
 
 // ─── GET /api/languages ───────────────────────────────────────────────────────
@@ -85,30 +120,67 @@ export async function submitLanguageApplication(req, res) {
   const existing = user.languageApplications.find(
     (a) => a.languageCode === languageCode
   );
-  if (existing && existing.status === "pending")
+  if (existing && existing.status === "pending") {
+    try { fs.unlinkSync(req.file.path); } catch (e) {}
     return res.status(409).json({ error: "already_pending" });
-  if (existing && existing.status === "approved")
+  }
+  if (existing && existing.status === "approved") {
+    try { fs.unlinkSync(req.file.path); } catch (e) {}
     return res.status(409).json({ error: "already_approved" });
-
-  const relPath = req.file.key || path.posix.join("language-apps", req.file.filename);
-
-  if (existing) {
-    existing.status = "pending";
-    existing.recordingFile = relPath;
-    existing.appliedAt = new Date();
-    existing.reviewedBy = null;
-    existing.reviewedAt = null;
-  } else {
-    user.languageApplications.push({
-      languageCode,
-      status: "pending",
-      recordingFile: relPath,
-      appliedAt: new Date(),
-    });
   }
 
-  await user.save();
-  res.json({ ok: true, message: "Application submitted" });
+  try {
+    const flacPath = req.file.path.replace(".wav", ".flac");
+    const ffmpeg = require("fluent-ffmpeg");
+    await new Promise((resolve, reject) => {
+      ffmpeg(req.file.path)
+        .audioChannels(1)
+        .audioFrequency(48000)
+        .output(flacPath)
+        .on("end", resolve)
+        .on("error", reject)
+        .run();
+    });
+
+    const { Upload } = require("@aws-sdk/lib-storage");
+    const s3Key = `language-apps/${req.user._id}_${languageCode}_${Date.now()}.flac`;
+
+    const uploader = new Upload({
+      client: s3Client,
+      params: {
+        Bucket: BUCKET_NAME,
+        Key: s3Key,
+        Body: fs.createReadStream(flacPath),
+        ContentType: "audio/flac",
+      },
+    });
+    await uploader.done();
+
+    try { fs.unlinkSync(req.file.path); } catch (e) {}
+    try { fs.unlinkSync(flacPath); } catch (e) {}
+
+    if (existing) {
+      existing.status = "pending";
+      existing.recordingFile = s3Key;
+      existing.appliedAt = new Date();
+      existing.reviewedBy = null;
+      existing.reviewedAt = null;
+    } else {
+      user.languageApplications.push({
+        languageCode,
+        status: "pending",
+        recordingFile: s3Key,
+        appliedAt: new Date(),
+      });
+    }
+
+    await user.save();
+    res.json({ ok: true, message: "Application submitted" });
+  } catch (err) {
+    console.error("Language app error:", err);
+    try { if (req.file.path) fs.unlinkSync(req.file.path); } catch (e) {}
+    res.status(500).json({ error: "server error" });
+  }
 }
 
 // ─── GET /api/language-applications/:userId/:languageCode/recording ───────────

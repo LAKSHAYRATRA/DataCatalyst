@@ -40,30 +40,16 @@ const requireQAOrAdmin = (req, res, next) => {
 /**
  * Multer Config for TTS Phrases
  */
-const PHRASE_RECORDINGS_DIR = path.join(process.cwd(), "recordings", "phrases");
 const phraseUpload = multer({
-  storage: multerS3({
-    s3: s3Client,
-    bucket: BUCKET_NAME,
-    contentType: multerS3.AUTO_CONTENT_TYPE,
-    key: async (req, file, cb) => {
-      try {
-        const ext = file.mimetype.split("/")[1]?.split(";")[0] || "webm";
-        const phraseId = req.body.phraseId || "unknown";
-        let companyFolder = "No Company";
-
-        if (phraseId && phraseId !== "unknown") {
-            const phrase = await Phrase.findById(phraseId);
-            if (phrase && phrase.companyId) {
-                companyFolder = String(phrase.companyId).replace(/[^a-zA-Z0-9_\-\ ]/g, "").trim();
-            }
-        }
-        cb(null, `phrases/${companyFolder}/${req.user._id}_${phraseId}_${Date.now()}.${ext}`);
-      } catch (err) {
-        // Fallback explicitly on network / db mismatch
-        cb(null, `phrases/No Company/${req.user._id}_unknown_${Date.now()}.webm`);
-      }
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => {
+      const dir = path.join(process.cwd(), "recordings", "temp");
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      cb(null, dir);
     },
+    filename: (req, file, cb) => {
+      cb(null, `phrase_${Date.now()}.wav`);
+    }
   }),
   limits: { fileSize: 20 * 1024 * 1024 }, // 20 MB
   fileFilter: (req, file, cb) => {

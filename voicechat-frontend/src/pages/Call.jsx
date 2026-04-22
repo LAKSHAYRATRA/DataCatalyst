@@ -52,7 +52,7 @@ export default function Call() {
   const pcRef = useRef(null);
   const localStreamRef = useRef(null);
   const audioContextRef = useRef(null);
-  const mediaRecorderRef = useRef(null);
+  const workletNodeRef = useRef(null);
   const callRef = useRef({
     callId: null,
     role: null,
@@ -333,51 +333,46 @@ export default function Call() {
     const stream = localStreamRef.current;
     if (!socket || !stream || !activeCallId) return;
 
-    if (mediaRecorderRef.current) return; // already recording
+    if (workletNodeRef.current) return; // already recording
 
-    // Pick best supported MIME type (WebM/Opus is native to Chrome/Firefox)
-    const mimeType =
-      MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
-        ? "audio/webm;codecs=opus"
-        : MediaRecorder.isTypeSupported("audio/webm")
-          ? "audio/webm"
-          : MediaRecorder.isTypeSupported("audio/ogg;codecs=opus")
-            ? "audio/ogg;codecs=opus"
-            : "audio/webm";
+    const audioCtx = new AudioContext({ sampleRate: 48000 });
+    audioContextRef.current = audioCtx;
+    
+    await audioCtx.audioWorklet.addModule("/pcm-worklet.js");
+    const workletNode = new AudioWorkletNode(audioCtx, "pcm-processor");
+    workletNodeRef.current = workletNode;
 
-    const mr = new MediaRecorder(stream, { mimeType, audioBitsPerSecond: 128000 });
-    mediaRecorderRef.current = mr;
+    const source = audioCtx.createMediaStreamSource(stream);
 
-    // Tell backend to open the file with the precise start timestamp
     const startTime = Date.now();
-    socket.emit("record_start", { callId: activeCallId, mimeType, startTime });
+    socket.emit("record_start", { callId: activeCallId, mimeType: "audio/pcm", startTime });
 
-    mr.ondataavailable = (e) => {
+    workletNode.port.onmessage = (e) => {
       const s2 = socketRef.current;
-      if (e.data.size > 0 && s2) {
+      if (s2) {
         s2.emit("record_chunk", e.data);
       }
     };
 
-    mr.start(250); // emit a chunk every 250ms — reduces per-chunk buffering jitter
+    const gain = audioCtx.createGain();
+    gain.gain.value = 0;
+    source.connect(workletNode);
+    workletNode.connect(gain);
+    gain.connect(audioCtx.destination);
   }
 
   function stopCallRecording() {
     const socket = socketRef.current;
-    try {
-      const mr = mediaRecorderRef.current;
-      if (mr && mr.state !== "inactive") {
-        mr.requestData(); // flush any buffered audio before stop
-        mr.stop();
-      }
-    } catch { }
-    mediaRecorderRef.current = null;
+    if (workletNodeRef.current) {
+        workletNodeRef.current.disconnect();
+        workletNodeRef.current = null;
+    }
+    if (audioContextRef.current) {
+        audioContextRef.current.close();
+        audioContextRef.current = null;
+    }
 
     try { if (socket) socket.emit("record_stop"); } catch { }
-
-    // Legacy AudioContext cleanup (fallback)
-    try { if (audioContextRef.current) audioContextRef.current.close(); } catch { }
-    audioContextRef.current = null;
   }
 
   async function createPeerConnection() {

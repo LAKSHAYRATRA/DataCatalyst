@@ -148,13 +148,47 @@ export async function submitPhraseRecording(req, res) {
       return res.status(400).json({ error: "Phrase is currently checked out by another contributor. Please refresh." });
     }
 
+    // 1. Convert local WAV to FLAC
+    const flacPath = req.file.path.replace(".wav", ".flac");
+    const ffmpeg = require("fluent-ffmpeg");
+    await new Promise((res, rej) => {
+        ffmpeg(req.file.path)
+            .audioChannels(1)
+            .audioFrequency(48000)
+            .output(flacPath)
+            .on("end", res)
+            .on("error", rej)
+            .run();
+    });
+
+    // 2. Upload FLAC to S3
+    const { Upload } = require("@aws-sdk/lib-storage");
+    const { s3Client, BUCKET_NAME } = require("../config/s3.js");
+    const companyFolder = phrase.companyId ? String(phrase.companyId).replace(/[^a-zA-Z0-9_\-\ ]/g, "").trim() : "No Company";
+    const s3Key = `phrases/${companyFolder}/${req.user._id}_${phraseId}_${Date.now()}.flac`;
+
+    const uploader = new Upload({
+        client: s3Client,
+        params: {
+            Bucket: BUCKET_NAME,
+            Key: s3Key,
+            Body: fs.createReadStream(flacPath),
+            ContentType: "audio/flac",
+        },
+    });
+    await uploader.done();
+
+    // 3. Clean up local temp files
+    try { fs.unlinkSync(req.file.path); } catch (e) {}
+    try { fs.unlinkSync(flacPath); } catch (e) {}
+
     phrase.status = "recorded";
     phrase.contributorId = req.user._id;
     
     // Clear lock metadata since it is successfully recorded
     phrase.lockedAt = null;
     phrase.lockedBy = null;
-    phrase.audioFile = req.file.key || path.basename(req.file.path);
+    phrase.audioFile = s3Key;
     phrase.recordedAt = new Date();
     // Default duration to 0 if not provided, we can calculate via front-end
     phrase.duration = Number(req.body.duration) || 0; 
@@ -164,7 +198,7 @@ export async function submitPhraseRecording(req, res) {
     res.json({ success: true, phrase });
   } catch (error) {
     console.error("submitPhraseRecording error:", error);
-    if (req.file && !req.file.key) {
+    if (req.file && req.file.path) {
       try { fs.unlinkSync(req.file.path); } catch (e) {}
     }
     res.status(500).json({ error: "Server error" });

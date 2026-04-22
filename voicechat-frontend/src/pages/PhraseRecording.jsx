@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Mic, Square, Play, UploadCloud, CheckCircle2, Clock } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { apiGet } from '../lib/api';
+import { encodeWAV } from '../utils/wavBuilder.js';
 
 export default function PhraseRecording() {
   const [stats, setStats] = useState({ totalSeconds: 0, history: [] });
@@ -64,25 +65,38 @@ export default function PhraseRecording() {
     audioChunksRef.current = [];
   }
 
+  const isRecordingRef = useRef(false);
+  const audioCtxRef = useRef(null);
+  const workletNodeRef = useRef(null);
+
   async function startRecording() {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, sampleRate: 48000, channelCount: 1 } });
       resetRecording();
-      const mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm', audioBitsPerSecond: 128000 });
-      mediaRecorderRef.current = mediaRecorder;
       
-      mediaRecorder.ondataavailable = (e) => {
-        if (e.data.size > 0) audioChunksRef.current.push(e.data);
+      const audioCtx = new AudioContext({ sampleRate: 48000 });
+      await audioCtx.audioWorklet.addModule("/pcm-worklet.js");
+      const source = audioCtx.createMediaStreamSource(stream);
+      const workletNode = new AudioWorkletNode(audioCtx, "pcm-processor");
+      
+      // Mute the local playback to prevent feedback loops
+      const gain = audioCtx.createGain();
+      gain.gain.value = 0;
+      
+      workletNode.port.onmessage = (e) => {
+        if (isRecordingRef.current) {
+          audioChunksRef.current.push(new Int16Array(e.data));
+        }
       };
 
-      mediaRecorder.onstop = () => {
-        const blob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-        setAudioBlob(blob);
-        setAudioUrl(URL.createObjectURL(blob));
-        stream.getTracks().forEach(t => t.stop());
-      };
-
-      mediaRecorder.start(250);
+      source.connect(workletNode);
+      workletNode.connect(gain);
+      gain.connect(audioCtx.destination);
+      
+      audioCtxRef.current = audioCtx;
+      workletNodeRef.current = workletNode;
+      streamRef.current = stream; // Assume we need to store it to stop it
+      isRecordingRef.current = true;
       setIsRecording(true);
       startTimeRef.current = Date.now();
       
@@ -97,10 +111,35 @@ export default function PhraseRecording() {
   }
 
   function stopRecording() {
-    if (mediaRecorderRef.current && isRecording) {
-      mediaRecorderRef.current.stop();
+    if (isRecordingRef.current) {
+      isRecordingRef.current = false;
       setIsRecording(false);
       clearInterval(timerRef.current);
+      
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(t => t.stop());
+      }
+      if (workletNodeRef.current) {
+        workletNodeRef.current.disconnect();
+      }
+      if (audioCtxRef.current) {
+        audioCtxRef.current.close();
+      }
+
+      let totalLength = 0;
+      for (const arr of audioChunksRef.current) {
+        totalLength += arr.length;
+      }
+      const combined = new Int16Array(totalLength);
+      let offset = 0;
+      for (const arr of audioChunksRef.current) {
+        combined.set(arr, offset);
+        offset += arr.length;
+      }
+
+      const wavBlob = encodeWAV(combined, 48000, 1);
+      setAudioBlob(wavBlob);
+      setAudioUrl(URL.createObjectURL(wavBlob));
     }
   }
 
@@ -111,7 +150,7 @@ export default function PhraseRecording() {
     try {
       const formData = new FormData();
       formData.append('phraseId', currentPhrase._id);
-      formData.append('recording', audioBlob, 'record.webm');
+      formData.append('recording', audioBlob, 'record.wav');
       formData.append('duration', duration);
 
       const token = document.cookie.split(";").find(c => c.trim().startsWith("vc_token="))?.split("=")[1] || localStorage.getItem("vc_token");

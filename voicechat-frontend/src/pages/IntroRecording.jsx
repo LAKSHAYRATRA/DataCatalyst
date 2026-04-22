@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { getUserInfo, setUserInfo } from "../lib/auth.js";
+import { encodeWAV } from "../utils/wavBuilder.js";
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:3001";
 const MAX_SECONDS = 120; // 2 minutes
@@ -47,6 +48,8 @@ export default function IntroRecording() {
     const canvasRef = useRef(null);
     const animFrameRef = useRef(null);
     const analyserRef = useRef(null);
+    const audioCtxRef = useRef(null);
+    const workletNodeRef = useRef(null);
 
     const [phase, setPhase] = useState("idle"); // idle | recording | preview | uploading
     const [secondsLeft, setSecondsLeft] = useState(MAX_SECONDS);
@@ -206,33 +209,29 @@ export default function IntroRecording() {
             const stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
             streamRef.current = stream;
 
-            const audioCtx = new AudioContext();
+            const audioCtx = new AudioContext({ sampleRate: 48000 });
+            audioCtxRef.current = audioCtx;
             const source = audioCtx.createMediaStreamSource(stream);
             const analyser = audioCtx.createAnalyser();
             analyser.fftSize = 2048;
             source.connect(analyser);
             analyserRef.current = analyser;
 
-            const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
-                ? "audio/webm;codecs=opus"
-                : "audio/webm";
+            await audioCtx.audioWorklet.addModule("/pcm-worklet.js");
+            const workletNode = new AudioWorkletNode(audioCtx, "pcm-processor");
+            workletNodeRef.current = workletNode;
 
-            const mr = new MediaRecorder(stream, { mimeType, audioBitsPerSecond: 128000 });
-            mediaRecorderRef.current = mr;
             chunksRef.current = [];
-
-            mr.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
-            mr.onstop = () => {
-                const blob = new Blob(chunksRef.current, { type: mimeType });
-                setAudioBlob(blob);
-                setAudioBlobUrl(URL.createObjectURL(blob));
-                setPhase("preview");
-                if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
-                stream.getTracks().forEach((t) => t.stop());
-                clearInterval(timerRef.current);
+            workletNode.port.onmessage = (e) => {
+                chunksRef.current.push(new Int16Array(e.data));
             };
 
-            mr.start(250);
+            const gain = audioCtx.createGain();
+            gain.gain.value = 0;
+            source.connect(workletNode);
+            workletNode.connect(gain);
+            gain.connect(audioCtx.destination);
+
             setPhase("recording");
             setSecondsLeft(MAX_SECONDS);
             drawWaveform();
@@ -253,9 +252,29 @@ export default function IntroRecording() {
     }
 
     function stopRecording() {
-        if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
-            mediaRecorderRef.current.stop();
+        if (workletNodeRef.current) {
+            workletNodeRef.current.disconnect();
+            workletNodeRef.current = null;
         }
+        if (audioCtxRef.current) {
+            audioCtxRef.current.close();
+            audioCtxRef.current = null;
+        }
+
+        let totalLength = 0;
+        for (const arr of chunksRef.current) totalLength += arr.length;
+        const combined = new Int16Array(totalLength);
+        let offset = 0;
+        for (const arr of chunksRef.current) {
+            combined.set(arr, offset);
+            offset += arr.length;
+        }
+
+        const wavBlob = encodeWAV(combined, 48000, 1);
+        setAudioBlob(wavBlob);
+        setAudioBlobUrl(URL.createObjectURL(wavBlob));
+        setPhase("preview");
+
         clearInterval(timerRef.current);
         if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
         if (streamRef.current) streamRef.current.getTracks().forEach((t) => t.stop());
@@ -274,8 +293,7 @@ export default function IntroRecording() {
         setError("");
         try {
             const formData = new FormData();
-            const ext = audioBlob.type.includes("ogg") ? "ogg" : "webm";
-            formData.append("recording", audioBlob, `intro.${ext}`);
+            formData.append("recording", audioBlob, `intro.wav`);
 
             const res = await fetch(`${BACKEND_URL}/api/user/intro-recording`, {
                 method: "POST",

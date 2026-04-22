@@ -141,16 +141,16 @@ const noiseUpload = multer({
 });
 
 // ─── Multer: intro recording ──────────────────────────────────────────────────
-const INTROS_DIR = path.join(process.cwd(), "recordings", "intros");
 const introUpload = multer({
-  storage: multerS3({
-    s3: s3Client,
-    bucket: BUCKET_NAME,
-    contentType: multerS3.AUTO_CONTENT_TYPE,
-    key: (req, file, cb) => {
-      const ext = file.mimetype.split("/")[1]?.split(";")[0] || "webm";
-      cb(null, `intros/${req.user._id}.${ext}`);
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => {
+      const dir = path.join(process.cwd(), "recordings", "temp");
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      cb(null, dir);
     },
+    filename: (req, file, cb) => {
+      cb(null, `intro_${req.user._id}_${Date.now()}.wav`);
+    }
   }),
   limits: { fileSize: 50 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
@@ -160,21 +160,16 @@ const introUpload = multer({
 });
 
 // ─── Multer: language application recording ───────────────────────────────────
-const LANG_RECORDINGS_DIR = path.join(
-  process.cwd(),
-  "recordings",
-  "language-apps"
-);
 const langUpload = multer({
-  storage: multerS3({
-    s3: s3Client,
-    bucket: BUCKET_NAME,
-    contentType: multerS3.AUTO_CONTENT_TYPE,
-    key: (req, file, cb) => {
-      const ext = file.mimetype.split("/")[1]?.split(";")[0] || "webm";
-      const code = String(req.body?.languageCode || "lang").replace(/[^a-z0-9]/gi, "");
-      cb(null, `language-apps/${req.user._id}_${code}_${Date.now()}.${ext}`);
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => {
+      const dir = path.join(process.cwd(), "recordings", "temp");
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      cb(null, dir);
     },
+    filename: (req, file, cb) => {
+      cb(null, `lang_${req.user._id}_${Date.now()}.wav`);
+    }
   }),
   limits: { fileSize: 60 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
@@ -340,13 +335,31 @@ async function cleanupRecording(socket) {
 
     return new Promise(async (resolve) => {
       try {
+        let finalUploadPath = tempPath;
+        if (tempPath.endsWith(".pcm")) {
+          const flacPath = tempPath.replace(".pcm", ".flac");
+          await new Promise((res, rej) => {
+            const ffmpeg = require("fluent-ffmpeg");
+            ffmpeg()
+              .input(tempPath)
+              .inputFormat('s16le')
+              .audioChannels(1)
+              .audioFrequency(48000)
+              .output(flacPath)
+              .on('end', res)
+              .on('error', rej)
+              .run();
+          });
+          finalUploadPath = flacPath;
+        }
+
         const upload = new Upload({
           client: s3Client,
           params: {
             Bucket: BUCKET_NAME,
-            Key: filePath, // the AWS object key
-            Body: fs.createReadStream(tempPath),
-            ContentType: `audio/${filePath.endsWith("ogg") ? "ogg" : "webm"}`,
+            Key: filePath,
+            Body: fs.createReadStream(finalUploadPath),
+            ContentType: `audio/${filePath.split('.').pop()}`,
           },
         });
         await upload.done();
@@ -357,6 +370,10 @@ async function cleanupRecording(socket) {
       } finally {
         if (fs.existsSync(tempPath)) {
           fs.unlink(tempPath, () => {});
+        }
+        if (tempPath.endsWith(".pcm")) {
+            const flacPath = tempPath.replace(".pcm", ".flac");
+            if (fs.existsSync(flacPath)) fs.unlink(flacPath, () => {});
         }
       }
     });
@@ -424,27 +441,29 @@ async function executeMergeRecordings(callId, offsetA, offsetB) {
   const keyB = session.recordingBFile;
 
   // We mount streams inside Node's standard /temp/ OS architecture
-  const localA = path.join(process.cwd(), "recordings", `${callId}_tmp_A.webm`);
-  const localB = path.join(process.cwd(), "recordings", `${callId}_tmp_B.webm`);
-  const localMixed = path.join(process.cwd(), "recordings", `${callId}_tmp_mixed.webm`);
+    const awsExt = keyA.split('.').pop() || "webm";
+    const localA = path.join(process.cwd(), "recordings", `${callId}_tmp_A.${awsExt}`);
+    const localB = path.join(process.cwd(), "recordings", `${callId}_tmp_B.${awsExt}`);
+    const localMixed = path.join(process.cwd(), "recordings", `${callId}_tmp_mixed.flac`);
 
-  try {
-    // 1. Pre-fetch WebRTC endpoints from Amazon gracefully mapping them to local NVME temporarily
-    const [streamA, streamB] = await Promise.all([
-      s3Client.send(new GetObjectCommand({ Bucket: BUCKET_NAME, Key: keyA })),
-      s3Client.send(new GetObjectCommand({ Bucket: BUCKET_NAME, Key: keyB }))
-    ]);
-    
-    await Promise.all([
-      pipeline(streamA.Body, fs.createWriteStream(localA)),
-      pipeline(streamB.Body, fs.createWriteStream(localB))
-    ]);
+    try {
+      // 1. Pre-fetch audio endpoints from Amazon gracefully mapping them to local NVME temporarily
+      const [streamA, streamB] = await Promise.all([
+        s3Client.send(new GetObjectCommand({ Bucket: BUCKET_NAME, Key: keyA })),
+        s3Client.send(new GetObjectCommand({ Bucket: BUCKET_NAME, Key: keyB }))
+      ]);
+      
+      await Promise.all([
+        pipeline(streamA.Body, fs.createWriteStream(localA)),
+        pipeline(streamB.Body, fs.createWriteStream(localB))
+      ]);
 
-    // 2. Perform native Fluent-FFMPEG Concatenation securely!
-    await new Promise((resolve, reject) => {
-      ffmpeg()
-        .input(localA)
-        .input(localB)
+      // 2. Perform native Fluent-FFMPEG Concatenation securely!
+      const ffmpeg = require("fluent-ffmpeg");
+      await new Promise((resolve, reject) => {
+        ffmpeg()
+          .input(localA)
+          .input(localB)
         .complexFilter([
           `[0:a]adelay=${offsetA}|${offsetA}[a]`,
           `[1:a]adelay=${offsetB}|${offsetB}[b]`,
@@ -457,7 +476,7 @@ async function executeMergeRecordings(callId, offsetA, offsetB) {
 
     // 3. Upload exactly back to the targeted Amazon hierarchy recursively 
     const awsFolderRoot = keyA.split("/").slice(0, 2).join("/"); // e.g. calls/{callId}_{lang}_{topic}
-    const finalMixedKey = `${awsFolderRoot}/combined.webm`;
+    const finalMixedKey = `${awsFolderRoot}/combined.flac`;
 
     const uploader = new Upload({
       client: s3Client,
@@ -465,7 +484,7 @@ async function executeMergeRecordings(callId, offsetA, offsetB) {
         Bucket: BUCKET_NAME,
         Key: finalMixedKey,
         Body: fs.createReadStream(localMixed),
-        ContentType: "audio/webm",
+        ContentType: "audio/flac",
       },
     });
     await uploader.done();
@@ -835,7 +854,8 @@ io.on("connection", (socket) => {
           ? Math.max(0, Date.now() - call.expectedActualStartTime)
           : 0;
 
-      const ext = (mimeType || "audio/webm").includes("ogg") ? "ogg" : "webm";
+      const isPcm = mimeType === "audio/pcm";
+      const ext = isPcm ? "flac" : (mimeType || "audio/webm").includes("ogg") ? "ogg" : "webm";
       
       let cleanTopic = "NoTopic";
       if (call && call.selectedTopic && call.selectedTopic.title) {
@@ -850,7 +870,8 @@ io.on("connection", (socket) => {
       const filePath = `calls/${folderName}/${fileName}`; // Systematic S3 Tier
 
       // Systematic S3 Tier
-      const tempLocalPath = path.join(process.cwd(), "recordings", `${socket.id}_${Date.now()}.webm`);
+      const localFileExt = isPcm ? "pcm" : ext;
+      const tempLocalPath = path.join(process.cwd(), "recordings", `${socket.id}_${Date.now()}.${localFileExt}`);
 
       socket.data.recordChunks = null;
       socket.data.tempLocalPath = tempLocalPath;

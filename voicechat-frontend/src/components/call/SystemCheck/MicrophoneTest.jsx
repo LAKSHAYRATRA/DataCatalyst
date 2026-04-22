@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import AudioVisualizer from '../../AudioVisualizer';
 import { analyzeNoiseYAMNet } from '../../../utils/yamnetAnalysis';
+import { encodeWAV } from '../../../utils/wavBuilder';
 
 const PHRASE = "A purple pig and a green donkey flew a kite in the middle of the night";
 
@@ -49,8 +50,11 @@ export default function MicrophoneTest({ onSuccess }) {
     const [noiseResult, setNoiseResult] = useState(null);
     const [loadError, setLoadError] = useState(null);
 
-    const mediaRecorderRef = useRef(null);
+    const audioCtxRef = useRef(null);
+    const workletNodeRef = useRef(null);
+    const streamRef = useRef(null);
     const audioChunksRef = useRef([]);
+    const timerIntervalRef = useRef(null);
 
     useEffect(() => {
         loadMics();
@@ -83,45 +87,41 @@ export default function MicrophoneTest({ onSuccess }) {
                 }
             };
             const stream = await navigator.mediaDevices.getUserMedia(constraints);
+            streamRef.current = stream;
 
-            // prefer webm/opus, fall back to webm
-            const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
-                ? 'audio/webm;codecs=opus'
-                : 'audio/webm';
-
-            const mediaRecorder = new MediaRecorder(stream, { mimeType, audioBitsPerSecond: 128000 });
-            mediaRecorderRef.current = mediaRecorder;
+            const audioCtx = new AudioContext({ sampleRate: 48000 });
+            audioCtxRef.current = audioCtx;
+            await audioCtx.audioWorklet.addModule("/pcm-worklet.js");
+            
+            const source = audioCtx.createMediaStreamSource(stream);
+            const workletNode = new AudioWorkletNode(audioCtx, "pcm-processor");
+            workletNodeRef.current = workletNode;
+            
             audioChunksRef.current = [];
-
-            mediaRecorder.ondataavailable = (event) => {
-                if (event.data.size > 0) audioChunksRef.current.push(event.data);
+            workletNode.port.onmessage = (e) => {
+                audioChunksRef.current.push(new Int16Array(e.data));
             };
+            
+            const gain = audioCtx.createGain();
+            gain.gain.value = 0;
+            source.connect(workletNode);
+            workletNode.connect(gain);
+            gain.connect(audioCtx.destination);
 
-            mediaRecorder.onstop = async () => {
-                const audioBlob = new Blob(audioChunksRef.current, { type: mimeType });
-                stream.getTracks().forEach((t) => t.stop());
-                processAudio(audioBlob);
-            };
-
-            mediaRecorder.start();
             setMicState(MicState.RECORDING);
             setMicTimer(10);
 
-            const timerInterval = setInterval(() => {
+            timerIntervalRef.current = setInterval(() => {
                 setMicTimer((prev) => {
                     if (prev <= 1) {
-                        clearInterval(timerInterval);
-                        setMicState(MicState.PROCESSING);
-                        if (mediaRecorderRef.current?.state === "recording") {
-                            mediaRecorder.stop();
-                        }
+                        clearInterval(timerIntervalRef.current);
+                        stopRecording();
                         return 0;
                     }
                     return prev - 1;
                 });
             }, 1000);
 
-            mediaRecorderRef.current.timerInterval = timerInterval;
         } catch (err) {
             console.error("Error accessing microphone:", err);
             alert("Could not access the selected microphone. Please check your device.");
@@ -129,13 +129,33 @@ export default function MicrophoneTest({ onSuccess }) {
     };
 
     const stopRecording = () => {
-        if (mediaRecorderRef.current?.state === "recording") {
-            mediaRecorderRef.current.stop();
-            if (mediaRecorderRef.current.timerInterval) {
-                clearInterval(mediaRecorderRef.current.timerInterval);
-            }
-            setMicState(MicState.PROCESSING);
+        setMicState(MicState.PROCESSING);
+        clearInterval(timerIntervalRef.current);
+
+        if (workletNodeRef.current) {
+            workletNodeRef.current.disconnect();
+            workletNodeRef.current = null;
         }
+        if (audioCtxRef.current) {
+            audioCtxRef.current.close();
+            audioCtxRef.current = null;
+        }
+        if (streamRef.current) {
+            streamRef.current.getTracks().forEach((t) => t.stop());
+            streamRef.current = null;
+        }
+
+        let totalLength = 0;
+        for (const arr of audioChunksRef.current) totalLength += arr.length;
+        const combined = new Int16Array(totalLength);
+        let offset = 0;
+        for (const arr of audioChunksRef.current) {
+            combined.set(arr, offset);
+            offset += arr.length;
+        }
+
+        const audioBlob = encodeWAV(combined, 48000, 1);
+        processAudio(audioBlob);
     };
 
     // Analyze noise entirely in the browser — no server call needed

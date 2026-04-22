@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Nav from "../components/Nav.jsx";
 import { apiGet } from "../lib/api.js";
+import { encodeWAV } from "../utils/wavBuilder.js";
 
 const BACKEND = import.meta.env.VITE_BACKEND_URL || "http://localhost:3001";
 const MAX_SEC = 120; // 2 minutes
@@ -21,7 +22,9 @@ export default function LanguageApply() {
     const [error, setError] = useState("");
     const [success, setSuccess] = useState("");
 
-    const mediaRecorderRef = useRef(null);
+    const audioCtxRef = useRef(null);
+    const workletNodeRef = useRef(null);
+    const streamRef = useRef(null);
     const chunksRef = useRef([]);
     const timerRef = useRef(null);
 
@@ -55,17 +58,27 @@ export default function LanguageApply() {
     async function startRecording() {
         try {
             const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, sampleRate: 48000, channelCount: 1 } });
+            streamRef.current = stream;
             chunksRef.current = [];
-            const mr = new MediaRecorder(stream, { audioBitsPerSecond: 128000 });
-            mediaRecorderRef.current = mr;
-            mr.ondataavailable = e => { if (e.data.size > 0) chunksRef.current.push(e.data); };
-            mr.onstop = () => {
-                const blob = new Blob(chunksRef.current, { type: "audio/webm" });
-                setAudioBlob(blob);
-                setAudioUrl(URL.createObjectURL(blob));
-                stream.getTracks().forEach(t => t.stop());
+            
+            const audioCtx = new AudioContext({ sampleRate: 48000 });
+            audioCtxRef.current = audioCtx;
+            await audioCtx.audioWorklet.addModule("/pcm-worklet.js");
+            
+            const source = audioCtx.createMediaStreamSource(stream);
+            const workletNode = new AudioWorkletNode(audioCtx, "pcm-processor");
+            workletNodeRef.current = workletNode;
+            
+            workletNode.port.onmessage = (e) => {
+                chunksRef.current.push(new Int16Array(e.data));
             };
-            mr.start();
+            
+            const gain = audioCtx.createGain();
+            gain.gain.value = 0;
+            source.connect(workletNode);
+            workletNode.connect(gain);
+            gain.connect(audioCtx.destination);
+            
             setRecording(true);
             setSecondsLeft(MAX_SEC);
 
@@ -82,7 +95,30 @@ export default function LanguageApply() {
 
     function stopRecording() {
         clearInterval(timerRef.current);
-        mediaRecorderRef.current?.stop();
+        if (workletNodeRef.current) {
+            workletNodeRef.current.disconnect();
+            workletNodeRef.current = null;
+        }
+        if (audioCtxRef.current) {
+            audioCtxRef.current.close();
+            audioCtxRef.current = null;
+        }
+        if (streamRef.current) {
+            streamRef.current.getTracks().forEach(t => t.stop());
+            streamRef.current = null;
+        }
+
+        let totalLength = 0;
+        for (const arr of chunksRef.current) totalLength += arr.length;
+        const combined = new Int16Array(totalLength);
+        let offset = 0;
+        for (const arr of chunksRef.current) {
+            combined.set(arr, offset);
+            offset += arr.length;
+        }
+        const blob = encodeWAV(combined, 48000, 1);
+        setAudioBlob(blob);
+        setAudioUrl(URL.createObjectURL(blob));
         setRecording(false);
     }
 
@@ -93,7 +129,7 @@ export default function LanguageApply() {
         try {
             const form = new FormData();
             form.append("languageCode", selected.code);
-            form.append("recording", audioBlob, `lang_${selected.code}.webm`);
+            form.append("recording", audioBlob, `lang_${selected.code}.wav`);
             const res = await fetch(`${BACKEND}/api/language-applications`, {
                 method: "POST", body: form, credentials: "include",
             });
