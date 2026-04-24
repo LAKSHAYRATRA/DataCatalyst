@@ -30,8 +30,6 @@ import { apiGet } from "./lib/api.js";
 import { SystemCheckProvider } from "./context/SystemCheckContext.jsx";
 import Earnings from "./pages/Earnings.jsx";
 import Community from "./pages/Community.jsx";
-import RainbowCursor from "./components/RainbowCursor.jsx";
-
 // Redirect logged-in users away from /login and /signup
 function RedirectIfAuthenticated({ children }) {
   const userInfo = getUserInfo();
@@ -127,7 +125,6 @@ export default function App() {
 
   return (
     <SystemCheckProvider>
-      <RainbowCursor />
       <Routes>
         <Route path="/login" element={<RedirectIfAuthenticated><Login /></RedirectIfAuthenticated>} />
         <Route path="/signup" element={<RedirectIfAuthenticated><Signup /></RedirectIfAuthenticated>} />

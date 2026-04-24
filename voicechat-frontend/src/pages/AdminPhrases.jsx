@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Upload, FileJson, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Upload, FileJson, CheckCircle2, AlertCircle, Download } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { apiGet, apiPostJson } from '../lib/api';
 import AdminNav from '../components/AdminNav.jsx';
@@ -10,12 +10,33 @@ export default function AdminPhrases() {
   const [file, setFile] = useState(null);
   const [pastedJson, setPastedJson] = useState('');
   const [loading, setLoading] = useState(false);
+  const [downloading, setDownloading] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
 
   useEffect(() => {
     fetchPhrases();
   }, []);
+
+  async function handleDownload() {
+    setDownloading(true);
+    try {
+      const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
+      const res = await fetch(`${BACKEND_URL}/api/phrases/admin/download`, { credentials: 'include' });
+      if (!res.ok) throw new Error('Download failed');
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `datacatalyst_phrases_${Date.now()}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setError('Download failed: ' + err.message);
+    } finally {
+      setDownloading(false);
+    }
+  }
 
   async function fetchPhrases() {
     try {
@@ -163,13 +184,25 @@ export default function AdminPhrases() {
         </div>
       </motion.div>
 
-      <motion.div 
+      <motion.div
         initial={{ y: 20, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
         transition={{ delay: 0.1 }}
         className="card overflow-hidden"
       >
-        <h2 className="text-xl font-semibold mb-4">Database Overview</h2>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-xl font-semibold">Database Overview</h2>
+          <button
+            onClick={handleDownload}
+            disabled={downloading}
+            className="btn btn-secondary flex items-center gap-2 text-sm"
+          >
+            {downloading
+              ? <div className="w-4 h-4 border-2 border-neutral-400/30 border-t-neutral-600 rounded-full animate-spin" />
+              : <Download className="w-4 h-4" />}
+            {downloading ? 'Preparing...' : 'Download Approved JSON'}
+          </button>
+        </div>
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse whitespace-nowrap">
             <thead>

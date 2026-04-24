@@ -70,7 +70,7 @@ export async function uploadPhrases(req, res) {
           updated++;
         }
       } else {
-        await Phrase.create({ phraseId: String(p.id), ...doc });
+        await Phrase.create({ phraseId: String(givenId), ...doc });
         inserted++;
       }
     }
@@ -372,6 +372,71 @@ export async function getAllPhrasesAdmin(req, res) {
     res.json({ phrases });
   } catch (error) {
     console.error("getAllPhrasesAdmin error:", error);
+    res.status(500).json({ error: "Server error" });
+  }
+}
+
+/**
+ * Admin: Download all approved phrases as structured JSON grouped by company
+ */
+export async function downloadPhrasesAdmin(req, res) {
+  try {
+    const phrases = await Phrase.find({ status: "approved" })
+      .populate("contributorId", "firstname lastname username gender regionalLanguage locality address microphoneBrand microphoneModel")
+      .sort({ companyId: 1, createdAt: 1 });
+
+    // Group by company
+    const grouped = {};
+    for (const p of phrases) {
+      const company = p.companyId || "Unassigned";
+      if (!grouped[company]) grouped[company] = [];
+
+      const contributor = p.contributorId;
+      grouped[company].push({
+        unique_id: p.phraseId,
+        phrase_text: p.text,
+        destination_mapping: p.language,
+        company_name: company,
+        speaker_id: p.speaker_id || (contributor ? contributor.username : null),
+        speaker_metadata: contributor
+          ? {
+              name: `${contributor.firstname || ""} ${contributor.lastname || ""}`.trim() || contributor.username,
+              gender: contributor.gender || null,
+              accent: contributor.regionalLanguage || null,
+              locality: contributor.locality || null,
+              state: contributor.address?.state || null,
+              city: contributor.address?.city || null,
+              microphone: `${contributor.microphoneBrand || ""} ${contributor.microphoneModel || ""}`.trim() || null,
+            }
+          : null,
+        audio_file_url: p.audioFile
+          ? `https://${process.env.S3_BUCKET_NAME}.s3.${process.env.AWS_REGION || "us-east-1"}.amazonaws.com/${p.audioFile}`
+          : null,
+        audio_s3_key: p.audioFile || null,
+        emotion: p.emotion || null,
+        style: p.style || null,
+        intent: p.intent || null,
+        pitch: p.pitch || null,
+        speed: p.speed || null,
+        volume: p.volume || null,
+        duration_seconds: p.duration || 0,
+        recorded_at: p.recordedAt,
+        approved_at: p.reviewedAt,
+      });
+    }
+
+    // Convert to array format
+    const output = Object.entries(grouped).map(([company_name, phrases]) => ({
+      company_name,
+      total_phrases: phrases.length,
+      phrases,
+    }));
+
+    res.setHeader("Content-Type", "application/json");
+    res.setHeader("Content-Disposition", `attachment; filename="datacatalyst_phrases_${Date.now()}.json"`);
+    res.json({ exported_at: new Date(), total_approved: phrases.length, companies: output });
+  } catch (error) {
+    console.error("downloadPhrasesAdmin error:", error);
     res.status(500).json({ error: "Server error" });
   }
 }

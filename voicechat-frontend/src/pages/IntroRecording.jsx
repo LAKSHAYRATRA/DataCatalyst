@@ -121,7 +121,15 @@ export default function IntroRecording() {
             }
 
         } catch (err) {
-            console.log("Mic permission denied");
+            if (err.name === "NotAllowedError" || err.name === "PermissionDeniedError") {
+                setError("Microphone permission denied. Please allow microphone access in your browser settings, then click 'Refresh Devices'.");
+            } else if (err.name === "NotFoundError") {
+                setError("No microphone detected. Please connect a USB microphone.");
+            } else if (err.name === "SecurityError" || window.location.protocol === "http:") {
+                setError("Microphone access requires a secure (HTTPS) connection.");
+            } else {
+                setError("Could not access microphone. Please check permissions and try again.");
+            }
         }
     }
 

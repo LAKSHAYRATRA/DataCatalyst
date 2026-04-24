@@ -106,8 +106,16 @@ export default function PhraseRecording() {
       }, 1000);
 
     } catch (err) {
-      alert('Microphone access denied or not available.');
       console.error(err);
+      if (err.name === "NotAllowedError" || err.name === "PermissionDeniedError") {
+        setError("Microphone permission denied. Please allow access in browser settings.");
+      } else if (err.name === "NotFoundError") {
+        setError("No microphone found. Please connect a microphone and try again.");
+      } else if (err.name === "SecurityError" || window.location.protocol === "http:") {
+        setError("Microphone access requires a secure (HTTPS) connection.");
+      } else {
+        setError("Could not access microphone. Please check your device and try again.");
+      }
     }
   }
 
@@ -169,8 +177,8 @@ export default function PhraseRecording() {
       await fetchStats();
       await fetchNextPhrase(); // Auto-cycle to the next phrase
     } catch (err) {
-      alert('Upload failed. Check your network or the current phrase might have been claimed.');
       console.error(err);
+      setError('Upload failed. Check your network or this phrase may have been claimed by another user.');
     } finally {
       setLoading(false);
     }

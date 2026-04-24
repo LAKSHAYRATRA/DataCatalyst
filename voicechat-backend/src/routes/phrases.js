@@ -14,6 +14,7 @@ import {
   reviewPhrase,
   streamPhraseAudio,
   getAllPhrasesAdmin,
+  downloadPhrasesAdmin,
   getContributorStats,
 } from "../controllers/phraseController.js";
 
@@ -63,6 +64,7 @@ const phraseUpload = multer({
 /* -------------------------------------------------------------------------- */
 router.post("/admin/upload", requireAuth(JWT_SECRET), requireAdmin, uploadPhrases);
 router.get("/admin/all", requireAuth(JWT_SECRET), requireAdmin, getAllPhrasesAdmin);
+router.get("/admin/download", requireAuth(JWT_SECRET), requireAdmin, downloadPhrasesAdmin);
 
 /* -------------------------------------------------------------------------- */
 /*                                   QA Routes                                */

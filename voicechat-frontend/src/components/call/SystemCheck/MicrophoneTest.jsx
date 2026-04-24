@@ -49,6 +49,7 @@ export default function MicrophoneTest({ onSuccess }) {
     const [micTimer, setMicTimer] = useState(10);
     const [noiseResult, setNoiseResult] = useState(null);
     const [loadError, setLoadError] = useState(null);
+    const [recordError, setRecordError] = useState(null);
 
     const audioCtxRef = useRef(null);
     const workletNodeRef = useRef(null);
@@ -75,6 +76,7 @@ export default function MicrophoneTest({ onSuccess }) {
     };
 
     const startRecording = async () => {
+        setRecordError(null);
         try {
             const constraints = {
                 audio: {
@@ -124,7 +126,19 @@ export default function MicrophoneTest({ onSuccess }) {
 
         } catch (err) {
             console.error("Error accessing microphone:", err);
-            alert("Could not access the selected microphone. Please check your device.");
+            if (err.name === "NotAllowedError" || err.name === "PermissionDeniedError") {
+                setRecordError("Microphone permission denied. Please allow microphone access in your browser settings and try again.");
+            } else if (err.name === "NotFoundError" || err.name === "DevicesNotFoundError") {
+                setRecordError("No microphone found. Please connect a microphone and click 'Refresh Devices'.");
+            } else if (err.name === "NotReadableError" || err.name === "TrackStartError") {
+                setRecordError("Microphone is in use by another application. Please close other apps using the mic and try again.");
+            } else if (err.name === "OverconstrainedError") {
+                setRecordError("Selected microphone does not support the required audio settings. Try a different device.");
+            } else if (err.name === "SecurityError" || window.location.protocol === "http:") {
+                setRecordError("Microphone access requires HTTPS. Please use a secure connection.");
+            } else {
+                setRecordError("Could not access the microphone. Please check your device and browser permissions.");
+            }
         }
     };
 
@@ -167,7 +181,7 @@ export default function MicrophoneTest({ onSuccess }) {
         } catch (err) {
             console.error('Client-side noise analysis failed:', err);
             setMicState(MicState.IDLE);
-            alert('Noise check failed. Please try again.');
+            setRecordError('Noise analysis failed. Please try again.');
         }
     };
 
@@ -387,6 +401,15 @@ export default function MicrophoneTest({ onSuccess }) {
                         </div>
                     )}
                 </div>
+
+                {recordError && (
+                    <div className="max-w-md mx-auto mt-4 flex items-start gap-3 rounded-xl border border-error-200 bg-error-50 p-4">
+                        <svg className="w-5 h-5 text-error-500 mt-0.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v4m0 4h.01M10.29 3.86l-7.5 13A1 1 0 003.66 18h16.68a1 1 0 00.87-1.5l-7.5-13a1 1 0 00-1.74 0z" />
+                        </svg>
+                        <p className="text-sm text-error-700">{recordError}</p>
+                    </div>
+                )}
             </div>
         </div>
     );
