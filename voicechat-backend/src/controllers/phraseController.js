@@ -39,15 +39,20 @@ export async function uploadPhrases(req, res) {
     let updated = 0;
 
     for (const p of phrases) {
-      if (!p.id || !p.text) continue;
+      // Flexibly map the phrase ID or auto-generate one
+      const givenId = p.id || p.phraseId || p._id || p.phrase_id || `auto_${Date.now()}_${Math.random().toString(36).substring(2,7)}`;
+      
+      // Flexibly map the text content
+      const text = p.text || p.sentence || p.content || p.phrase || p.transcript;
+      if (!text) continue; // We strictly need at least some text to be read
 
-      const existing = await Phrase.findOne({ phraseId: String(p.id) });
+      const existing = await Phrase.findOne({ phraseId: String(givenId) });
       const doc = {
         companyId: companyId || null,
-        language: p.language || "english",
-        script_type: p.script_type || null,
-        speaker_id: p.speaker_id || null,
-        text: p.text,
+        language: p.language || p.lang || "english",
+        script_type: p.script_type || p.scriptType || null,
+        speaker_id: p.speaker_id || p.speakerId || p.speaker || null,
+        text: text,
         emotion: p.emotion || null,
         style: p.style || null,
         intent: p.intent || null,
@@ -55,7 +60,7 @@ export async function uploadPhrases(req, res) {
         speed: p.speed || null,
         volume: p.volume || null,
         events: p.events ? (Array.isArray(p.events) ? p.events.join(", ") : JSON.stringify(p.events)) : null,
-        instructions: p.instructions || p.instruction || null,
+        instructions: p.instructions || p.instruction || p.notes || p.metadata || null,
       };
 
       if (existing) {
