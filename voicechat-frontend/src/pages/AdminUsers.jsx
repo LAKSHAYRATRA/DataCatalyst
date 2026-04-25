@@ -32,9 +32,24 @@ const STATUS_LABEL = {
 
 export default function AdminUsers() {
     const navigate = useNavigate();
-    const [tab, setTab] = useState("pending"); // "pending" | "all" | "qa"
+    const [tab, setTab] = useState("pending"); // "pending", "all", "qa"
+    
+    // Approval/Rejection states
+    const [actionUserId, setActionUserId] = useState(null);
+    const [rejectModal, setRejectModal] = useState(null);
+    const [rejectReason, setRejectReason] = useState("");
+    const [rejectLoading, setRejectLoading] = useState(false);
 
-    // All-users state
+    // Limit editing states
+    const [limitModalUser, setLimitModalUser] = useState(null);
+    const [limitForm, setLimitForm] = useState({
+        dailyPhraseLimit: 1000,
+        overallPhraseLimit: -1,
+        dailyCallLimit: 50,
+        overallCallLimit: -1
+    });
+
+    // Paginationg state
     const [users, setUsers] = useState([]);
     const [pagination, setPagination] = useState({ page: 1, limit: 20, total: 0, pages: 0 });
     const [usersLoading, setUsersLoading] = useState(false);
@@ -59,12 +74,6 @@ export default function AdminUsers() {
     const [languages, setLanguages] = useState([]);
 
     const [error, setError] = useState("");
-    const [actionUserId, setActionUserId] = useState(null);
-
-    // Reject modal
-    const [rejectModal, setRejectModal] = useState(null); // userId
-    const [rejectReason, setRejectReason] = useState("");
-    const [rejectLoading, setRejectLoading] = useState(false);
 
     useEffect(() => {
         if (tab === "pending") loadPending();
@@ -130,14 +139,16 @@ export default function AdminUsers() {
         }
     }
 
-    async function updateUserLimit(userId, limit) {
+    async function submitLimitUpdate(e) {
+        e.preventDefault();
+        if (!limitModalUser) return;
         try {
-            await apiPatchJson(`/api/admin/users/${userId}/limit`, { limit: parseInt(limit) });
+            await apiPatchJson(`/api/admin/users/${limitModalUser._id}/limits`, limitForm);
             await loadUsers();
-            setEditingUserId(null);
-            setNewLimit("");
-        } catch (e) {
-            alert("Error: " + e.message);
+            setLimitModalUser(null);
+            Swal.fire({ title: "Limits Updated", icon: "success", timer: 2000, showConfirmButton: false });
+        } catch (error) {
+            Swal.fire("Error", error.message, "error");
         }
     }
 
@@ -386,28 +397,31 @@ export default function AdminUsers() {
                                                     </span>
                                                 </td>
                                                 <td className="px-4 py-4">
-                                                    {editingUserId === user._id ? (
-                                                        <input type="number" min="0" value={newLimit}
-                                                            onChange={(e) => setNewLimit(e.target.value)}
-                                                            className="w-20 px-2 py-1 bg-neutral-600 text-white border border-neutral-500 rounded focus:outline-none focus:border-primary-500 text-sm"
-                                                            autoFocus />
-                                                    ) : (
-                                                        <span className="text-white font-semibold text-sm">{user.dailyCallLimit ?? 3}/day</span>
-                                                    )}
+                                                    <div className="flex flex-col gap-1 text-sm text-neutral-300">
+                                                        <div><span className="text-neutral-500 w-16 inline-block">Phrases:</span> 
+                                                            <span className="font-semibold text-white">{user.dailyPhraseLimit ?? 1000}</span>/day, 
+                                                            {user.overallPhraseLimit === -1 ? ' Unlimited' : ` ${user.overallPhraseLimit} total`}
+                                                        </div>
+                                                        <div><span className="text-neutral-500 w-16 inline-block">Calls:</span> 
+                                                            <span className="font-semibold text-white">{user.dailyCallLimit ?? 50}</span>/day, 
+                                                            {user.overallCallLimit === -1 ? ' Unlimited' : ` ${user.overallCallLimit} total`}
+                                                        </div>
+                                                    </div>
                                                 </td>
                                                 <td className="px-4 py-4 text-xs">
-                                                    {editingUserId === user._id ? (
-                                                        <div className="flex gap-2">
-                                                            <button onClick={() => updateUserLimit(user._id, newLimit)} className="text-success-400 hover:text-success-300">✓ Save</button>
-                                                            <button onClick={() => { setEditingUserId(null); setNewLimit(""); }} className="text-error-400 hover:text-error-300">✗</button>
-                                                        </div>
-                                                    ) : (
-                                                        <button
-                                                            onClick={() => { setEditingUserId(user._id); setNewLimit(user.dailyCallLimit ?? 3); }}
-                                                            className="text-warning-400 hover:text-warning-300">
-                                                            Edit Limit
-                                                        </button>
-                                                    )}
+                                                    <button
+                                                        onClick={() => { 
+                                                            setLimitModalUser(user); 
+                                                            setLimitForm({
+                                                                dailyPhraseLimit: user.dailyPhraseLimit ?? 1000,
+                                                                overallPhraseLimit: user.overallPhraseLimit ?? -1,
+                                                                dailyCallLimit: user.dailyCallLimit ?? 50,
+                                                                overallCallLimit: user.overallCallLimit ?? -1
+                                                            });
+                                                        }}
+                                                        className="text-warning-400 hover:text-warning-300 font-medium bg-warning-400/10 hover:bg-warning-400/20 px-3 py-1.5 rounded transition-colors">
+                                                        Edit Limits
+                                                    </button>
                                                 </td>
                                             </tr>
                                         ))}
@@ -596,6 +610,70 @@ export default function AdminUsers() {
                     </div>
                 )}
             </div>
+            {/* Limit Editing Modal */}
+            {limitModalUser && (
+                <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+                    <div className="bg-neutral-800 border border-neutral-700 rounded-2xl p-6 w-full max-w-md shadow-2xl">
+                        <h3 className="text-lg font-bold text-white mb-4">Edit Limits for {limitModalUser.username}</h3>
+                        <form onSubmit={submitLimitUpdate} className="space-y-4">
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-xs text-neutral-400 mb-1">Daily Phrases</label>
+                                    <input 
+                                        type="number" 
+                                        min="-1" 
+                                        value={limitForm.dailyPhraseLimit}
+                                        onChange={(e) => setLimitForm({...limitForm, dailyPhraseLimit: e.target.value})}
+                                        className="w-full bg-neutral-700 text-white border border-neutral-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-primary-500"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-xs text-neutral-400 mb-1">Overall Phrases (-1 = Unl)</label>
+                                    <input 
+                                        type="number" 
+                                        min="-1" 
+                                        value={limitForm.overallPhraseLimit}
+                                        onChange={(e) => setLimitForm({...limitForm, overallPhraseLimit: e.target.value})}
+                                        className="w-full bg-neutral-700 text-white border border-neutral-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-primary-500"
+                                    />
+                                </div>
+                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-xs text-neutral-400 mb-1">Daily Calls</label>
+                                    <input 
+                                        type="number" 
+                                        min="-1" 
+                                        value={limitForm.dailyCallLimit}
+                                        onChange={(e) => setLimitForm({...limitForm, dailyCallLimit: e.target.value})}
+                                        className="w-full bg-neutral-700 text-white border border-neutral-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-primary-500"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-xs text-neutral-400 mb-1">Overall Calls (-1 = Unl)</label>
+                                    <input 
+                                        type="number" 
+                                        min="-1" 
+                                        value={limitForm.overallCallLimit}
+                                        onChange={(e) => setLimitForm({...limitForm, overallCallLimit: e.target.value})}
+                                        className="w-full bg-neutral-700 text-white border border-neutral-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-primary-500"
+                                    />
+                                </div>
+                            </div>
+                            <div className="flex gap-3 mt-6">
+                                <button type="button" onClick={() => setLimitModalUser(null)}
+                                    className="flex-1 py-2 bg-neutral-700 hover:bg-neutral-600 text-neutral-300 text-sm font-semibold rounded-lg transition-colors">
+                                    Cancel
+                                </button>
+                                <button type="submit"
+                                    className="flex-1 py-2 bg-primary-600 hover:bg-primary-500 text-white text-sm font-semibold rounded-lg transition-colors">
+                                    Save Limits
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

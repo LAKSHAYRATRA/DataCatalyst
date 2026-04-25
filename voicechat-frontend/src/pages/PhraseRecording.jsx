@@ -5,7 +5,12 @@ import { apiGet } from '../lib/api';
 import { encodeWAV } from '../utils/wavBuilder.js';
 
 export default function PhraseRecording() {
-  const [stats, setStats] = useState({ totalSeconds: 0, history: [] });
+  const [stats, setStats] = useState({ 
+    totalSeconds: 0, 
+    history: [],
+    dailyPhraseLimit: 1000,
+    phrasesRecordedToday: 0
+  });
   const [language, setLanguage] = useState('english');
   const [currentPhrase, setCurrentPhrase] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -32,7 +37,14 @@ export default function PhraseRecording() {
   async function fetchStats() {
     try {
       const data = await apiGet('/api/phrases/my-stats');
-      setStats({ totalSeconds: data.totalSeconds || 0, history: data.history || [] });
+      setStats({ 
+          totalSeconds: data.totalSeconds || 0, 
+          history: data.history || [],
+          dailyPhraseLimit: data.dailyPhraseLimit !== undefined ? data.dailyPhraseLimit : 1000,
+          phrasesRecordedToday: data.phrasesRecordedToday || 0,
+          overallPhraseLimit: data.overallPhraseLimit !== undefined ? data.overallPhraseLimit : -1,
+          totalPhrasesRecorded: data.totalPhrasesRecorded || 0
+      });
     } catch (err) {
       console.error('Failed to fetch stats', err);
     }
@@ -204,6 +216,34 @@ export default function PhraseRecording() {
         </div>
       </motion.div>
 
+      {/* Progress Bar */}
+      <motion.div 
+        initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.1 }}
+        className="mb-8"
+      >
+        <div className="flex justify-between items-end mb-2">
+            <div>
+                <h3 className="text-sm font-bold text-neutral-400 uppercase tracking-wider">Daily Phrase Limit</h3>
+                <p className="text-xl font-bold text-white">
+                    {stats.phrasesRecordedToday} <span className="text-neutral-500 text-lg">/ {stats.dailyPhraseLimit === -1 ? '∞' : stats.dailyPhraseLimit}</span>
+                </p>
+            </div>
+            {stats.dailyPhraseLimit !== -1 && (
+                <div className="text-sm font-medium text-neutral-400">
+                    {Math.round((stats.phrasesRecordedToday / stats.dailyPhraseLimit) * 100)}%
+                </div>
+            )}
+        </div>
+        {stats.dailyPhraseLimit !== -1 && (
+            <div className="h-3 w-full bg-neutral-800 rounded-full overflow-hidden border border-neutral-700">
+                <div 
+                    className={`h-full transition-all duration-1000 ${stats.phrasesRecordedToday >= stats.dailyPhraseLimit ? 'bg-error-500' : 'bg-primary-500'}`}
+                    style={{ width: `${Math.min(100, (stats.phrasesRecordedToday / stats.dailyPhraseLimit) * 100)}%` }}
+                />
+            </div>
+        )}
+      </motion.div>
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         
         {/* Workspace */}
@@ -228,12 +268,15 @@ export default function PhraseRecording() {
               <button 
                 className="btn btn-primary"
                 onClick={fetchNextPhrase}
-                disabled={loading || isRecording}
+                disabled={loading || isRecording || (stats.dailyPhraseLimit !== -1 && stats.phrasesRecordedToday >= stats.dailyPhraseLimit)}
               >
                 {loading && !currentPhrase ? 'Searching...' : 'Get Next Phrase'}
               </button>
             </div>
             {error && <p className="text-error-500 mt-3 text-sm">{error}</p>}
+            {stats.dailyPhraseLimit !== -1 && stats.phrasesRecordedToday >= stats.dailyPhraseLimit && (
+                <p className="text-warning-500 mt-3 text-sm font-semibold">You have reached your daily phrase limit! Please come back tomorrow.</p>
+            )}
           </div>
 
           <AnimatePresence mode="popLayout">

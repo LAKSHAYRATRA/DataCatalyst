@@ -110,7 +110,7 @@ export default function AdminPayouts() {
               <table className="w-full text-sm">
                 <thead className="bg-neutral-700">
                   <tr>
-                    {["Name", "Email", "Total Calls", "Approved", "Pending", "Rejected", "Earned", "Remaining", "Action"].map((h) => (
+                    {["Name", "Email", "Calls (Appr/Tot)", "Phrases (Appr/Tot)", "Earned", "Remaining", "Action"].map((h) => (
                       <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-neutral-300 uppercase tracking-wider whitespace-nowrap">{h}</th>
                     ))}
                   </tr>
@@ -120,10 +120,12 @@ export default function AdminPayouts() {
                     <tr key={entry.user.id} className="hover:bg-neutral-700/40 transition-colors">
                       <td className="px-4 py-3 text-white font-medium whitespace-nowrap">{`${entry.user.firstname || ""} ${entry.user.lastname || ""}`.trim() || entry.user.username}</td>
                       <td className="px-4 py-3 text-neutral-300">{entry.user.email}</td>
-                      <td className="px-4 py-3 text-neutral-300">{entry.totalCallsMade}</td>
-                      <td className="px-4 py-3 text-green-300">{entry.totalApprovedCalls}</td>
-                      <td className="px-4 py-3 text-yellow-300">{entry.pendingCalls}</td>
-                      <td className="px-4 py-3 text-red-300">{entry.rejectedCalls}</td>
+                      <td className="px-4 py-3 text-neutral-300">
+                        <span className="text-green-300 font-medium">{entry.totalApprovedCalls}</span> / {entry.totalCallsMade}
+                      </td>
+                      <td className="px-4 py-3 text-neutral-300">
+                        <span className="text-green-300 font-medium">{entry.totalApprovedPhrases}</span> / {entry.totalPhrasesRecorded}
+                      </td>
                       <td className="px-4 py-3 text-neutral-100 font-semibold">{money(entry.totalMoneyMadeUsd)}</td>
                       <td className="px-4 py-3 text-warning-300 font-semibold">{money(entry.totalRemainingPayoutUsd)}</td>
                       <td className="px-4 py-3">

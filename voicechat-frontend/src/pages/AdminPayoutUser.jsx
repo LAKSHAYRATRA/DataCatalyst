@@ -93,7 +93,7 @@ export default function AdminPayoutUser() {
               <div className="bg-neutral-800 border border-neutral-700 rounded-2xl p-5">
                 <div className="text-sm text-neutral-400 mb-1">Total Earned</div>
                 <div className="text-3xl font-bold text-white">{money(summary.totalMoneyMadeUsd)}</div>
-                <div className="text-xs text-neutral-500 mt-2">{summary.totalApprovedCalls} approved calls</div>
+                <div className="text-xs text-neutral-500 mt-2">{summary.totalApprovedCalls} approved calls, {summary.totalApprovedPhrases} approved phrases</div>
               </div>
               <div className="bg-neutral-800 border border-neutral-700 rounded-2xl p-5">
                 <div className="text-sm text-neutral-400 mb-1">Paid Out</div>
@@ -103,7 +103,7 @@ export default function AdminPayoutUser() {
               <div className="bg-neutral-800 border border-neutral-700 rounded-2xl p-5">
                 <div className="text-sm text-neutral-400 mb-1">Remaining</div>
                 <div className="text-3xl font-bold text-warning-300">{money(summary.totalRemainingPayoutUsd)}</div>
-                <div className="text-xs text-neutral-500 mt-2">{summary.pendingCalls} pending, {summary.rejectedCalls} rejected</div>
+                <div className="text-xs text-neutral-500 mt-2">{summary.pendingCalls + summary.pendingPhrases} pending, {summary.rejectedCalls + summary.rejectedPhrases} rejected</div>
               </div>
             </div>
 
@@ -140,7 +140,40 @@ export default function AdminPayoutUser() {
                     </tbody>
                   </table>
                 </div>
-                {!data.calls.length && <div className="text-center py-16 text-neutral-500">No payout calls found.</div>}
+                {!data.calls.length && <div className="text-center py-6 text-neutral-500">No payout calls found.</div>}
+
+                {/* Phrase Payout Activity */}
+                <div className="px-5 py-4 border-t border-b border-neutral-700 bg-neutral-800">
+                  <h2 className="text-lg font-bold text-white">Phrase Payout Activity</h2>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-neutral-700">
+                      <tr>
+                        {["Date", "Phrase", "Language", "Status", "Duration (s)", "Payout"].map((h) => (
+                          <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-neutral-300 uppercase tracking-wider whitespace-nowrap">{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-neutral-700">
+                      {(data.phrases || []).map((phrase) => (
+                        <tr key={phrase.phraseId} className="hover:bg-neutral-700/40 transition-colors">
+                          <td className="px-4 py-3 text-neutral-300 whitespace-nowrap">{formatDate(phrase.recordedAt)}</td>
+                          <td className="px-4 py-3 text-white truncate max-w-[200px]" title={phrase.text}>{phrase.text}</td>
+                          <td className="px-4 py-3 text-neutral-300 capitalize">{phrase.language || "-"}</td>
+                          <td className="px-4 py-3">
+                            <span className={`inline-flex px-2 py-1 rounded-full text-xs font-semibold ${phrase.status === "approved" ? "bg-green-900/50 text-green-300" : phrase.status === "rejected" ? "bg-red-900/50 text-red-300" : "bg-yellow-900/50 text-yellow-300"}`}>
+                              {phrase.status}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-neutral-300">{phrase.duration?.toFixed?.(2) || "0.00"}</td>
+                          <td className="px-4 py-3 text-white font-semibold">{money(phrase.payoutUsd)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                {(!data.phrases || !data.phrases.length) && <div className="text-center py-6 text-neutral-500">No payout phrases found.</div>}
               </div>
 
               <div className="bg-neutral-800 border border-neutral-700 rounded-2xl overflow-hidden">

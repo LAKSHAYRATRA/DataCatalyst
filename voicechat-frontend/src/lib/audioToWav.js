@@ -8,8 +8,16 @@
  * @returns {Promise<Blob>}  WAV Blob ready for download
  */
 export async function fetchAndConvertToWav(url) {
-    // 1. Fetch the raw audio bytes
-    const res = await fetch(url, { credentials: "include" });
+    let token = null;
+    const cookies = document.cookie.split(";").map((c) => c.trim());
+    const vcCookie = cookies.find((c) => c.startsWith("vc_token="));
+    if (vcCookie) token = vcCookie.split("=")[1];
+    else token = localStorage.getItem("vc_token");
+
+    const res = await fetch(url, { 
+        credentials: "include",
+        headers: token ? { Authorization: `Bearer ${token}` } : {}
+    });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const arrayBuffer = await res.arrayBuffer();
 
