@@ -14,18 +14,8 @@ const MicState = {
 
 // ── USB-mic heuristic (same logic as IntroRecording) ──────────────────────────
 function isUsbMic(label) {
-    const l = label.toLowerCase();
-    if (l.includes("built-in") || l.includes("internal") || l.includes("default")) return false;
-    return (
-        l.includes("usb") ||
-        l.includes("external") ||
-        l.includes("headset") ||
-        l.includes("condenser") ||
-        l.includes("yeti") ||
-        l.includes("rode") ||
-        l.includes("blue") ||
-        l.includes("samson")
-    );
+    // TEMPORARILY DISABLED: User requested to remove external mic check for now
+    return true;
 }
 
 async function getUsbMics() {

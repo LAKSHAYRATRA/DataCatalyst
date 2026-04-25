@@ -18,23 +18,8 @@ const MODE = import.meta.env.VITE_MODE; // "dev" or "prod"
 // }
 
 function isUsbMic(label) {
-    const l = label.toLowerCase();
-
-    const positive =
-        l.includes("usb") ||
-        l.includes("external") ||
-        l.includes("headset") ||
-        l.includes("boya") ||
-        l.includes("fifine") ||
-        l.includes("maono");
-
-    const negative =
-        l.includes("internal") ||
-        l.includes("built-in") ||
-        l.includes("realtek") ||
-        l.includes("default");
-
-    return positive && !negative;
+    // TEMPORARILY DISABLED: User requested to remove external mic check for now
+    return true;
 }
 
 export default function IntroRecording() {
