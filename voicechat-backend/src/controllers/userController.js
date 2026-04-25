@@ -237,9 +237,21 @@ export async function getTodayCallCount(req, res) {
     });
 
     const user = await User.findById(req.userId);
-    const limit = user?.dailyCallLimit || 3;
+    const limit = user?.dailyCallLimit !== undefined ? user.dailyCallLimit : 50;
+    const overallLimit = user?.overallCallLimit !== undefined ? user.overallCallLimit : -1;
 
-    res.json({ count, limit, remaining: Math.max(0, limit - count) });
+    let remaining = Math.max(0, limit - count);
+
+    if (overallLimit !== -1) {
+        const overallCount = await CallSession.countDocuments({
+            $or: [{ userA: req.userId }, { userB: req.userId }],
+            callActuallyStarted: true,
+        });
+        const overallRemaining = Math.max(0, overallLimit - overallCount);
+        remaining = Math.min(remaining, overallRemaining);
+    }
+
+    res.json({ count, limit, remaining, overallLimit });
   } catch {
     res.status(500).json({ error: "server_error" });
   }

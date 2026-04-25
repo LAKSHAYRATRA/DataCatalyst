@@ -12,7 +12,10 @@ const userSchema = new mongoose.Schema(
     isQA: { type: Boolean, default: false },
     qaLanguageCode: { type: String, lowercase: true, trim: true, default: null },
     qaLanguageCodes: [{ type: String, lowercase: true, trim: true }],
-    dailyCallLimit: { type: Number, default: 3, min: 0 },
+    dailyCallLimit: { type: Number, default: 50, min: 0 },
+    overallCallLimit: { type: Number, default: -1 }, // -1 means unlimited
+    dailyPhraseLimit: { type: Number, default: 1000, min: 0 },
+    overallPhraseLimit: { type: Number, default: -1 }, // -1 means unlimited
     tokenVersion: { type: Number, default: 0 },
     isEmailVerified: { type: Boolean, default: false },
     dob: { type: Date, required: true },

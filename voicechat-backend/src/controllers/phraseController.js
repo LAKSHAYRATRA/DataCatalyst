@@ -95,6 +95,23 @@ export async function getAvailablePhrase(req, res) {
       baseQuery.language = { $regex: new RegExp(`^${language}$`, "i") };
     }
 
+    // Check Limits
+    const user = req.user;
+    const startOfDay = new Date();
+    startOfDay.setHours(0, 0, 0, 0);
+
+    const phrasesToday = await Phrase.countDocuments({ contributorId: user._id, recordedAt: { $gte: startOfDay } });
+    if (user.dailyPhraseLimit !== -1 && phrasesToday >= (user.dailyPhraseLimit !== undefined ? user.dailyPhraseLimit : 1000)) {
+      return res.json({ phrase: null, message: "Daily phrase limit reached. Come back tomorrow!" });
+    }
+
+    if (user.overallPhraseLimit !== -1) {
+      const overallPhrases = await Phrase.countDocuments({ contributorId: user._id, recordedAt: { $exists: true } });
+      if (overallPhrases >= user.overallPhraseLimit) {
+        return res.json({ phrase: null, message: "Overall phrase limit reached." });
+      }
+    }
+
     // 1. First see if the user already has a locked phrase they haven't finished
     let phrase = await Phrase.findOne({
       ...baseQuery,
@@ -172,6 +189,23 @@ export async function submitPhraseRecording(req, res) {
     if (phrase.status === "locked" && phrase.lockedBy && phrase.lockedBy.toString() !== req.user._id.toString()) {
       fs.unlinkSync(req.file.path);
       return res.status(400).json({ error: "Phrase is currently checked out by another contributor. Please refresh." });
+    }
+
+    // Enforce limits strictly at submission time
+    const startOfDay = new Date();
+    startOfDay.setHours(0, 0, 0, 0);
+    const phrasesToday = await Phrase.countDocuments({ contributorId: req.user._id, recordedAt: { $gte: startOfDay } });
+    if (req.user.dailyPhraseLimit !== -1 && phrasesToday >= (req.user.dailyPhraseLimit !== undefined ? req.user.dailyPhraseLimit : 1000)) {
+      fs.unlinkSync(req.file.path);
+      return res.status(400).json({ error: "Daily phrase limit reached. Come back tomorrow!" });
+    }
+
+    if (req.user.overallPhraseLimit !== -1) {
+      const overallPhrases = await Phrase.countDocuments({ contributorId: req.user._id, recordedAt: { $exists: true } });
+      if (overallPhrases >= req.user.overallPhraseLimit) {
+        fs.unlinkSync(req.file.path);
+        return res.status(400).json({ error: "Overall phrase limit reached." });
+      }
     }
 
     // 1. Convert local WAV to FLAC
@@ -371,6 +405,7 @@ export async function streamPhraseAudio(req, res) {
       
       s3Doc.Body.pipe(res);
     } catch (error) {
+      console.error("AWS S3 GetObject error:", error);
       return res.status(404).json({ error: "File missing on AWS S3" });
     }
   } catch (error) {
@@ -410,7 +445,18 @@ export async function getContributorStats(req, res) {
       .filter((p) => p.status === "approved")
       .reduce((sum, p) => sum + (p.duration || 0), 0);
 
-    res.json({ totalSeconds, history });
+    const startOfDay = new Date();
+    startOfDay.setHours(0, 0, 0, 0);
+    const phrasesToday = history.filter(p => p.recordedAt >= startOfDay).length;
+
+    res.json({ 
+        totalSeconds, 
+        history,
+        dailyPhraseLimit: req.user.dailyPhraseLimit !== undefined ? req.user.dailyPhraseLimit : 1000,
+        phrasesRecordedToday: phrasesToday,
+        overallPhraseLimit: req.user.overallPhraseLimit !== undefined ? req.user.overallPhraseLimit : -1,
+        totalPhrasesRecorded: history.length
+    });
   } catch (error) {
     console.error("getContributorStats error:", error);
     res.status(500).json({ error: "Server error" });

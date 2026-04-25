@@ -1,6 +1,8 @@
 import { CallSession } from "../models/CallSession.js";
 import { PayoutPayment } from "../models/PayoutPayment.js";
 import { User } from "../models/User.js";
+import { Phrase } from "../models/Phrase.js";
+import { Language } from "../models/Language.js";
 
 function roundCurrency(value) {
   return Math.round(value * 100) / 100;
@@ -56,12 +58,16 @@ function getCallEntryForUser(call, userId) {
   };
 }
 
-function createSummary(user, callEntries, payments) {
+function createSummary(user, callEntries, phraseEntries, payments) {
   const stats = {
     totalCallsMade: callEntries.length,
     totalApprovedCalls: 0,
     pendingCalls: 0,
     rejectedCalls: 0,
+    totalPhrasesRecorded: phraseEntries.length,
+    totalApprovedPhrases: 0,
+    pendingPhrases: 0,
+    rejectedPhrases: 0,
     totalMoneyMadeUsd: 0,
     totalPaidOutUsd: 0,
     totalRemainingPayoutUsd: 0,
@@ -72,6 +78,13 @@ function createSummary(user, callEntries, payments) {
     else if (entry.status === "rejected") stats.rejectedCalls += 1;
     else stats.pendingCalls += 1;
     stats.totalMoneyMadeUsd += Number(entry.payoutUsd) || 0;
+  }
+
+  for (const phrase of phraseEntries) {
+    if (phrase.status === "approved") stats.totalApprovedPhrases += 1;
+    else if (phrase.status === "rejected") stats.rejectedPhrases += 1;
+    else stats.pendingPhrases += 1;
+    stats.totalMoneyMadeUsd += Number(phrase.payoutUsd) || 0;
   }
 
   for (const payment of payments) {
@@ -123,24 +136,56 @@ async function loadPaymentsForUsers(userIds) {
     .lean();
 }
 
+async function loadPhrasesForUsers(userIds) {
+  const ids = userIds.map((id) => String(id));
+  return Phrase.find({ contributorId: { $in: ids } })
+    .sort({ recordedAt: -1 })
+    .lean();
+}
+
 export async function getPayoutOverview(userIds = null) {
   const users = await loadUsers(userIds);
   const validUsers = users.filter(isRegularUser);
   if (validUsers.length === 0) {
-    return { summaries: [], callsByUserId: {}, paymentsByUserId: {} };
+    return { summaries: [], callsByUserId: {}, phrasesByUserId: {}, paymentsByUserId: {} };
   }
 
   const ids = validUsers.map((user) => String(user._id));
-  const [calls, payments] = await Promise.all([
+  const [calls, payments, phrases, langs] = await Promise.all([
     loadCallsForUsers(ids),
     loadPaymentsForUsers(ids),
+    loadPhrasesForUsers(ids),
+    Language.find({}).lean()
   ]);
+
+  const langRates = Object.fromEntries(langs.map(l => [l.code.toLowerCase(), Number(l.hourlyPayout) || 0]));
 
   const callsByUserId = Object.fromEntries(ids.map((id) => [id, []]));
   for (const call of calls) {
     for (const userId of ids) {
       const entry = getCallEntryForUser(call, userId);
       if (entry) callsByUserId[userId].push(entry);
+    }
+  }
+
+  const phrasesByUserId = Object.fromEntries(ids.map((id) => [id, []]));
+  for (const phrase of phrases) {
+    const key = String(phrase.contributorId);
+    if (phrasesByUserId[key]) {
+      const rate = langRates[String(phrase.language).toLowerCase()] || 0;
+      let phrasePayout = 0;
+      if (phrase.status === "approved" && phrase.duration) {
+         phrasePayout = (phrase.duration / 3600) * rate;
+      }
+      phrasesByUserId[key].push({
+        phraseId: phrase.phraseId,
+        text: phrase.text,
+        language: phrase.language,
+        status: phrase.status,
+        duration: phrase.duration || 0,
+        recordedAt: phrase.recordedAt,
+        payoutUsd: roundCurrency(phrasePayout)
+      });
     }
   }
 
@@ -164,18 +209,24 @@ export async function getPayoutOverview(userIds = null) {
     }
   }
 
-  const summaries = validUsers.map((user) => createSummary(user, callsByUserId[String(user._id)] || [], paymentsByUserId[String(user._id)] || []));
-  return { summaries, callsByUserId, paymentsByUserId };
+  const summaries = validUsers.map((user) => createSummary(
+    user, 
+    callsByUserId[String(user._id)] || [], 
+    phrasesByUserId[String(user._id)] || [], 
+    paymentsByUserId[String(user._id)] || []
+  ));
+  return { summaries, callsByUserId, phrasesByUserId, paymentsByUserId };
 }
 
 export async function getSingleUserPayout(userId) {
-  const { summaries, callsByUserId, paymentsByUserId } = await getPayoutOverview([userId]);
+  const { summaries, callsByUserId, phrasesByUserId, paymentsByUserId } = await getPayoutOverview([userId]);
   if (!summaries.length) return null;
   const summary = summaries[0];
   const normalizedUserId = String(summary.user.id);
   return {
     summary,
     calls: callsByUserId[normalizedUserId] || [],
+    phrases: phrasesByUserId[normalizedUserId] || [],
     payments: paymentsByUserId[normalizedUserId] || [],
   };
 }

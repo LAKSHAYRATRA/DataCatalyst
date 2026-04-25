@@ -1010,7 +1010,7 @@ router.get("/users", async (req, res) => {
 
         const total = await User.countDocuments(filter);
         const users = await User.find(filter)
-            .select('username email firstname lastname dailyCallLimit accountStatus createdAt')
+            .select('username email firstname lastname dailyCallLimit overallCallLimit dailyPhraseLimit overallPhraseLimit accountStatus createdAt')
             .sort({ createdAt: -1 })
             .skip(skip)
             .limit(limit);
@@ -1080,6 +1080,30 @@ router.patch("/users/:userId/approve", async (req, res) => {
         ).select('username email accountStatus');
         if (!user) return res.status(404).json({ error: "User not found" });
         res.json({ message: "User approved", user });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Update user limits
+router.patch("/users/:userId/limits", async (req, res) => {
+    try {
+        const { dailyPhraseLimit, overallPhraseLimit, dailyCallLimit, overallCallLimit } = req.body;
+        
+        const updates = {};
+        if (dailyPhraseLimit !== undefined) updates.dailyPhraseLimit = Number(dailyPhraseLimit);
+        if (overallPhraseLimit !== undefined) updates.overallPhraseLimit = Number(overallPhraseLimit);
+        if (dailyCallLimit !== undefined) updates.dailyCallLimit = Number(dailyCallLimit);
+        if (overallCallLimit !== undefined) updates.overallCallLimit = Number(overallCallLimit);
+
+        const user = await User.findByIdAndUpdate(
+            req.params.userId,
+            { $set: updates },
+            { new: true }
+        ).select('username email dailyPhraseLimit overallPhraseLimit dailyCallLimit overallCallLimit');
+        
+        if (!user) return res.status(404).json({ error: "User not found" });
+        res.json({ message: "Limits updated", user });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
