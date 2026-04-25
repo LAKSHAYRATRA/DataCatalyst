@@ -1,6 +1,32 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { clearToken, getUserInfo } from '../lib/auth.js';
+
+function CursorToggle() {
+  const [enabled, setEnabled] = useState(() => localStorage.getItem("rainbowCursorEnabled") === "true");
+
+  useEffect(() => {
+    const handleToggle = () => setEnabled(localStorage.getItem("rainbowCursorEnabled") === "true");
+    window.addEventListener("cursorToggle", handleToggle);
+    return () => window.removeEventListener("cursorToggle", handleToggle);
+  }, []);
+
+  return (
+    <div className="flex items-center justify-between px-3 py-2 mt-3 bg-neutral-900/50 border border-neutral-700 rounded-xl">
+      <span className="text-xs font-bold text-neutral-400">Rainbow Cursor</span>
+      <button 
+        onClick={() => {
+          const next = !enabled;
+          localStorage.setItem("rainbowCursorEnabled", next ? "true" : "false");
+          window.dispatchEvent(new Event("cursorToggle"));
+        }}
+        className={`w-10 h-5 rounded-full relative transition-colors ${enabled ? 'bg-warning-500' : 'bg-neutral-600'}`}
+      >
+        <div className={`w-4 h-4 bg-white rounded-full absolute top-0.5 transition-transform ${enabled ? 'translate-x-5' : 'translate-x-1'}`} />
+      </button>
+    </div>
+  );
+}
 
 export default function AdminNav() {
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -170,6 +196,7 @@ export default function AdminNav() {
                                     <span className="font-semibold text-cyan-50 capitalize">{qaLanguage}</span>
                                 </div>
                             )}
+                            <CursorToggle />
                         </div>
                         <button
                             onClick={logout}
