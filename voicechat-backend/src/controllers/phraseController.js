@@ -95,25 +95,44 @@ export async function getAvailablePhrase(req, res) {
       baseQuery.language = { $regex: new RegExp(`^${language}$`, "i") };
     }
 
-    // Atomically find a pending/expired phrase and lock it immediately
-    const phrase = await Phrase.findOneAndUpdate(
-      {
-        ...baseQuery,
-        $or: [
-          { status: "pending" },
-          { status: "locked", lockedAt: { $lt: expiryTime } },
-          { status: "locked", lockedBy: req.user._id }
-        ]
-      },
-      {
-        $set: {
-          status: "locked",
-          lockedAt: new Date(),
-          lockedBy: req.user._id
-        }
-      },
-      { new: true, sort: { createdAt: 1 } }
-    );
+    // 1. First see if the user already has a locked phrase they haven't finished
+    let phrase = await Phrase.findOne({
+      ...baseQuery,
+      status: "locked",
+      lockedBy: req.user._id,
+      lockedAt: { $gte: expiryTime }
+    });
+
+    // 2. If not, pick a random pending (or expired) phrase to prevent contention
+    if (!phrase) {
+      const randomPhrases = await Phrase.aggregate([
+        { 
+          $match: { 
+            ...baseQuery, 
+            $or: [
+              { status: "pending" },
+              { status: "locked", lockedAt: { $lt: expiryTime } }
+            ] 
+          } 
+        },
+        { $sample: { size: 5 } } // Pick a few to try locking
+      ]);
+
+      for (const p of randomPhrases) {
+        phrase = await Phrase.findOneAndUpdate(
+          { _id: p._id, status: p.status }, // Ensure it hasn't changed
+          {
+            $set: {
+              status: "locked",
+              lockedAt: new Date(),
+              lockedBy: req.user._id
+            }
+          },
+          { new: true }
+        );
+        if (phrase) break; // Successfully locked one
+      }
+    }
 
     if (!phrase) {
       return res.json({ phrase: null, message: "No phrases available" });

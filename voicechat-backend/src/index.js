@@ -123,9 +123,15 @@ app.use(express.json({ limit: "1mb" }));
 app.use(cookieParser());
 app.use(
   cors({
-    origin: FRONTEND_ORIGIN,
-    allowedHeaders: ["Content-Type", "Authorization"],
-    methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
+    origin: [
+      FRONTEND_ORIGIN,
+      "https://voclara.com",
+      "https://www.voclara.com",
+      "http://localhost:5173",
+      "http://127.0.0.1:5173"
+    ],
+    allowedHeaders: ["Content-Type", "Authorization", "Accept"],
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     credentials: true,
   })
 );

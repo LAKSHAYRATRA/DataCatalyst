@@ -10,6 +10,32 @@ function BrandLogo({ className = "" }) {
   );
 }
 
+function CursorToggle() {
+  const [enabled, setEnabled] = useState(() => localStorage.getItem("rainbowCursorEnabled") === "true");
+
+  useEffect(() => {
+    const handleToggle = () => setEnabled(localStorage.getItem("rainbowCursorEnabled") === "true");
+    window.addEventListener("cursorToggle", handleToggle);
+    return () => window.removeEventListener("cursorToggle", handleToggle);
+  }, []);
+
+  return (
+    <div className="flex items-center justify-between px-3 py-2 mb-4 bg-neutral-100 dark:bg-neutral-800 rounded-xl">
+      <span className="text-xs font-bold text-neutral-500 dark:text-neutral-400">Rainbow Cursor</span>
+      <button 
+        onClick={() => {
+          const next = !enabled;
+          localStorage.setItem("rainbowCursorEnabled", next ? "true" : "false");
+          window.dispatchEvent(new Event("cursorToggle"));
+        }}
+        className={`w-10 h-5 rounded-full relative transition-colors ${enabled ? 'bg-primary-500' : 'bg-neutral-300 dark:bg-neutral-600'}`}
+      >
+        <div className={`w-4 h-4 bg-white rounded-full absolute top-0.5 transition-transform ${enabled ? 'translate-x-5' : 'translate-x-1'}`} />
+      </button>
+    </div>
+  );
+}
+
 export default function Nav({ disabled = false }) {
   const navigate = useNavigate();
   const location = useLocation();
@@ -183,6 +209,7 @@ export default function Nav({ disabled = false }) {
                 </div>
               </div>
             )}
+            <CursorToggle />
           </div>
 
           <button

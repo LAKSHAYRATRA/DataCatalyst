@@ -2,8 +2,20 @@ import React, { useEffect, useState } from 'react';
 
 export default function RainbowCursor() {
   const [particles, setParticles] = useState([]);
+  const [enabled, setEnabled] = useState(() => localStorage.getItem("rainbowCursorEnabled") === "true");
 
   useEffect(() => {
+    const handleToggle = () => setEnabled(localStorage.getItem("rainbowCursorEnabled") === "true");
+    window.addEventListener("cursorToggle", handleToggle);
+    return () => window.removeEventListener("cursorToggle", handleToggle);
+  }, []);
+
+  useEffect(() => {
+    if (!enabled) {
+      setParticles([]);
+      return;
+    }
+
     // Only enable on non-touch devices
     if (window.matchMedia("(pointer: coarse)").matches) return;
 
@@ -58,7 +70,7 @@ export default function RainbowCursor() {
         window.removeEventListener('pointermove', handlePointerMove);
         cancelAnimationFrame(animationFrameId);
     };
-  }, []);
+  }, [enabled]);
 
   if (particles.length === 0) return null;
 
