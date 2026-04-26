@@ -7,6 +7,9 @@ import { GetObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
 import { Upload } from "@aws-sdk/lib-storage";
 import { s3Client, BUCKET_NAME } from "../config/s3.js";
 import ffmpeg from "fluent-ffmpeg";
+import ffmpegInstaller from "@ffmpeg-installer/ffmpeg";
+
+ffmpeg.setFfmpegPath(ffmpegInstaller.path);
 
 const PHRASE_RECORDINGS_DIR = path.join(process.cwd(), "recordings", "phrases");
 
@@ -48,7 +51,7 @@ export async function uploadPhrases(req, res) {
 
       const existing = await Phrase.findOne({ phraseId: String(givenId) });
       const doc = {
-        companyId: companyId || null,
+        companyId: companyId ? companyId.trim() : null,
         language: p.language || p.lang || "english",
         script_type: p.script_type || p.scriptType || null,
         speaker_id: p.speaker_id || p.speakerId || p.speaker || null,
@@ -70,7 +73,7 @@ export async function uploadPhrases(req, res) {
           updated++;
         }
       } else {
-        await Phrase.create({ phraseId: String(p.id), ...doc });
+        await Phrase.create({ phraseId: String(givenId), ...doc });
         inserted++;
       }
     }
@@ -136,8 +139,15 @@ export async function getAvailablePhrase(req, res) {
       ]);
 
       for (const p of randomPhrases) {
+        const query = { _id: p._id, status: p.status };
+        // CRITICAL: Prevent lock stealing for expired locks. If it was locked, we must ensure
+        // no one else updated the lock timestamp since we read it from the aggregation pipeline.
+        if (p.status === "locked") {
+          query.lockedAt = p.lockedAt;
+        }
+
         phrase = await Phrase.findOneAndUpdate(
-          { _id: p._id, status: p.status }, // Ensure it hasn't changed
+          query,
           {
             $set: {
               status: "locked",
