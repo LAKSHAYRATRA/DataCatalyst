@@ -19,13 +19,12 @@ const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:3001";
 
 function parseIceServers() {
   const raw = import.meta.env.VITE_ICE_SERVERS;
-  if (!raw) return [];
+  if (!raw) return [{ urls: "stun:stun.l.google.com:19302" }, { urls: "stun:stun1.l.google.com:19302" }];
   try {
     const parsed = JSON.parse(raw);
-    // console.log("Stun/Turn Servers Loaded:", parsed);
-    return Array.isArray(parsed) ? parsed : [];
+    return Array.isArray(parsed) && parsed.length > 0 ? parsed : [{ urls: "stun:stun.l.google.com:19302" }, { urls: "stun:stun1.l.google.com:19302" }];
   } catch {
-    return [];
+    return [{ urls: "stun:stun.l.google.com:19302" }, { urls: "stun:stun1.l.google.com:19302" }];
   }
 }
 
