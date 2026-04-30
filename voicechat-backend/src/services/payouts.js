@@ -3,6 +3,7 @@ import { PayoutPayment } from "../models/PayoutPayment.js";
 import { User } from "../models/User.js";
 import { Phrase } from "../models/Phrase.js";
 import { Language } from "../models/Language.js";
+import { Project } from "../models/Project.js";
 
 function roundCurrency(value) {
   return Math.round(value * 100) / 100;
@@ -151,11 +152,12 @@ export async function getPayoutOverview(userIds = null) {
   }
 
   const ids = validUsers.map((user) => String(user._id));
-  const [calls, payments, phrases, langs] = await Promise.all([
+  const [calls, payments, phrases, langs, projects] = await Promise.all([
     loadCallsForUsers(ids),
     loadPaymentsForUsers(ids),
     loadPhrasesForUsers(ids),
-    Language.find({}).lean()
+    Language.find({}).lean(),
+    Project.find({}).lean()
   ]);
 
   const langRates = Object.fromEntries(langs.map(l => [l.code.toLowerCase(), Number(l.hourlyPayout) || 0]));
@@ -172,7 +174,19 @@ export async function getPayoutOverview(userIds = null) {
   for (const phrase of phrases) {
     const key = String(phrase.contributorId);
     if (phrasesByUserId[key]) {
-      const rate = langRates[String(phrase.language).toLowerCase()] || 0;
+      let rate = langRates[String(phrase.language).toLowerCase()] || 0;
+      
+      // Check if project has a specific rate
+      if (phrase.projectName) {
+        const project = projects.find(p => p.name === phrase.projectName);
+        if (project && project.languageRates) {
+          const specificRate = project.languageRates.find(r => r.languageCode === phrase.language?.toLowerCase());
+          if (specificRate) {
+            rate = specificRate.hourlyPayout;
+          }
+        }
+      }
+
       let phrasePayout = 0;
       if (phrase.status === "approved" && phrase.duration) {
          phrasePayout = (phrase.duration / 3600) * rate;

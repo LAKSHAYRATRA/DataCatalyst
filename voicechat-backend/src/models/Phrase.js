@@ -5,6 +5,7 @@ const phraseSchema = new mongoose.Schema(
     // Admin / Core JSON fields
     phraseId: { type: String, required: true, unique: true },
     companyId: { type: String, default: null }, // Optional company grouping
+    projectName: { type: String, default: null }, // Optional project grouping
     language: { type: String, required: true },
     script_type: { type: String, default: null },
     speaker_id: { type: String, default: null }, // from JSON, though we'll assign our own contributorId internally if we want

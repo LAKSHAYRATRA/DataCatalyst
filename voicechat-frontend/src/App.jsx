@@ -25,6 +25,7 @@ import AdminPhrases from "./pages/AdminPhrases.jsx";
 import QaPhrases from "./pages/QaPhrases.jsx";
 import PhraseRecording from "./pages/PhraseRecording.jsx";
 import AdminMedia from "./pages/AdminMedia.jsx";
+import AdminProjects from "./pages/AdminProjects.jsx";
 import { getUserInfo, setUserInfo, clearToken } from "./lib/auth.js";
 import { apiGet } from "./lib/api.js";
 import { SystemCheckProvider } from "./context/SystemCheckContext.jsx";
@@ -152,6 +153,7 @@ export default function App() {
         <Route path="/admin/languages" element={<RequireAdmin><AdminLanguages /></RequireAdmin>} />
         <Route path="/admin/language-apps" element={<RequireAdminOrQA><AdminLanguageApps /></RequireAdminOrQA>} />
         <Route path="/admin/phrases" element={<RequireAdmin><AdminPhrases /></RequireAdmin>} />
+        <Route path="/admin/projects" element={<RequireAdmin><AdminProjects /></RequireAdmin>} />
         <Route path="/admin/qaphrase" element={<RequireAdminOrQA><QaPhrases /></RequireAdminOrQA>} />
         <Route path="/admin/media" element={<RequireAdmin><AdminMedia /></RequireAdmin>} />
         <Route path="/language-apply" element={<RequireAuth><LanguageApply /></RequireAuth>} />

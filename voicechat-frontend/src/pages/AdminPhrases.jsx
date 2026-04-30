@@ -7,6 +7,7 @@ import AdminNav from '../components/AdminNav.jsx';
 export default function AdminPhrases() {
   const [phrasesList, setPhrasesList] = useState([]);
   const [companyId, setCompanyId] = useState('');
+  const [projectName, setProjectName] = useState('');
   const [file, setFile] = useState(null);
   const [pastedJson, setPastedJson] = useState('');
   const [loading, setLoading] = useState(false);
@@ -49,11 +50,13 @@ export default function AdminPhrases() {
         const json = JSON.parse(pastedJson);
         const res = await apiPostJson('/api/phrases/admin/upload', {
           companyId: companyId.trim(),
+          projectName: projectName.trim(),
           phrases: Array.isArray(json) ? json : [json],
         });
         setMessage(`Success! Inserted: ${res.inserted}, Updated: ${res.updated}`);
         setPastedJson('');
         setCompanyId('');
+        setProjectName('');
         fetchPhrases();
       } catch (err) {
         setError('Failed to parse pasted JSON or upload failed: ' + err.message);
@@ -69,11 +72,13 @@ export default function AdminPhrases() {
         const json = JSON.parse(e.target.result);
         const res = await apiPostJson('/api/phrases/admin/upload', {
           companyId: companyId.trim(),
+          projectName: projectName.trim(),
           phrases: Array.isArray(json) ? json : [json],
         });
         setMessage(`Success! Inserted: ${res.inserted}, Updated: ${res.updated}`);
         setFile(null);
         setCompanyId('');
+        setProjectName('');
         fetchPhrases();
       } catch (err) {
         setError('Failed to parse file JSON or upload failed: ' + err.message);
@@ -105,14 +110,26 @@ export default function AdminPhrases() {
         <h2 className="text-xl font-semibold mb-4">Upload New Batch</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div>
-            <label className="block text-sm font-medium mb-2 opacity-80">Company Identifier (Optional)</label>
-            <input 
-              type="text" 
-              className="input mb-4" 
-              placeholder="e.g. Acme Corp..." 
-              value={companyId}
-              onChange={(e) => setCompanyId(e.target.value)}
-            />
+            <div className="mb-4">
+              <label className="block text-sm font-medium mb-2 opacity-80">Company Identifier (Optional)</label>
+              <input 
+                type="text" 
+                className="input w-full" 
+                placeholder="e.g. Acme Corp..." 
+                value={companyId}
+                onChange={(e) => setCompanyId(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-2 opacity-80">Project Name (Optional)</label>
+              <input 
+                type="text" 
+                className="input w-full" 
+                placeholder="e.g. Healthcare Model V2..." 
+                value={projectName}
+                onChange={(e) => setProjectName(e.target.value)}
+              />
+            </div>
           </div>
           <div>
             <label className="block text-sm font-medium mb-2 opacity-80">Method 1: JSON File Upload</label>

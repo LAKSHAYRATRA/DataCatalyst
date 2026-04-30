@@ -140,6 +140,11 @@ export default function AdminNav() {
                                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" /></svg>
                                     <span>S3 Media Library</span>
                                 </Link>
+                                <Link to="/admin/projects" onClick={() => setIsMobileMenuOpen(false)}
+                                    className={`flex items-center space-x-3 px-4 py-3 rounded-lg text-sm font-medium transition-all ${isActive('/admin/projects') ? 'bg-neutral-700 text-warning-400 shadow-sm' : 'text-neutral-300 hover:bg-neutral-700/50 hover:text-white'}`}>
+                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" /></svg>
+                                    <span>Project Payrates</span>
+                                </Link>
                                 {/* Divider before Q/A */}
                                 <div className="h-px bg-neutral-700 my-2" />
                             </>)}

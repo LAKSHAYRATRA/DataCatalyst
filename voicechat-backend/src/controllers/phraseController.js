@@ -3,6 +3,7 @@ import path from "path";
 import { Phrase } from "../models/Phrase.js";
 import { User } from "../models/User.js";
 import { Company } from "../models/Company.js";
+import { Project } from "../models/Project.js";
 import { GetObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
 import { Upload } from "@aws-sdk/lib-storage";
 import { s3Client, BUCKET_NAME } from "../config/s3.js";
@@ -23,7 +24,7 @@ if (!fs.existsSync(PHRASE_RECORDINGS_DIR)) {
  */
 export async function uploadPhrases(req, res) {
   try {
-    const { companyId, phrases } = req.body;
+    const { companyId, projectName, phrases } = req.body;
     if (!Array.isArray(phrases)) {
       return res.status(400).json({ error: "Phrases must be an array" });
     }
@@ -34,6 +35,16 @@ export async function uploadPhrases(req, res) {
       await Company.findOneAndUpdate(
         { name: trimmed },
         { name: trimmed },
+        { upsert: true }
+      );
+    }
+
+    // Natively index new unique projects
+    if (projectName && projectName.trim()) {
+      const trimmedProject = projectName.trim();
+      await Project.findOneAndUpdate(
+        { name: trimmedProject },
+        { $setOnInsert: { name: trimmedProject, languageRates: [] } },
         { upsert: true }
       );
     }
@@ -52,6 +63,7 @@ export async function uploadPhrases(req, res) {
       const existing = await Phrase.findOne({ phraseId: String(givenId) });
       const doc = {
         companyId: companyId ? companyId.trim() : null,
+        projectName: projectName ? projectName.trim() : null,
         language: p.language || p.lang || "english",
         script_type: p.script_type || p.scriptType || null,
         speaker_id: p.speaker_id || p.speakerId || p.speaker || null,
@@ -90,12 +102,15 @@ export async function uploadPhrases(req, res) {
  */
 export async function getAvailablePhrase(req, res) {
   try {
-    const { language } = req.query;
+    const { language, projectName } = req.query;
     const expiryTime = new Date(Date.now() - 5 * 60 * 1000); // 5 minutes ago
 
     const baseQuery = {};
     if (language) {
       baseQuery.language = { $regex: new RegExp(`^${language}$`, "i") };
+    }
+    if (projectName && projectName !== "Any") {
+      baseQuery.projectName = projectName;
     }
 
     // Check Limits

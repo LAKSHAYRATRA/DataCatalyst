@@ -1,17 +1,28 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Mic, Square, Play, UploadCloud, CheckCircle2, Clock } from 'lucide-react';
+import { Mic, Square, Play, UploadCloud, CheckCircle2, Clock, DollarSign, FolderGit2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { apiGet } from '../lib/api';
 import { encodeWAV } from '../utils/wavBuilder.js';
+import { getUserInfo } from '../lib/auth.js';
 
 export default function PhraseRecording() {
+  const userInfo = getUserInfo();
+  const approvedLanguages = userInfo?.languageApplications?.filter(app => app.status === 'approved').map(app => app.languageCode) || [];
+
   const [stats, setStats] = useState({ 
     totalSeconds: 0, 
     history: [],
     dailyPhraseLimit: 1000,
     phrasesRecordedToday: 0
   });
-  const [language, setLanguage] = useState('english');
+  
+  const [projects, setProjects] = useState([]);
+  const [allLanguages, setAllLanguages] = useState([]);
+  
+  // Default to first approved language or 'english'
+  const [language, setLanguage] = useState(approvedLanguages[0] || 'english');
+  const [projectName, setProjectName] = useState('Any');
+
   const [currentPhrase, setCurrentPhrase] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -27,35 +38,64 @@ export default function PhraseRecording() {
   const timerRef = useRef(null);
 
   useEffect(() => {
-    fetchStats();
+    fetchInitialData();
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
       if (audioUrl) URL.revokeObjectURL(audioUrl);
     };
   }, []);
 
-  async function fetchStats() {
+  async function fetchInitialData() {
     try {
-      const data = await apiGet('/api/phrases/my-stats');
+      const [statsData, projectsData, languagesData] = await Promise.all([
+        apiGet('/api/phrases/my-stats'),
+        apiGet('/api/projects'),
+        apiGet('/api/languages')
+      ]);
+
       setStats({ 
-          totalSeconds: data.totalSeconds || 0, 
-          history: data.history || [],
-          dailyPhraseLimit: data.dailyPhraseLimit !== undefined ? data.dailyPhraseLimit : 1000,
-          phrasesRecordedToday: data.phrasesRecordedToday || 0,
-          overallPhraseLimit: data.overallPhraseLimit !== undefined ? data.overallPhraseLimit : -1,
-          totalPhrasesRecorded: data.totalPhrasesRecorded || 0
+          totalSeconds: statsData.totalSeconds || 0, 
+          history: statsData.history || [],
+          dailyPhraseLimit: statsData.dailyPhraseLimit !== undefined ? statsData.dailyPhraseLimit : 1000,
+          phrasesRecordedToday: statsData.phrasesRecordedToday || 0,
+          overallPhraseLimit: statsData.overallPhraseLimit !== undefined ? statsData.overallPhraseLimit : -1,
+          totalPhrasesRecorded: statsData.totalPhrasesRecorded || 0
       });
+      setProjects(projectsData.projects || []);
+      setAllLanguages(languagesData.languages || []);
     } catch (err) {
-      console.error('Failed to fetch stats', err);
+      console.error('Failed to fetch initial data', err);
     }
   }
+
+  // Calculate current payrate based on selection
+  const currentPayrate = React.useMemo(() => {
+    let rate = 0;
+    const baseLang = allLanguages.find(l => l.code.toLowerCase() === language.toLowerCase());
+    if (baseLang) rate = Number(baseLang.hourlyPayout) || 0;
+
+    if (projectName !== 'Any') {
+      const proj = projects.find(p => p.name === projectName);
+      if (proj && proj.languageRates) {
+        const specRate = proj.languageRates.find(r => r.languageCode === language.toLowerCase());
+        if (specRate) {
+          rate = Number(specRate.hourlyPayout);
+        }
+      }
+    }
+    return rate;
+  }, [language, projectName, projects, allLanguages]);
 
   async function fetchNextPhrase() {
     try {
       setLoading(true);
       setError(null);
       resetRecording();
-      const data = await apiGet(`/api/phrases/available?language=${language}`);
+      let url = `/api/phrases/available?language=${language}`;
+      if (projectName !== 'Any') {
+        url += `&projectName=${encodeURIComponent(projectName)}`;
+      }
+      const data = await apiGet(url);
       if (data.phrase) {
         setCurrentPhrase(data.phrase);
       } else {
@@ -255,18 +295,59 @@ export default function PhraseRecording() {
         >
           <div className="card">
             <h2 className="text-lg font-semibold mb-4">1. Fetch a Phrase</h2>
+            
+            <div className="flex flex-col sm:flex-row gap-4 mb-4">
+              <div className="flex-1">
+                <label className="block text-xs font-bold text-neutral-500 uppercase tracking-wider mb-2 flex items-center gap-2">
+                  <FolderGit2 className="w-4 h-4" /> Project
+                </label>
+                <select 
+                  className="input w-full"
+                  value={projectName} 
+                  onChange={(e) => setProjectName(e.target.value)}
+                >
+                  <option value="Any">Any Project</option>
+                  {projects.map(p => (
+                    <option key={p._id} value={p.name}>{p.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex-1">
+                <label className="block text-xs font-bold text-neutral-500 uppercase tracking-wider mb-2 flex items-center gap-2">
+                  <Mic className="w-4 h-4" /> Language
+                </label>
+                <select 
+                  className="input w-full" 
+                  value={language} 
+                  onChange={(e) => setLanguage(e.target.value)}
+                >
+                  {approvedLanguages.length === 0 ? (
+                    <option value="english">English (Default)</option>
+                  ) : (
+                    approvedLanguages.map(lang => (
+                      <option key={lang} value={lang}>{lang.charAt(0).toUpperCase() + lang.slice(1)}</option>
+                    ))
+                  )}
+                </select>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between bg-primary-900/20 border border-primary-500/30 p-4 rounded-xl mb-4">
+              <div className="flex items-center gap-3">
+                <div className="bg-primary-500 p-2 rounded-lg text-white">
+                  <DollarSign className="w-5 h-5" />
+                </div>
+                <div>
+                  <p className="text-xs font-bold text-primary-400 uppercase tracking-wider">Current Payrate</p>
+                  <p className="font-bold text-lg text-white">${currentPayrate.toFixed(2)} / hour</p>
+                </div>
+              </div>
+            </div>
+
             <div className="flex gap-4">
-              <select 
-                className="input max-w-[200px]"
-                value={language}
-                onChange={(e) => setLanguage(e.target.value)}
-              >
-                <option value="english">English</option>
-                <option value="hindi">Hindi</option>
-                <option value="hinglish">Hinglish</option>
-              </select>
               <button 
-                className="btn btn-primary"
+                className="btn btn-primary w-full"
                 onClick={fetchNextPhrase}
                 disabled={loading || isRecording || (stats.dailyPhraseLimit !== -1 && stats.phrasesRecordedToday >= stats.dailyPhraseLimit)}
               >
