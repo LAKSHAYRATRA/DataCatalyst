@@ -38,6 +38,18 @@ export default function AdminPhrases() {
     }
   };
 
+  const extractPhrasesArray = (json) => {
+    if (Array.isArray(json)) return json;
+    if (typeof json === 'object' && json !== null) {
+      // Look for the first array value inside the object
+      for (const key in json) {
+        if (Array.isArray(json[key])) return json[key];
+      }
+      return [json];
+    }
+    return [];
+  };
+
   const handleUpload = async () => {
     if (!file && !pastedJson.trim()) return setError('Please select a JSON file or paste JSON payload.');
     
@@ -51,7 +63,7 @@ export default function AdminPhrases() {
         const res = await apiPostJson('/api/phrases/admin/upload', {
           companyId: companyId.trim(),
           projectName: projectName.trim(),
-          phrases: Array.isArray(json) ? json : [json],
+          phrases: extractPhrasesArray(json),
         });
         setMessage(`Success! Inserted: ${res.inserted}, Updated: ${res.updated}`);
         setPastedJson('');
@@ -73,7 +85,7 @@ export default function AdminPhrases() {
         const res = await apiPostJson('/api/phrases/admin/upload', {
           companyId: companyId.trim(),
           projectName: projectName.trim(),
-          phrases: Array.isArray(json) ? json : [json],
+          phrases: extractPhrasesArray(json),
         });
         setMessage(`Success! Inserted: ${res.inserted}, Updated: ${res.updated}`);
         setFile(null);

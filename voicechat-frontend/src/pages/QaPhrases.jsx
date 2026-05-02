@@ -8,7 +8,7 @@ import AdminNav from '../components/AdminNav.jsx';
 export default function QaPhrases() {
   const [queue, setQueue] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [comment, setComment] = useState('');
+  const [comments, setComments] = useState({});
   const [processing, setProcessing] = useState(null);
 
   useEffect(() => {
@@ -30,8 +30,8 @@ export default function QaPhrases() {
   const handleReview = async (phraseId, action) => {
     setProcessing(phraseId);
     try {
-      await apiPostJson(`/api/phrases/qa/review/${phraseId}`, { action, comment });
-      setComment('');
+      await apiPostJson(`/api/phrases/qa/review/${phraseId}`, { action, comment: comments[phraseId] || '' });
+      setComments(prev => { const next = { ...prev }; delete next[phraseId]; return next; });
       setQueue(queue.filter(q => q._id !== phraseId));
     } catch (err) {
       console.error(err);
@@ -112,8 +112,8 @@ export default function QaPhrases() {
                         type="text" 
                         placeholder="Add QA comment (optional)"
                         className="input text-sm mb-3"
-                        value={comment}
-                        onChange={(e) => setComment(e.target.value)}
+                        value={comments[p._id] || ''}
+                        onChange={(e) => setComments(prev => ({ ...prev, [p._id]: e.target.value }))}
                         disabled={processing === p._id}
                       />
                       <div className="flex gap-2">
