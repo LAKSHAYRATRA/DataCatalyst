@@ -66,6 +66,9 @@ const userSchema = new mongoose.Schema(
       },
     ],
     
+    // Speaker ID (e.g. spk_1, spk_2, ...)
+    speaker_id: { type: String, unique: true, sparse: true, default: null },
+
     // Reset Password
     resetPasswordToken: { type: String, default: null },
     resetPasswordExpires: { type: Date, default: null },

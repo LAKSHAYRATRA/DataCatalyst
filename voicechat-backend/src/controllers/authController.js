@@ -1,6 +1,7 @@
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import { User } from "../models/User.js";
+import { Counter } from "../models/Counter.js";
 import { OtpCode } from "../models/OtpCode.js";
 import { isNonEmptyString, normalizeEmail } from "../util/validators.js";
 import { generateOtp, sendOtpEmail, sendResetPasswordEmail } from "../util/emailService.js";
@@ -150,6 +151,13 @@ export async function signup(req, res) {
     if (counter > 10) break;
   }
 
+  const { seq } = await Counter.findOneAndUpdate(
+    { _id: "speaker_id" },
+    { $inc: { seq: 1 } },
+    { upsert: true, new: true }
+  );
+  const speaker_id = `spk_${seq}`;
+
   const passwordHash = await bcrypt.hash(password, 10);
   const user = await User.create({
     firstname,
@@ -165,6 +173,7 @@ export async function signup(req, res) {
     microphoneModel,
     dob: new Date(dob),
     isEmailVerified: true,
+    speaker_id,
   });
 
   const token = signToken(

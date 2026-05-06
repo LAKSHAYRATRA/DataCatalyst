@@ -14,6 +14,7 @@ import fs from "fs";
 import path from "path";
 import { Phrase } from "../models/Phrase.js";
 import { Company } from "../models/Company.js";
+import { Counter } from "../models/Counter.js";
 import { getPayoutOverview, getSingleUserPayout } from "../services/payouts.js";
 import { ListObjectsV2Command, DeleteObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
 import { s3Client, BUCKET_NAME } from "../config/s3.js";
@@ -140,8 +141,8 @@ qaCallRouter.get("/calls", async (req, res) => {
 
         const [calls, total] = await Promise.all([
             CallSession.find(filter)
-                .populate("userA", "firstname lastname username email age gender address locality regionalLanguage")
-                .populate("userB", "firstname lastname username email age gender address locality regionalLanguage")
+                .populate("userA", "firstname lastname username email dob gender address locality regionalLanguage speaker_id")
+                .populate("userB", "firstname lastname username email dob gender address locality regionalLanguage speaker_id")
                 .populate("topicId", "title")
                 .populate("subtopicId", "title description instructions")
                 .populate("reviewedBy", "firstname lastname email")
@@ -643,8 +644,8 @@ router.get("/calls", async (req, res) => {
 
         const total = await CallSession.countDocuments(query);
         const calls = await CallSession.find(query)
-            .populate("userA", "firstname lastname username email age gender address locality regionalLanguage")
-            .populate("userB", "firstname lastname username email age gender address locality regionalLanguage")
+            .populate("userA", "firstname lastname username email dob gender address locality regionalLanguage speaker_id")
+            .populate("userB", "firstname lastname username email dob gender address locality regionalLanguage speaker_id")
             .populate("topicId", "title")
             .populate("subtopicId", "title description instructions")
             .populate("questionerUserId", "firstname lastname username")
@@ -684,8 +685,8 @@ router.get("/calls/exportable", async (req, res) => {
         };
 
         const calls = await CallSession.find(query)
-            .populate("userA", "firstname lastname username email age gender address locality regionalLanguage")
-            .populate("userB", "firstname lastname username email age gender address locality regionalLanguage")
+            .populate("userA", "firstname lastname username email dob gender address locality regionalLanguage speaker_id")
+            .populate("userB", "firstname lastname username email dob gender address locality regionalLanguage speaker_id")
             .populate("topicId", "title")
             .populate("subtopicId", "title description instructions")
             .sort({ startedAt: -1 });
@@ -1528,6 +1529,26 @@ router.delete("/s3-explorer", async (req, res) => {
         res.json({ success: true, message: "Deleted native AWS block permanently" });
     } catch (e) {
         console.error("S3 Delete Error:", e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// ===== SPEAKER ID BACKFILL (admin only, idempotent) =====
+router.post("/backfill-speaker-ids", async (req, res) => {
+    try {
+        const users = await User.find({ speaker_id: null }).sort({ createdAt: 1 }).select("_id");
+        let updated = 0;
+        for (const user of users) {
+            const { seq } = await Counter.findOneAndUpdate(
+                { _id: "speaker_id" },
+                { $inc: { seq: 1 } },
+                { upsert: true, new: true }
+            );
+            await User.updateOne({ _id: user._id }, { $set: { speaker_id: `spk_${seq}` } });
+            updated++;
+        }
+        res.json({ message: `Backfilled ${updated} users with speaker IDs` });
+    } catch (e) {
         res.status(500).json({ error: e.message });
     }
 });

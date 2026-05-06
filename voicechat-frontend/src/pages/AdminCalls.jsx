@@ -118,19 +118,24 @@ export default function AdminCalls() {
         }
     }
 
-    function metadataForSpeaker(call, speakerLabel, user) {
+    function metadataForSpeaker(call, speakerLabel, user, duration) {
+        const age = user?.dob ? new Date().getFullYear() - new Date(user.dob).getFullYear() : "";
+        const speakerId = user?.speaker_id || "";
+        const audioPath = speakerId ? `audio/${speakerId}-${call.callId}.wav` : "";
         const data = [
-            ["Name", user?.firstname ? `${user.firstname} ${user.lastname || ""}`.trim() : (user?.username || "")],
-            ["Age", user?.age || ""],
-            ["Gender", user?.gender || ""],
-            ["Region", user?.address?.state || ""],
-            ["Accent", user?.locality || ""],
-            ["Dialect", user?.regionalLanguage || ""],
-            ["Topic", call.topicId?.title || ""],
-            ["Subtopic", call.subtopicId?.title || ""],
-            ["Description", call.subtopicId?.description || ""],
+            ["speaker_id", speakerId],
+            ["age", age],
+            ["gender", user?.gender || ""],
+            ["region", user?.address?.state || ""],
+            ["accent", user?.locality || ""],
+            ["dialect", user?.regionalLanguage || ""],
+            ["topic_of_conversation", call.topicId?.title || ""],
+            ["subtopic", call.subtopicId?.title || ""],
+            ["description", call.subtopicId?.description || ""],
+            ["duration_minutes", duration ?? ""],
+            ["path", audioPath],
         ];
-        return data.map(([key, value]) => `${key}: ${value ?? ""}`).join("\n");
+        return data.map(([key, value]) => `"${key}","${String(value ?? "").replace(/"/g, '""')}"`).join("\n");
     }
 
     async function fetchRecordingBlob(callId, userId, recordingFile) {
@@ -204,27 +209,30 @@ export default function AdminCalls() {
                         folder: "speaker1",
                         user: call.userA,
                         file: call.recordingAFile,
-                        status: call.recordingAStatus
+                        status: call.recordingAStatus,
+                        duration: Number(call.recordingADurationMinutes || 0).toFixed(2),
                     },
                     {
                         folder: "speaker2",
                         user: call.userB,
                         file: call.recordingBFile,
-                        status: call.recordingBStatus
+                        status: call.recordingBStatus,
+                        duration: Number(call.recordingBDurationMinutes || 0).toFixed(2),
                     },
                 ].filter((s) => s.file && s.user?._id && s.status === "approved");
 
                 for (const speaker of speakers) {
                     try {
+                        const speakerFileBase = `${speaker.user.speaker_id}-${call.callId}`;
                         const blob = await fetchRecordingBlob(call.callId, speaker.user._id, speaker.file);
                         allFiles.push({
-                            path: `${call.callId}/${speaker.folder}/${speaker.folder}.wav`,
+                            path: `${call.callId}/${speakerFileBase}.wav`,
                             data: new Uint8Array(await blob.arrayBuffer()),
                             modifiedAt: new Date(),
                         });
                         allFiles.push({
-                            path: `${call.callId}/${speaker.folder}/${speaker.folder}_metadata.txt`,
-                            data: textEncoder.encode(metadataForSpeaker(call, speaker.folder, speaker.user)),
+                            path: `${call.callId}/${speakerFileBase}_metadata.csv`,
+                            data: textEncoder.encode(metadataForSpeaker(call, speaker.folder, speaker.user, speaker.duration)),
                             modifiedAt: new Date(),
                         });
                     } catch (err) {
@@ -319,15 +327,16 @@ export default function AdminCalls() {
 
             for (const speaker of speakers) {
                 setDownloadStep(`Fetching ${speaker.user.username}'s recording...`);
+                const speakerFileBase = `${speaker.user.speaker_id}-${call.callId}`;
                 const blob = await fetchRecordingBlob(call.callId, speaker.user._id, speaker.file);
                 files.push({
-                    path: `${rootFolder}/${speaker.folder}/${speaker.folder}.wav`,
+                    path: `${rootFolder}/${speakerFileBase}.wav`,
                     data: new Uint8Array(await blob.arrayBuffer()),
                     modifiedAt: new Date(),
                 });
                 files.push({
-                    path: `${rootFolder}/${speaker.folder}/${speaker.folder}_metadata.txt`,
-                    data: textEncoder.encode(metadataForSpeaker(call, speaker.folder, speaker.user)),
+                    path: `${rootFolder}/${speakerFileBase}_metadata.csv`,
+                    data: textEncoder.encode(metadataForSpeaker(call, speaker.folder, speaker.user, speaker.duration)),
                     modifiedAt: new Date(),
                 });
             }
