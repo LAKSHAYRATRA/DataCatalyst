@@ -307,12 +307,25 @@ qaCallRouter.get("/calls/:callId/recording/:userId", async (req, res) => {
             return res.status(404).json({ error: "Recording not available" });
         }
 
-        const filePath = path.join(process.cwd(), "recordings", callId, recordingFile);
-        if (!fs.existsSync(filePath)) {
-            return res.status(404).json({ error: "Recording file not found" });
+        try {
+            const command = new GetObjectCommand({
+                Bucket: BUCKET_NAME,
+                Key: recordingFile
+            });
+            const response = await s3Client.send(command);
+            
+            if (response.ContentLength) {
+                res.setHeader("Content-Length", response.ContentLength);
+            }
+            res.setHeader("Content-Type", response.ContentType || "audio/webm");
+            res.setHeader("Content-Disposition", `attachment; filename="${path.basename(recordingFile)}"`);
+            res.setHeader("Accept-Ranges", "bytes");
+            
+            response.Body.pipe(res);
+        } catch (s3error) {
+            console.error("QA call recording streaming S3 error:", s3error);
+            return res.status(404).json({ error: "Recording file not found in cloud storage" });
         }
-
-        res.download(filePath, recordingFile);
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
@@ -721,14 +734,23 @@ router.get("/calls/:callId/recording/:userId", async (req, res) => {
         }
 
         try {
-            const command = new GetObjectCommand({ Bucket: BUCKET_NAME, Key: recordingFile });
-            const s3Doc = await s3Client.send(command);
-            const fileName = recordingFile.split("/").pop();
-            res.setHeader("Content-Disposition", `attachment; filename="${fileName}.wav"`);
-            streamS3ToWav(s3Doc.Body, res, fileName.replace(/\.[^.]+$/, ""));
-        } catch (s3Err) {
-            console.error(`[admin/recording] S3 fetch failed — bucket="${BUCKET_NAME}" key="${recordingFile}"`, s3Err?.name, s3Err?.message);
-            return res.status(404).json({ error: "Recording file not found in storage", key: recordingFile });
+            const command = new GetObjectCommand({
+                Bucket: BUCKET_NAME,
+                Key: recordingFile
+            });
+            const response = await s3Client.send(command);
+            
+            if (response.ContentLength) {
+                res.setHeader("Content-Length", response.ContentLength);
+            }
+            res.setHeader("Content-Type", response.ContentType || "audio/webm");
+            res.setHeader("Content-Disposition", `attachment; filename="${path.basename(recordingFile)}"`);
+            res.setHeader("Accept-Ranges", "bytes");
+            
+            response.Body.pipe(res);
+        } catch (s3error) {
+            console.error("Admin call recording streaming S3 error:", s3error);
+            return res.status(404).json({ error: "Recording file not found in cloud storage" });
         }
     } catch (error) {
         res.status(500).json({ error: error.message });
