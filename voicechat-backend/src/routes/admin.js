@@ -724,14 +724,11 @@ router.get("/calls/:callId/recording/:userId", async (req, res) => {
             const command = new GetObjectCommand({ Bucket: BUCKET_NAME, Key: recordingFile });
             const s3Doc = await s3Client.send(command);
             const fileName = recordingFile.split("/").pop();
-            const ext = fileName.split(".").pop();
-            const mimeTypes = { flac: "audio/flac", wav: "audio/wav", ogg: "audio/ogg", webm: "audio/webm", mp3: "audio/mpeg" };
-            res.setHeader("Content-Type", s3Doc.ContentType || mimeTypes[ext] || "application/octet-stream");
-            res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
-            if (s3Doc.ContentLength) res.setHeader("Content-Length", s3Doc.ContentLength);
-            s3Doc.Body.pipe(res);
-        } catch {
-            return res.status(404).json({ error: "Recording file not found in storage" });
+            res.setHeader("Content-Disposition", `attachment; filename="${fileName}.wav"`);
+            streamS3ToWav(s3Doc.Body, res, fileName.replace(/\.[^.]+$/, ""));
+        } catch (s3Err) {
+            console.error(`[admin/recording] S3 fetch failed — bucket="${BUCKET_NAME}" key="${recordingFile}"`, s3Err?.name, s3Err?.message);
+            return res.status(404).json({ error: "Recording file not found in storage", key: recordingFile });
         }
     } catch (error) {
         res.status(500).json({ error: error.message });
