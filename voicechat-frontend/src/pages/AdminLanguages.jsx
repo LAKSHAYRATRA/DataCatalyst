@@ -31,6 +31,7 @@ export default function AdminLanguages() {
     const [editingLanguage, setEditingLanguage] = useState(null);
     const [modalName, setModalName] = useState("");
     const [modalHourlyPayout, setModalHourlyPayout] = useState("");
+    const [modalSampleRate, setModalSampleRate] = useState("48000");
     const [modalSaving, setModalSaving] = useState(false);
     const [modalError, setModalError] = useState("");
 
@@ -52,6 +53,7 @@ export default function AdminLanguages() {
         setEditingLanguage(null);
         setModalName("");
         setModalHourlyPayout("");
+        setModalSampleRate("48000");
         setModalError("");
         setShowModal(true);
     }
@@ -60,6 +62,7 @@ export default function AdminLanguages() {
         setEditingLanguage(language);
         setModalName(language.name || "");
         setModalHourlyPayout(String(language.hourlyPayout ?? ""));
+        setModalSampleRate(String(language.sampleRate ?? 48000));
         setModalError("");
         setShowModal(true);
     }
@@ -69,6 +72,7 @@ export default function AdminLanguages() {
         setEditingLanguage(null);
         setModalName("");
         setModalHourlyPayout("");
+        setModalSampleRate("48000");
         setModalError("");
     }
 
@@ -76,8 +80,10 @@ export default function AdminLanguages() {
         e.preventDefault();
         const name = modalName.trim();
         const hourlyPayout = Number(modalHourlyPayout);
+        const sampleRate = Number(modalSampleRate);
         if (!name) return setModalError("Language name is required.");
         if (!Number.isFinite(hourlyPayout) || hourlyPayout < 0) return setModalError("A valid hourly payout is required.");
+        if (!Number.isFinite(sampleRate) || sampleRate <= 0) return setModalError("A valid sample rate is required.");
         const code = editingLanguage ? editingLanguage.code : toSlug(name);
         if (!editingLanguage && !code) return setModalError("Name must contain at least one letter or number.");
 
@@ -85,10 +91,10 @@ export default function AdminLanguages() {
         setModalError("");
         try {
             if (editingLanguage) {
-                await patch(`/api/admin/languages/${editingLanguage._id}`, { name, hourlyPayout });
+                await patch(`/api/admin/languages/${editingLanguage._id}`, { name, hourlyPayout, sampleRate });
                 setSuccess(`"${name}" updated successfully.`);
             } else {
-                await postJson("/api/admin/languages", { name, code, hourlyPayout });
+                await postJson("/api/admin/languages", { name, code, hourlyPayout, sampleRate });
                 setSuccess(`"${name}" added successfully.`);
             }
             closeModal();
@@ -153,7 +159,7 @@ export default function AdminLanguages() {
                             <table className="w-full text-sm">
                                 <thead className="bg-neutral-700">
                                     <tr>
-                                        {["Name", "Hourly Payout", "Status", "Actions"].map(h => (
+                                        {["Name", "Hourly Payout", "Sample Rate", "Status", "Actions"].map(h => (
                                             <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-neutral-300 uppercase tracking-wider whitespace-nowrap">{h}</th>
                                         ))}
                                     </tr>
@@ -163,6 +169,7 @@ export default function AdminLanguages() {
                                         <tr key={lang._id} className="hover:bg-neutral-700/40 transition-colors">
                                             <td className="px-4 py-3 text-white font-medium">{lang.name}</td>
                                             <td className="px-4 py-3 text-neutral-300 font-medium">${lang.hourlyPayout ?? 0}/hr</td>
+                                            <td className="px-4 py-3 text-neutral-300 font-medium">{lang.sampleRate ?? 48000} Hz</td>
                                             <td className="px-4 py-3">
                                                 {lang.enabled
                                                     ? <span className="inline-flex items-center gap-1 px-2 py-1 bg-green-900/50 text-green-300 text-xs font-semibold rounded-full">● Enabled</span>
@@ -246,6 +253,19 @@ export default function AdminLanguages() {
                                     placeholder="e.g. 25"
                                     value={modalHourlyPayout}
                                     onChange={e => setModalHourlyPayout(e.target.value)}
+                                />
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-neutral-300 mb-1.5">Sample Rate (Hz)</label>
+                                <input
+                                    type="number"
+                                    min="8000"
+                                    step="1"
+                                    className="w-full bg-neutral-700 border border-neutral-600 text-white placeholder-neutral-400 text-sm rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-warning-500"
+                                    placeholder="e.g. 48000"
+                                    value={modalSampleRate}
+                                    onChange={e => setModalSampleRate(e.target.value)}
                                 />
                             </div>
 

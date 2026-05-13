@@ -355,12 +355,13 @@ async function cleanupRecording(socket) {
         let finalUploadPath = tempPath;
         if (tempPath.endsWith(".pcm")) {
           const flacPath = tempPath.replace(".pcm", ".flac");
+          const recordSampleRate = socket.data.recordSampleRate || 48000;
           await new Promise((res, rej) => {
             ffmpeg()
               .input(tempPath)
               .inputFormat('s16le')
               .audioChannels(1)
-              .audioFrequency(48000)
+              .audioFrequency(recordSampleRate)
               .output(flacPath)
               .on('end', res)
               .on('error', rej)
@@ -857,7 +858,7 @@ io.on("connection", (socket) => {
     if (callId) endCall(callId, "hangup");
   });
 
-  socket.on("record_start", ({ callId, mimeType }) => {
+  socket.on("record_start", ({ callId, mimeType, startTime, sampleRate }) => {
     const currentCallId = getCallIdForSocket(socket);
     if (!currentCallId || currentCallId !== callId) return;
 
@@ -866,8 +867,10 @@ io.on("connection", (socket) => {
 
       socket.data.recordOffsetMs =
         call?.expectedActualStartTime
-          ? Math.max(0, Date.now() - call.expectedActualStartTime)
+          ? Math.max(0, (startTime || Date.now()) - call.expectedActualStartTime)
           : 0;
+
+      socket.data.recordSampleRate = sampleRate || 48000;
 
       const isPcm = mimeType === "audio/pcm";
       const ext = isPcm ? "flac" : (mimeType || "audio/webm").includes("ogg") ? "ogg" : "webm";

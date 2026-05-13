@@ -37,6 +37,7 @@ export default function Call() {
   const [callCount, setCallCount] = useState(0);
   const [callLimit, setCallLimit] = useState(3);
   const [userInfo, setUserInfo] = useState(null);
+  const [languageSampleRates, setLanguageSampleRates] = useState({});
 
   // System Check State
   const [showSystemCheck, setShowSystemCheck] = useState(false);
@@ -103,6 +104,16 @@ export default function Call() {
         // Fetch today's call count
         const countRes = await apiGet("/api/calls/today-count");
         setCallCount(countRes.count || 0);
+
+        // Fetch language sample rates
+        const langRes = await apiGet("/api/languages");
+        const rates = {};
+        if (langRes.languages) {
+          langRes.languages.forEach(l => {
+            rates[l.code] = l.sampleRate || 48000;
+          });
+        }
+        setLanguageSampleRates(rates);
       } catch (e) {
         console.error("Failed to fetch user info or call count:", e);
       }
@@ -321,9 +332,14 @@ export default function Call() {
     setStatus(s);
   }
 
+  const getCurrentSampleRate = () => {
+    return languageSampleRates[selectedLanguage] || 48000;
+  };
+
   async function ensureLocalStream() {
     if (localStreamRef.current) return localStreamRef.current;
-    localStreamRef.current = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, sampleRate: 48000, channelCount: 1 } });
+    const rate = getCurrentSampleRate();
+    localStreamRef.current = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, sampleRate: rate, channelCount: 1 } });
     return localStreamRef.current;
   }
 
@@ -334,7 +350,8 @@ export default function Call() {
 
     if (workletNodeRef.current) return; // already recording
 
-    const audioCtx = new AudioContext({ sampleRate: 48000 });
+    const rate = getCurrentSampleRate();
+    const audioCtx = new AudioContext({ sampleRate: rate });
     audioContextRef.current = audioCtx;
     
     await audioCtx.audioWorklet.addModule("/pcm-worklet.js");
@@ -344,7 +361,7 @@ export default function Call() {
     const source = audioCtx.createMediaStreamSource(stream);
 
     const startTime = Date.now();
-    socket.emit("record_start", { callId: activeCallId, mimeType: "audio/pcm", startTime });
+    socket.emit("record_start", { callId: activeCallId, mimeType: "audio/pcm", startTime, sampleRate: rate });
 
     workletNode.port.onmessage = (e) => {
       const s2 = socketRef.current;

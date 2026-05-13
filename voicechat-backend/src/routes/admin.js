@@ -1320,15 +1320,20 @@ router.get("/languages", async (req, res) => {
 router.post("/languages", async (req, res) => {
     const { name, code } = req.body;
     const hourlyPayout = Number(req.body?.hourlyPayout);
+    const sampleRate = req.body?.sampleRate !== undefined ? Number(req.body.sampleRate) : 48000;
     if (!name || !code) return res.status(400).json({ error: "name and code are required" });
     if (!Number.isFinite(hourlyPayout) || hourlyPayout < 0) {
         return res.status(400).json({ error: "A valid hourly payout is required" });
+    }
+    if (!Number.isFinite(sampleRate) || sampleRate <= 0) {
+        return res.status(400).json({ error: "A valid sample rate is required" });
     }
     try {
         const lang = await Language.create({
             name: name.trim(),
             code: code.trim().toLowerCase(),
             hourlyPayout,
+            sampleRate,
             enabled: true
         });
         res.status(201).json({ language: lang });
@@ -1349,6 +1354,13 @@ router.patch("/languages/:id", async (req, res) => {
             return res.status(400).json({ error: "A valid hourly payout is required" });
         }
         updates.hourlyPayout = hourlyPayout;
+    }
+    if (req.body.sampleRate !== undefined) {
+        const sampleRate = Number(req.body.sampleRate);
+        if (!Number.isFinite(sampleRate) || sampleRate <= 0) {
+            return res.status(400).json({ error: "A valid sample rate is required" });
+        }
+        updates.sampleRate = sampleRate;
     }
     try {
         const lang = await Language.findByIdAndUpdate(req.params.id, updates, { new: true });
