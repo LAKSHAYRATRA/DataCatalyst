@@ -19,7 +19,9 @@ import { getPayoutOverview, getSingleUserPayout } from "../services/payouts.js";
 import { ListObjectsV2Command, DeleteObjectCommand, GetObjectCommand, CopyObjectCommand } from "@aws-sdk/client-s3";
 import { s3Client, BUCKET_NAME } from "../config/s3.js";
 import { streamS3ToWav } from "../utils/ffmpeg-stream.js";
-import archiver from "archiver";
+import { createRequire } from "module";
+const require = createRequire(import.meta.url);
+const archiver = require("archiver");
 
 const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET;
@@ -1684,10 +1686,6 @@ router.get("/phrases/download-company", async (req, res) => {
     } catch (e) {
         console.error("Download Company Phrases Error:", e);
         if (!res.headersSent) res.status(500).json({ error: e.message });
-    }
-});
-        console.error("S3 WAV Transcode Download Error:", e);
-        res.status(500).json({ error: e.message });
     }
 });
 
