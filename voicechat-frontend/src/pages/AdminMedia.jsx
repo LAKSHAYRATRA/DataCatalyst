@@ -61,6 +61,27 @@ export default function AdminMedia() {
     loadExplorer(upPath);
   };
 
+  const handleDownloadCompany = async (companyName) => {
+    const confirm = await Swal.fire({
+      title: "Download Company Batch?",
+      text: `This will download a ZIP of all approved phrases for "${companyName}" and MOVE them to a "_downloaded" folder in S3.`,
+      icon: "info",
+      showCancelButton: true,
+      confirmButtonText: "Yes, Download & Move",
+    });
+
+    if (!confirm.isConfirmed) return;
+
+    const url = `${import.meta.env.VITE_BACKEND_URL || "http://localhost:3001"}/api/admin/phrases/download-company?company=${encodeURIComponent(companyName)}`;
+    window.location.href = url;
+
+    Swal.fire("Started", "Download has started. S3 files will be moved automatically in the background.", "success");
+    setTimeout(() => {
+      // Traverse up to phrases/ since the current folder will be moved
+      loadExplorer("phrases/");
+    }, 3000);
+  };
+
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-6">
       <div className="flex justify-between items-end">
@@ -70,9 +91,19 @@ export default function AdminMedia() {
           </h1>
           <p className="text-neutral-500 mt-2">Visually manage, review, and delete synchronized AWS blocks globally.</p>
         </div>
-        <button className="btn btn-secondary flex items-center gap-2" onClick={() => loadExplorer(prefixPath)}>
-          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> Refresh
-        </button>
+        <div className="flex gap-2 items-center">
+          {prefixPath.startsWith("phrases/") && prefixPath.split("/").filter(Boolean).length === 2 && !prefixPath.includes("_downloaded") && (
+            <button 
+              className="btn flex items-center gap-2 bg-primary-600 hover:bg-primary-700 text-white px-4 py-2 rounded shadow-sm font-medium transition-colors" 
+              onClick={() => handleDownloadCompany(prefixPath.split("/")[1])}
+            >
+              <Download className="w-4 h-4" /> Download Company Batch
+            </button>
+          )}
+          <button className="btn btn-secondary flex items-center gap-2" onClick={() => loadExplorer(prefixPath)}>
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> Refresh
+          </button>
+        </div>
       </div>
 
       <div className="card p-0 overflow-hidden border border-neutral-200 dark:border-neutral-800">

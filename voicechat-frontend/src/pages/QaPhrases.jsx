@@ -74,6 +74,11 @@ export default function QaPhrases() {
                   <div className="flex-1">
                     <div className="flex items-center gap-3 mb-2">
                       <span className="badge badge-warning">Pending Review</span>
+                      {p.isTestPhrase && (
+                        <span className="badge bg-error-500 text-white font-bold animate-pulse shadow-[0_0_10px_rgba(239,68,68,0.5)]">
+                          TEST PHRASE
+                        </span>
+                      )}
                       <span className="text-sm font-mono opacity-60">ID: {p.phraseId}</span>
                       <span className="text-sm font-semibold capitalize bg-neutral-100 dark:bg-neutral-700 px-2 rounded">{p.language}</span>
                     </div>

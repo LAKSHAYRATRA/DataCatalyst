@@ -38,6 +38,7 @@ const phraseSchema = new mongoose.Schema(
     qaId: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
     qaComment: { type: String, default: null },
     reviewedAt: { type: Date, default: null },
+    isTestPhrase: { type: Boolean, default: false },
   },
   { timestamps: true }
 );

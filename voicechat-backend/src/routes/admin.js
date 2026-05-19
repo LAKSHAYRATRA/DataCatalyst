@@ -16,9 +16,10 @@ import { Phrase } from "../models/Phrase.js";
 import { Company } from "../models/Company.js";
 import { Counter } from "../models/Counter.js";
 import { getPayoutOverview, getSingleUserPayout } from "../services/payouts.js";
-import { ListObjectsV2Command, DeleteObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
+import { ListObjectsV2Command, DeleteObjectCommand, GetObjectCommand, CopyObjectCommand } from "@aws-sdk/client-s3";
 import { s3Client, BUCKET_NAME } from "../config/s3.js";
 import { streamS3ToWav } from "../utils/ffmpeg-stream.js";
+import archiver from "archiver";
 
 const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET;
@@ -1548,6 +1549,143 @@ router.get("/s3-download-wav", async (req, res) => {
         // JIT Pipe logic streams natively executing FFMPEG bridging
         streamS3ToWav(s3Doc.Body, res, filename);
     } catch (e) {
+        console.error("S3 Download WAV Error:", e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+router.get("/phrases/download-company", async (req, res) => {
+    try {
+        const { company } = req.query;
+        if (!company) return res.status(400).json({ error: "Company name is required" });
+
+        // Normalize company name the same way it is stored in DB/S3
+        const companyFolder = company.replace(/[^a-zA-Z0-9_\-\ ]/g, "").trim();
+
+        // Fetch approved phrases for this company
+        const phrases = await Phrase.find({ 
+            $or: [{ companyId: company }, { companyId: companyFolder }],
+            status: "approved" 
+        }).populate("contributorId").lean();
+
+        if (phrases.length === 0) {
+            return res.status(404).json({ error: "No approved phrases found for this company." });
+        }
+
+        res.setHeader("Content-Type", "application/zip");
+        res.setHeader("Content-Disposition", `attachment; filename="${companyFolder}_phrases.zip"`);
+
+        const archive = archiver("zip", { zlib: { level: 9 } });
+
+        archive.on("error", (err) => {
+            console.error("Archiver Error:", err);
+            if (!res.headersSent) res.status(500).json({ error: err.message });
+        });
+
+        archive.pipe(res);
+
+        const successfullyProcessed = [];
+
+        for (const phrase of phrases) {
+            if (!phrase.audioFile) continue;
+            const phraseId = phrase.phraseId;
+            const folderName = phraseId;
+            const contributor = phrase.contributorId || {};
+
+            // Generate speaker_metadata.json
+            const speakerMetadata = {
+                [contributor.speaker_id || `spk_${contributor._id}`]: {
+                    speaker_id: contributor.speaker_id || `spk_${contributor._id}`,
+                    gender: contributor.gender || "unknown",
+                    age_range: "unknown",
+                    native_language: contributor.regionalLanguage || "unknown",
+                    primary_language: contributor.regionalLanguage || "unknown",
+                    languages_spoken: contributor.languageApplications ? contributor.languageApplications.map(app => app.languageCode) : [],
+                    accent: "unknown",
+                    dialect: "unknown",
+                    region: contributor.locality || "unknown",
+                    state: contributor.address?.state || "unknown",
+                    consent_provided: true,
+                    consent_platform: "voclara.com",
+                    recording_environment: "room",
+                    audio_specs: {
+                        format: "FLAC",
+                        sample_rate: 48000,
+                        bit_depth: 24,
+                        channels: 1
+                    }
+                }
+            };
+            archive.append(JSON.stringify(speakerMetadata, null, 2), { name: `${folderName}/speaker_metadata.json` });
+
+            // Generate utterance.json
+            const utterance = {
+                id: phraseId,
+                language: phrase.language,
+                script_type: phrase.script_type || "orthographic",
+                speaker_id: contributor.speaker_id || `spk_${contributor._id}`,
+                text: phrase.text,
+                emotion: phrase.emotion || "neutral",
+                style: phrase.style || "conversational",
+                intent: phrase.intent || "statement",
+                pitch: phrase.pitch || "medium",
+                speed: phrase.speed || "normal",
+                volume: phrase.volume || "normal",
+                events: phrase.events ? phrase.events.split(",").map(e => e.trim()) : [],
+                instruction: phrase.instructions || ""
+            };
+            archive.append(JSON.stringify(utterance, null, 2), { name: `${folderName}/utterance.json` });
+
+            // Stream S3 Audio
+            try {
+                const audioCommand = new GetObjectCommand({
+                    Bucket: BUCKET_NAME,
+                    Key: phrase.audioFile
+                });
+                const s3Doc = await s3Client.send(audioCommand);
+                const extension = phrase.audioFile.split(".").pop() || "flac";
+                archive.append(s3Doc.Body, { name: `${folderName}/recording.${extension}` });
+                successfullyProcessed.push(phrase);
+            } catch (err) {
+                console.error(`Failed to fetch S3 audio for phrase ${phraseId}:`, err);
+            }
+        }
+
+        // Wait for archive to finalize
+        await archive.finalize();
+
+        // Background task to move files in S3 and update DB
+        setTimeout(async () => {
+            for (const phrase of successfullyProcessed) {
+                try {
+                    const oldKey = phrase.audioFile;
+                    const newKey = oldKey.replace(`phrases/${companyFolder}/`, `phrases/${companyFolder}_downloaded/`);
+                    
+                    if (oldKey === newKey) continue;
+
+                    await s3Client.send(new CopyObjectCommand({
+                        Bucket: BUCKET_NAME,
+                        CopySource: `${BUCKET_NAME}/${oldKey}`,
+                        Key: newKey
+                    }));
+
+                    await s3Client.send(new DeleteObjectCommand({
+                        Bucket: BUCKET_NAME,
+                        Key: oldKey
+                    }));
+
+                    await Phrase.updateOne({ _id: phrase._id }, { $set: { audioFile: newKey } });
+                } catch (moveErr) {
+                    console.error(`Error moving phrase ${phrase.phraseId} to downloaded folder:`, moveErr);
+                }
+            }
+        }, 1000);
+
+    } catch (e) {
+        console.error("Download Company Phrases Error:", e);
+        if (!res.headersSent) res.status(500).json({ error: e.message });
+    }
+});
         console.error("S3 WAV Transcode Download Error:", e);
         res.status(500).json({ error: e.message });
     }

@@ -130,6 +130,37 @@ export async function getAvailablePhrase(req, res) {
       }
     }
 
+    // Check Project-specific 3-hour limit (10800 seconds) & Test Phrase status
+    const projectStats = await Phrase.aggregate([
+      { $match: { contributorId: user._id, status: { $in: ["recorded", "approved"] }, projectName: { $ne: null } } },
+      { $group: { 
+          _id: "$projectName", 
+          totalDuration: { $sum: "$duration" },
+          approvedCount: { $sum: { $cond: [{ $eq: ["$status", "approved"] }, 1, 0] } },
+          recordedCount: { $sum: { $cond: [{ $eq: ["$status", "recorded"] }, 1, 0] } }
+      }}
+    ]);
+
+    const maxedOutProjects = [];
+    const waitingTestProjects = [];
+
+    for (const p of projectStats) {
+        if (p.totalDuration >= 10800) maxedOutProjects.push(p._id);
+        if (p.approvedCount === 0 && p.recordedCount > 0) waitingTestProjects.push(p._id);
+    }
+
+    const blockedProjects = [...new Set([...maxedOutProjects, ...waitingTestProjects])];
+
+    if (baseQuery.projectName && blockedProjects.includes(baseQuery.projectName)) {
+      if (maxedOutProjects.includes(baseQuery.projectName)) {
+        return res.json({ phrase: null, message: `You have reached the 3-hour maximum contribution limit for project: ${baseQuery.projectName}.` });
+      } else {
+        return res.json({ phrase: null, message: `Your test phrase for project ${baseQuery.projectName} is currently under review by QA. Please wait for approval before contributing further.` });
+      }
+    } else if (!baseQuery.projectName && blockedProjects.length > 0) {
+      baseQuery.projectName = { $nin: blockedProjects };
+    }
+
     // 1. First see if the user already has a locked phrase they haven't finished
     let phrase = await Phrase.findOne({
       ...baseQuery,
@@ -233,6 +264,30 @@ export async function submitPhraseRecording(req, res) {
       }
     }
 
+    // Enforce Project-specific limits and detect Test Phrases
+    let isTestPhrase = false;
+    if (phrase.projectName) {
+      const projectStats = await Phrase.aggregate([
+        { $match: { contributorId: req.user._id, projectName: phrase.projectName, status: { $in: ["recorded", "approved"] } } },
+        { $group: { 
+            _id: null, 
+            totalDuration: { $sum: "$duration" },
+            approvedCount: { $sum: { $cond: [{ $eq: ["$status", "approved"] }, 1, 0] } }
+        }}
+      ]);
+      const totalSecs = projectStats.length > 0 ? projectStats[0].totalDuration : 0;
+      const approvedCount = projectStats.length > 0 ? projectStats[0].approvedCount : 0;
+
+      if (totalSecs >= 10800) { // 3 hours = 10800 seconds
+        fs.unlinkSync(req.file.path);
+        return res.status(400).json({ error: `You have reached the 3-hour maximum contribution limit for project: ${phrase.projectName}.` });
+      }
+
+      if (approvedCount === 0) {
+        isTestPhrase = true;
+      }
+    }
+
     // 1. Convert local WAV to FLAC
     const flacPath = req.file.path.replace(".wav", ".flac");
     await new Promise((res, rej) => {
@@ -274,6 +329,7 @@ export async function submitPhraseRecording(req, res) {
     phrase.recordedAt = new Date();
     // Default duration to 0 if not provided, we can calculate via front-end
     phrase.duration = Number(req.body.duration) || 0; 
+    phrase.isTestPhrase = isTestPhrase;
     
     await phrase.save();
 
