@@ -58,6 +58,14 @@ export function apiPutJson(path, data) {
   });
 }
 
+export function apiPatchJson(path, data) {
+  return apiFetch(path, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+}
+
 export function apiDeleteJson(path) {
   return apiFetch(path, {
     method: "DELETE",
