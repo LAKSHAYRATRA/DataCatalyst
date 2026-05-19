@@ -19,9 +19,6 @@ import { getPayoutOverview, getSingleUserPayout } from "../services/payouts.js";
 import { ListObjectsV2Command, DeleteObjectCommand, GetObjectCommand, CopyObjectCommand } from "@aws-sdk/client-s3";
 import { s3Client, BUCKET_NAME } from "../config/s3.js";
 import { streamS3ToWav } from "../utils/ffmpeg-stream.js";
-import { createRequire } from "module";
-const require = createRequire(import.meta.url);
-const archiver = require("archiver");
 
 const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET;
@@ -1576,6 +1573,14 @@ router.get("/phrases/download-company", async (req, res) => {
 
         res.setHeader("Content-Type", "application/zip");
         res.setHeader("Content-Disposition", `attachment; filename="${companyFolder}_phrases.zip"`);
+
+        let archiver;
+        try {
+            archiver = (await import("archiver")).default;
+        } catch (err) {
+            console.error("Archiver package not found. Run npm install archiver.");
+            return res.status(500).json({ error: "Server missing 'archiver' dependency." });
+        }
 
         const archive = archiver("zip", { zlib: { level: 9 } });
 
