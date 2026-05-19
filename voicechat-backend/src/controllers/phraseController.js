@@ -130,35 +130,41 @@ export async function getAvailablePhrase(req, res) {
       }
     }
 
-    // Check Project-specific 3-hour limit (10800 seconds) & Test Phrase status
-    const projectStats = await Phrase.aggregate([
-      { $match: { contributorId: user._id, status: { $in: ["recorded", "approved"] }, projectName: { $ne: null } } },
+    // Fetch all companies to get their limits (defaulting to 195 mins = 11700 secs)
+    const companies = await Company.find({}).lean();
+    const companyLimits = Object.fromEntries(companies.map(c => [c.name, (c.maxContributionMinutes || 195) * 60]));
+
+    // Check Company-specific contribution limit & Test Phrase status
+    const companyStats = await Phrase.aggregate([
+      { $match: { contributorId: user._id, status: { $in: ["recorded", "approved"] }, companyId: { $ne: null } } },
       { $group: { 
-          _id: "$projectName", 
+          _id: "$companyId", 
           totalDuration: { $sum: "$duration" },
           approvedCount: { $sum: { $cond: [{ $eq: ["$status", "approved"] }, 1, 0] } },
           recordedCount: { $sum: { $cond: [{ $eq: ["$status", "recorded"] }, 1, 0] } }
       }}
     ]);
 
-    const maxedOutProjects = [];
-    const waitingTestProjects = [];
+    const maxedOutCompanies = [];
+    const waitingTestCompanies = [];
 
-    for (const p of projectStats) {
-        if (p.totalDuration >= 10800) maxedOutProjects.push(p._id);
-        if (p.approvedCount === 0 && p.recordedCount > 0) waitingTestProjects.push(p._id);
+    for (const c of companyStats) {
+        // Find company limit, default to 11700 (3h 15m) if company not explicitly in DB
+        const limitSecs = companyLimits[c._id] || 11700;
+        if (c.totalDuration >= limitSecs) maxedOutCompanies.push(c._id);
+        if (c.approvedCount === 0 && c.recordedCount > 0) waitingTestCompanies.push(c._id);
     }
 
-    const blockedProjects = [...new Set([...maxedOutProjects, ...waitingTestProjects])];
+    const blockedCompanies = [...new Set([...maxedOutCompanies, ...waitingTestCompanies])];
 
-    if (baseQuery.projectName && blockedProjects.includes(baseQuery.projectName)) {
-      if (maxedOutProjects.includes(baseQuery.projectName)) {
-        return res.json({ phrase: null, message: `You have reached the 3-hour maximum contribution limit for project: ${baseQuery.projectName}.` });
+    if (baseQuery.companyId && blockedCompanies.includes(baseQuery.companyId)) {
+      if (maxedOutCompanies.includes(baseQuery.companyId)) {
+        return res.json({ phrase: null, message: `You have reached the maximum contribution time limit for company: ${baseQuery.companyId}.` });
       } else {
-        return res.json({ phrase: null, message: `Your test phrase for project ${baseQuery.projectName} is currently under review by QA. Please wait for approval before contributing further.` });
+        return res.json({ phrase: null, message: `Your test phrase for company ${baseQuery.companyId} is currently under review by QA. Please wait for approval before contributing further.` });
       }
-    } else if (!baseQuery.projectName && blockedProjects.length > 0) {
-      baseQuery.projectName = { $nin: blockedProjects };
+    } else if (!baseQuery.companyId && blockedCompanies.length > 0) {
+      baseQuery.companyId = { $nin: blockedCompanies };
     }
 
     // 1. First see if the user already has a locked phrase they haven't finished

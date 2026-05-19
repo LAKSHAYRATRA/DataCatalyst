@@ -4,6 +4,7 @@ import { User } from "../models/User.js";
 import { Phrase } from "../models/Phrase.js";
 import { Language } from "../models/Language.js";
 import { Project } from "../models/Project.js";
+import { Company } from "../models/Company.js";
 
 function roundCurrency(value) {
   return Math.round(value * 100) / 100;
@@ -152,12 +153,13 @@ export async function getPayoutOverview(userIds = null) {
   }
 
   const ids = validUsers.map((user) => String(user._id));
-  const [calls, payments, phrases, langs, projects] = await Promise.all([
+  const [calls, payments, phrases, langs, projects, companies] = await Promise.all([
     loadCallsForUsers(ids),
     loadPaymentsForUsers(ids),
     loadPhrasesForUsers(ids),
     Language.find({}).lean(),
-    Project.find({}).lean()
+    Project.find({}).lean(),
+    Company.find({}).lean()
   ]);
 
   const langRates = Object.fromEntries(langs.map(l => [l.code.toLowerCase(), Number(l.hourlyPayout) || 0]));
@@ -184,6 +186,16 @@ export async function getPayoutOverview(userIds = null) {
           if (specificRate) {
             rate = specificRate.hourlyPayout;
           }
+        }
+      }
+
+      // Company rate overrides all other rates if set
+      if (phrase.companyId) {
+        // Strip _downloaded suffix if present to match the core company rate
+        const coreCompanyId = String(phrase.companyId).replace("_downloaded", "").trim();
+        const company = companies.find(c => c.name === phrase.companyId || c.name === coreCompanyId);
+        if (company && company.hourlyPayout > 0) {
+          rate = company.hourlyPayout;
         }
       }
 

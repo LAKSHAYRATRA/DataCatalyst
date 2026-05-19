@@ -1746,4 +1746,52 @@ router.post("/backfill-speaker-ids", async (req, res) => {
     }
 });
 
+// ===== COMPANY MANAGEMENT =====
+
+router.get("/companies", async (req, res) => {
+    try {
+        const companies = await Company.find({}).sort({ name: 1 }).lean();
+        res.json({ companies });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+router.post("/companies", async (req, res) => {
+    try {
+        const { name, maxContributionMinutes, hourlyPayout } = req.body;
+        if (!name) return res.status(400).json({ error: "Company name is required" });
+        const company = new Company({ name, maxContributionMinutes, hourlyPayout });
+        await company.save();
+        res.json({ message: "Company created successfully", company });
+    } catch (e) {
+        if (e.code === 11000) return res.status(400).json({ error: "Company name already exists" });
+        res.status(500).json({ error: e.message });
+    }
+});
+
+router.patch("/companies/:id", async (req, res) => {
+    try {
+        const { maxContributionMinutes, hourlyPayout } = req.body;
+        const updateData = {};
+        if (maxContributionMinutes !== undefined) updateData.maxContributionMinutes = Number(maxContributionMinutes);
+        if (hourlyPayout !== undefined) updateData.hourlyPayout = Number(hourlyPayout);
+        
+        const company = await Company.findByIdAndUpdate(req.params.id, { $set: updateData }, { new: true });
+        if (!company) return res.status(404).json({ error: "Company not found" });
+        res.json({ message: "Company updated", company });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+router.delete("/companies/:id", async (req, res) => {
+    try {
+        await Company.findByIdAndDelete(req.params.id);
+        res.json({ message: "Company deleted" });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 export default router;
