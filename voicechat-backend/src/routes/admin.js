@@ -1574,15 +1574,21 @@ router.get("/phrases/download-company", async (req, res) => {
         res.setHeader("Content-Type", "application/zip");
         res.setHeader("Content-Disposition", `attachment; filename="${companyFolder}_phrases.zip"`);
 
-        let archiver;
+        let ZipArchive;
         try {
-            archiver = (await import("archiver")).default;
+            const archiverModule = await import("archiver");
+            ZipArchive = archiverModule.ZipArchive || archiverModule.default?.ZipArchive;
+            if (!ZipArchive) {
+                const { createRequire } = await import("module");
+                const require = createRequire(import.meta.url);
+                ZipArchive = require("archiver").ZipArchive;
+            }
         } catch (err) {
-            console.error("Archiver package not found. Run npm install archiver.");
+            console.error("Archiver package not found.", err);
             return res.status(500).json({ error: "Server missing 'archiver' dependency." });
         }
 
-        const archive = archiver("zip", { zlib: { level: 9 } });
+        const archive = new ZipArchive({ zlib: { level: 9 } });
 
         archive.on("error", (err) => {
             console.error("Archiver Error:", err);
