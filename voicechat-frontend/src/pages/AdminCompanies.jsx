@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Building2, Save, Loader2, CheckCircle2, Plus, Trash2 } from 'lucide-react';
-import { apiGet, apiPostJson, apiPatchJson, apiDelete } from '../lib/api';
+import { apiGet, apiPostJson, apiPatchJson, apiDeleteJson } from '../lib/api';
 import AdminNav from '../components/AdminNav.jsx';
 import Swal from 'sweetalert2';
 
@@ -87,7 +87,7 @@ export default function AdminCompanies() {
     if (!confirm.isConfirmed) return;
 
     try {
-      await apiDelete(`/api/admin/companies/${companyId}`);
+      await apiDeleteJson(`/api/admin/companies/${companyId}`);
       setMessage('Company deleted!');
       setTimeout(() => setMessage(''), 3000);
       fetchData();
