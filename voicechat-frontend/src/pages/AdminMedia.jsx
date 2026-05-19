@@ -92,7 +92,7 @@ export default function AdminMedia() {
           <p className="text-neutral-500 mt-2">Visually manage, review, and delete synchronized AWS blocks globally.</p>
         </div>
         <div className="flex gap-2 items-center">
-          {prefixPath.startsWith("phrases/") && prefixPath.split("/").filter(Boolean).length === 2 && !prefixPath.includes("_downloaded") && (
+          {prefixPath.startsWith("phrases/") && prefixPath.split("/").filter(Boolean).length === 2 && (
             <button 
               className="btn flex items-center gap-2 bg-primary-600 hover:bg-primary-700 text-white px-4 py-2 rounded shadow-sm font-medium transition-colors" 
               onClick={() => handleDownloadCompany(prefixPath.split("/")[1])}

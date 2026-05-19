@@ -1560,6 +1560,7 @@ router.get("/phrases/download-company", async (req, res) => {
 
         // Normalize company name the same way it is stored in DB/S3
         const companyFolder = company.replace(/[^a-zA-Z0-9_\-\ ]/g, "").trim();
+        const isAlreadyDownloadedFolder = company.endsWith("_downloaded") || companyFolder.endsWith("_downloaded");
 
         // Fetch approved phrases for this company
         const phrases = await Phrase.find({ 
@@ -1669,6 +1670,8 @@ router.get("/phrases/download-company", async (req, res) => {
 
         // Background task to move files in S3 and update DB
         setTimeout(async () => {
+            if (isAlreadyDownloadedFolder) return;
+
             for (const phrase of successfullyProcessed) {
                 try {
                     const oldKey = phrase.audioFile;
@@ -1687,7 +1690,13 @@ router.get("/phrases/download-company", async (req, res) => {
                         Key: oldKey
                     }));
 
-                    await Phrase.updateOne({ _id: phrase._id }, { $set: { audioFile: newKey } });
+                    await Phrase.updateOne(
+                        { _id: phrase._id }, 
+                        { $set: { 
+                            audioFile: newKey,
+                            companyId: (phrase.companyId.endsWith("_downloaded") ? phrase.companyId : phrase.companyId + "_downloaded")
+                        } }
+                    );
                 } catch (moveErr) {
                     console.error(`Error moving phrase ${phrase.phraseId} to downloaded folder:`, moveErr);
                 }
