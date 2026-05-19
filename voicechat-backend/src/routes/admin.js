@@ -18,7 +18,7 @@ import { Counter } from "../models/Counter.js";
 import { getPayoutOverview, getSingleUserPayout } from "../services/payouts.js";
 import { ListObjectsV2Command, DeleteObjectCommand, GetObjectCommand, CopyObjectCommand } from "@aws-sdk/client-s3";
 import { s3Client, BUCKET_NAME } from "../config/s3.js";
-import { streamS3ToWav } from "../utils/ffmpeg-stream.js";
+import { streamS3ToWav, getWavStream } from "../utils/ffmpeg-stream.js";
 
 const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET;
@@ -1656,8 +1656,8 @@ router.get("/phrases/download-company", async (req, res) => {
                     Key: phrase.audioFile
                 });
                 const s3Doc = await s3Client.send(audioCommand);
-                const extension = phrase.audioFile.split(".").pop() || "flac";
-                archive.append(s3Doc.Body, { name: `${folderName}/recording.${extension}` });
+                const wavStream = getWavStream(s3Doc.Body);
+                archive.append(wavStream, { name: `${folderName}/recording.wav` });
                 successfullyProcessed.push(phrase);
             } catch (err) {
                 console.error(`Failed to fetch S3 audio for phrase ${phraseId}:`, err);
