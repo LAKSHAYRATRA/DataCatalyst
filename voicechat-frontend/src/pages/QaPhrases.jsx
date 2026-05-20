@@ -10,6 +10,7 @@ export default function QaPhrases() {
   const [loading, setLoading] = useState(true);
   const [comments, setComments] = useState({});
   const [processing, setProcessing] = useState(null);
+  const [filterCompany, setFilterCompany] = useState('All');
 
   useEffect(() => {
     fetchQueue();
@@ -60,8 +61,23 @@ export default function QaPhrases() {
         </div>
       ) : (
         <div className="space-y-6">
+          {queue.length > 0 && (
+            <div className="flex justify-end mb-4">
+              <select 
+                className="input w-full md:w-64"
+                value={filterCompany}
+                onChange={(e) => setFilterCompany(e.target.value)}
+              >
+                <option value="All">All Companies</option>
+                {[...new Set(queue.map(q => q.companyId).filter(Boolean))].sort().map(company => (
+                  <option key={company} value={company}>{company}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
           <AnimatePresence>
-            {queue.map((p) => (
+            {(filterCompany === 'All' ? queue : queue.filter(q => q.companyId === filterCompany)).map((p) => (
               <motion.div 
                 key={p._id}
                 layout
@@ -100,6 +116,13 @@ export default function QaPhrases() {
                     <p className="text-sm border-t border-neutral-200 dark:border-neutral-700 pt-3 mt-3">
                       <span className="opacity-70">Contributor: </span>
                       <span className="font-semibold">{p.contributorId?.username}</span>
+                      {p.companyId && (
+                        <>
+                          <span className="mx-2 opacity-30">|</span>
+                          <span className="opacity-70">Company: </span>
+                          <span className="font-semibold">{p.companyId}</span>
+                        </>
+                      )}
                     </p>
                   </div>
 
@@ -144,7 +167,7 @@ export default function QaPhrases() {
             ))}
           </AnimatePresence>
 
-          {queue.length === 0 && (
+          {(filterCompany === 'All' ? queue : queue.filter(q => q.companyId === filterCompany)).length === 0 && (
             <motion.div 
               initial={{ opacity: 0 }} 
               animate={{ opacity: 1 }} 
