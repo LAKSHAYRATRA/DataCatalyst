@@ -190,7 +190,7 @@ export default function PhraseRecording() {
         offset += arr.length;
       }
 
-      const wavBlob = encodeWAV(combined, 48000, 1);
+      const wavBlob = encodeWAV(combined, audioCtxRef.current?.sampleRate || 48000, 1);
       setAudioBlob(wavBlob);
       setAudioUrl(URL.createObjectURL(wavBlob));
     }
@@ -215,14 +215,44 @@ export default function PhraseRecording() {
         body: formData
       });
 
-      if (!res.ok) throw new Error('Failed to upload');
-      
+      if (!res.ok) {
+        let body = {};
+        try { body = await res.json(); } catch {}
+        // "Already recorded" means a previous submit went through but the response
+        // was lost in transit — treat it as success.
+        if (body.error === 'Phrase has already been successfully recorded.') {
+          resetRecording();
+          await fetchStats().catch(() => {});
+          await fetchNextPhrase().catch(() => {});
+          return;
+        }
+        throw new Error(body.error || 'Upload failed');
+      }
+
       resetRecording();
       await fetchStats();
-      await fetchNextPhrase(); // Auto-cycle to the next phrase
+      await fetchNextPhrase();
     } catch (err) {
-      alert('Upload failed. Check your network or the current phrase might have been claimed.');
-      console.error(err);
+      console.error('Submit error:', err);
+      // Before showing an error, verify whether the phrase was actually saved
+      // server-side. The S3 upload + DB save can complete even when the
+      // HTTP connection drops, leaving the client with a false failure.
+      try {
+        const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
+        const check = await fetch(`${BACKEND_URL}/api/phrases/${currentPhrase._id}/status`, {
+          credentials: 'include'
+        });
+        if (check.ok) {
+          const { status } = await check.json();
+          if (status === 'recorded' || status === 'approved') {
+            resetRecording();
+            await fetchStats().catch(() => {});
+            await fetchNextPhrase().catch(() => {});
+            return;
+          }
+        }
+      } catch {}
+      alert('Upload failed. Check your network and try again.');
     } finally {
       setLoading(false);
     }

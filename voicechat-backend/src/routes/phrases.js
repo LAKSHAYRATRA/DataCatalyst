@@ -10,6 +10,7 @@ import {
   uploadPhrases,
   getAvailablePhrase,
   submitPhraseRecording,
+  getPhraseStatus,
   getQaQueue,
   reviewPhrase,
   streamPhraseAudio,
@@ -76,6 +77,7 @@ router.post("/qa/review/:phraseId", requireAuth(JWT_SECRET), requireQAOrAdmin, r
 router.get("/available", requireAuth(JWT_SECRET), getAvailablePhrase);
 router.post("/record", requireAuth(JWT_SECRET), phraseUpload.single("recording"), submitPhraseRecording);
 router.get("/my-stats", requireAuth(JWT_SECRET), getContributorStats);
+router.get("/:phraseId/status", requireAuth(JWT_SECRET), getPhraseStatus);
 
 /* -------------------------------------------------------------------------- */
 /*                           Secure Audio Playback                            */

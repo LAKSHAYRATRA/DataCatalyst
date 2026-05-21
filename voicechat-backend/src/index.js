@@ -483,7 +483,7 @@ async function executeMergeRecordings(callId, offsetA, offsetB) {
         .complexFilter([
           `[0:a]adelay=${offsetA}|${offsetA}[a]`,
           `[1:a]adelay=${offsetB}|${offsetB}[b]`,
-          `[a][b]amix=inputs=2:duration=longest:dropout_transition=0,volume=2`,
+          `[a][b]amix=inputs=2:duration=longest:dropout_transition=0:normalize=0`,
         ])
         .save(localMixed)
         .on("end", resolve)

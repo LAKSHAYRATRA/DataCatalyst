@@ -38,7 +38,7 @@ export async function uploadIntroRecording(req, res) {
     await new Promise((resolve, reject) => {
       ffmpeg(req.file.path)
         .audioChannels(1)
-        .audioFrequency(48000)
+        .audioCodec('flac')
         .output(flacPath)
         .on("end", resolve)
         .on("error", reject)
@@ -134,7 +134,7 @@ export async function submitLanguageApplication(req, res) {
     await new Promise((resolve, reject) => {
       ffmpeg(req.file.path)
         .audioChannels(1)
-        .audioFrequency(48000)
+        .audioCodec('flac')
         .output(flacPath)
         .on("end", resolve)
         .on("error", reject)

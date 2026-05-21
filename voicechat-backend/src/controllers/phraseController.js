@@ -225,6 +225,21 @@ export async function getAvailablePhrase(req, res) {
 }
 
 /**
+ * Contributor: Check whether a specific phrase was successfully recorded.
+ * Used by the client to verify upload success when the response is lost in transit
+ * (e.g. S3 upload completes server-side but connection drops before res.json fires).
+ */
+export async function getPhraseStatus(req, res) {
+  try {
+    const phrase = await Phrase.findById(req.params.phraseId).select('status contributorId');
+    if (!phrase) return res.status(404).json({ error: 'Phrase not found' });
+    res.json({ status: phrase.status });
+  } catch (error) {
+    res.status(500).json({ error: 'Server error' });
+  }
+}
+
+/**
  * Contributor: Submit recording for a phrase
  */
 export async function submitPhraseRecording(req, res) {
@@ -294,12 +309,12 @@ export async function submitPhraseRecording(req, res) {
       }
     }
 
-    // 1. Convert local WAV to FLAC
+    // 1. Convert local WAV to FLAC (lossless — no filters, no resampling, preserve native bit depth)
     const flacPath = req.file.path.replace(".wav", ".flac");
     await new Promise((res, rej) => {
         ffmpeg(req.file.path)
             .audioChannels(1)
-            .audioFrequency(48000)
+            .audioCodec('flac')
             .output(flacPath)
             .on("end", res)
             .on("error", rej)
