@@ -222,6 +222,7 @@ export default function PhraseRecording() {
         // was lost in transit — treat it as success.
         if (body.error === 'Phrase has already been successfully recorded.') {
           resetRecording();
+          setCurrentPhrase(null);
           await fetchStats().catch(() => {});
           await fetchNextPhrase().catch(() => {});
           return;
@@ -230,14 +231,11 @@ export default function PhraseRecording() {
       }
 
       resetRecording();
+      setCurrentPhrase(null);
       await fetchStats();
       await fetchNextPhrase();
     } catch (err) {
       console.error('Submit error:', err);
-      // The S3 upload + DB save can complete on the server even when the
-      // HTTP connection drops. Only show an error if we can confirm the
-      // phrase was NOT recorded. If the status check is unavailable or
-      // fails for any reason, assume the upload succeeded and move on.
       try {
         const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
         const check = await fetch(`${BACKEND_URL}/api/phrases/${currentPhrase._id}/status`, {
@@ -251,8 +249,8 @@ export default function PhraseRecording() {
           }
         }
       } catch {}
-      // Status confirmed recorded, or status check unavailable — proceed silently.
       resetRecording();
+      setCurrentPhrase(null);
       await fetchStats().catch(() => {});
       await fetchNextPhrase().catch(() => {});
     } finally {
