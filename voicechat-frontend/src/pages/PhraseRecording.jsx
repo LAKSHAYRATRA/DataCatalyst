@@ -234,9 +234,10 @@ export default function PhraseRecording() {
       await fetchNextPhrase();
     } catch (err) {
       console.error('Submit error:', err);
-      // Before showing an error, verify whether the phrase was actually saved
-      // server-side. The S3 upload + DB save can complete even when the
-      // HTTP connection drops, leaving the client with a false failure.
+      // The S3 upload + DB save can complete on the server even when the
+      // HTTP connection drops. Only show an error if we can confirm the
+      // phrase was NOT recorded. If the status check is unavailable or
+      // fails for any reason, assume the upload succeeded and move on.
       try {
         const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
         const check = await fetch(`${BACKEND_URL}/api/phrases/${currentPhrase._id}/status`, {
@@ -244,15 +245,16 @@ export default function PhraseRecording() {
         });
         if (check.ok) {
           const { status } = await check.json();
-          if (status === 'recorded' || status === 'approved') {
-            resetRecording();
-            await fetchStats().catch(() => {});
-            await fetchNextPhrase().catch(() => {});
+          if (status !== 'recorded' && status !== 'approved') {
+            alert('Upload failed. Please try again.');
             return;
           }
         }
       } catch {}
-      alert('Upload failed. Check your network and try again.');
+      // Status confirmed recorded, or status check unavailable — proceed silently.
+      resetRecording();
+      await fetchStats().catch(() => {});
+      await fetchNextPhrase().catch(() => {});
     } finally {
       setLoading(false);
     }
