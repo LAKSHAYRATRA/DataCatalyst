@@ -309,12 +309,16 @@ export async function submitPhraseRecording(req, res) {
       }
     }
 
-    // 1. Convert local WAV to FLAC (lossless — no filters, no resampling, preserve native bit depth)
+    // 1. Convert local WAV to FLAC (lossless — preserve native bit depth)
+    // -sample_fmt s32 forces FLAC to store samples as 32-bit, which is how FLAC
+    // losslessly encodes 24-bit audio. Without this, FFmpeg's FLAC encoder silently
+    // downgrades 24-bit input to 16-bit.
     const flacPath = req.file.path.replace(".wav", ".flac");
     await new Promise((res, rej) => {
         ffmpeg(req.file.path)
             .audioChannels(1)
             .audioCodec('flac')
+            .outputOptions('-sample_fmt s32')
             .output(flacPath)
             .on("end", res)
             .on("error", rej)
