@@ -124,18 +124,31 @@ export default function PhraseRecording() {
 
   async function startRecording() {
     try {
+      if (window.voclaraRecorder?.isNative) {
+        // Native Electron path — 24-bit WASAPI exclusive, bypasses Windows audio engine
+        resetRecording();
+        await window.voclaraRecorder.startRecording(currentPhrase._id, { bitDepth: 24, sampleRate: 48000, channels: 1 });
+        isRecordingRef.current = true;
+        setIsRecording(true);
+        startTimeRef.current = Date.now();
+        timerRef.current = setInterval(() => {
+          setDuration(Math.floor((Date.now() - startTimeRef.current) / 1000));
+        }, 1000);
+        return;
+      }
+
+      // Browser fallback path
       const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, sampleRate: 48000, channelCount: 1 } });
       resetRecording();
-      
+
       const audioCtx = new AudioContext({ sampleRate: 48000 });
       await audioCtx.audioWorklet.addModule("/pcm-worklet.js");
       const source = audioCtx.createMediaStreamSource(stream);
       const workletNode = new AudioWorkletNode(audioCtx, "pcm-processor");
-      
-      // Mute the local playback to prevent feedback loops
+
       const gain = audioCtx.createGain();
       gain.gain.value = 0;
-      
+
       workletNode.port.onmessage = (e) => {
         if (isRecordingRef.current) {
           audioChunksRef.current.push(new Int16Array(e.data));
@@ -145,14 +158,14 @@ export default function PhraseRecording() {
       source.connect(workletNode);
       workletNode.connect(gain);
       gain.connect(audioCtx.destination);
-      
+
       audioCtxRef.current = audioCtx;
       workletNodeRef.current = workletNode;
-      streamRef.current = stream; // Assume we need to store it to stop it
+      streamRef.current = stream;
       isRecordingRef.current = true;
       setIsRecording(true);
       startTimeRef.current = Date.now();
-      
+
       timerRef.current = setInterval(() => {
         setDuration(Math.floor((Date.now() - startTimeRef.current) / 1000));
       }, 1000);
@@ -163,37 +176,42 @@ export default function PhraseRecording() {
     }
   }
 
-  function stopRecording() {
-    if (isRecordingRef.current) {
-      isRecordingRef.current = false;
-      setIsRecording(false);
-      clearInterval(timerRef.current);
-      
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach(t => t.stop());
-      }
-      if (workletNodeRef.current) {
-        workletNodeRef.current.disconnect();
-      }
-      if (audioCtxRef.current) {
-        audioCtxRef.current.close();
-      }
+  async function stopRecording() {
+    if (!isRecordingRef.current) return;
+    isRecordingRef.current = false;
+    setIsRecording(false);
+    clearInterval(timerRef.current);
 
-      let totalLength = 0;
-      for (const arr of audioChunksRef.current) {
-        totalLength += arr.length;
+    if (window.voclaraRecorder?.isNative) {
+      try {
+        const { data, options } = await window.voclaraRecorder.stopRecordingRaw();
+        const binary = atob(data);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+        const wavBlob = new Blob([bytes], { type: 'audio/wav' });
+        setAudioBlob(wavBlob);
+        setAudioUrl(URL.createObjectURL(wavBlob));
+      } catch (err) {
+        console.error('Native stop failed:', err);
+        alert('Failed to stop recording.');
       }
-      const combined = new Int16Array(totalLength);
-      let offset = 0;
-      for (const arr of audioChunksRef.current) {
-        combined.set(arr, offset);
-        offset += arr.length;
-      }
-
-      const wavBlob = encodeWAV(combined, audioCtxRef.current?.sampleRate || 48000, 1);
-      setAudioBlob(wavBlob);
-      setAudioUrl(URL.createObjectURL(wavBlob));
+      return;
     }
+
+    // Browser fallback cleanup
+    if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
+    if (workletNodeRef.current) workletNodeRef.current.disconnect();
+    if (audioCtxRef.current) audioCtxRef.current.close();
+
+    let totalLength = 0;
+    for (const arr of audioChunksRef.current) totalLength += arr.length;
+    const combined = new Int16Array(totalLength);
+    let offset = 0;
+    for (const arr of audioChunksRef.current) { combined.set(arr, offset); offset += arr.length; }
+
+    const wavBlob = encodeWAV(combined, audioCtxRef.current?.sampleRate || 48000, 1);
+    setAudioBlob(wavBlob);
+    setAudioUrl(URL.createObjectURL(wavBlob));
   }
 
   async function submitRecording() {
