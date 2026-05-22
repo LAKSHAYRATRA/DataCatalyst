@@ -89,7 +89,7 @@ export default function MicrophoneTest({ onSuccess }) {
             
             audioChunksRef.current = [];
             workletNode.port.onmessage = (e) => {
-                audioChunksRef.current.push(new Int16Array(e.data));
+                audioChunksRef.current.push(new Float32Array(e.data));
             };
             
             const gain = audioCtx.createGain();
@@ -137,7 +137,7 @@ export default function MicrophoneTest({ onSuccess }) {
 
         let totalLength = 0;
         for (const arr of audioChunksRef.current) totalLength += arr.length;
-        const combined = new Int16Array(totalLength);
+        const combined = new Float32Array(totalLength);
         let offset = 0;
         for (const arr of audioChunksRef.current) {
             combined.set(arr, offset);

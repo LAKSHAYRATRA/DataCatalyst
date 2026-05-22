@@ -208,7 +208,7 @@ export default function IntroRecording() {
 
             chunksRef.current = [];
             workletNode.port.onmessage = (e) => {
-                chunksRef.current.push(new Int16Array(e.data));
+                chunksRef.current.push(new Float32Array(e.data));
             };
 
             const gain = audioCtx.createGain();
@@ -248,7 +248,7 @@ export default function IntroRecording() {
 
         let totalLength = 0;
         for (const arr of chunksRef.current) totalLength += arr.length;
-        const combined = new Int16Array(totalLength);
+        const combined = new Float32Array(totalLength);
         let offset = 0;
         for (const arr of chunksRef.current) {
             combined.set(arr, offset);
