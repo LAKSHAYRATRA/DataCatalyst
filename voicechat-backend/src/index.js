@@ -481,15 +481,16 @@ async function executeMergeRecordings(callId, offsetA, offsetB) {
         ffmpeg()
           .input(localA)
           .input(localB)
-        .complexFilter([
-          `[0:a]adelay=${offsetA}|${offsetA}[a]`,
-          `[1:a]adelay=${offsetB}|${offsetB}[b]`,
-          `[a][b]amix=inputs=2:duration=longest:dropout_transition=0:normalize=0`,
-        ])
-        .save(localMixed)
-        .on("end", resolve)
-        .on("error", reject);
-    });
+          .complexFilter([
+            `[0:a]adelay=${offsetA}|${offsetA}[a]`,
+            `[1:a]adelay=${offsetB}|${offsetB}[b]`,
+            `[a][b]amix=inputs=2:duration=longest:dropout_transition=0:normalize=0`,
+          ])
+          .outputOptions(['-sample_fmt s32'])  // preserve 24-bit depth through the amix pipeline
+          .save(localMixed)
+          .on("end", resolve)
+          .on("error", reject);
+      });
 
     // 3. Upload exactly back to the targeted Amazon hierarchy recursively 
     const awsFolderRoot = keyA.split("/").slice(0, 2).join("/"); // e.g. calls/{callId}_{lang}_{topic}
