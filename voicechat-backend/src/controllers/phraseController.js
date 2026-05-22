@@ -318,6 +318,7 @@ export async function submitPhraseRecording(req, res) {
         ffmpeg(req.file.path)
             .audioChannels(1)
             .audioCodec('flac')
+            .outputOptions(['-sample_fmt s32'])  // FLAC packs s32 as 24-bit; prevents silent 16-bit downgrade
             .output(flacPath)
             .on("end", res)
             .on("error", rej)

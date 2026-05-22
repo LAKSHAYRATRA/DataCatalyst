@@ -125,7 +125,18 @@ export default function PhraseRecording() {
   async function startRecording() {
     try {
       if (window.voclaraRecorder?.isNative) {
-        // Native Electron path — 24-bit WASAPI exclusive, bypasses Windows audio engine
+        // Native Electron path — 24-bit WASAPI exclusive, bypasses Windows audio engine.
+        // Release any active browser mic tracks first so Chromium stops holding the device
+        // in WASAPI shared mode. If another app holds it exclusively, audify would fail;
+        // releasing Chromium's hold is what lets exclusive mode succeed here.
+        if (streamRef.current) {
+          streamRef.current.getTracks().forEach(t => t.stop());
+          streamRef.current = null;
+        }
+        if (audioCtxRef.current) {
+          audioCtxRef.current.close().catch(() => {});
+          audioCtxRef.current = null;
+        }
         resetRecording();
         await window.voclaraRecorder.startRecording(currentPhrase._id, { bitDepth: 24, sampleRate: 48000, channels: 1 });
         isRecordingRef.current = true;
@@ -151,7 +162,7 @@ export default function PhraseRecording() {
 
       workletNode.port.onmessage = (e) => {
         if (isRecordingRef.current) {
-          audioChunksRef.current.push(new Int16Array(e.data));
+          audioChunksRef.current.push(new Float32Array(e.data));
         }
       };
 
@@ -205,7 +216,7 @@ export default function PhraseRecording() {
 
     let totalLength = 0;
     for (const arr of audioChunksRef.current) totalLength += arr.length;
-    const combined = new Int16Array(totalLength);
+    const combined = new Float32Array(totalLength);
     let offset = 0;
     for (const arr of audioChunksRef.current) { combined.set(arr, offset); offset += arr.length; }
 

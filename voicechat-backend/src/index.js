@@ -359,9 +359,10 @@ async function cleanupRecording(socket) {
           await new Promise((res, rej) => {
             ffmpeg()
               .input(tempPath)
-              .inputFormat('s16le')
+              .inputFormat('f32le')   // matches Float32 from pcm-worklet.js
               .audioChannels(1)
               .audioFrequency(recordSampleRate)
+              .outputOptions(['-sample_fmt s32'])  // FLAC stores s32 as 24-bit integers
               .output(flacPath)
               .on('end', res)
               .on('error', rej)

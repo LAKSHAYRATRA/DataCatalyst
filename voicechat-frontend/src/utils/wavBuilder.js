@@ -1,5 +1,9 @@
+// Encodes a Float32Array of PCM samples as a 32-bit IEEE float WAV blob
+// (format code 3 = WAVE_FORMAT_IEEE_FLOAT). Using float32 avoids the
+// 16-bit quantisation (96 dB ceiling) that the old Int16 encoder imposed.
 export function encodeWAV(samples, sampleRate = 48000, numChannels = 1) {
-  const buffer = new ArrayBuffer(44 + samples.length * 2);
+  const bytesPerSample = 4; // float32
+  const buffer = new ArrayBuffer(44 + samples.length * bytesPerSample);
   const view = new DataView(buffer);
 
   function writeString(view, offset, string) {
@@ -8,37 +12,23 @@ export function encodeWAV(samples, sampleRate = 48000, numChannels = 1) {
     }
   }
 
-  // RIFF identifier
   writeString(view, 0, 'RIFF');
-  // file length
-  view.setUint32(4, 36 + samples.length * 2, true);
-  // RIFF type
+  view.setUint32(4, 36 + samples.length * bytesPerSample, true);
   writeString(view, 8, 'WAVE');
-  // format chunk identifier
   writeString(view, 12, 'fmt ');
-  // format chunk length
   view.setUint32(16, 16, true);
-  // sample format (1 is PCM)
-  view.setUint16(20, 1, true);
-  // channel count
+  view.setUint16(20, 3, true);                                          // IEEE float
   view.setUint16(22, numChannels, true);
-  // sample rate
   view.setUint32(24, sampleRate, true);
-  // byte rate (sample rate * block align)
-  view.setUint32(28, sampleRate * numChannels * 2, true);
-  // block align (channel count * bytes per sample)
-  view.setUint16(32, numChannels * 2, true);
-  // bits per sample
-  view.setUint16(34, 16, true);
-  // data chunk identifier
+  view.setUint32(28, sampleRate * numChannels * bytesPerSample, true);  // byte rate
+  view.setUint16(32, numChannels * bytesPerSample, true);               // block align
+  view.setUint16(34, 32, true);                                         // bits per sample
   writeString(view, 36, 'data');
-  // data chunk length
-  view.setUint32(40, samples.length * 2, true);
+  view.setUint32(40, samples.length * bytesPerSample, true);
 
-  // Write the PCM samples (16-bit)
   let offset = 44;
-  for (let i = 0; i < samples.length; i++, offset += 2) {
-    view.setInt16(offset, samples[i], true);
+  for (let i = 0; i < samples.length; i++, offset += 4) {
+    view.setFloat32(offset, samples[i], true);
   }
 
   return new Blob([view], { type: 'audio/wav' });
