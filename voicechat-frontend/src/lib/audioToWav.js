@@ -30,12 +30,13 @@ export async function fetchAndConvertToWav(url) {
         audioCtx.close();
     }
 
-    // 3. Build WAV file in memory
+    // 3. Build 32-bit IEEE float WAV (format 3) — preserves the full dynamic
+    //    range that decodeAudioData delivers. The old Int16 path was silently
+    //    downgrading 24-bit FLAC to 16-bit for every QA/admin playback and download.
     const numChannels = audioBuffer.numberOfChannels;
     const sampleRate = audioBuffer.sampleRate;
     const numFrames = audioBuffer.length;
-    const bitsPerSample = 16;
-    const bytesPerSample = bitsPerSample / 8;
+    const bytesPerSample = 4; // float32
     const blockAlign = numChannels * bytesPerSample;
     const byteRate = sampleRate * blockAlign;
     const dataSize = numFrames * blockAlign;
@@ -51,28 +52,24 @@ export async function fetchAndConvertToWav(url) {
 
     // fmt chunk
     writeString(view, 12, "fmt ");
-    view.setUint32(16, 16, true);          // subchunk size
-    view.setUint16(20, 1, true);           // PCM format
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 3, true);           // IEEE float
     view.setUint16(22, numChannels, true);
     view.setUint32(24, sampleRate, true);
     view.setUint32(28, byteRate, true);
     view.setUint16(32, blockAlign, true);
-    view.setUint16(34, bitsPerSample, true);
+    view.setUint16(34, 32, true);          // 32-bit
 
     // data chunk
     writeString(view, 36, "data");
     view.setUint32(40, dataSize, true);
 
-    // Interleave PCM samples from all channels
+    // Interleave float32 samples from all channels
     let offset = 44;
     for (let i = 0; i < numFrames; i++) {
         for (let ch = 0; ch < numChannels; ch++) {
-            const sample = audioBuffer.getChannelData(ch)[i];
-            // Clamp to [-1, 1] then convert to int16
-            const clamped = Math.max(-1, Math.min(1, sample));
-            const int16 = clamped < 0 ? clamped * 0x8000 : clamped * 0x7fff;
-            view.setInt16(offset, int16, true);
-            offset += 2;
+            view.setFloat32(offset, audioBuffer.getChannelData(ch)[i], true);
+            offset += 4;
         }
     }
 
