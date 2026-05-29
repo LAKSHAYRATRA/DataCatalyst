@@ -59,11 +59,13 @@ async function listLanguageApplications(req, res) {
                 if (statusFilter && app.status !== statusFilter) return;
                 if (allowedLanguages && !allowedLanguages.includes(languageCode)) return;
                 apps.push({
+                    appId: app._id,
                     userId: u._id,
                     userFirstname: u.firstname,
                     userLastname: u.lastname,
                     userEmail: u.email,
                     username: u.username,
+                    companyId: app.companyId,
                     ...app,
                 });
             });
@@ -81,14 +83,16 @@ async function listLanguageApplications(req, res) {
 
 async function approveLanguageApplication(req, res) {
     try {
-        const languageCode = String(req.params.languageCode || "").trim().toLowerCase();
+        const appId = req.params.appId;
+        const user = await User.findById(req.params.userId);
+        if (!user) return res.status(404).json({ error: "User not found" });
+        const app = user.languageApplications.find((a) => String(a._id) === String(appId));
+        if (!app) return res.status(404).json({ error: "Application not found" });
+        
+        const languageCode = String(app.languageCode || "").trim().toLowerCase();
         if (!hasLanguageAccess(req.user, languageCode)) {
             return res.status(403).json({ error: "Forbidden: language access required" });
         }
-        const user = await User.findById(req.params.userId);
-        if (!user) return res.status(404).json({ error: "User not found" });
-        const app = user.languageApplications.find((a) => a.languageCode === languageCode);
-        if (!app) return res.status(404).json({ error: "Application not found" });
         app.status = "approved";
         app.reviewedBy = req.user._id;
         app.reviewedAt = new Date();
@@ -101,14 +105,16 @@ async function approveLanguageApplication(req, res) {
 
 async function rejectLanguageApplication(req, res) {
     try {
-        const languageCode = String(req.params.languageCode || "").trim().toLowerCase();
+        const appId = req.params.appId;
+        const user = await User.findById(req.params.userId);
+        if (!user) return res.status(404).json({ error: "User not found" });
+        const app = user.languageApplications.find((a) => String(a._id) === String(appId));
+        if (!app) return res.status(404).json({ error: "Application not found" });
+
+        const languageCode = String(app.languageCode || "").trim().toLowerCase();
         if (!hasLanguageAccess(req.user, languageCode)) {
             return res.status(403).json({ error: "Forbidden: language access required" });
         }
-        const user = await User.findById(req.params.userId);
-        if (!user) return res.status(404).json({ error: "User not found" });
-        const app = user.languageApplications.find((a) => a.languageCode === languageCode);
-        if (!app) return res.status(404).json({ error: "Application not found" });
         app.status = "rejected";
         app.reviewedBy = req.user._id;
         app.reviewedAt = new Date();
@@ -332,8 +338,8 @@ qaCallRouter.get("/calls/:callId/recording/:userId", async (req, res) => {
 });
 
 qaCallRouter.get("/language-applications", listLanguageApplications);
-qaCallRouter.patch("/language-applications/:userId/:languageCode/approve", approveLanguageApplication);
-qaCallRouter.patch("/language-applications/:userId/:languageCode/reject", rejectLanguageApplication);
+qaCallRouter.patch("/language-applications/:userId/:appId/approve", approveLanguageApplication);
+qaCallRouter.patch("/language-applications/:userId/:appId/reject", rejectLanguageApplication);
 
 
 // Mount QA router BEFORE isAdmin — this must stay here
@@ -343,8 +349,8 @@ const sharedLanguageReviewRouter = express.Router();
 sharedLanguageReviewRouter.use(requireAuth(JWT_SECRET));
 sharedLanguageReviewRouter.use(isAdminOrQA);
 sharedLanguageReviewRouter.get("/language-applications", listLanguageApplications);
-sharedLanguageReviewRouter.patch("/language-applications/:userId/:languageCode/approve", approveLanguageApplication);
-sharedLanguageReviewRouter.patch("/language-applications/:userId/:languageCode/reject", rejectLanguageApplication);
+sharedLanguageReviewRouter.patch("/language-applications/:userId/:appId/approve", approveLanguageApplication);
+sharedLanguageReviewRouter.patch("/language-applications/:userId/:appId/reject", rejectLanguageApplication);
 router.use("/", sharedLanguageReviewRouter);
 
 // All routes below this line require full admin access
@@ -1404,11 +1410,13 @@ router.get("/language-applications", async (req, res) => {
             u.languageApplications.forEach(app => {
                 if (!statusFilter || app.status === statusFilter) {
                     apps.push({
+                        appId: app._id,
                         userId: u._id,
                         userFirstname: u.firstname,
                         userLastname: u.lastname,
                         userEmail: u.email,
                         username: u.username,
+                        companyId: app.companyId,
                         ...app,
                     });
                 }
@@ -1428,11 +1436,11 @@ router.get("/language-applications", async (req, res) => {
 });
 
 // Approve a user's language application
-router.patch("/language-applications/:userId/:languageCode/approve", async (req, res) => {
+router.patch("/language-applications/:userId/:appId/approve", async (req, res) => {
     try {
         const user = await User.findById(req.params.userId);
         if (!user) return res.status(404).json({ error: "User not found" });
-        const app = user.languageApplications.find(a => a.languageCode === req.params.languageCode);
+        const app = user.languageApplications.find(a => String(a._id) === String(req.params.appId));
         if (!app) return res.status(404).json({ error: "Application not found" });
         app.status = "approved";
         app.reviewedBy = req.user._id;
@@ -1445,11 +1453,11 @@ router.patch("/language-applications/:userId/:languageCode/approve", async (req,
 });
 
 // Reject a user's language application
-router.patch("/language-applications/:userId/:languageCode/reject", async (req, res) => {
+router.patch("/language-applications/:userId/:appId/reject", async (req, res) => {
     try {
         const user = await User.findById(req.params.userId);
         if (!user) return res.status(404).json({ error: "User not found" });
-        const app = user.languageApplications.find(a => a.languageCode === req.params.languageCode);
+        const app = user.languageApplications.find(a => String(a._id) === String(req.params.appId));
         if (!app) return res.status(404).json({ error: "Application not found" });
         app.status = "rejected";
         app.reviewedBy = req.user._id;

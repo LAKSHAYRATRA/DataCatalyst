@@ -247,7 +247,7 @@ app.post(
   submitLanguageApplication
 );
 app.get(
-  "/api/language-applications/:userId/:languageCode/recording",
+  "/api/language-applications/:userId/:appId/recording",
   requireAuth(JWT_SECRET),
   streamLanguageRecording
 );

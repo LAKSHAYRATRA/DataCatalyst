@@ -108,8 +108,11 @@ export async function submitLanguageApplication(req, res) {
   const languageCode = String(req.body?.languageCode || "")
     .trim()
     .toLowerCase();
+  const companyId = String(req.body?.companyId || "").trim() || null;
   if (!languageCode)
     return res.status(400).json({ error: "languageCode is required" });
+  if (!companyId)
+    return res.status(400).json({ error: "companyId is required" });
 
   const lang = await Language.findOne({ code: languageCode, enabled: true });
   if (!lang)
@@ -119,7 +122,7 @@ export async function submitLanguageApplication(req, res) {
   if (!user) return res.status(404).json({ error: "User not found" });
 
   const existing = user.languageApplications.find(
-    (a) => a.languageCode === languageCode
+    (a) => a.languageCode === languageCode && a.companyId === companyId
   );
   if (existing && existing.status === "pending") {
     try { fs.unlinkSync(req.file.path); } catch (e) {}
@@ -167,6 +170,7 @@ export async function submitLanguageApplication(req, res) {
       existing.reviewedAt = null;
     } else {
       user.languageApplications.push({
+        companyId,
         languageCode,
         status: "pending",
         recordingFile: s3Key,
@@ -183,11 +187,22 @@ export async function submitLanguageApplication(req, res) {
   }
 }
 
-// ─── GET /api/language-applications/:userId/:languageCode/recording ───────────
+// ─── GET /api/language-applications/:userId/:appId/recording ───────────
 export async function streamLanguageRecording(req, res) {
-  const requestedLanguageCode = String(req.params.languageCode || "")
-    .trim()
-    .toLowerCase();
+  const appId = String(req.params.appId || "").trim();
+
+  const user = await User.findById(req.params.userId)
+    .select("languageApplications")
+    .lean();
+  if (!user) return res.status(404).json({ error: "User not found" });
+
+  const application = user.languageApplications.find(
+    (a) => String(a._id) === appId
+  );
+  if (!application) return res.status(404).json({ error: "Application not found" });
+
+  const requestedLanguageCode = String(application.languageCode).toLowerCase();
+  
   const qaLanguageCode = String(
     req.user?.qaLanguageCode || req.user?.qaLanguageCodes?.[0] || ""
   )
@@ -200,15 +215,7 @@ export async function streamLanguageRecording(req, res) {
     return res.status(403).json({ error: "Language access required" });
   }
 
-  const user = await User.findById(req.params.userId)
-    .select("languageApplications")
-    .lean();
-  if (!user) return res.status(404).json({ error: "User not found" });
-
-  const application = user.languageApplications.find(
-    (a) => a.languageCode === requestedLanguageCode
-  );
-  if (!application?.recordingFile)
+  if (!application.recordingFile)
     return res.status(404).json({ error: "Recording not found" });
 
   try {

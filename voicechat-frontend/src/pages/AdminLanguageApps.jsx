@@ -61,11 +61,11 @@ export default function AdminLanguageApps() {
         }
     }
 
-    async function act(userId, langCode, action) {
-        const key = `${action}_${userId}_${langCode}`;
+    async function act(userId, appId, action) {
+        const key = `${action}_${appId}`;
         setActionLoading(key);
         try {
-            await patch(`${REVIEW_BASE}/${userId}/${langCode}/${action}`);
+            await patch(`${REVIEW_BASE}/${userId}/${appId}/${action}`);
             await loadApps();
         } catch (e) {
             setError(e.message);
@@ -74,10 +74,10 @@ export default function AdminLanguageApps() {
         }
     }
 
-    function loadAudio(userId, langCode) {
-        const key = `${userId}_${langCode}`;
+    function loadAudio(userId, appId) {
+        const key = appId;
         if (audioSrc[key]) return;
-        setAudioSrc(prev => ({ ...prev, [key]: `${BASE}/api/language-applications/${userId}/${langCode}/recording` }));
+        setAudioSrc(prev => ({ ...prev, [key]: `${BASE}/api/language-applications/${userId}/${appId}/recording` }));
     }
 
     return (
@@ -118,19 +118,22 @@ export default function AdminLanguageApps() {
                                 <table className="w-full text-sm">
                                     <thead className="bg-neutral-700">
                                         <tr>
-                                            {["User", "Language", "Status", "Applied", "Recording", "Action"].map(h => (
+                                            {["User", "Project", "Language", "Status", "Applied", "Recording", "Action"].map(h => (
                                                 <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-neutral-300 uppercase tracking-wider whitespace-nowrap">{h}</th>
                                             ))}
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-neutral-700">
                                         {apps.map(app => {
-                                            const key = `${app.userId}_${app.languageCode}`;
+                                            const key = app.appId;
                                             return (
                                                 <tr key={key} className="hover:bg-neutral-700/40 transition-colors">
                                                     <td className="px-4 py-3">
                                                         <div className="text-white font-medium text-xs">{app.userFirstname} {app.userLastname}</div>
                                                         <div className="text-neutral-400 text-xs">@{app.username}</div>
+                                                    </td>
+                                                    <td className="px-4 py-3 text-white text-xs font-medium">
+                                                        {app.companyId || <span className="text-neutral-500 italic">None</span>}
                                                     </td>
                                                     <td className="px-4 py-3">
                                                         <code className="bg-neutral-700 text-warning-300 px-2 py-0.5 rounded text-xs font-mono">{app.languageCode}</code>
@@ -145,7 +148,7 @@ export default function AdminLanguageApps() {
                                                         {app.recordingFile ? (
                                                             !audioSrc[key] ? (
                                                                 <button
-                                                                    onClick={() => loadAudio(app.userId, app.languageCode)}
+                                                                    onClick={() => loadAudio(app.userId, app.appId)}
                                                                     className="px-3 py-1.5 bg-neutral-700 hover:bg-neutral-600 text-warning-400 text-xs font-semibold rounded-lg transition-colors"
                                                                 >
                                                                     ▶ Load
@@ -161,14 +164,14 @@ export default function AdminLanguageApps() {
                                                         {app.status === "pending" ? (
                                                             <div className="flex gap-2">
                                                                 <button
-                                                                    onClick={() => act(app.userId, app.languageCode, "approve")}
+                                                                    onClick={() => act(app.userId, app.appId, "approve")}
                                                                     disabled={!!actionLoading}
                                                                     className="px-3 py-1.5 bg-warning-600 hover:bg-warning-700 text-white text-xs font-semibold rounded-lg transition-colors disabled:opacity-50"
                                                                 >
                                                                     {actionLoading === `approve_${key}` ? "…" : "Approve"}
                                                                 </button>
                                                                 <button
-                                                                    onClick={() => act(app.userId, app.languageCode, "reject")}
+                                                                    onClick={() => act(app.userId, app.appId, "reject")}
                                                                     disabled={!!actionLoading}
                                                                     className="px-3 py-1.5 bg-red-900/60 hover:bg-red-800 text-red-300 text-xs font-semibold rounded-lg transition-colors disabled:opacity-50"
                                                                 >

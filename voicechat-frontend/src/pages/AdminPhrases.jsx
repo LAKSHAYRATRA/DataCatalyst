@@ -6,8 +6,10 @@ import AdminNav from '../components/AdminNav.jsx';
 
 export default function AdminPhrases() {
   const [phrasesList, setPhrasesList] = useState([]);
+  const [companiesList, setCompaniesList] = useState([]);
   const [companyId, setCompanyId] = useState('');
   const [projectName, setProjectName] = useState('');
+  const [language, setLanguage] = useState('');
   const [file, setFile] = useState(null);
   const [pastedJson, setPastedJson] = useState('');
   const [loading, setLoading] = useState(false);
@@ -16,7 +18,17 @@ export default function AdminPhrases() {
 
   useEffect(() => {
     fetchPhrases();
+    fetchCompanies();
   }, []);
+
+  async function fetchCompanies() {
+    try {
+      const data = await apiGet('/api/admin/companies');
+      setCompaniesList(data.companies || []);
+    } catch (err) {
+      console.error(err);
+    }
+  }
 
   async function fetchPhrases() {
     try {
@@ -63,13 +75,16 @@ export default function AdminPhrases() {
         const res = await apiPostJson('/api/phrases/admin/upload', {
           companyId: companyId.trim(),
           projectName: projectName.trim(),
+          language: language.trim(),
           phrases: extractPhrasesArray(json),
         });
         setMessage(`Success! Inserted: ${res.inserted}, Updated: ${res.updated}`);
         setPastedJson('');
         setCompanyId('');
         setProjectName('');
+        setLanguage('');
         fetchPhrases();
+        fetchCompanies();
       } catch (err) {
         setError('Failed to parse pasted JSON or upload failed: ' + err.message);
       } finally {
@@ -85,13 +100,16 @@ export default function AdminPhrases() {
         const res = await apiPostJson('/api/phrases/admin/upload', {
           companyId: companyId.trim(),
           projectName: projectName.trim(),
+          language: language.trim(),
           phrases: extractPhrasesArray(json),
         });
         setMessage(`Success! Inserted: ${res.inserted}, Updated: ${res.updated}`);
         setFile(null);
         setCompanyId('');
         setProjectName('');
+        setLanguage('');
         fetchPhrases();
+        fetchCompanies();
       } catch (err) {
         setError('Failed to parse file JSON or upload failed: ' + err.message);
       } finally {
@@ -126,11 +144,33 @@ export default function AdminPhrases() {
               <label className="block text-sm font-medium mb-2 opacity-80">Company Identifier (Optional)</label>
               <input 
                 type="text" 
+                list="company-list"
                 className="input w-full" 
                 placeholder="e.g. Acme Corp..." 
                 value={companyId}
                 onChange={(e) => setCompanyId(e.target.value)}
               />
+              <datalist id="company-list">
+                {companiesList.map(c => (
+                  <option key={c._id} value={c.name} />
+                ))}
+              </datalist>
+            </div>
+            <div className="mb-4">
+              <label className="block text-sm font-medium mb-2 opacity-80">Language (Optional)</label>
+              <input 
+                type="text" 
+                list="language-list"
+                className="input w-full" 
+                placeholder="e.g. english, spanish..." 
+                value={language}
+                onChange={(e) => setLanguage(e.target.value)}
+              />
+              <datalist id="language-list">
+                {companyId && companiesList.find(c => c.name === companyId)?.languages?.map(lang => (
+                  <option key={lang} value={lang} />
+                ))}
+              </datalist>
             </div>
             <div>
               <label className="block text-sm font-medium mb-2 opacity-80">Project Name (Optional)</label>

@@ -16,6 +16,8 @@ import {
   streamPhraseAudio,
   getAllPhrasesAdmin,
   getContributorStats,
+  getSamplePhrase,
+  approveRejectedPhrase,
 } from "../controllers/phraseController.js";
 
 const JWT_SECRET = process.env.JWT_SECRET;
@@ -63,6 +65,7 @@ const phraseUpload = multer({
 /*                                 Admin Routes                               */
 /* -------------------------------------------------------------------------- */
 router.post("/admin/upload", requireAuth(JWT_SECRET), requireAdmin, uploadPhrases);
+router.post("/admin/approve-rejected", requireAuth(JWT_SECRET), requireAdmin, approveRejectedPhrase);
 router.get("/admin/all", requireAuth(JWT_SECRET), requireAdmin, getAllPhrasesAdmin);
 
 /* -------------------------------------------------------------------------- */
@@ -75,6 +78,7 @@ router.post("/qa/review/:phraseId", requireAuth(JWT_SECRET), requireQAOrAdmin, r
 /*                              Contributor Routes                            */
 /* -------------------------------------------------------------------------- */
 router.get("/available", requireAuth(JWT_SECRET), getAvailablePhrase);
+router.get("/sample", requireAuth(JWT_SECRET), getSamplePhrase);
 router.post("/record", requireAuth(JWT_SECRET), phraseUpload.single("recording"), submitPhraseRecording);
 router.get("/my-stats", requireAuth(JWT_SECRET), getContributorStats);
 router.get("/:phraseId/status", requireAuth(JWT_SECRET), getPhraseStatus);

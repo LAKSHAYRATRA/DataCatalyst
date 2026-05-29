@@ -4,7 +4,7 @@ import { Phrase } from "../models/Phrase.js";
 import { User } from "../models/User.js";
 import { Company } from "../models/Company.js";
 import { Project } from "../models/Project.js";
-import { GetObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
+import { GetObjectCommand, DeleteObjectCommand, CopyObjectCommand } from "@aws-sdk/client-s3";
 import { Upload } from "@aws-sdk/lib-storage";
 import { s3Client, BUCKET_NAME } from "../config/s3.js";
 import ffmpeg from "fluent-ffmpeg";
@@ -24,7 +24,7 @@ if (!fs.existsSync(PHRASE_RECORDINGS_DIR)) {
  */
 export async function uploadPhrases(req, res) {
   try {
-    const { companyId, projectName, phrases } = req.body;
+    const { companyId, projectName, language, phrases } = req.body;
     if (!Array.isArray(phrases)) {
       return res.status(400).json({ error: "Phrases must be an array" });
     }
@@ -32,9 +32,16 @@ export async function uploadPhrases(req, res) {
     // Natively index new unique companies seamlessly during the bulk ingest
     if (companyId && companyId.trim()) {
       const trimmed = companyId.trim();
+      const langTrimmed = language ? language.trim().toLowerCase() : null;
+      
+      const updateOp = { $setOnInsert: { name: trimmed } };
+      if (langTrimmed) {
+        updateOp.$addToSet = { languages: langTrimmed };
+      }
+
       await Company.findOneAndUpdate(
         { name: trimmed },
-        { name: trimmed },
+        updateOp,
         { upsert: true }
       );
     }
@@ -64,7 +71,7 @@ export async function uploadPhrases(req, res) {
       const doc = {
         companyId: companyId ? companyId.trim() : null,
         projectName: projectName ? projectName.trim() : null,
-        language: p.language || p.lang || "english",
+        language: (language && language.trim()) ? language.trim().toLowerCase() : (p.language || p.lang || "english"),
         script_type: p.script_type || p.scriptType || null,
         speaker_id: p.speaker_id || p.speakerId || p.speaker || null,
         text: text,
@@ -423,15 +430,25 @@ export async function reviewPhrase(req, res) {
       phrase.reviewedAt = new Date();
       await phrase.save();
     } else if (action === "reject") {
-      // 1. Permanently delete the submitted payload to harvest S3 space.
+      // 1. Move the submitted payload to _rejected folder instead of deleting.
+      let newAudioFile = phrase.audioFile;
       if (phrase.audioFile) {
         try {
+          const companyStr = phrase.companyId ? String(phrase.companyId).replace(/[^a-zA-Z0-9_\-\ ]/g, "").trim() : "No_Company";
+          const newKey = `phrases/${companyStr}_rejected/${phrase.audioFile.split("/").pop()}`;
+          
+          await s3Client.send(new CopyObjectCommand({
+            Bucket: BUCKET_NAME,
+            CopySource: `${BUCKET_NAME}/${phrase.audioFile}`,
+            Key: newKey
+          }));
           await s3Client.send(new DeleteObjectCommand({
             Bucket: BUCKET_NAME,
             Key: phrase.audioFile
           }));
+          newAudioFile = newKey;
         } catch (s3err) {
-          console.error("Failed to delete rejected S3 Audio:", s3err);
+          console.error("Failed to move rejected S3 Audio:", s3err);
         }
       }
 
@@ -440,7 +457,7 @@ export async function reviewPhrase(req, res) {
       phrase.status = "rejected";
       phrase.phraseId = `${originalPhraseId}_rejected_${Date.now()}`;
       phrase.qaId = req.user._id;
-      phrase.audioFile = null; // Ghost the old pointer securely
+      phrase.audioFile = newAudioFile; // Point to the rejected folder
       phrase.qaComment = comment || null;
       phrase.reviewedAt = new Date();
       await phrase.save();
@@ -565,6 +582,96 @@ export async function getContributorStats(req, res) {
     });
   } catch (error) {
     console.error("getContributorStats error:", error);
+    res.status(500).json({ error: "Server error" });
+  }
+}
+
+/**
+ * GET /api/phrases/sample
+ * Fetches the very first phrase for a given companyId and language to be used as a sample recording.
+ */
+export async function getSamplePhrase(req, res) {
+  try {
+    const { companyId, language } = req.query;
+    if (!companyId || !language) {
+      return res.status(400).json({ error: "companyId and language are required" });
+    }
+
+    const phrase = await Phrase.findOne({
+      companyId: companyId.trim(),
+      language: language.trim().toLowerCase()
+    }).sort({ _id: 1 }).select("phraseId text language emotion style speed intent pitch volume instructions").lean();
+
+    if (!phrase) {
+      return res.status(404).json({ error: "No sample phrase found for this project and language." });
+    }
+
+    res.json({ phrase });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+}
+
+/**
+ * POST /api/phrases/admin/approve-rejected
+ * Admins can approve a rejected phrase from the S3 Library.
+ */
+export async function approveRejectedPhrase(req, res) {
+  try {
+    const { phraseId } = req.body; // Mongo _id
+    
+    const phrase = await Phrase.findById(phraseId);
+    if (!phrase) return res.status(404).json({ error: "Phrase not found" });
+    if (phrase.status !== "rejected") return res.status(400).json({ error: "Phrase is not rejected" });
+
+    // Extract the original phraseId from the tagged ID
+    const parts = phrase.phraseId.split("_rejected_");
+    const originalPhraseId = parts[0];
+
+    // 1. Check if another contributor already successfully recorded it
+    const approvedClone = await Phrase.findOne({ phraseId: originalPhraseId, status: "approved" });
+    if (approvedClone) {
+      return res.status(400).json({ error: "Another contributor has already recorded and been approved for this phrase." });
+    }
+
+    // 2. Delete the pending/recorded clone that was spawned during rejection
+    await Phrase.deleteMany({ phraseId: originalPhraseId, status: { $ne: "approved" } });
+
+    // 3. Move the S3 file back to the active phrases folder
+    let newAudioFile = phrase.audioFile;
+    if (phrase.audioFile && phrase.audioFile.includes("_rejected")) {
+      try {
+        const companyFolder = phrase.companyId ? String(phrase.companyId).replace(/[^a-zA-Z0-9_\-\ ]/g, "").trim() : "No_Company";
+        const newKey = `phrases/${companyFolder}/${phrase.audioFile.split("/").pop()}`;
+        
+        await s3Client.send(new CopyObjectCommand({
+            Bucket: BUCKET_NAME,
+            CopySource: `${BUCKET_NAME}/${phrase.audioFile}`,
+            Key: newKey
+        }));
+        await s3Client.send(new DeleteObjectCommand({
+            Bucket: BUCKET_NAME,
+            Key: phrase.audioFile
+        }));
+        newAudioFile = newKey;
+      } catch (s3err) {
+        console.error("Failed to move S3 Audio back:", s3err);
+      }
+    }
+
+    // 4. Update the phrase document to approved
+    phrase.status = "approved";
+    phrase.phraseId = originalPhraseId;
+    phrase.audioFile = newAudioFile;
+    phrase.qaComment = "Re-approved by Admin from S3 Library";
+    phrase.reviewedAt = new Date();
+    phrase.qaId = req.user._id;
+
+    await phrase.save();
+
+    res.json({ success: true, phrase });
+  } catch (error) {
+    console.error("approveRejectedPhrase error:", error);
     res.status(500).json({ error: "Server error" });
   }
 }

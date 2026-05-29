@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Folder, FileAudio, Trash2, ChevronRight, HardDrive, RefreshCw, Download, FileText } from "lucide-react";
+import { Folder, FileAudio, Trash2, ChevronRight, HardDrive, RefreshCw, Download, FileText, CheckCircle } from "lucide-react";
 import Swal from "sweetalert2";
 import { apiGet, apiFetch } from "../lib/api.js";
 import { getUserInfo } from "../lib/auth.js";
@@ -29,36 +29,37 @@ export default function AdminMedia() {
     loadExplorer();
   }, []);
 
-  const handleDelete = async (key) => {
-    const confirm = await Swal.fire({
-      title: "Delete this permanently?",
-      text: `AWS Object: ${key}`,
-      icon: "warning",
-      showCancelButton: true,
-      confirmButtonColor: "#d33",
-      confirmButtonText: "Yes, destroy it"
-    });
-
-    if (!confirm.isConfirmed) return;
-
-    try {
-      const data = await apiFetch("/api/admin/s3-explorer", {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ key })
-      });
-      Swal.fire("Deleted!", "Removed from AWS completely.", "success");
-      loadExplorer(prefixPath);
-    } catch (e) {
-      Swal.fire("Error", e.body?.error || e.message || "Network issue removing file.", "error");
-    }
-  };
-
   const traverseUp = () => {
     const segments = prefixPath.split("/").filter(Boolean);
     segments.pop();
     const upPath = segments.length > 0 ? segments.join("/") + "/" : "";
     loadExplorer(upPath);
+  };
+
+  const handleApproveRejected = async (phraseId) => {
+    const confirm = await Swal.fire({
+      title: "Approve this rejected phrase?",
+      text: "This will move the phrase back to the active library and set its status to approved.",
+      icon: "question",
+      showCancelButton: true,
+      confirmButtonText: "Yes, approve it"
+    });
+
+    if (!confirm.isConfirmed) return;
+
+    try {
+      setLoading(true);
+      await apiFetch("/api/phrases/admin/approve-rejected", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phraseId })
+      });
+      Swal.fire("Approved!", "Phrase has been re-approved successfully.", "success");
+      loadExplorer(prefixPath);
+    } catch (e) {
+      setLoading(false);
+      Swal.fire("Error", e.body?.error || e.message || "Failed to approve phrase", "error");
+    }
   };
 
   const handleDownloadCompany = async (companyName) => {
@@ -191,15 +192,22 @@ export default function AdminMedia() {
                     />
                   </div>
 
-                  <div className="flex justify-between border-t border-neutral-200 dark:border-neutral-700 pt-3">
-                    {user?.isAdmin && (
-                      <a href={`${import.meta.env.VITE_BACKEND_URL || "http://localhost:3001"}/api/admin/s3-download-wav?key=${encodeURIComponent(f.key)}`} className="text-xs flex items-center gap-1 text-primary-600 hover:text-primary-700 bg-primary-50 hover:bg-primary-100 dark:bg-primary-900/20 px-3 py-1 rounded">
-                        <Download className="w-3 h-3" /> Download WAV
-                      </a>
+                  <div className="flex justify-between items-center border-t border-neutral-200 dark:border-neutral-700 pt-3">
+                    <div className="flex gap-2">
+                      {user?.isAdmin && (
+                        <a href={`${import.meta.env.VITE_BACKEND_URL || "http://localhost:3001"}/api/admin/s3-download-wav?key=${encodeURIComponent(f.key)}`} className="text-xs flex items-center gap-1 text-primary-600 hover:text-primary-700 bg-primary-50 hover:bg-primary-100 dark:bg-primary-900/20 px-3 py-1 rounded">
+                          <Download className="w-3 h-3" /> Download WAV
+                        </a>
+                      )}
+                    </div>
+                    {f.context && f.context.status === 'rejected' && user?.isAdmin && (
+                      <button 
+                        onClick={() => handleApproveRejected(f.context._id)} 
+                        className="text-xs flex items-center gap-1 text-success-600 hover:text-success-700 bg-success-50 hover:bg-success-100 dark:bg-success-900/20 px-3 py-1 rounded font-medium transition-colors"
+                      >
+                        <CheckCircle className="w-3 h-3" /> Approve
+                      </button>
                     )}
-                    <button onClick={() => handleDelete(f.key)} className="text-xs flex items-center gap-1 text-error-600 hover:text-error-700 bg-error-50 hover:bg-error-100 dark:bg-error-900/20 px-3 py-1 rounded">
-                      <Trash2 className="w-3 h-3" /> Destroy
-                    </button>
                   </div>
                 </div>
               ))}

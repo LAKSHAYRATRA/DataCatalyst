@@ -4,7 +4,8 @@ const companySchema = new mongoose.Schema(
   {
     name: { type: String, required: true, unique: true },
     maxContributionMinutes: { type: Number, default: 195 }, // 3 hours 15 mins default
-    hourlyPayout: { type: Number, default: 0 }
+    hourlyPayout: { type: Number, default: 0 },
+    languages: [{ type: String, lowercase: true, trim: true }]
   },
   { timestamps: true }
 );
