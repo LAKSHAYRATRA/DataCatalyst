@@ -10,9 +10,12 @@ export default function AdminMedia() {
   const [files, setFiles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [prefixPath, setPrefixPath] = useState("");
+  const [selectedKeys, setSelectedKeys] = useState([]);
+  const [downloadingSelected, setDownloadingSelected] = useState(false);
 
   const loadExplorer = async (pathTarget = "") => {
     setLoading(true);
+    setSelectedKeys([]); // clear selection whenever the folder changes
     try {
       const data = await apiGet(`/api/admin/s3-explorer?prefix=${encodeURIComponent(pathTarget)}`);
       setFolders(data.folders || []);
@@ -22,6 +25,46 @@ export default function AdminMedia() {
       Swal.fire("Error", e.body?.error || e.message || "Failed to load S3 objects", "error");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const toggleSelect = (key) => {
+    setSelectedKeys((prev) =>
+      prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]
+    );
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedKeys.length === files.length) {
+      setSelectedKeys([]);
+    } else {
+      setSelectedKeys(files.map((f) => f.key));
+    }
+  };
+
+  const handleDownloadSelected = async () => {
+    if (selectedKeys.length === 0) return;
+    setDownloadingSelected(true);
+    try {
+      const res = await apiFetch("/api/admin/phrases/download-selected", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ keys: selectedKeys }),
+      });
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "selected_phrases.zip";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+      setSelectedKeys([]);
+    } catch (e) {
+      Swal.fire("Error", e.body?.error || e.message || "Failed to download selected files", "error");
+    } finally {
+      setDownloadingSelected(false);
     }
   };
 
@@ -93,9 +136,28 @@ export default function AdminMedia() {
           <p className="text-neutral-500 mt-2">Visually manage, review, and delete synchronized AWS blocks globally.</p>
         </div>
         <div className="flex gap-2 items-center">
+          {files.length > 0 && (
+            <button
+              className="btn btn-secondary flex items-center gap-2"
+              onClick={toggleSelectAll}
+            >
+              <CheckCircle className="w-4 h-4" />
+              {selectedKeys.length === files.length ? "Clear All" : "Select All"}
+            </button>
+          )}
+          {selectedKeys.length > 0 && (
+            <button
+              className="btn flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded shadow-sm font-medium transition-colors disabled:opacity-60"
+              onClick={handleDownloadSelected}
+              disabled={downloadingSelected}
+            >
+              <Download className={`w-4 h-4 ${downloadingSelected ? 'animate-pulse' : ''}`} />
+              {downloadingSelected ? "Preparing…" : `Download Selected (${selectedKeys.length})`}
+            </button>
+          )}
           {prefixPath.startsWith("phrases/") && prefixPath.split("/").filter(Boolean).length === 2 && (
-            <button 
-              className="btn flex items-center gap-2 bg-primary-600 hover:bg-primary-700 text-white px-4 py-2 rounded shadow-sm font-medium transition-colors" 
+            <button
+              className="btn flex items-center gap-2 bg-primary-600 hover:bg-primary-700 text-white px-4 py-2 rounded shadow-sm font-medium transition-colors"
               onClick={() => handleDownloadCompany(prefixPath.split("/")[1])}
             >
               <Download className="w-4 h-4" /> Download Company Batch
@@ -143,8 +205,15 @@ export default function AdminMedia() {
               ))}
 
               {files.map(f => (
-                <div key={f.key} className="flex flex-col justify-between p-4 rounded-lg bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 transition-all shadow-sm">
+                <div key={f.key} className={`flex flex-col justify-between p-4 rounded-lg bg-neutral-50 dark:bg-neutral-800 border transition-all shadow-sm ${selectedKeys.includes(f.key) ? 'border-green-500 ring-2 ring-green-400/40' : 'border-neutral-200 dark:border-neutral-700'}`}>
                   <div className="flex items-start gap-3 mb-4">
+                    <input
+                      type="checkbox"
+                      checked={selectedKeys.includes(f.key)}
+                      onChange={() => toggleSelect(f.key)}
+                      className="mt-1 w-4 h-4 accent-green-600 cursor-pointer shrink-0"
+                      title="Select for download"
+                    />
                     <FileAudio className="w-8 h-8 text-green-500 shrink-0" />
                     <div className="flex-1 min-w-0">
                       <p className="font-medium font-mono text-xs truncate" title={f.key.split('/').pop()}>{f.key.split('/').pop()}</p>

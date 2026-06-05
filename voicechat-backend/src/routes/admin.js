@@ -18,7 +18,7 @@ import { Counter } from "../models/Counter.js";
 import { getPayoutOverview, getSingleUserPayout } from "../services/payouts.js";
 import { ListObjectsV2Command, DeleteObjectCommand, GetObjectCommand, CopyObjectCommand } from "@aws-sdk/client-s3";
 import { s3Client, BUCKET_NAME } from "../config/s3.js";
-import { streamS3ToWav, getWavStream } from "../utils/ffmpeg-stream.js";
+import { streamS3ToWav, getWavStream, getWavBuffer } from "../utils/ffmpeg-stream.js";
 
 const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET;
@@ -1570,15 +1570,33 @@ router.get("/phrases/download-company", async (req, res) => {
         const companyFolder = company.replace(/[^a-zA-Z0-9_\-\ ]/g, "").trim();
         const isAlreadyDownloadedFolder = company.endsWith("_downloaded") || companyFolder.endsWith("_downloaded");
 
-        // Fetch approved phrases for this company
-        const phrases = await Phrase.find({ 
-            $or: [{ companyId: company }, { companyId: companyFolder }],
-            status: "approved" 
-        }).populate("contributorId").lean();
+        // Enumerate EVERY object actually present in this company's S3 folder.
+        // We drive the batch off the real folder contents (not a DB query) so
+        // that no file is ever skipped because of a status / companyId mismatch.
+        const folderPrefix = `phrases/${companyFolder}/`;
+        const objectKeys = [];
+        let ContinuationToken;
+        do {
+            const listResp = await s3Client.send(new ListObjectsV2Command({
+                Bucket: BUCKET_NAME,
+                Prefix: folderPrefix,
+                ContinuationToken
+            }));
+            for (const obj of (listResp.Contents || [])) {
+                // Skip the folder placeholder object itself
+                if (obj.Key && obj.Key !== folderPrefix) objectKeys.push(obj.Key);
+            }
+            ContinuationToken = listResp.IsTruncated ? listResp.NextContinuationToken : undefined;
+        } while (ContinuationToken);
 
-        if (phrases.length === 0) {
-            return res.status(404).json({ error: "No approved phrases found for this company." });
+        if (objectKeys.length === 0) {
+            return res.status(404).json({ error: "No files found in this company's folder." });
         }
+
+        // Pull any matching phrase records so we can attach metadata when it exists.
+        const phraseDocs = await Phrase.find({ audioFile: { $in: objectKeys } })
+            .populate("contributorId").lean();
+        const phraseByKey = new Map(phraseDocs.map((p) => [p.audioFile, p]));
 
         res.setHeader("Content-Type", "application/zip");
         res.setHeader("Content-Disposition", `attachment; filename="${companyFolder}_phrases.zip"`);
@@ -1607,17 +1625,27 @@ router.get("/phrases/download-company", async (req, res) => {
         archive.pipe(res);
 
         const successfullyProcessed = [];
+        const combinedUtterances = []; // collected to write one combined file at the end
+        const combinedSpeakers = {}; // keyed by speaker_id so each speaker appears only once
 
-        for (const phrase of phrases) {
-            if (!phrase.audioFile) continue;
-            const phraseId = phrase.phraseId;
-            const folderName = phraseId;
-            const contributor = phrase.contributorId || {};
+        // Process EVERY file in the folder, one at a time.
+        for (const key of objectKeys) {
+            const phrase = phraseByKey.get(key) || null;
+            const contributor = phrase?.contributorId || {};
 
-            // Generate speaker_metadata.json
-            const speakerMetadata = {
-                [contributor.speaker_id || `spk_${contributor._id}`]: {
-                    speaker_id: contributor.speaker_id || `spk_${contributor._id}`,
+            // Folder name inside the zip: the phraseId when we have a DB record,
+            // otherwise the file's base name so the file is still included.
+            const baseName = key.substring(key.lastIndexOf("/") + 1).replace(/\.[^.]+$/, "");
+            const folderName = phrase?.phraseId || baseName;
+
+            // Attach metadata JSON only when a phrase record exists for this file.
+            if (phrase) {
+                const phraseId = phrase.phraseId;
+                const speakerId = contributor.speaker_id || `spk_${contributor._id}`;
+
+                // Generate speaker_metadata.json
+                const speakerInfo = {
+                    speaker_id: speakerId,
                     gender: contributor.gender || "unknown",
                     age_range: "unknown",
                     native_language: contributor.regionalLanguage || "unknown",
@@ -1636,42 +1664,54 @@ router.get("/phrases/download-company", async (req, res) => {
                         bit_depth: 24,
                         channels: 1
                     }
-                }
-            };
-            archive.append(JSON.stringify(speakerMetadata, null, 2), { name: `${folderName}/speaker_metadata.json` });
+                };
+                // Collect once per speaker for the combined file (no repetition).
+                if (!combinedSpeakers[speakerId]) combinedSpeakers[speakerId] = speakerInfo;
 
-            // Generate utterance.json
-            const utterance = {
-                id: phraseId,
-                language: phrase.language,
-                script_type: phrase.script_type || "orthographic",
-                speaker_id: contributor.speaker_id || `spk_${contributor._id}`,
-                text: phrase.text,
-                emotion: phrase.emotion || "neutral",
-                style: phrase.style || "conversational",
-                intent: phrase.intent || "statement",
-                pitch: phrase.pitch || "medium",
-                speed: phrase.speed || "normal",
-                volume: phrase.volume || "normal",
-                events: phrase.events ? phrase.events.split(",").map(e => e.trim()) : [],
-                instruction: phrase.instructions || ""
-            };
-            archive.append(JSON.stringify(utterance, null, 2), { name: `${folderName}/utterance.json` });
+                // Build the utterance entry (only used for the combined file).
+                const utterance = {
+                    id: phraseId,
+                    language: phrase.language,
+                    script_type: phrase.script_type || "orthographic",
+                    speaker_id: contributor.speaker_id || `spk_${contributor._id}`,
+                    text: phrase.text,
+                    emotion: phrase.emotion || "neutral",
+                    style: phrase.style || "conversational",
+                    intent: phrase.intent || "statement",
+                    pitch: phrase.pitch || "medium",
+                    speed: phrase.speed || "normal",
+                    volume: phrase.volume || "normal",
+                    events: phrase.events ? phrase.events.split(",").map(e => e.trim()) : [],
+                    instruction: phrase.instructions || ""
+                };
+                combinedUtterances.push(utterance);
+            }
 
-            // Stream S3 Audio
+            // Fetch + convert the S3 audio ONE AT A TIME and fully buffer it
+            // before appending. This avoids opening every S3 stream / spawning
+            // every ffmpeg process up front (which caused sockets to time out
+            // and files to be silently skipped from the zip on large folders).
             try {
                 const audioCommand = new GetObjectCommand({
                     Bucket: BUCKET_NAME,
-                    Key: phrase.audioFile
+                    Key: key
                 });
                 const s3Doc = await s3Client.send(audioCommand);
-                const wavStream = getWavStream(s3Doc.Body);
-                archive.append(wavStream, { name: `${folderName}/recording.wav` });
-                successfullyProcessed.push(phrase);
+                const wavBuffer = await getWavBuffer(s3Doc.Body);
+                // Flat layout: every wav sits at the zip root (e.g. utt_xxx.wav)
+                archive.append(wavBuffer, { name: `${folderName}.wav` });
+                successfullyProcessed.push({ key, phrase });
             } catch (err) {
-                console.error(`Failed to fetch S3 audio for phrase ${phraseId}:`, err);
+                console.error(`Failed to fetch S3 audio for ${key}:`, err);
             }
         }
+
+        // One combined utterances file at the root of the zip, covering every
+        // downloaded file that has a phrase record.
+        archive.append(JSON.stringify(combinedUtterances, null, 2), { name: `combined_utterances.json` });
+
+        // One combined speaker-metadata file at the root, each speaker only once.
+        archive.append(JSON.stringify(combinedSpeakers, null, 2), { name: `combined_speaker_metadata.json` });
 
         // Wait for archive to finalize
         await archive.finalize();
@@ -1680,11 +1720,10 @@ router.get("/phrases/download-company", async (req, res) => {
         setTimeout(async () => {
             if (isAlreadyDownloadedFolder) return;
 
-            for (const phrase of successfullyProcessed) {
+            for (const { key: oldKey, phrase } of successfullyProcessed) {
                 try {
-                    const oldKey = phrase.audioFile;
                     const newKey = oldKey.replace(`phrases/${companyFolder}/`, `phrases/${companyFolder}_downloaded/`);
-                    
+
                     if (oldKey === newKey) continue;
 
                     await s3Client.send(new CopyObjectCommand({
@@ -1698,21 +1737,146 @@ router.get("/phrases/download-company", async (req, res) => {
                         Key: oldKey
                     }));
 
-                    await Phrase.updateOne(
-                        { _id: phrase._id }, 
-                        { $set: { 
-                            audioFile: newKey,
-                            companyId: (phrase.companyId.endsWith("_downloaded") ? phrase.companyId : phrase.companyId + "_downloaded")
-                        } }
-                    );
+                    // Only update DB if this file has a phrase record.
+                    if (phrase) {
+                        await Phrase.updateOne(
+                            { _id: phrase._id },
+                            { $set: {
+                                audioFile: newKey,
+                                companyId: (phrase.companyId && phrase.companyId.endsWith("_downloaded") ? phrase.companyId : (phrase.companyId || companyFolder) + "_downloaded")
+                            } }
+                        );
+                    }
                 } catch (moveErr) {
-                    console.error(`Error moving phrase ${phrase.phraseId} to downloaded folder:`, moveErr);
+                    console.error(`Error moving ${oldKey} to downloaded folder:`, moveErr);
                 }
             }
         }, 1000);
 
     } catch (e) {
         console.error("Download Company Phrases Error:", e);
+        if (!res.headersSent) res.status(500).json({ error: e.message });
+    }
+});
+
+// Download only a hand-picked set of files (by their exact S3 keys).
+// Same zip layout as the company batch, but it never moves anything in S3.
+router.post("/phrases/download-selected", async (req, res) => {
+    try {
+        const keys = Array.isArray(req.body?.keys) ? req.body.keys.filter(Boolean) : [];
+        if (keys.length === 0) {
+            return res.status(400).json({ error: "No files selected." });
+        }
+
+        // Attach metadata when a phrase record exists for a given file.
+        const phraseDocs = await Phrase.find({ audioFile: { $in: keys } })
+            .populate("contributorId").lean();
+        const phraseByKey = new Map(phraseDocs.map((p) => [p.audioFile, p]));
+
+        res.setHeader("Content-Type", "application/zip");
+        res.setHeader("Content-Disposition", `attachment; filename="selected_phrases.zip"`);
+
+        let ZipArchive;
+        try {
+            const archiverModule = await import("archiver");
+            ZipArchive = archiverModule.ZipArchive || archiverModule.default?.ZipArchive;
+            if (!ZipArchive) {
+                const { createRequire } = await import("module");
+                const require = createRequire(import.meta.url);
+                ZipArchive = require("archiver").ZipArchive;
+            }
+        } catch (err) {
+            console.error("Archiver package not found.", err);
+            return res.status(500).json({ error: "Server missing 'archiver' dependency." });
+        }
+
+        const archive = new ZipArchive({ zlib: { level: 9 } });
+        archive.on("error", (err) => {
+            console.error("Archiver Error:", err);
+            if (!res.headersSent) res.status(500).json({ error: err.message });
+        });
+        archive.pipe(res);
+
+        const combinedUtterances = []; // collected to write one combined file at the end
+        const combinedSpeakers = {}; // keyed by speaker_id so each speaker appears only once
+
+        // Process each selected file one at a time (buffered) so nothing is skipped.
+        for (const key of keys) {
+            const phrase = phraseByKey.get(key) || null;
+            const contributor = phrase?.contributorId || {};
+
+            const baseName = key.substring(key.lastIndexOf("/") + 1).replace(/\.[^.]+$/, "");
+            const folderName = phrase?.phraseId || baseName;
+
+            if (phrase) {
+                const phraseId = phrase.phraseId;
+                const speakerId = contributor.speaker_id || `spk_${contributor._id}`;
+
+                const speakerInfo = {
+                    speaker_id: speakerId,
+                    gender: contributor.gender || "unknown",
+                    age_range: "unknown",
+                    native_language: contributor.regionalLanguage || "unknown",
+                    primary_language: contributor.regionalLanguage || "unknown",
+                    languages_spoken: contributor.languageApplications ? contributor.languageApplications.map(app => app.languageCode) : [],
+                    accent: "unknown",
+                    dialect: "unknown",
+                    region: contributor.locality || "unknown",
+                    state: contributor.address?.state || "unknown",
+                    consent_provided: true,
+                    consent_platform: "voclara.com",
+                    recording_environment: "room",
+                    audio_specs: {
+                        format: "FLAC",
+                        sample_rate: 48000,
+                        bit_depth: 24,
+                        channels: 1
+                    }
+                };
+                // Collect once per speaker for the combined file (no repetition).
+                if (!combinedSpeakers[speakerId]) combinedSpeakers[speakerId] = speakerInfo;
+
+                const utterance = {
+                    id: phraseId,
+                    language: phrase.language,
+                    script_type: phrase.script_type || "orthographic",
+                    speaker_id: contributor.speaker_id || `spk_${contributor._id}`,
+                    text: phrase.text,
+                    emotion: phrase.emotion || "neutral",
+                    style: phrase.style || "conversational",
+                    intent: phrase.intent || "statement",
+                    pitch: phrase.pitch || "medium",
+                    speed: phrase.speed || "normal",
+                    volume: phrase.volume || "normal",
+                    events: phrase.events ? phrase.events.split(",").map(e => e.trim()) : [],
+                    instruction: phrase.instructions || ""
+                };
+                combinedUtterances.push(utterance);
+            }
+
+            try {
+                const s3Doc = await s3Client.send(new GetObjectCommand({
+                    Bucket: BUCKET_NAME,
+                    Key: key
+                }));
+                const wavBuffer = await getWavBuffer(s3Doc.Body);
+                // Flat layout: every wav sits at the zip root (e.g. utt_xxx.wav)
+                archive.append(wavBuffer, { name: `${folderName}.wav` });
+            } catch (err) {
+                console.error(`Failed to fetch S3 audio for ${key}:`, err);
+            }
+        }
+
+        // One combined utterances file at the root of the zip, covering every
+        // downloaded file that has a phrase record.
+        archive.append(JSON.stringify(combinedUtterances, null, 2), { name: `combined_utterances.json` });
+
+        // One combined speaker-metadata file at the root, each speaker only once.
+        archive.append(JSON.stringify(combinedSpeakers, null, 2), { name: `combined_speaker_metadata.json` });
+
+        await archive.finalize();
+    } catch (e) {
+        console.error("Download Selected Phrases Error:", e);
         if (!res.headersSent) res.status(500).json({ error: e.message });
     }
 });
