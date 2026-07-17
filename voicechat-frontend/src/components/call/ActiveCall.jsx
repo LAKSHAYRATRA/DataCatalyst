@@ -9,7 +9,10 @@ export default function ActiveCall({
     remoteAudioRef,
     remoteStream,
     onHangup,
-    localStreamRef
+    localStreamRef,
+    topics,
+    selectedTopic,
+    selectedSubtopic
 }) {
     const [isMuted, setIsMuted] = useState(false);
     const [isRemoteSpeaking, setIsRemoteSpeaking] = useState(false);
@@ -171,6 +174,30 @@ export default function ActiveCall({
                         <p className="text-xs md:text-sm font-semibold text-neutral-700 capitalize">{role || '-'}</p>
                     </div>
                 </div>
+
+                {/* Topic Info */}
+                {(selectedTopic || selectedSubtopic) && (
+                    <div className="mt-4 md:mt-6 pt-4 md:pt-6 border-t border-neutral-200">
+                        <div className="bg-neutral-50 rounded-xl p-4 border border-neutral-100">
+                            <h4 className="text-sm font-semibold text-neutral-700 mb-2 uppercase tracking-wider">Conversation Topic</h4>
+                            {selectedTopic && topics?.find(t => t._id === selectedTopic) && (
+                                <p className="text-base font-medium text-neutral-900 mb-1">
+                                    {topics.find(t => t._id === selectedTopic)?.title}
+                                </p>
+                            )}
+                            {selectedSubtopic && topics?.find(t => t._id === selectedTopic)?.subtopics?.find(s => s._id === selectedSubtopic) && (
+                                <p className="text-sm text-neutral-600">
+                                    {topics.find(t => t._id === selectedTopic)?.subtopics?.find(s => s._id === selectedSubtopic)?.title}
+                                    {topics.find(t => t._id === selectedTopic)?.subtopics?.find(s => s._id === selectedSubtopic)?.description && (
+                                        <span className="block mt-1 text-xs text-neutral-500 italic">
+                                            "{topics.find(t => t._id === selectedTopic)?.subtopics?.find(s => s._id === selectedSubtopic)?.description}"
+                                        </span>
+                                    )}
+                                </p>
+                            )}
+                        </div>
+                    </div>
+                )}
             </div>
         </div>
     );

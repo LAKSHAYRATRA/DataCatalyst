@@ -900,6 +900,9 @@ export default function Call() {
             remoteStream={remoteStream}
             localStreamRef={localStreamRef}
             onHangup={hangup}
+            topics={topics}
+            selectedTopic={selectedTopic}
+            selectedSubtopic={selectedSubtopic}
           />
         )}
       </div>
