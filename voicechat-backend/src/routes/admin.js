@@ -23,6 +23,15 @@ import { streamS3ToWav, getWavStream, getWavBuffer } from "../utils/ffmpeg-strea
 const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET;
 
+router.get("/companies", requireAuth(JWT_SECRET), async (req, res) => {
+    try {
+        const companies = await Company.find({}).sort({ name: 1 }).lean();
+        res.json({ companies });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 function getReviewerLanguageCodes(user) {
     if (!user?.isQA || user?.isAdmin) return [];
     if (user?.qaLanguageCode) {
@@ -1920,14 +1929,6 @@ router.post("/backfill-speaker-ids", async (req, res) => {
 
 // ===== COMPANY MANAGEMENT =====
 
-router.get("/companies", async (req, res) => {
-    try {
-        const companies = await Company.find({}).sort({ name: 1 }).lean();
-        res.json({ companies });
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
-});
 
 router.post("/companies", async (req, res) => {
     try {
