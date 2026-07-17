@@ -10,6 +10,7 @@ const MAX_SEC = 120; // 2 minutes
 export default function LanguageApply() {
     const navigate = useNavigate();
     const [companies, setCompanies] = useState([]);
+    const [globalLanguages, setGlobalLanguages] = useState([]);
     const [myApps, setMyApps] = useState([]);
     const [selectedCompany, setSelectedCompany] = useState("");
     const [selectedLanguage, setSelectedLanguage] = useState("");
@@ -35,12 +36,14 @@ export default function LanguageApply() {
     async function load() {
         setPageLoading(true);
         try {
-            const [companiesRes, appsRes] = await Promise.all([
+            const [companiesRes, appsRes, langsRes] = await Promise.all([
                 apiGet("/api/admin/companies"),
                 apiGet("/api/language-applications/my"),
+                apiGet("/api/languages")
             ]);
             setCompanies(companiesRes.companies || []);
             setMyApps(appsRes.applications || []);
+            setGlobalLanguages(langsRes.languages || []);
         } catch (e) {
             setError("Failed to load projects.");
         } finally {
@@ -61,7 +64,7 @@ export default function LanguageApply() {
         setLoading(true);
         setError("");
         try {
-            const langQuery = language ? `&language=${encodeURIComponent(language)}` : '';
+            const langQuery = languageCode ? `&language=${encodeURIComponent(languageCode)}` : '';
             const data = await apiGet(`/api/phrases/sample?companyId=${encodeURIComponent(companyId)}${langQuery}`);
             if (data.phrase) {
                 setSamplePhrase(data.phrase);
@@ -146,17 +149,14 @@ export default function LanguageApply() {
     }
 
     async function submit() {
-        const hasLanguages = (companies.find(c => c.name === selectedCompany)?.languages?.length > 0);
-        if (!audioBlob || !selectedCompany || (hasLanguages && !selectedLanguage)) return;
+        if (!audioBlob || !selectedCompany || !selectedLanguage) return;
         setLoading(true);
         setError("");
         try {
             const form = new FormData();
             form.append("companyId", selectedCompany);
-            if (hasLanguages) {
-                form.append("languageCode", selectedLanguage);
-            }
-            form.append("recording", audioBlob, `app_${selectedCompany}_${selectedLanguage || 'any'}.wav`);
+            form.append("languageCode", selectedLanguage);
+            form.append("recording", audioBlob, `app_${selectedCompany}_${selectedLanguage}.wav`);
             const res = await fetch(`${BACKEND}/api/language-applications`, {
                 method: "POST", body: form, credentials: "include",
             });
@@ -253,7 +253,7 @@ export default function LanguageApply() {
                                         ))}
                                     </select>
                                 </div>
-                                {selectedCompany && (companies.find(c => c.name === selectedCompany)?.languages?.length > 0) && (
+                                {selectedCompany && (
                                     <div>
                                         <label className="block text-sm font-semibold mb-2">Language</label>
                                         <select 
@@ -262,14 +262,16 @@ export default function LanguageApply() {
                                             onChange={(e) => setSelectedLanguage(e.target.value)}
                                         >
                                             <option value="">-- Select Language --</option>
-                                            {companies.find(c => c.name === selectedCompany)?.languages?.map(lang => (
-                                                <option key={lang} value={lang}>{lang.charAt(0).toUpperCase() + lang.slice(1)}</option>
+                                            {globalLanguages.map(lang => (
+                                                <option key={lang._id || lang.code} value={lang.code}>
+                                                    {lang.name}
+                                                </option>
                                             ))}
                                         </select>
                                     </div>
                                 )}
                                 
-                                {selectedCompany && (!(companies.find(c => c.name === selectedCompany)?.languages?.length > 0) || selectedLanguage) && (
+                                {selectedCompany && selectedLanguage && (
                                     <div className="pt-4 border-t border-neutral-100">
                                         <div className="mb-4">
                                             <span className="block text-sm font-semibold mb-1">Status:</span>
