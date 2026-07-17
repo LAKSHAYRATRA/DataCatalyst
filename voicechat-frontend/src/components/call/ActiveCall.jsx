@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef } from 'react';
-import AudioVisualizer from '../AudioVisualizer';
 
 export default function ActiveCall({
     peerUsername,
@@ -107,32 +106,45 @@ export default function ActiveCall({
     return (
         <div className="max-w-3xl mx-auto w-full px-4">
             <div className="animate-fade-in">
-                {/* Call Header */}
-                <div className="text-center mb-6 md:mb-8 pb-4 md:pb-6 border-b border-neutral-200">
-                    <div className="w-16 h-16 md:w-20 md:h-20 bg-gradient-success rounded-full mx-auto mb-3 md:mb-4 flex items-center justify-center shadow-lg animate-pulse">
-                        <svg className="w-8 h-8 md:w-10 md:h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path>
-                        </svg>
-                    </div>
-                    <h3 className="text-xl md:text-2xl font-bold text-neutral-900 mb-2">{peerUsername || "Anonymous User"}</h3>
-                    <div className="inline-flex items-center space-x-2 px-3 md:px-4 py-1.5 md:py-2 bg-success-50 rounded-full">
-                        <div className="w-2 h-2 bg-success-500 rounded-full animate-pulse"></div>
-                        <span className="text-xs md:text-sm font-medium text-success-700">Call in Progress</span>
-                    </div>
-                </div>
-
-                {/* Audio Visualizer */}
-                <div className="mb-6 md:mb-8">
-                    <AudioVisualizer isRecording={isRemoteSpeaking} />
-                </div>
-
-                {/* Call Timer */}
-                <div className="text-center mb-6 md:mb-8">
+        <div className="max-w-3xl mx-auto w-full px-4">
+            <div className="animate-fade-in">
+                {/* Call Timer (Now at the top) */}
+                <div className="text-center mb-6 md:mb-8 pt-4">
                     <div className="text-3xl md:text-5xl font-bold text-primary-600 mb-2 font-mono tabular-nums">
                         {formatTime(timeRemaining)}
                     </div>
-                    <p className="text-xs md:text-sm text-neutral-500">Time Remaining</p>
+                    <p className="text-xs md:text-sm text-neutral-500 mb-4">Time Remaining</p>
+                    <div className="inline-flex items-center space-x-2 px-3 md:px-4 py-1.5 md:py-2 bg-success-50 rounded-full">
+                        <div className="w-2 h-2 bg-success-500 rounded-full animate-pulse"></div>
+                        <span className="text-xs md:text-sm font-medium text-success-700">Call in Progress with Anonymous Partner</span>
+                    </div>
                 </div>
+
+                {/* Topic Info (Now below timer) */}
+                {(selectedTopic || selectedSubtopic) && (
+                    <div className="mb-6 md:mb-8">
+                        <div className="bg-neutral-50 rounded-xl p-4 md:p-6 border border-neutral-200 shadow-sm">
+                            <h4 className="text-sm font-semibold text-neutral-700 mb-3 uppercase tracking-wider text-center">Conversation Topic</h4>
+                            {selectedTopic && topics?.find(t => t._id === selectedTopic) && (
+                                <p className="text-lg md:text-xl font-bold text-neutral-900 mb-2 text-center">
+                                    {topics.find(t => t._id === selectedTopic)?.title}
+                                </p>
+                            )}
+                            {selectedSubtopic && topics?.find(t => t._id === selectedTopic)?.subtopics?.find(s => s._id === selectedSubtopic) && (
+                                <div className="text-center">
+                                    <p className="text-base md:text-lg text-neutral-800 font-medium mb-3">
+                                        {topics.find(t => t._id === selectedTopic)?.subtopics?.find(s => s._id === selectedSubtopic)?.title}
+                                    </p>
+                                    {topics.find(t => t._id === selectedTopic)?.subtopics?.find(s => s._id === selectedSubtopic)?.description && (
+                                        <div className="mt-2 text-sm text-neutral-600 italic whitespace-pre-wrap text-left bg-white p-4 rounded-lg border border-neutral-100 shadow-sm">
+                                            {topics.find(t => t._id === selectedTopic)?.subtopics?.find(s => s._id === selectedSubtopic)?.description}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                )}
 
                 {/* Audio Element */}
                 <audio ref={remoteAudioRef} autoPlay playsInline className="hidden" />
@@ -174,30 +186,6 @@ export default function ActiveCall({
                         <p className="text-xs md:text-sm font-semibold text-neutral-700 capitalize">{role || '-'}</p>
                     </div>
                 </div>
-
-                {/* Topic Info */}
-                {(selectedTopic || selectedSubtopic) && (
-                    <div className="mt-4 md:mt-6 pt-4 md:pt-6 border-t border-neutral-200">
-                        <div className="bg-neutral-50 rounded-xl p-4 border border-neutral-100">
-                            <h4 className="text-sm font-semibold text-neutral-700 mb-2 uppercase tracking-wider">Conversation Topic</h4>
-                            {selectedTopic && topics?.find(t => t._id === selectedTopic) && (
-                                <p className="text-base font-medium text-neutral-900 mb-1">
-                                    {topics.find(t => t._id === selectedTopic)?.title}
-                                </p>
-                            )}
-                            {selectedSubtopic && topics?.find(t => t._id === selectedTopic)?.subtopics?.find(s => s._id === selectedSubtopic) && (
-                                <p className="text-sm text-neutral-600">
-                                    {topics.find(t => t._id === selectedTopic)?.subtopics?.find(s => s._id === selectedSubtopic)?.title}
-                                    {topics.find(t => t._id === selectedTopic)?.subtopics?.find(s => s._id === selectedSubtopic)?.description && (
-                                        <span className="block mt-1 text-xs text-neutral-500 italic">
-                                            "{topics.find(t => t._id === selectedTopic)?.subtopics?.find(s => s._id === selectedSubtopic)?.description}"
-                                        </span>
-                                    )}
-                                </p>
-                            )}
-                        </div>
-                    </div>
-                )}
             </div>
         </div>
     );

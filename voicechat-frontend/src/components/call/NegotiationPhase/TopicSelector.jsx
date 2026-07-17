@@ -46,7 +46,7 @@ export default function TopicSelector({
     const claimSubtopic = claimTopic?.subtopics?.find(
         (s) => s._id === activeClaim?.subtopicId
     );
-    const claimerLabel = activeClaim?.mine ? "You" : (peerUsername || "Peer");
+    const claimerLabel = activeClaim?.mine ? "You" : "Partner";
 
     return (
         <div className="bg-white border border-neutral-200 rounded-xl p-4 mb-4 shadow-sm animate-slide-up space-y-4">
@@ -125,13 +125,13 @@ export default function TopicSelector({
                                         ? "bg-primary-500 text-white"
                                         : "bg-amber-500 text-white"
                                         }`}>
-                                        {claimedByMe ? "✓ You claimed" : `${peerUsername || "Peer"} claimed`}
+                                        {claimedByMe ? "✓ You claimed" : `Partner claimed`}
                                     </div>
                                 )}
 
                                 <div className="font-semibold text-sm text-neutral-900 pr-20">{sub.title}</div>
                                 {sub.description && (
-                                    <p className="text-xs text-neutral-500 leading-relaxed line-clamp-2">
+                                    <p className="text-xs text-neutral-500 leading-relaxed line-clamp-2 whitespace-pre-wrap">
                                         {sub.description}
                                     </p>
                                 )}

@@ -264,7 +264,7 @@ export default function AdminTopics() {
                                         </div>
                                     </div>
                                     {topic.description && (
-                                        <p className="text-neutral-400 text-xs md:text-sm ml-0 md:ml-9 break-words">{topic.description}</p>
+                                        <p className="text-neutral-400 text-xs md:text-sm ml-0 md:ml-9 break-words whitespace-pre-wrap">{topic.description}</p>
                                     )}
                                 </div>
 
@@ -289,7 +289,7 @@ export default function AdminTopics() {
                                                             </button>
                                                         </div>
                                                         {subtopic.description && (
-                                                            <div className="text-xs text-neutral-500 break-words">{subtopic.description}</div>
+                                                            <div className="text-xs text-neutral-500 break-words whitespace-pre-wrap">{subtopic.description}</div>
                                                         )}
                                                         {subtopic.instructions && (
                                                             <div className="mt-1">
