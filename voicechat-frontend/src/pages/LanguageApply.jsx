@@ -61,7 +61,8 @@ export default function LanguageApply() {
         setLoading(true);
         setError("");
         try {
-            const data = await apiGet(`/api/phrases/sample?companyId=${encodeURIComponent(companyId)}&language=${encodeURIComponent(languageCode)}`);
+            const langQuery = language ? `&language=${encodeURIComponent(language)}` : '';
+            const data = await apiGet(`/api/phrases/sample?companyId=${encodeURIComponent(companyId)}${langQuery}`);
             if (data.phrase) {
                 setSamplePhrase(data.phrase);
                 setPhase("record");
@@ -145,14 +146,17 @@ export default function LanguageApply() {
     }
 
     async function submit() {
-        if (!audioBlob || !selectedCompany || !selectedLanguage) return;
+        const hasLanguages = (companies.find(c => c.name === selectedCompany)?.languages?.length > 0);
+        if (!audioBlob || !selectedCompany || (hasLanguages && !selectedLanguage)) return;
         setLoading(true);
         setError("");
         try {
             const form = new FormData();
             form.append("companyId", selectedCompany);
-            form.append("languageCode", selectedLanguage);
-            form.append("recording", audioBlob, `app_${selectedCompany}_${selectedLanguage}.wav`);
+            if (hasLanguages) {
+                form.append("languageCode", selectedLanguage);
+            }
+            form.append("recording", audioBlob, `app_${selectedCompany}_${selectedLanguage || 'any'}.wav`);
             const res = await fetch(`${BACKEND}/api/language-applications`, {
                 method: "POST", body: form, credentials: "include",
             });
@@ -249,7 +253,7 @@ export default function LanguageApply() {
                                         ))}
                                     </select>
                                 </div>
-                                {selectedCompany && (
+                                {selectedCompany && (companies.find(c => c.name === selectedCompany)?.languages?.length > 0) && (
                                     <div>
                                         <label className="block text-sm font-semibold mb-2">Language</label>
                                         <select 
@@ -265,7 +269,7 @@ export default function LanguageApply() {
                                     </div>
                                 )}
                                 
-                                {selectedCompany && selectedLanguage && (
+                                {selectedCompany && (!(companies.find(c => c.name === selectedCompany)?.languages?.length > 0) || selectedLanguage) && (
                                     <div className="pt-4 border-t border-neutral-100">
                                         <div className="mb-4">
                                             <span className="block text-sm font-semibold mb-1">Status:</span>
@@ -293,7 +297,7 @@ export default function LanguageApply() {
                 {phase === "record" && samplePhrase && (
                     <div className="card animate-slide-up">
                         <div className="flex items-center justify-between mb-1">
-                            <h2 className="text-lg font-bold text-neutral-900">Record Sample: {selectedCompany} ({selectedLanguage})</h2>
+                            <h2 className="text-lg font-bold text-neutral-900">Record Sample: {selectedCompany} {selectedLanguage && `(${selectedLanguage})`}</h2>
                             <button onClick={() => { stopRecording(); setPhase("select"); }} className="text-sm text-neutral-500 hover:text-neutral-700 transition-colors">
                                 ← Change
                             </button>

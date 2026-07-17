@@ -109,14 +109,14 @@ export async function submitLanguageApplication(req, res) {
     .trim()
     .toLowerCase();
   const companyId = String(req.body?.companyId || "").trim() || null;
-  if (!languageCode)
-    return res.status(400).json({ error: "languageCode is required" });
   if (!companyId)
     return res.status(400).json({ error: "companyId is required" });
 
-  const lang = await Language.findOne({ code: languageCode, enabled: true });
-  if (!lang)
-    return res.status(404).json({ error: "Language not found or disabled" });
+  if (languageCode) {
+    const lang = await Language.findOne({ code: languageCode, enabled: true });
+    if (!lang)
+      return res.status(404).json({ error: "Language not found or disabled" });
+  }
 
   const user = await User.findById(req.user._id);
   if (!user) return res.status(404).json({ error: "User not found" });

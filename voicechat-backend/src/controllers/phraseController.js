@@ -593,14 +593,16 @@ export async function getContributorStats(req, res) {
 export async function getSamplePhrase(req, res) {
   try {
     const { companyId, language } = req.query;
-    if (!companyId || !language) {
-      return res.status(400).json({ error: "companyId and language are required" });
+    if (!companyId) {
+      return res.status(400).json({ error: "companyId is required" });
     }
 
-    const phrase = await Phrase.findOne({
-      companyId: companyId.trim(),
-      language: language.trim().toLowerCase()
-    }).sort({ _id: 1 }).select("phraseId text language emotion style speed intent pitch volume instructions").lean();
+    const query = { companyId: companyId.trim() };
+    if (language) {
+      query.language = language.trim().toLowerCase();
+    }
+
+    const phrase = await Phrase.findOne(query).sort({ _id: 1 }).select("phraseId text language emotion style speed intent pitch volume instructions").lean();
 
     if (!phrase) {
       return res.status(404).json({ error: "No sample phrase found for this project and language." });
