@@ -16,6 +16,7 @@ import PendingApproval from "./pages/PendingApproval.jsx";
 import LanguageApply from "./pages/LanguageApply.jsx";
 import AdminLanguages from "./pages/AdminLanguages.jsx";
 import AdminLanguageApps from "./pages/AdminLanguageApps.jsx";
+import AdminCallApps from "./pages/AdminCallApps.jsx";
 import Landing from "./pages/Landing.jsx";
 import Support from "./pages/Support.jsx";
 import UserPayouts from "./pages/UserPayouts.jsx";
@@ -153,6 +154,7 @@ export default function App() {
         <Route path="/admin/qa" element={<RequireAdminOrQA><AdminQA /></RequireAdminOrQA>} />
         <Route path="/admin/languages" element={<RequireAdmin><AdminLanguages /></RequireAdmin>} />
         <Route path="/admin/language-apps" element={<RequireAdminOrQA><AdminLanguageApps /></RequireAdminOrQA>} />
+        <Route path="/admin/call-apps" element={<RequireAdminOrQA><AdminCallApps /></RequireAdminOrQA>} />
         <Route path="/admin/phrases" element={<RequireAdmin><AdminPhrases /></RequireAdmin>} />
         <Route path="/admin/projects" element={<RequireAdmin><AdminProjects /></RequireAdmin>} />
         <Route path="/admin/companies" element={<RequireAdmin><AdminCompanies /></RequireAdmin>} />

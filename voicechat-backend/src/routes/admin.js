@@ -54,6 +54,7 @@ async function listLanguageApplications(req, res) {
         const page = parseInt(req.query.page) || 1;
         const limit = parseInt(req.query.limit) || 20;
         const statusFilter = req.query.status;
+        const typeFilter = req.query.type; // 'call' or 'phrase'
         const skip = (page - 1) * limit;
         const allowedLanguages = req.user.isAdmin ? null : getReviewerLanguageCodes(req.user);
 
@@ -65,7 +66,9 @@ async function listLanguageApplications(req, res) {
         users.forEach((u) => {
             u.languageApplications.forEach((app) => {
                 const languageCode = String(app.languageCode || "").trim().toLowerCase();
+                const appType = app.applicationType || 'phrase';
                 if (statusFilter && app.status !== statusFilter) return;
+                if (typeFilter && appType !== typeFilter) return;
                 if (allowedLanguages && !allowedLanguages.includes(languageCode)) return;
                 apps.push({
                     appId: app._id,

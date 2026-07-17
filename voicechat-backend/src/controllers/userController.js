@@ -105,12 +105,13 @@ export async function submitLanguageApplication(req, res) {
   if (!req.user) return res.status(401).json({ error: "unauthorized" });
   if (!req.file) return res.status(400).json({ error: "no_file" });
 
-  const languageCode = String(req.body?.languageCode || "")
-    .trim()
-    .toLowerCase();
+  const applicationType = String(req.body?.applicationType || "phrase").trim();
+  const languageCode = String(req.body?.languageCode || "").trim().toLowerCase();
   const companyId = String(req.body?.companyId || "").trim() || null;
-  if (!companyId)
-    return res.status(400).json({ error: "companyId is required" });
+  
+  if (applicationType === "phrase" && !companyId) {
+    return res.status(400).json({ error: "companyId is required for phrase applications" });
+  }
 
   if (languageCode) {
     const lang = await Language.findOne({ code: languageCode, enabled: true });
@@ -122,7 +123,7 @@ export async function submitLanguageApplication(req, res) {
   if (!user) return res.status(404).json({ error: "User not found" });
 
   const existing = user.languageApplications.find(
-    (a) => a.languageCode === languageCode && a.companyId === companyId
+    (a) => a.languageCode === languageCode && (applicationType === 'phrase' ? a.companyId === companyId : true) && a.applicationType === applicationType
   );
   if (existing && existing.status === "pending") {
     try { fs.unlinkSync(req.file.path); } catch (e) {}
@@ -170,6 +171,7 @@ export async function submitLanguageApplication(req, res) {
       existing.reviewedAt = null;
     } else {
       user.languageApplications.push({
+        applicationType,
         companyId,
         languageCode,
         status: "pending",

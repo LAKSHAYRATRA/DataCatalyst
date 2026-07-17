@@ -740,7 +740,7 @@ io.on("connection", (socket) => {
         .select("languageApplications")
         .lean();
       const langApp = freshUser?.languageApplications?.find(
-        (a) => a.languageCode === userLanguage && a.status === "approved"
+        (a) => a.languageCode === userLanguage && a.status === "approved" && (a.applicationType || 'phrase') === 'call'
       );
       if (!langApp) {
         socket.emit("error_message", {

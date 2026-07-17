@@ -28,7 +28,7 @@ function StatusBadge({ status }) {
     );
 }
 
-export default function AdminLanguageApps() {
+export default function AdminCallApps() {
     const [apps, setApps] = useState([]);
     const [loading, setLoading] = useState(true);
     const [statusFilter, setStatusFilter] = useState("pending");
@@ -42,7 +42,7 @@ export default function AdminLanguageApps() {
     useEffect(() => { loadApps(); }, [page, statusFilter]);
 
     async function fetchApps() {
-        const qs = `?type=phrase&page=${page}&limit=20${statusFilter ? `&status=${statusFilter}` : ""}`;
+        const qs = `?type=call&page=${page}&limit=20${statusFilter ? `&status=${statusFilter}` : ""}`;
         return get(`${REVIEW_BASE}${qs}`);
     }
 
@@ -88,8 +88,8 @@ export default function AdminLanguageApps() {
                 {/* Header */}
                 <div className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                     <div>
-                        <h1 className="text-2xl md:text-3xl font-bold text-white mb-1">Phrase Applications</h1>
-                        <p className="text-neutral-400 text-sm">Review and approve phrase language audio submissions.</p>
+                        <h1 className="text-2xl md:text-3xl font-bold text-white mb-1">Call Applications</h1>
+                        <p className="text-neutral-400 text-sm">Review and approve call application audio submissions.</p>
                     </div>
                     <select
                         value={statusFilter}
@@ -118,7 +118,7 @@ export default function AdminLanguageApps() {
                                 <table className="w-full text-sm">
                                     <thead className="bg-neutral-700">
                                         <tr>
-                                            {["User", "Project", "Language", "Status", "Applied", "Recording", "Action"].map(h => (
+                                            {["User", "Language", "Status", "Applied", "Recording", "Action"].map(h => (
                                                 <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-neutral-300 uppercase tracking-wider whitespace-nowrap">{h}</th>
                                             ))}
                                         </tr>
@@ -131,9 +131,6 @@ export default function AdminLanguageApps() {
                                                     <td className="px-4 py-3">
                                                         <div className="text-white font-medium text-xs">{app.userFirstname} {app.userLastname}</div>
                                                         <div className="text-neutral-400 text-xs">@{app.username}</div>
-                                                    </td>
-                                                    <td className="px-4 py-3 text-white text-xs font-medium">
-                                                        {app.companyId || <span className="text-neutral-500 italic">None</span>}
                                                     </td>
                                                     <td className="px-4 py-3">
                                                         <code className="bg-neutral-700 text-warning-300 px-2 py-0.5 rounded text-xs font-mono">{app.languageCode}</code>
