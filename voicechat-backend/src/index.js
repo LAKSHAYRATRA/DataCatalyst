@@ -106,7 +106,7 @@ app.set("trust proxy", 1);
 app.use(helmet()); 
 const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes span
-  max: 150, // Permitted requests natively
+  max: 2000, // Permitted requests natively
   message: { error: "Global Speed Limit exceeded. Please try again later." },
 });
 const authLimiter = rateLimit({
