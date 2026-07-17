@@ -158,14 +158,6 @@ export default function FeedbackScreen({ onJoinAnotherQueue, onGoHome }) {
             >
               {loading ? "Submitting..." : "Submit Feedback"}
             </button>
-            <button
-              type="button"
-              disabled={loading}
-              onClick={onGoHome}
-              className="px-4 py-2 mt-2 w-full text-sm font-medium text-neutral-600 hover:text-neutral-900 bg-neutral-100 hover:bg-neutral-200 rounded-lg transition-colors"
-            >
-              Skip Feedback
-            </button>
           </form>
         ) : (
           <div className="text-center py-6 animate-scale-in">
