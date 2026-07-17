@@ -106,8 +106,6 @@ export default function ActiveCall({
     return (
         <div className="max-w-3xl mx-auto w-full px-4">
             <div className="animate-fade-in">
-        <div className="max-w-3xl mx-auto w-full px-4">
-            <div className="animate-fade-in">
                 {/* Call Timer (Now at the top) */}
                 <div className="text-center mb-6 md:mb-8 pt-4">
                     <div className="text-3xl md:text-5xl font-bold text-primary-600 mb-2 font-mono tabular-nums">
