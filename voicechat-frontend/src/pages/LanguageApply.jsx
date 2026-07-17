@@ -201,10 +201,10 @@ export default function LanguageApply() {
                 {/* Header */}
                 <div className="mb-8 animate-fade-in">
                     <button
-                        onClick={() => navigate("/call")}
+                        onClick={() => navigate(-1)}
                         className="inline-flex items-center gap-1 text-sm text-primary-600 hover:text-primary-700 font-medium mb-4 transition-colors"
                     >
-                        ← Back to Call
+                        ← Back
                     </button>
                     <h1 className="text-3xl md:text-4xl font-bold text-neutral-900 mb-2">Apply for a Language</h1>
                     <p className="text-neutral-600">Record a 2‑minute sample to demonstrate your fluency. An admin will review and approve your application.</p>

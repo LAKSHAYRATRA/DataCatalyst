@@ -14,7 +14,7 @@ export default function PhraseRecording() {
 
   useEffect(() => {
     if (approvedApps.length === 0) {
-      navigate('/apply');
+      navigate('/language-apply');
     }
   }, []);
 
@@ -412,7 +412,7 @@ export default function PhraseRecording() {
             </div>
 
             <div className="flex justify-end mb-4">
-               <Link to="/apply" className="text-sm font-medium text-primary-600 hover:text-primary-700">
+               <Link to="/language-apply" className="text-sm font-medium text-primary-600 hover:text-primary-700">
                  + Apply for New Project/Language
                </Link>
             </div>
