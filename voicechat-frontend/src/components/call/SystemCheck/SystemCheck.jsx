@@ -38,9 +38,12 @@ export default function SystemCheck({ onComplete, noisy = false }) {
                         <p className="text-sm md:text-lg text-neutral-600 dark:text-neutral-400 mb-8 md:mb-10 max-w-xl mx-auto px-4">
                             We'll verify your internet connection, microphone, and speakers to ensure the best call quality.
                         </p>
-                        <div className="flex justify-center px-4">
+                        <div className="flex flex-col items-center justify-center px-4 gap-4">
                             <button onClick={startInternetCheck} className="btn btn-primary w-full sm:w-auto">
                                 Start System Check
+                            </button>
+                            <button onClick={onComplete} className="text-sm text-neutral-400 hover:underline">
+                                Skip (Testing Only)
                             </button>
                         </div>
                     </div>
