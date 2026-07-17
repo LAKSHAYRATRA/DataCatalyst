@@ -9,8 +9,8 @@ import { useNavigate, Link } from 'react-router-dom';
 export default function PhraseRecording() {
   const navigate = useNavigate();
   const userInfo = getUserInfo();
-  const approvedApps = userInfo?.languageApplications?.filter(app => app.status === 'approved' && app.companyId) || [];
-  const approvedCompanies = Array.from(new Set(approvedApps.map(a => a.companyId)));
+  const approvedApps = userInfo?.languageApplications?.filter(app => app.status === 'approved') || [];
+  const approvedCompanies = ['Any', ...Array.from(new Set(approvedApps.map(a => a.companyId).filter(Boolean)))];
 
   useEffect(() => {
     if (approvedApps.length === 0) {
@@ -28,12 +28,20 @@ export default function PhraseRecording() {
   const [projects, setProjects] = useState([]);
   const [allLanguages, setAllLanguages] = useState([]);
   
-  const [projectName, setProjectName] = useState(approvedCompanies[0] || '');
-  const availableLanguages = approvedApps.filter(a => a.companyId === projectName).map(a => a.languageCode);
+  const [projectName, setProjectName] = useState(approvedCompanies[0] || 'Any');
+  const availableLanguages = Array.from(new Set(
+    approvedApps
+      .filter(a => projectName === 'Any' || a.companyId === projectName)
+      .map(a => a.languageCode)
+  ));
   const [language, setLanguage] = useState(availableLanguages[0] || '');
 
   useEffect(() => {
-    const newLangs = approvedApps.filter(a => a.companyId === projectName).map(a => a.languageCode);
+    const newLangs = Array.from(new Set(
+      approvedApps
+        .filter(a => projectName === 'Any' || a.companyId === projectName)
+        .map(a => a.languageCode)
+    ));
     if (!newLangs.includes(language)) {
       setLanguage(newLangs[0] || '');
     }
