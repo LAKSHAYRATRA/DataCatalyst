@@ -1,4 +1,11 @@
 import "dotenv/config";
+
+process.on("uncaughtException", (err) => {
+  console.error("Uncaught Exception:", err);
+});
+process.on("unhandledRejection", (reason, promise) => {
+  console.error("Unhandled Rejection at:", promise, "reason:", reason);
+});
 import http from "http";
 import path from "path";
 import crypto from "crypto";
@@ -10,6 +17,18 @@ import multer from "multer";
 import multerS3 from "multer-s3";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
+
+// --- Async Route Error Handling Patch ---
+const Layer = express.Router.Layer;
+const origHandle = Layer.prototype.handle_request;
+Layer.prototype.handle_request = function handle(req, res, next) {
+  const fnReturn = origHandle.apply(this, arguments);
+  if (fnReturn && fnReturn.catch) {
+    fnReturn.catch(err => next(err));
+  }
+};
+// ----------------------------------------
+
 import { s3Client, BUCKET_NAME } from "./config/s3.js";
 import { Upload } from "@aws-sdk/lib-storage";
 import { GetObjectCommand } from "@aws-sdk/client-s3";
@@ -289,6 +308,16 @@ const io = new Server(server, {
 
 // Wire login route now that io exists
 app.post("/api/auth/login", authLimiter, makeLogin(io));
+
+// --- Global Express Error Handler ---
+app.use((err, req, res, next) => {
+  console.error("Global Express Error:", err);
+  if (res.headersSent) {
+    return next(err);
+  }
+  res.status(500).json({ error: "Internal Server Error" });
+});
+// ------------------------------------
 
 // ─── Socket middleware ────────────────────────────────────────────────────────
 io.use((socket, next) => {
@@ -695,14 +724,15 @@ io.on("connection", (socket) => {
   });
 
   socket.on("find_match", async () => {
-    if (getCallIdForSocket(socket)) return;
+    try {
+      if (getCallIdForSocket(socket)) return;
 
-    if (!socket.data.systemCheckPassed) {
-      socket.emit("error_message", { message: "system_check_required" });
-      return;
-    }
+      if (!socket.data.systemCheckPassed) {
+        socket.emit("error_message", { message: "system_check_required" });
+        return;
+      }
 
-    // Check daily call limit
+      // Check daily call limit
     try {
       const user = await User.findById(socket.data.userId);
       if (!user) {
@@ -745,7 +775,7 @@ io.on("connection", (socket) => {
         .select("languageApplications")
         .lean();
       const langApp = freshUser?.languageApplications?.find(
-        (a) => a.languageCode === userLanguage && a.status === "approved" && (a.applicationType || 'phrase') === 'call'
+        (a) => a.languageCode === userLanguage && a.status === "approved" && (!a.applicationType || a.applicationType === 'call')
       );
       if (!langApp) {
         socket.emit("error_message", {
@@ -851,6 +881,10 @@ io.on("connection", (socket) => {
       negotiationMode: true,
       negotiationEndsAt,
     });
+    } catch (e) {
+      console.error("Error in find_match:", e);
+      socket.emit("error_message", { message: "server_error" });
+    }
   });
 
   socket.on("signal", ({ callId, to, data }) => {
@@ -918,65 +952,77 @@ io.on("connection", (socket) => {
   });
 
   socket.on("record_chunk", (chunk) => {
-    if (!socket.data.recording || !socket.data.recordStream) return;
+    try {
+      if (!socket.data.recording || !socket.data.recordStream) return;
 
-    let buf;
-    if (Buffer.isBuffer(chunk)) buf = chunk;
-    else if (chunk instanceof ArrayBuffer) buf = Buffer.from(chunk);
-    else if (ArrayBuffer.isView(chunk))
-      buf = Buffer.from(chunk.buffer, chunk.byteOffset, chunk.byteLength);
-    else return;
+      let buf;
+      if (Buffer.isBuffer(chunk)) buf = chunk;
+      else if (chunk instanceof ArrayBuffer) buf = Buffer.from(chunk);
+      else if (ArrayBuffer.isView(chunk))
+        buf = Buffer.from(chunk.buffer, chunk.byteOffset, chunk.byteLength);
+      else return;
 
-    socket.data.recordStream.write(buf);
+      socket.data.recordStream.write(buf);
+    } catch (e) {
+      console.error("Error writing record_chunk:", e);
+    }
   });
 
   socket.on("topic_claim", async ({ topicId, subtopicId }) => {
-    const callId = getCallIdForSocket(socket);
-    const call = calls.get(callId);
-    if (!call || call.rolesConfirmed) return;
+    try {
+      const callId = getCallIdForSocket(socket);
+      const call = calls.get(callId);
+      if (!call || call.rolesConfirmed) return;
 
-    call.claimedBy = socket.id;
-    call.selectedTopic = topicId;
-    call.selectedSubtopic = subtopicId;
-    call.topicSelectedBy = socket.data.userId;
+      call.claimedBy = socket.id;
+      call.selectedTopic = topicId;
+      call.selectedSubtopic = subtopicId;
+      call.topicSelectedBy = socket.data.userId;
 
-    let instructions = "";
-    if (subtopicId) {
-      try {
-        const sub = await Subtopic.findById(subtopicId).select("instructions").lean();
-        instructions = sub?.instructions || "";
-      } catch (e) {
-        console.error("Error fetching subtopic instructions:", e);
+      let instructions = "";
+      if (subtopicId) {
+        try {
+          const sub = await Subtopic.findById(subtopicId).select("instructions").lean();
+          instructions = sub?.instructions || "";
+        } catch (e) {
+          console.error("Error fetching subtopic instructions:", e);
+        }
       }
-    }
 
-    io.to(call.a).emit("topic_claimed", {
-      topicId,
-      subtopicId,
-      instructions,
-      byMe: call.a === socket.id,
-    });
-    io.to(call.b).emit("topic_claimed", {
-      topicId,
-      subtopicId,
-      instructions,
-      byMe: call.b === socket.id,
-    });
+      io.to(call.a).emit("topic_claimed", {
+        topicId,
+        subtopicId,
+        instructions,
+        byMe: call.a === socket.id,
+      });
+      io.to(call.b).emit("topic_claimed", {
+        topicId,
+        subtopicId,
+        instructions,
+        byMe: call.b === socket.id,
+      });
+    } catch (e) {
+      console.error("Error in topic_claim:", e);
+    }
   });
 
   socket.on("topic_selected", async ({ topicId, subtopicId }) => {
-    const callId = getCallIdForSocket(socket);
-    const call = calls.get(callId);
-    if (!call || call.rolesConfirmed || !call.selectedTopic) return;
+    try {
+      const callId = getCallIdForSocket(socket);
+      const call = calls.get(callId);
+      if (!call || call.rolesConfirmed || !call.selectedTopic) return;
 
-    io.to(call.a).emit("topic_selected", {
-      topicId: call.selectedTopic,
-      subtopicId: call.selectedSubtopic,
-    });
-    io.to(call.b).emit("topic_selected", {
-      topicId: call.selectedTopic,
-      subtopicId: call.selectedSubtopic,
-    });
+      io.to(call.a).emit("topic_selected", {
+        topicId: call.selectedTopic,
+        subtopicId: call.selectedSubtopic,
+      });
+      io.to(call.b).emit("topic_selected", {
+        topicId: call.selectedTopic,
+        subtopicId: call.selectedSubtopic,
+      });
+    } catch (e) {
+      console.error("Error in topic_selected:", e);
+    }
   });
 
   socket.on("role_selected", ({ role }) => {

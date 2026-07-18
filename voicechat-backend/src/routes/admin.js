@@ -339,7 +339,9 @@ qaCallRouter.get("/calls/:callId/recording/:userId", async (req, res) => {
             res.setHeader("Content-Disposition", `attachment; filename="${path.basename(recordingFile)}"`);
             res.setHeader("Accept-Ranges", "bytes");
             
-            response.Body.pipe(res);
+            response.Body.on('error', (err) => {
+                console.error('S3 Stream error (QA call recording):', err);
+            }).pipe(res);
         } catch (s3error) {
             console.error("QA call recording streaming S3 error:", s3error);
             return res.status(404).json({ error: "Recording file not found in cloud storage" });
@@ -765,7 +767,9 @@ router.get("/calls/:callId/recording/:userId", async (req, res) => {
             res.setHeader("Content-Disposition", `attachment; filename="${path.basename(recordingFile)}"`);
             res.setHeader("Accept-Ranges", "bytes");
             
-            response.Body.pipe(res);
+            response.Body.on('error', (err) => {
+                console.error('S3 Stream error (Admin call recording):', err);
+            }).pipe(res);
         } catch (s3error) {
             console.error("Admin call recording streaming S3 error:", s3error);
             return res.status(404).json({ error: "Recording file not found in cloud storage" });
@@ -1106,7 +1110,9 @@ router.get("/users/:userId/intro", async (req, res) => {
             }
             res.setHeader("Content-Type", response.ContentType || "audio/webm");
             res.setHeader("Accept-Ranges", "bytes");
-            response.Body.pipe(res);
+            response.Body.on('error', (err) => {
+                console.error('S3 Stream error (Admin intro):', err);
+            }).pipe(res);
         } catch (s3error) {
             console.error("Intro admin streaming S3 error:", s3error);
             return res.status(404).json({ error: `Audio file cloud error: ${s3error.message}` });
@@ -1502,8 +1508,9 @@ router.get("/s3-explorer", async (req, res) => {
         })).filter(f => f.key !== prefix);
 
         // --- Context Injection Engine ---
+        const ObjectKeysExtracted = files.map(f => f.key);
+
         if (prefix.startsWith("phrases/")) {
-            const ObjectKeysExtracted = files.map(f => f.key);
             // Deeply query the exact phrase objects pointing cleanly to these S3 assets
             const phrases = await Phrase.find({ audioFile: { $in: ObjectKeysExtracted } })
                 .populate("contributorId", "username email firstname lastname");
@@ -1514,6 +1521,51 @@ router.get("/s3-explorer", async (req, res) => {
                     return { 
                         ...f, 
                         context: match.toObject ? match.toObject() : match
+                    };
+                }
+                return f;
+            });
+        } else if (prefix.startsWith("calls/")) {
+            // Query CallSession for these audio files
+            const calls = await CallSession.find({
+                $or: [
+                    { recordingAFile: { $in: ObjectKeysExtracted } },
+                    { recordingBFile: { $in: ObjectKeysExtracted } },
+                    { mixedRecordingFile: { $in: ObjectKeysExtracted } }
+                ]
+            })
+            .populate("userA", "firstname lastname username email dob gender address locality regionalLanguage speaker_id")
+            .populate("userB", "firstname lastname username email dob gender address locality regionalLanguage speaker_id")
+            .populate("topicId", "title")
+            .populate("subtopicId", "title description instructions");
+
+            files = files.map(f => {
+                const match = calls.find(c => 
+                    c.recordingAFile === f.key || 
+                    c.recordingBFile === f.key || 
+                    c.mixedRecordingFile === f.key
+                );
+                
+                if (match) {
+                    let speakerRole = "Unknown";
+                    let matchedUser = null;
+                    if (match.recordingAFile === f.key) {
+                        speakerRole = "Speaker A";
+                        matchedUser = match.userA;
+                    } else if (match.recordingBFile === f.key) {
+                        speakerRole = "Speaker B";
+                        matchedUser = match.userB;
+                    } else if (match.mixedRecordingFile === f.key) {
+                        speakerRole = "Mixed";
+                    }
+
+                    const contextObj = match.toObject ? match.toObject() : match;
+                    contextObj._fileSpeakerRole = speakerRole;
+                    contextObj._fileMatchedUser = matchedUser;
+
+                    return { 
+                        ...f, 
+                        context: contextObj
                     };
                 }
                 return f;
@@ -1548,7 +1600,9 @@ router.get("/s3-download", async (req, res) => {
             res.setHeader("Content-Disposition", "inline");
         }
 
-        s3Doc.Body.pipe(res);
+        s3Doc.Body.on('error', (err) => {
+            console.error('S3 Stream error (Admin download):', err);
+        }).pipe(res);
     } catch (e) {
         console.error("S3 Download Error:", e);
         res.status(500).json({ error: e.message });
@@ -1636,6 +1690,7 @@ router.get("/phrases/download-company", async (req, res) => {
             if (!res.headersSent) res.status(500).json({ error: err.message });
         });
 
+        res.on('error', (err) => console.error('Response stream error:', err));
         archive.pipe(res);
 
         const successfullyProcessed = [];
@@ -1775,7 +1830,7 @@ router.get("/phrases/download-company", async (req, res) => {
 
 // Download only a hand-picked set of files (by their exact S3 keys).
 // Same zip layout as the company batch, but it never moves anything in S3.
-router.post("/phrases/download-selected", async (req, res) => {
+router.post("/s3/download-selected", async (req, res) => {
     try {
         const keys = Array.isArray(req.body?.keys) ? req.body.keys.filter(Boolean) : [];
         if (keys.length === 0) {
@@ -1787,8 +1842,28 @@ router.post("/phrases/download-selected", async (req, res) => {
             .populate("contributorId").lean();
         const phraseByKey = new Map(phraseDocs.map((p) => [p.audioFile, p]));
 
+        // Attach metadata when a call session record exists for a given file.
+        const callDocs = await CallSession.find({
+            $or: [
+                { recordingAFile: { $in: keys } },
+                { recordingBFile: { $in: keys } },
+                { mixedRecordingFile: { $in: keys } }
+            ]
+        })
+        .populate("userA", "firstname lastname username email dob gender address locality regionalLanguage speaker_id")
+        .populate("userB", "firstname lastname username email dob gender address locality regionalLanguage speaker_id")
+        .populate("topicId", "title")
+        .populate("subtopicId", "title description instructions").lean();
+        
+        const callByKey = new Map();
+        callDocs.forEach(c => {
+            if (c.recordingAFile) callByKey.set(c.recordingAFile, c);
+            if (c.recordingBFile) callByKey.set(c.recordingBFile, c);
+            if (c.mixedRecordingFile) callByKey.set(c.mixedRecordingFile, c);
+        });
+
         res.setHeader("Content-Type", "application/zip");
-        res.setHeader("Content-Disposition", `attachment; filename="selected_phrases.zip"`);
+        res.setHeader("Content-Disposition", `attachment; filename="selected_files.zip"`);
 
         let ZipArchive;
         try {
@@ -1809,20 +1884,24 @@ router.post("/phrases/download-selected", async (req, res) => {
             console.error("Archiver Error:", err);
             if (!res.headersSent) res.status(500).json({ error: err.message });
         });
+        res.on('error', (err) => console.error('Response stream error:', err));
         archive.pipe(res);
 
         const combinedUtterances = []; // collected to write one combined file at the end
         const combinedSpeakers = {}; // keyed by speaker_id so each speaker appears only once
+        const combinedCalls = []; // collected to write call metadata
 
         // Process each selected file one at a time (buffered) so nothing is skipped.
         for (const key of keys) {
             const phrase = phraseByKey.get(key) || null;
-            const contributor = phrase?.contributorId || {};
-
+            const call = callByKey.get(key) || null;
+            
             const baseName = key.substring(key.lastIndexOf("/") + 1).replace(/\.[^.]+$/, "");
-            const folderName = phrase?.phraseId || baseName;
+            let folderName = baseName;
 
             if (phrase) {
+                folderName = phrase.phraseId || baseName;
+                const contributor = phrase.contributorId || {};
                 const phraseId = phrase.phraseId;
                 const speakerId = contributor.speaker_id || `spk_${contributor._id}`;
 
@@ -1866,6 +1945,37 @@ router.post("/phrases/download-selected", async (req, res) => {
                     instruction: phrase.instructions || ""
                 };
                 combinedUtterances.push(utterance);
+            } else if (call) {
+                folderName = call.callId ? `${call.callId}_${baseName}` : baseName;
+                
+                let speakerRole = "Unknown";
+                let matchedUser = null;
+                if (call.recordingAFile === key) {
+                    speakerRole = "Speaker A";
+                    matchedUser = call.userA || {};
+                } else if (call.recordingBFile === key) {
+                    speakerRole = "Speaker B";
+                    matchedUser = call.userB || {};
+                } else if (call.mixedRecordingFile === key) {
+                    speakerRole = "Mixed";
+                }
+
+                const callMetadata = {
+                    file_name: `${folderName}.wav`,
+                    call_id: call.callId,
+                    topic_of_conversation: call.topicId?.title || "",
+                    subtopic: call.subtopicId?.title || "",
+                    description: call.subtopicId?.description || "",
+                    speaker_role: speakerRole,
+                    speaker_id: matchedUser ? (matchedUser.speaker_id || matchedUser._id) : "mixed_or_unknown",
+                    speaker_gender: matchedUser?.gender || "",
+                    speaker_region: matchedUser?.address?.state || "",
+                    speaker_accent: matchedUser?.locality || "",
+                    speaker_dialect: matchedUser?.regionalLanguage || "",
+                    negotiation_duration_seconds: call.negotiationDuration || 0,
+                    duration_minutes: call.durationMinutes || ""
+                };
+                combinedCalls.push(callMetadata);
             }
 
             try {
@@ -1881,16 +1991,19 @@ router.post("/phrases/download-selected", async (req, res) => {
             }
         }
 
-        // One combined utterances file at the root of the zip, covering every
-        // downloaded file that has a phrase record.
-        archive.append(JSON.stringify(combinedUtterances, null, 2), { name: `combined_utterances.json` });
-
-        // One combined speaker-metadata file at the root, each speaker only once.
-        archive.append(JSON.stringify(combinedSpeakers, null, 2), { name: `combined_speaker_metadata.json` });
+        if (combinedUtterances.length > 0) {
+            archive.append(JSON.stringify(combinedUtterances, null, 2), { name: `combined_utterances.json` });
+        }
+        if (Object.keys(combinedSpeakers).length > 0) {
+            archive.append(JSON.stringify(combinedSpeakers, null, 2), { name: `combined_speaker_metadata.json` });
+        }
+        if (combinedCalls.length > 0) {
+            archive.append(JSON.stringify(combinedCalls, null, 2), { name: `combined_calls_metadata.json` });
+        }
 
         await archive.finalize();
     } catch (e) {
-        console.error("Download Selected Phrases Error:", e);
+        console.error("Download Selected Files Error:", e);
         if (!res.headersSent) res.status(500).json({ error: e.message });
     }
 });

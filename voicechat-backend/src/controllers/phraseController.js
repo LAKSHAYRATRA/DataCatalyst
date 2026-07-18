@@ -432,6 +432,7 @@ export async function reviewPhrase(req, res) {
     } else if (action === "reject") {
       // 1. Move the submitted payload to _rejected folder instead of deleting.
       let newAudioFile = phrase.audioFile;
+      const oldAudioFile = phrase.audioFile;
       if (phrase.audioFile) {
         try {
           const companyStr = phrase.companyId ? String(phrase.companyId).replace(/[^a-zA-Z0-9_\-\ ]/g, "").trim() : "No_Company";
@@ -441,10 +442,6 @@ export async function reviewPhrase(req, res) {
             Bucket: BUCKET_NAME,
             CopySource: `${BUCKET_NAME}/${phrase.audioFile}`,
             Key: newKey
-          }));
-          await s3Client.send(new DeleteObjectCommand({
-            Bucket: BUCKET_NAME,
-            Key: phrase.audioFile
           }));
           newAudioFile = newKey;
         } catch (s3err) {
@@ -461,6 +458,18 @@ export async function reviewPhrase(req, res) {
       phrase.qaComment = comment || null;
       phrase.reviewedAt = new Date();
       await phrase.save();
+
+      // Only delete original file if copy AND save succeeded
+      if (phrase.audioFile && phrase.audioFile !== oldAudioFile) {
+        try {
+          await s3Client.send(new DeleteObjectCommand({
+            Bucket: BUCKET_NAME,
+            Key: oldAudioFile
+          }));
+        } catch (s3err) {
+          console.error("Failed to delete original S3 Audio after move:", s3err);
+        }
+      }
 
       // 2. Spawn a pristine clone mapping to the core phraseId to re-enter the queue
       const phraseObj = phrase.toObject();
@@ -526,7 +535,9 @@ export async function streamPhraseAudio(req, res) {
       res.setHeader("X-Content-Type-Options", "nosniff");
       res.setHeader("Content-Type", s3Doc.ContentType || "audio/webm");
       
-      s3Doc.Body.pipe(res);
+      s3Doc.Body.on('error', (err) => {
+          console.error('S3 Stream error (phrase recording):', err);
+      }).pipe(res);
     } catch (error) {
       console.error("AWS S3 GetObject error:", error);
       return res.status(404).json({ error: "File missing on AWS S3" });
@@ -597,7 +608,7 @@ export async function getSamplePhrase(req, res) {
       return res.status(400).json({ error: "companyId is required" });
     }
 
-    const query = { companyId: companyId.trim() };
+    const query = { companyId: typeof companyId === "string" ? companyId.trim() : companyId };
     if (language) {
       query.language = language.trim().toLowerCase();
     }
@@ -641,6 +652,7 @@ export async function approveRejectedPhrase(req, res) {
 
     // 3. Move the S3 file back to the active phrases folder
     let newAudioFile = phrase.audioFile;
+    const oldAudioFile = phrase.audioFile;
     if (phrase.audioFile && phrase.audioFile.includes("_rejected")) {
       try {
         const companyFolder = phrase.companyId ? String(phrase.companyId).replace(/[^a-zA-Z0-9_\-\ ]/g, "").trim() : "No_Company";
@@ -650,10 +662,6 @@ export async function approveRejectedPhrase(req, res) {
             Bucket: BUCKET_NAME,
             CopySource: `${BUCKET_NAME}/${phrase.audioFile}`,
             Key: newKey
-        }));
-        await s3Client.send(new DeleteObjectCommand({
-            Bucket: BUCKET_NAME,
-            Key: phrase.audioFile
         }));
         newAudioFile = newKey;
       } catch (s3err) {
@@ -670,6 +678,18 @@ export async function approveRejectedPhrase(req, res) {
     phrase.qaId = req.user._id;
 
     await phrase.save();
+
+    // Only delete original file if copy AND save succeeded
+    if (phrase.audioFile && phrase.audioFile !== oldAudioFile) {
+      try {
+        await s3Client.send(new DeleteObjectCommand({
+          Bucket: BUCKET_NAME,
+          Key: oldAudioFile
+        }));
+      } catch (s3err) {
+        console.error("Failed to delete original S3 Audio after move:", s3err);
+      }
+    }
 
     res.json({ success: true, phrase });
   } catch (error) {

@@ -50,6 +50,7 @@ export default function Call() {
   const remoteAudioRef = useRef(null);
   const socketRef = useRef(null);
   const pcRef = useRef(null);
+  const pendingCandidates = useRef([]);
   const localStreamRef = useRef(null);
   const audioContextRef = useRef(null);
   const workletNodeRef = useRef(null);
@@ -337,7 +338,9 @@ export default function Call() {
   };
 
   async function ensureLocalStream() {
-    if (localStreamRef.current) return localStreamRef.current;
+    if (localStreamRef.current && localStreamRef.current.active) {
+      return localStreamRef.current;
+    }
     const rate = getCurrentSampleRate();
     localStreamRef.current = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, sampleRate: rate, channelCount: 1 } });
     return localStreamRef.current;
@@ -524,18 +527,30 @@ export default function Call() {
         to: activePeerId,
         data: { type: "answer", sdp: pc.localDescription },
       });
+      // Drain pending candidates
+      for (const c of pendingCandidates.current) {
+        try { await pc.addIceCandidate(c); } catch {}
+      }
+      pendingCandidates.current = [];
       return;
     }
 
     if (data.type === "answer") {
       await pc.setRemoteDescription(data.sdp);
+      // Drain pending candidates
+      for (const c of pendingCandidates.current) {
+        try { await pc.addIceCandidate(c); } catch {}
+      }
+      pendingCandidates.current = [];
       return;
     }
 
     if (data.type === "ice") {
-      try {
-        await pc.addIceCandidate(data.candidate);
-      } catch { }
+      if (pc.remoteDescription) {
+        try { await pc.addIceCandidate(data.candidate); } catch { }
+      } else {
+        pendingCandidates.current.push(data.candidate);
+      }
     }
   }
 
@@ -548,7 +563,8 @@ export default function Call() {
     pcRef.current = null;
 
     if (remoteAudioRef.current) remoteAudioRef.current.srcObject = null;
-
+    workletNodeRef.current = null;
+    pendingCandidates.current = [];
     callRef.current = {
       callId: null,
       role: null,
