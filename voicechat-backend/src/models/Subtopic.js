@@ -6,6 +6,7 @@ const subtopicSchema = new mongoose.Schema(
         title: { type: String, required: true, trim: true },
         description: { type: String, trim: true },
         instructions: { type: String, trim: true },
+        maxCalls: { type: Number, default: 3 },
         isEnabled: { type: Boolean, default: true },
     },
     { timestamps: true }

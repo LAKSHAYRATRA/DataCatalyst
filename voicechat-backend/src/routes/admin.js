@@ -906,7 +906,7 @@ router.delete("/topics/:topicId", async (req, res) => {
 router.post("/topics/:topicId/subtopics", async (req, res) => {
     try {
         const { topicId } = req.params;
-        const { title, description, instructions, isEnabled } = req.body;
+        const { title, description, instructions, maxCalls, isEnabled } = req.body;
 
         if (!title) {
             return res.status(400).json({ error: "Title is required" });
@@ -922,6 +922,8 @@ router.post("/topics/:topicId/subtopics", async (req, res) => {
             topicId,
             title,
             description,
+            instructions,
+            maxCalls: maxCalls !== undefined ? maxCalls : 3,
             isEnabled: isEnabled !== undefined ? isEnabled : true,
         });
 
@@ -935,11 +937,11 @@ router.post("/topics/:topicId/subtopics", async (req, res) => {
 router.put("/subtopics/:subtopicId", async (req, res) => {
     try {
         const { subtopicId } = req.params;
-        const { title, description, instructions, isEnabled } = req.body;
+        const { title, description, instructions, maxCalls, isEnabled } = req.body;
 
         const subtopic = await Subtopic.findByIdAndUpdate(
             subtopicId,
-            { title, description, instructions, isEnabled },
+            { title, description, instructions, maxCalls, isEnabled },
             { new: true, runValidators: true }
         );
 
