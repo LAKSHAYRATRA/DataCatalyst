@@ -1,0 +1,109 @@
+FIXED BUGS — SERVER CRASHERS ("Failed to fetch" for everyone)
+================================================================
+Fixed in commit adf0397 on branch divyam-updates.
+All fixes verified with `node --check` on every touched file.
+
+
+================================================================
+[FIXED] 7x unhandled S3 stream .pipe(res) — process crash on client abort
+================================================================
+Root cause: `s3Doc.Body.pipe(res)` had no error listener on the source.
+When a client closed the <audio> player, refreshed, or navigated away
+mid-download, the S3 stream emitted 'error' with nothing listening →
+Node treated it as uncaught → whole process exited → every logged-in
+user on every page saw "Failed to fetch" until manual restart.
+
+Fix: Replaced every raw .pipe(res) with `await pipeline(s3Doc.Body, res)`
+from `stream/promises`. `pipeline` attaches error handlers to both
+source and destination, cleans up on abort, and rethrows to a local
+try/catch. Client-abort error codes (ERR_STREAM_PREMATURE_CLOSE,
+ECONNRESET, ERR_STREAM_DESTROYED) are filtered from logs to avoid noise.
+
+Sites fixed:
+  voicechat-backend/src/controllers/userController.js
+    - streamLanguageRecording (was line 232) — language app recording
+    - streamRecording (was line 419) — call recording download
+  voicechat-backend/src/controllers/phraseController.js
+    - streamPhraseAudio (was line 529) — phrase audio playback
+  voicechat-backend/src/routes/admin.js
+    - QA call recording stream (was line 342)
+    - Admin call recording stream (was line 768)
+    - Intro admin recording stream (was line 1107)
+    - Admin s3-download endpoint (was line 1549)
+
+Also added `if (!res.headersSent)` guards to the outer catches so a
+rare late error can no longer cause "Cannot set headers after they
+are sent" secondary crashes.
+
+
+================================================================
+[FIXED] Missing global safety net — any leaked rejection crashed the server
+================================================================
+Root cause: no `process.on('uncaughtException')` or
+`process.on('unhandledRejection')` handlers anywhere. Any async footgun
+(a Mongo transient error inside a Socket.IO handler, a background
+promise, etc.) killed the process.
+
+Fix: Added both handlers early in voicechat-backend/src/index.js,
+right after config parsing and before Express setup. They log the
+error but keep the process alive. Node's official guidance is to
+restart after uncaughtException — that's a separate concern (PM2/
+nodemon) but this prevents the immediate common-case death.
+
+
+================================================================
+[FIXED] Missing global Express error middleware
+================================================================
+Root cause: No `app.use((err, req, res, next) => ...)` handler. Any
+synchronous throw or `next(err)` call inside a route bubbled up to
+default Express handling, which in some paths could hang the response
+or return unhelpful HTML.
+
+Fix: Added a terminal error middleware in voicechat-backend/src/index.js
+right before `server.listen`. Logs the error, and if headers haven't
+been sent yet returns a clean JSON `{ error: "server_error" }` 500.
+Placed AFTER all route mounts so it catches everything.
+
+
+================================================================
+[FIXED] submitLanguageApplication — two awaits outside try/catch
+================================================================
+Root cause: In voicechat-backend/src/controllers/userController.js,
+the `Language.findOne` and `User.findById` calls sat OUTSIDE the
+try/catch that wrapped ffmpeg + S3 upload. A Mongo transient error
+during those two calls became an unhandled promise rejection → process
+exit.
+
+Fix: Moved the outer try/catch block up so it now wraps the entire
+handler body from the Language lookup onward. Temp file cleanup on
+error still runs in the catch (safer than before — it now also fires
+if Mongo throws, cleaning the multer temp .wav).
+
+
+================================================================
+NOT YET FIXED (still open from WebsiteBreakingBugsList.txt)
+================================================================
+- Socket.IO handlers (index.js: find_match / topic_claim /
+  topic_selected / record_chunk): the global unhandledRejection
+  handler now catches leaked rejections, so these no longer crash
+  the process — but they still don't emit a helpful error back to
+  the client. Optional future improvement.
+- Data-integrity concerns in approveRejectedPhrase / reviewPhrase
+  reject flow / getSamplePhrase (from the "recent uncommitted
+  changes" section). These are correctness bugs, not crashers.
+- companyId type confusion (LanguageApply.jsx sends company NAME,
+  not _id). Feature-level breakage, not fatal.
+- Hindi call gate regression (index.js applicationType === 'call'
+  check). Needs a Mongo backfill on legacy approved records before
+  it hits prod.
+
+
+================================================================
+NET STABILITY IMPACT
+================================================================
+Before: any client canceling an audio download killed the whole
+  backend until manual restart. Multiple crash paths, no safety net.
+
+After: client aborts are silently swallowed. Real S3 errors log
+  but don't crash. Every unrelated async footgun in the codebase
+  is caught by the global handlers instead of exiting the process.
