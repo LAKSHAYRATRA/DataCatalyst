@@ -102,27 +102,6 @@ const app = express();
 // Trust the NGINX reverse proxy for correct IP rate limiting
 app.set("trust proxy", 1);
 
-// Application Security Routing Shields
-app.use(helmet()); 
-const globalLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes span
-  max: 2000, // Permitted requests natively
-  message: { error: "Global Speed Limit exceeded. Please try again later." },
-});
-const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, 
-  max: 10, // 10 Requests MAX per 15 mins for OTP/Login per user
-  message: { error: "Security Lockout: Wait 15 minutes before sending another OTP for this email." },
-  keyGenerator: (req) => {
-    // Isolate limit strictly to the specific email being requested bypassing NGINX proxy masking
-    return req.body?.email || req.ip; 
-  }
-});
-app.use("/api/", globalLimiter); // Protect generic /api hooks
-
-app.use(express.json({ limit: "50mb" }));
-app.use(express.urlencoded({ limit: "50mb", extended: true }));
-app.use(cookieParser());
 app.use(
   cors({
     origin: function (origin, callback) {
@@ -145,6 +124,32 @@ app.use(
     credentials: true,
   })
 );
+
+// Application Security Routing Shields
+app.use(helmet()); 
+const globalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes span
+  max: 20000, // Increased to prevent false-positives
+  message: { error: "Global Speed Limit exceeded. Please try again later." },
+  keyGenerator: (req) => {
+    const forwarded = req.headers['x-forwarded-for'];
+    return forwarded ? forwarded.split(',')[0] : req.ip;
+  }
+});
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, 
+  max: 10, // 10 Requests MAX per 15 mins for OTP/Login per user
+  message: { error: "Security Lockout: Wait 15 minutes before sending another OTP for this email." },
+  keyGenerator: (req) => {
+    // Isolate limit strictly to the specific email being requested bypassing NGINX proxy masking
+    return req.body?.email || req.ip; 
+  }
+});
+app.use("/api/", globalLimiter); // Protect generic /api hooks
+
+app.use(express.json({ limit: "50mb" }));
+app.use(express.urlencoded({ limit: "50mb", extended: true }));
+app.use(cookieParser());
 
 // ─── Multer: noise check (memory, ≤5 MB) ─────────────────────────────────────
 const noiseUpload = multer({
