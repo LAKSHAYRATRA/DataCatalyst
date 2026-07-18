@@ -1,0 +1,183 @@
+WEBSITE BREAKING BUGS — PRIORITIZED PUNCH LIST
+================================================
+
+Split into "will crash the whole server" vs "will only break one feature".
+
+
+================================================================
+🔴 SERVER-CRASHERS
+(one click = whole site "Failed to fetch" for everyone)
+================================================================
+
+The exact pattern from possiblebug.txt is still present and untouched.
+Multiple places pipe an S3 stream directly to the HTTP response with
+NO `.on('error', ...)` listener on the source. When a client aborts
+the request mid-download (which happens constantly — closing an
+<audio> player, navigating away, refreshing), the S3 stream emits
+'error', nothing is listening, Node treats it as uncaught → process
+exits → whole site down (backend has no auto-reload per your project
+notes).
+
+Sites this fires from:
+
+  File                                                             Line   Trigger
+  ---------------------------------------------------------------  -----  ------------------------------------------------------------
+  voicechat-backend/src/controllers/userController.js              232    intro recording stream — Admin opens Pending Users list, then approves anyone (unmounts <audio> mid-stream)
+  voicechat-backend/src/controllers/userController.js              419    language app recording stream — Admin/QA reviews language apps and approves/rejects
+  voicechat-backend/src/routes/admin.js                            342    QA call recording stream — QA plays a call recording and navigates away
+  voicechat-backend/src/routes/admin.js                            768    Admin call recording stream — same as above, admin side
+  voicechat-backend/src/routes/admin.js                           1107    Intro admin stream — Admin closes pending-users tab mid-load
+  voicechat-backend/src/routes/admin.js                           1549    Admin download endpoint — User cancels a download
+  voicechat-backend/src/controllers/phraseController.js            529    Phrase audio stream — QA/admin plays phrases and clicks around
+
+Also still absent:
+  - No process.on('uncaughtException') — confirmed by grep
+  - No process.on('unhandledRejection') — confirmed by grep
+  - No global Express error middleware (app.use((err, req, res, next) => ...)) — confirmed by grep
+  - No express-async-errors package — confirmed
+  - submitLanguageApplication still has two `await` calls OUTSIDE its try/catch
+    (voicechat-backend/src/controllers/userController.js:117 and :122)
+    A Mongo transient error = process exit.
+
+Blast radius: EVERY logged-in user on EVERY page. A single admin
+approval or user clicking around in QA can kill the whole site until
+you manually restart. This is your #1 fix priority — a 20-line change
+(process.on(...) + global error middleware + .on('error', ...) in the
+pipe helper) eliminates almost all of it.
+
+
+================================================================
+🟠 SERVER-CRASHERS INTRODUCED BY RECENT UNCOMMITTED CHANGES
+================================================================
+
+approveRejectedPhrase in voicechat-backend/src/controllers/phraseController.js:601
+  - Does Phrase.findById(phraseId) — if phraseId is not a valid ObjectId
+    string, Mongoose throws CastError INSIDE the try, so it's caught. OK.
+  - But deleteMany + CopyObjectCommand + DeleteObjectCommand + phrase.save()
+    all run sequentially with only the S3 ops in an inner try. If
+    phrase.save() fails AFTER the S3 move already succeeded, you have a
+    document pointing to the wrong S3 key. Data-integrity bug, not a crash.
+
+getSamplePhrase in voicechat-backend/src/controllers/phraseController.js:590
+  - Queries { companyId: companyId.trim() } treating companyId as a raw
+    string. But if elsewhere Phrase.companyId is stored as an ObjectId
+    (or the frontend sends the *company name* — which is what
+    LanguageApply.jsx actually does: form.append("companyId", selectedCompany)
+    where selectedCompany = c.name), this silently returns 404 forever for
+    legitimate requests. Feature breaks silently, doesn't crash.
+
+reviewPhrase reject flow (voicechat-backend/src/controllers/phraseController.js:432)
+  - New CopyObjectCommand-then-DeleteObjectCommand. If CopyObjectCommand
+    succeeds but DeleteObjectCommand fails (S3 hiccup), you have the same
+    file in both phrases/company/ and phrases/company_rejected/. Costs
+    money, not fatal.
+  - If CopyObjectCommand fails and you fall into catch, newAudioFile still
+    equals the old phrase.audioFile, then the doc is saved with status
+    "rejected" but audioFile pointing at the still-live original. Next
+    reviewer/admin will see it there. Confusing but not a crash.
+
+
+================================================================
+🟠 SOCKET.IO HANDLERS THAT CAN CRASH THE PROCESS
+================================================================
+
+Socket.IO handles thrown errors from its own callbacks OK, but any async
+work that leaks a rejected promise still bypasses that.
+
+  - voicechat-backend/src/index.js:692 (find_match), :928 (topic_claim),
+    :962 (topic_selected) — all async, several awaits, no top-level
+    try/catch wrapping the whole handler. A single Mongo blip during
+    matching = unhandled rejection = process exit.
+  - voicechat-backend/src/index.js:915 (record_chunk) — fires hundreds
+    of times per call. If any write-side operation throws, it multiplies
+    fast.
+
+
+================================================================
+🟠 THE HINDI CALL GATE ITSELF (already flagged in NoSoundBug.txt)
+================================================================
+
+voicechat-backend/src/index.js:743 — the new `applicationType === 'call'`
+requirement will silently reject every historical Hindi approval. Not a
+crash, but "click Find Match → alert → dead end" for every legacy user.
+If you push this to prod without migrating old records, a lot of users
+lose access on deploy day.
+
+
+================================================================
+🟡 FEATURE-LEVEL BREAKAGE (only affects the person clicking)
+================================================================
+
+- companyId type confusion: In voicechat-frontend/src/pages/LanguageApply.jsx:281-283
+  the value sent for companyId is the company NAME (c.name), not its _id.
+  The backend then stores it as-is on the LanguageApplication and Phrase
+  docs. Later queries that assume it's an ObjectId won't match. Anything
+  comparing a.companyId === companyId (like the first-phrase gate) works
+  only if both sides consistently use names. If any admin ever changes
+  a company's name, all its phrase and language-app links break silently.
+
+- Multer errors go into the void: phraseUpload, langUpload, introUpload
+  all use disk storage. If the temp directory can't be written (OneDrive
+  lock, disk full, permissions), multer errors have no global handler
+  and the request hangs → client sees "Failed to fetch". Not a crash,
+  just a hang.
+
+- langUpload fileFilter rejects non-audio/* mimetypes. encodeWAV returns
+  a blob with type audio/wav in the new code, so this should be fine,
+  but if a browser ever hands back an empty `type` field the request
+  400s with a cryptic error.
+
+- Ghost files in ~$ prefix: I noticed ~$crophoneTest.jsx, ~$stemCheck.jsx
+  — Excel/Word-style lock files from OneDrive or Office. Not a bug, but
+  if any code globs **/*.jsx for build/lint, these will error. Delete
+  them.
+
+
+================================================================
+🟡 THINGS THAT WILL BREAK UNDER CONCURRENCY
+================================================================
+
+- getSamplePhrase returns sort({ _id: 1 }) — always returns the *same*
+  first phrase for every applicant. If ph001 gets deleted, the "sample"
+  silently switches. Fine, but worth knowing.
+
+- ensureLocalStream guard (voicechat-frontend/src/pages/Call.jsx:340)
+  returns the existing stream — but if the mic was unplugged / permission
+  revoked / device changed between calls, the cached track is dead and
+  future calls silently have no audio. Should re-check track.readyState
+  before returning.
+
+- Race in startCallRecording: guard `if (workletNodeRef.current) return`
+  at voicechat-frontend/src/pages/Call.jsx:351 is fine, but there's no
+  cleanup if audioCtx.audioWorklet.addModule throws — leaves partial state.
+
+
+================================================================
+WHAT I'D ACTUALLY DO FIRST, IN THIS ORDER
+================================================================
+
+1. One evening: kill the server-crash class of bugs. Wrap the S3 pipe
+   pattern in a small helper that adds .on('error') on the source and a
+   fallback res.status(500).end(). Replace all 7+ call sites. Add:
+
+     process.on('uncaughtException', (e) => console.error('UNCAUGHT', e));
+     process.on('unhandledRejection', (e) => console.error('UNHANDLED', e));
+     app.use((err, req, res, next) => {
+       console.error(err);
+       if (!res.headersSent) res.status(500).json({error:'server_error'});
+     });
+
+   That single evening's work removes 90% of "clicked a button and killed
+   everything" risk.
+
+2. Move submitLanguageApplication's two awaits into the try/catch.
+   30-second fix.
+
+3. Backfill applicationType: 'call' on existing approved Hindi apps
+   before that backend change hits prod. One-line Mongo update.
+
+4. Add nodemon or PM2 so at least when it does die, it comes back
+   automatically. Even without any code fix, this alone stops "5-minute
+   outages until someone notices".
+
+5. Then chase feature-level bugs individually.

@@ -3,7 +3,7 @@ import InternetTest from './InternetTest';
 import MicrophoneTest from './MicrophoneTest';
 import HearingTest from './HearingTest';
 
-export default function SystemCheck({ onComplete, noisy = false }) {
+export default function SystemCheck({ onComplete, onSkip }) {
     const [currentStep, setCurrentStep] = useState('start');
 
     const startInternetCheck = () => {
@@ -11,8 +11,7 @@ export default function SystemCheck({ onComplete, noisy = false }) {
     };
 
     const handleInternetSuccess = () => {
-        // Skip mic noise test for noisy-data languages
-        setCurrentStep(noisy ? 'hearing' : 'mic');
+        setCurrentStep('mic');
     };
 
     const handleMicSuccess = () => {
@@ -34,15 +33,15 @@ export default function SystemCheck({ onComplete, noisy = false }) {
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
                             </svg>
                         </div>
-                        <h2 className="text-2xl md:text-4xl font-bold text-neutral-900 dark:text-white mb-4 md:mb-6 px-4">System Check Required</h2>
-                        <p className="text-sm md:text-lg text-neutral-600 dark:text-neutral-400 mb-8 md:mb-10 max-w-xl mx-auto px-4">
+                        <h2 className="text-2xl md:text-4xl font-bold text-neutral-900 mb-4 md:mb-6 px-4">System Check Required</h2>
+                        <p className="text-sm md:text-lg text-neutral-600 mb-8 md:mb-10 max-w-xl mx-auto px-4">
                             We'll verify your internet connection, microphone, and speakers to ensure the best call quality.
                         </p>
-                        <div className="flex flex-col items-center justify-center px-4 gap-4">
+                        <div className="flex flex-col sm:flex-row gap-3 md:gap-4 justify-center px-4">
                             <button onClick={startInternetCheck} className="btn btn-primary w-full sm:w-auto">
                                 Start System Check
                             </button>
-                            <button onClick={onComplete} className="text-sm text-neutral-400 hover:underline">
+                            <button onClick={onSkip} className="btn btn-secondary text-sm w-full sm:w-auto">
                                 Skip (Testing Only)
                             </button>
                         </div>

@@ -1,5 +1,6 @@
 import path from "path";
 import fs from "fs";
+import { pipeline } from "stream/promises";
 import { User } from "../models/User.js";
 import { CallSession } from "../models/CallSession.js";
 import { Feedback } from "../models/Feedback.js";
@@ -105,32 +106,36 @@ export async function submitLanguageApplication(req, res) {
   if (!req.user) return res.status(401).json({ error: "unauthorized" });
   if (!req.file) return res.status(400).json({ error: "no_file" });
 
-  const languageCode = String(req.body?.languageCode || "")
-    .trim()
-    .toLowerCase();
-  if (!languageCode)
-    return res.status(400).json({ error: "languageCode is required" });
-
-  const lang = await Language.findOne({ code: languageCode, enabled: true });
-  if (!lang)
-    return res.status(404).json({ error: "Language not found or disabled" });
-
-  const user = await User.findById(req.user._id);
-  if (!user) return res.status(404).json({ error: "User not found" });
-
-  const existing = user.languageApplications.find(
-    (a) => a.languageCode === languageCode
-  );
-  if (existing && existing.status === "pending") {
-    try { fs.unlinkSync(req.file.path); } catch (e) {}
-    return res.status(409).json({ error: "already_pending" });
-  }
-  if (existing && existing.status === "approved") {
-    try { fs.unlinkSync(req.file.path); } catch (e) {}
-    return res.status(409).json({ error: "already_approved" });
+  const applicationType = String(req.body?.applicationType || "phrase").trim();
+  const languageCode = String(req.body?.languageCode || "").trim().toLowerCase();
+  const companyId = String(req.body?.companyId || "").trim() || null;
+  
+  if (applicationType === "phrase" && !companyId) {
+    return res.status(400).json({ error: "companyId is required for phrase applications" });
   }
 
   try {
+    if (languageCode) {
+      const lang = await Language.findOne({ code: languageCode, enabled: true });
+      if (!lang)
+        return res.status(404).json({ error: "Language not found or disabled" });
+    }
+
+    const user = await User.findById(req.user._id);
+    if (!user) return res.status(404).json({ error: "User not found" });
+
+    const existing = user.languageApplications.find(
+      (a) => a.languageCode === languageCode && (applicationType === 'phrase' ? a.companyId === companyId : true) && a.applicationType === applicationType
+    );
+    if (existing && existing.status === "pending") {
+      try { fs.unlinkSync(req.file.path); } catch (e) {}
+      return res.status(409).json({ error: "already_pending" });
+    }
+    if (existing && existing.status === "approved") {
+      try { fs.unlinkSync(req.file.path); } catch (e) {}
+      return res.status(409).json({ error: "already_approved" });
+    }
+
     const flacPath = req.file.path.replace(".wav", ".flac");
     await new Promise((resolve, reject) => {
       ffmpeg(req.file.path)
@@ -167,6 +172,8 @@ export async function submitLanguageApplication(req, res) {
       existing.reviewedAt = null;
     } else {
       user.languageApplications.push({
+        applicationType,
+        companyId,
         languageCode,
         status: "pending",
         recordingFile: s3Key,
@@ -183,11 +190,22 @@ export async function submitLanguageApplication(req, res) {
   }
 }
 
-// ─── GET /api/language-applications/:userId/:languageCode/recording ───────────
+// ─── GET /api/language-applications/:userId/:appId/recording ───────────
 export async function streamLanguageRecording(req, res) {
-  const requestedLanguageCode = String(req.params.languageCode || "")
-    .trim()
-    .toLowerCase();
+  const appId = String(req.params.appId || "").trim();
+
+  const user = await User.findById(req.params.userId)
+    .select("languageApplications")
+    .lean();
+  if (!user) return res.status(404).json({ error: "User not found" });
+
+  const application = user.languageApplications.find(
+    (a) => String(a._id) === appId
+  );
+  if (!application) return res.status(404).json({ error: "Application not found" });
+
+  const requestedLanguageCode = String(application.languageCode).toLowerCase();
+  
   const qaLanguageCode = String(
     req.user?.qaLanguageCode || req.user?.qaLanguageCodes?.[0] || ""
   )
@@ -200,15 +218,7 @@ export async function streamLanguageRecording(req, res) {
     return res.status(403).json({ error: "Language access required" });
   }
 
-  const user = await User.findById(req.params.userId)
-    .select("languageApplications")
-    .lean();
-  if (!user) return res.status(404).json({ error: "User not found" });
-
-  const application = user.languageApplications.find(
-    (a) => a.languageCode === requestedLanguageCode
-  );
-  if (!application?.recordingFile)
+  if (!application.recordingFile)
     return res.status(404).json({ error: "Recording not found" });
 
   try {
@@ -220,9 +230,15 @@ export async function streamLanguageRecording(req, res) {
     res.setHeader("Content-Disposition", "inline");
     res.setHeader("X-Content-Type-Options", "nosniff");
     res.setHeader("Content-Type", s3Doc.ContentType || "audio/webm");
-    s3Doc.Body.pipe(res);
+    try {
+      await pipeline(s3Doc.Body, res);
+    } catch (streamErr) {
+      if (!["ERR_STREAM_PREMATURE_CLOSE", "ECONNRESET", "ERR_STREAM_DESTROYED"].includes(streamErr?.code)) {
+        console.error("streamLanguageRecording pipe error:", streamErr);
+      }
+    }
   } catch (err) {
-    return res.status(404).json({ error: "File not found on AWS S3" });
+    if (!res.headersSent) return res.status(404).json({ error: "File not found on AWS S3" });
   }
 }
 
@@ -407,8 +423,14 @@ export async function streamRecording(req, res) {
     const s3Doc = await s3Client.send(command);
     const mimeType = fileName.endsWith(".ogg") ? "audio/ogg" : "audio/webm";
     res.setHeader("Content-Type", s3Doc.ContentType || mimeType);
-    s3Doc.Body.pipe(res);
+    try {
+      await pipeline(s3Doc.Body, res);
+    } catch (streamErr) {
+      if (!["ERR_STREAM_PREMATURE_CLOSE", "ECONNRESET", "ERR_STREAM_DESTROYED"].includes(streamErr?.code)) {
+        console.error("streamRecording pipe error:", streamErr);
+      }
+    }
   } catch (err) {
-    return res.status(404).json({ error: "recording_not_found" });
+    if (!res.headersSent) return res.status(404).json({ error: "recording_not_found" });
   }
 }

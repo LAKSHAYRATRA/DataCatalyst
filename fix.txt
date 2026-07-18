@@ -1,0 +1,65 @@
+## 1. Yes, you can run your own free TURN
+
+Absolutely doable. The trick is: the TURN software itself (`coturn`) is free and open source. You just need a small server with a public IP to run it on.
+
+**Best genuinely-free option: Oracle Cloud Always Free**
+
+Not a trial, not "free for 12 months" — actually free forever. Includes:
+- 4 ARM cores + 24 GB RAM (way more than TURN needs)
+- Mumbai region available (low latency for India users)
+- **10 TB/month outbound bandwidth free** — more than enough for hundreds of voice calls a day
+
+Rough recipe:
+1. Sign up at cloud.oracle.com → pick "Always Free" tier during signup
+2. Create a small ARM Ubuntu VM in the **Mumbai** region
+3. In the VM: `sudo apt install coturn`
+4. Configure `/etc/turnserver.conf` — a bare-minimum config:
+
+    listening-port=3478
+    fingerprint
+    lt-cred-mech
+    user=myuser:mypassword
+    realm=yourdomain.com
+    total-quota=100
+
+5. Open UDP 3478 and UDP 49152-65535 in Oracle's security list *and* Ubuntu firewall
+6. Start it: `sudo systemctl enable --now coturn`
+7. In your `voicechat-frontend/.env`:
+
+    VITE_ICE_SERVERS=[{"urls":"stun:stun.l.google.com:19302"},{"urls":"turn:<your-oracle-vm-public-ip>:3478","username":"myuser","credential":"mypassword"}]
+
+8. Rebuild frontend, redeploy to S3.
+
+Total setup time: ~1 hour if you've never done it before, ~15 min if you're familiar with Linux. Total ongoing cost: **₹0/month**.
+
+**Other free-forever-ish options (backup plans):**
+- Google Cloud e2-micro always free — but only 1 GB/month egress, tiny.
+- AWS t3.micro free tier — only 12 months, then you pay.
+- Any $5/month VPS from Hetzner/DigitalOcean if Oracle signup is annoying.
+
+**Warning:** Oracle Cloud is notorious for either (a) taking days to approve new signups in some regions, or (b) reclaiming idle free instances. If you go this route, use the instance regularly and don't let it sit unused for weeks.
+
+
+## 2. TURN cannot cause the file-duration mismatch
+
+Rock-solid no. Here's why, one more time in the simplest way:
+
+- The **recording** = each person's own mic → their own browser → mailed over Socket.IO → backend saves it. This is the tape-recorder-in-your-hand path.
+- The **live call** = each person's mic → WebRTC → other person's speaker. This is the phone-call path.
+- TURN sits on the **phone-call path only**. It never touches the tape-recorder path.
+
+Different pipes. Different code. Different servers. Adding TURN to the phone-call path can't affect what the tape recorders capture, any more than switching phone carriers would affect a voice memo you recorded on your phone.
+
+**The real reason the two recording files differ in length** (19:30 vs 19:45 = 15 seconds off):
+
+Look at voicechat-frontend/src/pages/Call.jsx:346-381 (`startCallRecording`) and voicechat-frontend/src/pages/Call.jsx:383-395 (`stopCallRecording`).
+
+- Each side calls `startCallRecording` independently, at the end of its own countdown. If one side's browser is slower to load the audio worklet, or `record_start` reaches the backend a few hundred ms later, that side's recording begins later.
+- Each side calls `stopCallRecording` when its own `cleanupCallUi` runs — which fires when it *receives* the `call_ended` / `peer_left` event. Whoever hangs up stops recording *first*. The other side keeps recording until the "call ended" message travels through the server and back to them.
+
+15 seconds is bigger than I'd expect from network delay alone, so it's probably one of:
+- One side started significantly later (slow `getUserMedia` / `audioWorklet.addModule`)
+- One side didn't get the `call_ended` event promptly and kept recording (or the recording upload had a hiccup)
+- The two recordings genuinely covered slightly different time windows
+
+This is a **separate issue** worth fixing later. It's not caused by TURN and adding TURN won't make it worse. If you want, once your Hindi call actually has audio, I can dig into whether there's a way to timestamp both recordings against a common server clock so they always line up.

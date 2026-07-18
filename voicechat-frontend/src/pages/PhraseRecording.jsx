@@ -4,10 +4,15 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { apiGet } from '../lib/api';
 import { encodeWAV } from '../utils/wavBuilder.js';
 import { getUserInfo } from '../lib/auth.js';
+import { useNavigate, Link } from 'react-router-dom';
 
 export default function PhraseRecording() {
+  const navigate = useNavigate();
   const userInfo = getUserInfo();
-  const approvedLanguages = userInfo?.languageApplications?.filter(app => app.status === 'approved').map(app => app.languageCode) || [];
+  
+  // These will be populated from the API
+  const [approvedApps, setApprovedApps] = useState([]);
+  const [approvedCompanies, setApprovedCompanies] = useState([]);
 
   const [stats, setStats] = useState({ 
     totalSeconds: 0, 
@@ -19,9 +24,21 @@ export default function PhraseRecording() {
   const [projects, setProjects] = useState([]);
   const [allLanguages, setAllLanguages] = useState([]);
   
-  // Default to first approved language or 'english'
-  const [language, setLanguage] = useState(approvedLanguages[0] || 'english');
   const [projectName, setProjectName] = useState('Any');
+  const [language, setLanguage] = useState('');
+  const [availableLanguages, setAvailableLanguages] = useState([]);
+
+  useEffect(() => {
+    const newLangs = Array.from(new Set(
+      approvedApps
+        .filter(a => projectName === 'Any' || a.companyId === projectName)
+        .map(a => a.languageCode)
+    ));
+    setAvailableLanguages(newLangs);
+    if (!newLangs.includes(language)) {
+      setLanguage(newLangs[0] || '');
+    }
+  }, [projectName, approvedApps]);
 
   const [currentPhrase, setCurrentPhrase] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -47,11 +64,25 @@ export default function PhraseRecording() {
 
   async function fetchInitialData() {
     try {
-      const [statsData, projectsData, languagesData] = await Promise.all([
+      const [statsData, projectsData, languagesData, appsData] = await Promise.all([
         apiGet('/api/phrases/my-stats'),
         apiGet('/api/projects'),
-        apiGet('/api/languages')
+        apiGet('/api/languages'),
+        apiGet('/api/language-applications/my')
       ]);
+
+      const myApps = appsData.applications || [];
+      const approved = myApps.filter(app => app.status === 'approved');
+      
+      if (approved.length === 0) {
+        navigate('/language-apply');
+        return;
+      }
+      
+      setApprovedApps(approved);
+      const companies = ['Any', ...Array.from(new Set(approved.map(a => a.companyId).filter(Boolean)))];
+      setApprovedCompanies(companies);
+      setProjectName(companies[0] || 'Any');
 
       setStats({ 
           totalSeconds: statsData.totalSeconds || 0, 
@@ -363,11 +394,14 @@ export default function PhraseRecording() {
                 <select 
                   className="input w-full"
                   value={projectName} 
-                  onChange={(e) => setProjectName(e.target.value)}
+                  onChange={(e) => {
+                    setProjectName(e.target.value);
+                    setCurrentPhrase(null);
+                  }}
+                  disabled={loading || isRecording}
                 >
-                  <option value="Any">Any Project</option>
-                  {projects.map(p => (
-                    <option key={p._id} value={p.name}>{p.name}</option>
+                  {approvedCompanies.map(c => (
+                    <option key={c} value={c}>{c}</option>
                   ))}
                 </select>
               </div>
@@ -377,19 +411,25 @@ export default function PhraseRecording() {
                   <Mic className="w-4 h-4" /> Language
                 </label>
                 <select 
-                  className="input w-full" 
+                  className="input w-full capitalize" 
                   value={language} 
-                  onChange={(e) => setLanguage(e.target.value)}
+                  onChange={(e) => {
+                    setLanguage(e.target.value);
+                    setCurrentPhrase(null);
+                  }}
+                  disabled={loading || isRecording}
                 >
-                  {approvedLanguages.length === 0 ? (
-                    <option value="english">English (Default)</option>
-                  ) : (
-                    approvedLanguages.map(lang => (
-                      <option key={lang} value={lang}>{lang.charAt(0).toUpperCase() + lang.slice(1)}</option>
-                    ))
-                  )}
+                  {availableLanguages.map(lang => (
+                    <option key={lang} value={lang}>{lang}</option>
+                  ))}
                 </select>
               </div>
+            </div>
+
+            <div className="flex justify-end mb-4">
+               <Link to="/language-apply" className="text-sm font-medium text-primary-600 hover:text-primary-700">
+                 + Apply for New Project/Language
+               </Link>
             </div>
 
             <div className="flex items-center justify-between bg-primary-900/20 border border-primary-500/30 p-4 rounded-xl mb-4">

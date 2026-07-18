@@ -57,6 +57,8 @@ const userSchema = new mongoose.Schema(
     // Language applications — one entry per language the user has applied for
     languageApplications: [
       {
+        applicationType: { type: String, enum: ["call", "phrase"], default: "phrase" },
+        companyId: { type: String, trim: true, default: null },
         languageCode: { type: String, required: true, lowercase: true, trim: true },
         status: { type: String, enum: ["pending", "approved", "rejected"], default: "pending" },
         recordingFile: { type: String, default: null },

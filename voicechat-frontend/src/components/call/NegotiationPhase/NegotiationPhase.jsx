@@ -84,11 +84,11 @@ export default function NegotiationPhase({
                 {/* Peer Info */}
                 <div className="flex items-center justify-center space-x-3 mb-4 md:mb-5 bg-neutral-50 p-3 rounded-xl border border-neutral-100">
                     <div className="w-9 h-9 md:w-10 md:h-10 bg-gradient-primary rounded-full flex items-center justify-center text-white font-bold text-base md:text-lg shadow-md">
-                        {peerUsername?.charAt(0)?.toUpperCase() || "P"}
+                        A
                     </div>
                     <div>
                         <div className="text-xs text-neutral-500">Connected with</div>
-                        <div className="text-sm md:text-base font-bold text-neutral-900">{peerUsername || "Peer"}</div>
+                        <div className="text-sm md:text-base font-bold text-neutral-900">Anonymous Partner</div>
                     </div>
                 </div>
 

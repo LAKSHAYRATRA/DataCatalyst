@@ -1,0 +1,283 @@
+========================================================================
+WHY THE WEBSITE BREAKS FOR EVERYONE ON THESE ACTIONS
+========================================================================
+
+Three actions all end with "the whole website is down and returns
+'Failed to fetch' for every user, on every page":
+
+  1. Admin > Users > Pending > Approve
+  2. User > Active Call > submit Hindi call application
+  3. Admin > Language Apps > approve Hindi recording
+
+They share ONE root cause. The individual triggers per action differ,
+but the reason the whole site goes down is the same.
+
+
+========================================================================
+ROOT CAUSE (COMMON TO ALL THREE)
+========================================================================
+
+The backend has NO safety net for uncaught exceptions.
+
+Confirmed by grepping voicechat-backend/src:
+  - Express version:                  4.19.2
+  - express-async-errors installed:   NO
+  - Any asyncHandler wrapper:         NO
+  - process.on('uncaughtException'):  NO (0 matches anywhere)
+  - process.on('unhandledRejection'): NO (0 matches anywhere)
+  - Global Express error middleware:  NO
+
+Consequences:
+  - Express 4 does NOT automatically catch errors from async route
+    handlers. An `await` that rejects outside a try/catch becomes an
+    UnhandledPromiseRejection.
+  - Since Node 15, the default behavior for UnhandledPromiseRejection
+    is to TERMINATE the process.
+  - Any readable-stream `.pipe(res)` where the source stream emits
+    'error' with no listener is an uncaught 'error' event, which Node
+    also treats as an unhandled exception -> process exit.
+  - Per project memory: backend has NO auto-reload (`node src/index.js`,
+    no nodemon). Once the process dies, it stays dead until manually
+    restarted.
+
+Effect on the browser:
+  - The server is simply gone. Every fetch() to it fails at the network
+    layer with `TypeError: Failed to fetch`.
+  - Every currently logged-in browser (yours, other admins, users) sees
+    the same "Failed to fetch" until the backend is restarted.
+
+Any one of the specific triggers below is enough to bring the whole
+site down.
+
+
+========================================================================
+SCENARIO 1: APPROVING A PENDING USER
+  Frontend: voicechat-frontend/src/pages/AdminUsers.jsx (approveUser)
+  Backend:  voicechat-backend/src/routes/admin.js:1117
+            (PATCH /api/admin/users/:userId/approve)
+========================================================================
+
+The approve endpoint itself is small and wrapped in try/catch. The
+handler is not what crashes. What crashes is the SIDE EFFECT of the
+re-render after approval.
+
+The kill chain:
+
+  1. Click Approve.
+  2. Frontend does `apiPatchJson('/api/admin/users/<id>/approve')`.
+  3. Frontend then awaits `loadPending()` which reloads the list.
+  4. The approved user disappears from the list -> React unmounts that
+     row.
+  5. The <audio src="/api/admin/users/<id>/intro"> element unmounts
+     mid-stream -> the browser ABORTS the connection.
+  6. On the backend, admin.js:1107 pipes the S3 object body directly
+     to the response:
+        response.Body.pipe(res);
+     with NO `.on('error', ...)` handler on `response.Body`.
+  7. When the client aborts, the AWS SDK v3 readable stream emits an
+     'error' event ('Premature close' / 'ECONNRESET' / socket hangup).
+  8. Nothing is subscribed to that 'error' event -> Node re-throws it
+     as an uncaughtException.
+  9. No `process.on('uncaughtException')` handler -> process EXITS.
+ 10. Every subsequent request from every browser: "Failed to fetch".
+
+Contributing / secondary issues in this flow:
+  - `apiPatchJson(path)` is called with no body -> `JSON.stringify(undefined)`
+    is sent with `Content-Type: application/json`. Harmless in this
+    case but a smell.
+  - The pending list opens N <audio> elements at once (one per pending
+    user). Each is a separate S3 stream. N chances for one to abort/
+    error at the wrong moment.
+  - Any pending user whose `introRecordingFile` no longer exists in
+    S3/MinIO will cause the S3 GetObject to error mid-stream.
+  - Per project memory, S3 endpoint locally is MinIO on :9000. If
+    `S3_ENDPOINT` is missing or MinIO is restarted, the pipe errors.
+
+Note: "Voclara" is NOT special. Nothing in the approve endpoint or
+the User model touches company data. Voclara just happened to be the
+account you clicked; any pending user with an intro recording will
+trigger this.
+
+
+========================================================================
+SCENARIO 2: SUBMITTING A HINDI CALL APPLICATION
+  Frontend: voicechat-frontend/src/pages/LanguageApply.jsx (submit)
+  Backend:  voicechat-backend/src/controllers/userController.js:104
+            (POST /api/language-applications)
+========================================================================
+
+This handler has multiple crash paths.
+
+------------------------------------------------------------------
+2A. Two awaits OUTSIDE the try/catch (the most likely killer)
+------------------------------------------------------------------
+In `submitLanguageApplication`:
+
+    line 117:  await Language.findOne({ code: languageCode, enabled: true })
+    line 122:  await User.findById(req.user._id)
+
+The `try {` doesn't open until line 137. If either Mongo call rejects
+for ANY reason (transient network blip, replica-set election, socket
+timeout, connection pool exhausted, wrong URI, DB restart, cursor
+error), Express 4 does not catch it -> UnhandledPromiseRejection ->
+Node exits -> whole website down.
+
+------------------------------------------------------------------
+2B. ffmpeg spawn / conversion errors
+------------------------------------------------------------------
+line 139-148: WAV -> FLAC conversion via fluent-ffmpeg.
+
+  - userController.js imports `fluent-ffmpeg` but NEVER calls
+    `ffmpeg.setFfmpegPath(...)`. Only index.js, phraseController.js,
+    and testController.js do. It works today because setFfmpegPath
+    sets a module-level static and one of those modules loads first.
+    If module load order ever shifts, ffmpeg spawns with just
+    "ffmpeg" and fails ENOENT on Windows.
+  - Project path contains spaces and OneDrive:
+        C:\Users\manoj\OneDrive\Desktop\DC App n Website\DC Website\...
+    OneDrive can transiently lock the temp WAV during sync while
+    ffmpeg is reading it -> ffmpeg error.
+  - .output(flacPath) with flacPath = req.file.path.replace(".wav",".flac"):
+    if the temp filename ever loses its ".wav" suffix (multer config
+    change), replace() returns the input unchanged -> ffmpeg reads
+    AND writes the same file -> corrupted FLAC uploaded to S3.
+    (Not a server crash, but a "code broke" symptom.)
+  - fluent-ffmpeg attaches `.on('error', reject)` inside the Promise,
+    so most ffmpeg errors reject cleanly and get caught. But a spawn
+    error firing before listeners attach can escape.
+
+------------------------------------------------------------------
+2C. S3/MinIO upload with a raw file stream
+------------------------------------------------------------------
+line 152-161:
+
+    Body: fs.createReadStream(flacPath)
+
+Same class of bug as scenario 1. If MinIO drops the connection
+mid-upload, or the local disk stream errors (OneDrive lock, file
+deleted by antivirus, disk full), the readable stream can emit
+'error' where @aws-sdk/lib-storage doesn't cleanly propagate every
+edge case -> possible unhandled rejection.
+
+If MinIO isn't running on :9000, or S3_ENDPOINT is wrong, the
+`uploader.done()` rejects cleanly and is caught -> 500 response.
+Not fatal by itself.
+
+------------------------------------------------------------------
+2D. Multer / upload middleware
+------------------------------------------------------------------
+`langUpload` is disk storage at index.js:179, writing to
+`recordings/temp/`. Failure modes:
+
+  - If that directory can't be created (permissions, disk full,
+    OneDrive sync holding it) -> multer error. There is NO Express
+    error middleware to catch multer errors -> response hangs, client
+    sees Failed to fetch.
+  - fileFilter rejects if the blob's `type` isn't `audio/*`. The
+    frontend `encodeWAV(...)` may return a blob with an empty type,
+    depending on implementation. If so, multer rejects the request.
+  - limits.fileSize = 60MB. A 2-min 48kHz mono 16-bit WAV is ~11 MB,
+    well under the limit. Not the trigger.
+
+------------------------------------------------------------------
+2E. Hindi language row missing / disabled
+------------------------------------------------------------------
+line 117 requires the Language collection to have a row with
+`{ code: "hindi", enabled: true }`. If Hindi is missing or disabled,
+you get 404, NOT a crash. But this is worth verifying with:
+
+    db.languages.findOne({ code: "hindi" })
+
+
+========================================================================
+SCENARIO 3: ADMIN/QA APPROVING A HINDI RECORDING
+  Frontend: voicechat-frontend/src/pages/AdminLanguageApps.jsx
+  Backend:  voicechat-backend/src/routes/admin.js:96
+            (PATCH /api/admin/language-applications/:userId/:appId/approve
+             and the mirror qa route at admin.js:353)
+========================================================================
+
+`approveLanguageApplication` IS wrapped in try/catch (admin.js:97-115).
+So a Mongo rejection inside becomes a clean 500, not a crash. But two
+things can still take the process down:
+
+------------------------------------------------------------------
+3A. `await user.save()` triggers FULL-DOCUMENT validation
+------------------------------------------------------------------
+line 111. Mongoose's `save()` validates the ENTIRE user document,
+not just the changed fields.
+
+The User schema (voicechat-backend/src/models/User.js) requires:
+    username, email, passwordHash, dob, gender, regionalLanguage,
+    locality, address.{street,state,city,pincode},
+    microphoneBrand, microphoneModel
+
+If ANY of those are missing, invalid, or of the wrong shape on the
+target user document (e.g. old accounts created before the schema
+tightened, seeded QA users, an entry with a `languageApplications`
+sub-doc missing `languageCode`), save() rejects.
+
+The reject is caught by the try/catch -> HTTP 500 with the error
+message. So this alone does NOT crash node -- BUT it does explain
+why "approving Hindi recording" fails while other actions succeed:
+the target user is in a state that can't be re-saved.
+
+------------------------------------------------------------------
+3B. The audio review players in AdminLanguageApps
+------------------------------------------------------------------
+Same crash pattern as scenario 1. The admin page renders an <audio>
+element for each pending application, pointing at:
+
+    GET /api/language-applications/:userId/:appId/recording
+    -> streamLanguageRecording (userController.js:193)
+
+That endpoint also does `response.Body.pipe(res)`-style streaming.
+When you click Approve, the list reloads, the approved row unmounts,
+its audio request is aborted mid-stream, the S3 stream emits 'error'
+with no listener -> uncaughtException -> node exits -> whole site
+down.
+
+This is the SAME kill chain as scenario 1, just on a different
+endpoint. It fires regardless of which language you approve --
+"Hindi" isn't special.
+
+------------------------------------------------------------------
+3C. Missing / stale S3 object
+------------------------------------------------------------------
+If the FLAC that was uploaded during scenario 2 is broken/missing
+(e.g. corrupted by the WAV/FLAC same-path bug in 2B, or MinIO was
+wiped between submission and review), the streaming endpoint's
+S3 GetObject errors mid-stream -> same unhandled 'error' event ->
+crash.
+
+
+========================================================================
+SUMMARY: WHAT ACTUALLY NEEDS TO CHANGE (NOT FIXING, JUST LISTING)
+========================================================================
+
+The individual triggers are almost secondary. The reason ONE bad
+request takes down every user on every page is architectural:
+
+  A) No global `process.on('uncaughtException')` /
+     `process.on('unhandledRejection')` -> any single unhandled error
+     kills node.
+
+  B) No `express-async-errors` (or Express 5) and no asyncHandler
+     wrappers -> async rejections in routes are unhandled.
+
+  C) No global Express error middleware -> multer errors and thrown
+     synchronous errors have nowhere to go.
+
+  D) Every S3 stream endpoint does `response.Body.pipe(res)` with no
+     'error' listener on the source stream. Client aborts (routine
+     during React unmounts) become uncaught exceptions.
+
+  E) `submitLanguageApplication` has two awaits above its try/catch.
+
+  F) No auto-reload on the backend -> once it dies, it stays dead
+     until manually restarted.
+
+Fix any ONE of A/B/C/D and the "whole website goes down" symptom
+mostly disappears; the individual requests would then just return
+5xx errors to the one user who triggered them, instead of taking
+down the site.

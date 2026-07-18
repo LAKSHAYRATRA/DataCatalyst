@@ -1,0 +1,143 @@
+WHY YOU AND YOUR BUDDY CAN'T HEAR EACH OTHER ON A HINDI CALL
+==============================================================
+
+There are two things that could be causing this. One of them is a
+code problem, the other is a network problem. Read both and see
+which one matches what you're actually experiencing.
+
+
+------------------------------------------------------------------
+REASON 1 — YOU MIGHT NOT EVEN BE GETTING CONNECTED
+------------------------------------------------------------------
+
+The website recently added a new rule for who is allowed to make
+calls. To join the call queue, your Hindi approval has to be
+marked as a "call" application specifically.
+
+Where the rule lives: voicechat-backend/src/index.js:743
+Where the setting lives: voicechat-backend/src/models/User.js:60
+
+Think of it like a movie theater that just added a new rule:
+"Only tickets stamped 'evening show' are allowed in tonight."
+If your Hindi ticket was printed before that rule existed, or
+was stamped 'phrase' instead of 'call', the doorman turns you
+away — even though it says "Hindi approved" right on the ticket.
+
+What you would see:
+- A popup that says "You are not approved to call in Hindi yet.
+  Would you like to apply now?"
+- Or you just sit on "finding match" forever while your buddy
+  seems to also be stuck.
+
+You would NOT see the topic selection screen or the countdown.
+
+How to fix it:
+- Both people need a Hindi application where the type is 'call'.
+- Either re-apply through the "Call Application" tab on the
+  language apply page (voicechat-frontend/src/pages/LanguageApply.jsx:239)
+  and get an admin to approve it,
+- Or go directly into Mongo and set the field:
+
+    db.users.find({ "languageApplications.languageCode": "hindi" },
+                  { username: 1, "languageApplications.$": 1 })
+
+    // then for each user missing the flag:
+    $set: { "languageApplications.$.applicationType": "call" }
+
+
+------------------------------------------------------------------
+REASON 2 — YOU'RE CONNECTED, BUT THE AUDIO CAN'T GET THROUGH
+------------------------------------------------------------------
+
+If you actually reach the topic-selection screen and the countdown,
+and then it just goes silent — the code is fine, the connection
+is stuck at the network level.
+
+Where the setup lives: voicechat-frontend/src/pages/Call.jsx:20-29
+
+Think of it like two people trying to call each other's phones,
+but both phones are inside locked apartment buildings. You know
+each other's addresses (that's what STUN does — it exchanges
+addresses), but neither of you can actually get past the other's
+front door (the firewall / NAT). So no sound gets through.
+
+The site currently only has STUN and no TURN. That means:
+
+- Same Wi-Fi, same house, same LAN? Works. No locked doors between you.
+- Two browsers on the same laptop? Definitely works — that's why
+  you heard yourself echo.
+- Two different networks across the internet? Often fails.
+  Mobile data, office Wi-Fi, hotels, some home ISPs — the doors
+  are locked and STUN alone can't open them.
+
+How to confirm this is what's happening:
+- Open DevTools during the call.
+- Look for "ICE Connection Failed" in the console
+  (logged from voicechat-frontend/src/pages/Call.jsx:417).
+- Or open chrome://webrtc-internals and watch the ICE candidate
+  pairs — they'll stay in "checking" or "failed" and never
+  reach "succeeded".
+
+How to fix it:
+Add a TURN server. TURN is basically a middleman meeting spot —
+instead of trying to force open each other's front doors, both
+of you walk to a coffee shop in the middle and hand your voice
+packets to a barista who passes them along. This works because
+both of you are the ones reaching OUT (which locked doors don't
+block), instead of trying to be reached IN.
+
+Set this in voicechat-frontend/.env
+(NOT the backend .env — it's a frontend variable because it's
+read via import.meta.env):
+
+    VITE_ICE_SERVERS=[{"urls":"stun:stun.l.google.com:19302"},{"urls":"turn:YOUR_TURN_HOST:3478","username":"USER","credential":"PASS"}]
+
+Options for the TURN server itself:
+- Quick free test (dev only): Open Relay Project at
+  metered.ca/tools/openrelay — gives working credentials in a
+  minute. But their free servers are US-only, so India users
+  will feel a walkie-talkie delay.
+- Best for India users: rent a small $5/month VPS in Mumbai or
+  Singapore and run coturn on it. Low delay, cheap.
+- Best zero-hassle option: Twilio Network Traversal — pay per
+  GB, has servers everywhere, low delay.
+
+After you change the .env, REBUILD the frontend. Vite bakes env
+variables in at build time, so a live-reload isn't enough.
+
+
+------------------------------------------------------------------
+IMPORTANT: TURN DOES NOT AFFECT YOUR RECORDINGS
+------------------------------------------------------------------
+
+If you were worried that adding TURN would mess up the two
+separated speaker recordings (like the 19:30 vs 19:45 files) —
+it won't.
+
+Each person's recording is captured from their OWN microphone,
+locally in their own browser, and mailed to the server over a
+separate socket connection. TURN is only involved in the LIVE
+conversation between the two of you. It never touches the
+recording files.
+
+The reason the two recordings have slightly different lengths
+is a separate small timing issue in when each side starts and
+stops recording (see startCallRecording in
+voicechat-frontend/src/pages/Call.jsx:346), not a TURN problem.
+
+
+------------------------------------------------------------------
+QUICK CHECK — WHICH REASON IS YOURS?
+------------------------------------------------------------------
+
+Q: Do you get a "would you like to apply" popup, or stay stuck
+   on the "finding match" spinner?
+   → Reason 1 (application type).
+
+Q: Do you actually reach the topic-selection screen and the
+   5-second countdown, and THEN it goes silent?
+   → Reason 2 (no TURN server).
+
+Q: Do two accounts on the same laptop echo fine, but a real
+   buddy on a different network hears nothing?
+   → Reason 2 (no TURN server). Confirmed.

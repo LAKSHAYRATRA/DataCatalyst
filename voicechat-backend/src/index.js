@@ -96,6 +96,14 @@ const MAX_CALL_MS = parseMaxCallMs(process.env.MAX_CALL_MS, 20 * 60 * 1000);
 
 if (!JWT_SECRET) throw new Error("JWT_SECRET is required");
 
+// ─── Global safety net: keep the process alive on unexpected errors ──────────
+process.on("uncaughtException", (err) => {
+  console.error("UNCAUGHT EXCEPTION:", err);
+});
+process.on("unhandledRejection", (reason) => {
+  console.error("UNHANDLED REJECTION:", reason);
+});
+
 // ─── Express setup ────────────────────────────────────────────────────────────
 const app = express();
 
@@ -106,7 +114,7 @@ app.set("trust proxy", 1);
 app.use(helmet()); 
 const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes span
-  max: 150, // Permitted requests natively
+  max: 2000, // Permitted requests natively
   message: { error: "Global Speed Limit exceeded. Please try again later." },
 });
 const authLimiter = rateLimit({
@@ -247,7 +255,7 @@ app.post(
   submitLanguageApplication
 );
 app.get(
-  "/api/language-applications/:userId/:languageCode/recording",
+  "/api/language-applications/:userId/:appId/recording",
   requireAuth(JWT_SECRET),
   streamLanguageRecording
 );
@@ -740,7 +748,7 @@ io.on("connection", (socket) => {
         .select("languageApplications")
         .lean();
       const langApp = freshUser?.languageApplications?.find(
-        (a) => a.languageCode === userLanguage && a.status === "approved"
+        (a) => a.languageCode === userLanguage && a.status === "approved" && (a.applicationType || 'phrase') === 'call'
       );
       if (!langApp) {
         socket.emit("error_message", {
@@ -1035,6 +1043,13 @@ io.on("connection", (socket) => {
     socket.data.peerId = null;
     socket.data.role = null;
   });
+});
+
+// ─── Global Express error handler (must be last app.use) ─────────────────────
+app.use((err, req, res, next) => {
+  console.error("Express error:", err);
+  if (res.headersSent) return next(err);
+  res.status(500).json({ error: "server_error" });
 });
 
 // ─── Start ────────────────────────────────────────────────────────────────────

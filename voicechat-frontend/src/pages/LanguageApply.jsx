@@ -9,9 +9,13 @@ const MAX_SEC = 120; // 2 minutes
 
 export default function LanguageApply() {
     const navigate = useNavigate();
-    const [languages, setLanguages] = useState([]);
+    const [companies, setCompanies] = useState([]);
+    const [globalLanguages, setGlobalLanguages] = useState([]);
     const [myApps, setMyApps] = useState([]);
-    const [selected, setSelected] = useState(null);
+    const [selectedCompany, setSelectedCompany] = useState("");
+    const [selectedLanguage, setSelectedLanguage] = useState("");
+    const [applicationType, setApplicationType] = useState("call"); // 'call' or 'phrase'
+    const [samplePhrase, setSamplePhrase] = useState(null);
     const [phase, setPhase] = useState("select"); // select | record | done
     const [recording, setRecording] = useState(false);
     const [secondsLeft, setSecondsLeft] = useState(MAX_SEC);
@@ -33,26 +37,49 @@ export default function LanguageApply() {
     async function load() {
         setPageLoading(true);
         try {
-            const [langsRes, appsRes] = await Promise.all([
-                apiGet("/api/languages"),
+            const [companiesRes, appsRes, langsRes] = await Promise.all([
+                apiGet("/api/admin/companies"),
                 apiGet("/api/language-applications/my"),
+                apiGet("/api/languages")
             ]);
-            setLanguages(langsRes.languages || []);
+            setCompanies(companiesRes.companies || []);
             setMyApps(appsRes.applications || []);
+            setGlobalLanguages(langsRes.languages || []);
         } catch (e) {
-            setError("Failed to load languages.");
+            setError("Failed to load projects.");
         } finally {
             setPageLoading(false);
         }
     }
 
-    function getStatus(code) {
-        return myApps.find(a => a.languageCode === code)?.status || null;
+    function getStatus(companyId, code, type) {
+        return myApps.find(a => a.languageCode === code && (type === 'phrase' ? a.companyId === companyId : true) && (a.applicationType || 'phrase') === type)?.status || null;
     }
 
-    function canApply(code) {
-        const st = getStatus(code);
+    function canApply(companyId, code, type) {
+        const st = getStatus(companyId, code, type);
         return st === null || st === "rejected";
+    }
+
+    async function fetchSamplePhrase(companyId, languageCode) {
+        setLoading(true);
+        setError("");
+        try {
+            const langQuery = languageCode ? `&language=${encodeURIComponent(languageCode)}` : '';
+            const data = await apiGet(`/api/phrases/sample?companyId=${encodeURIComponent(companyId)}${langQuery}`);
+            if (data.phrase) {
+                setSamplePhrase(data.phrase);
+                setPhase("record");
+                setAudioBlob(null);
+                setAudioUrl(null);
+            } else {
+                setError("No sample phrase found for this project and language.");
+            }
+        } catch (e) {
+            setError(e.message || "Failed to fetch sample phrase.");
+        } finally {
+            setLoading(false);
+        }
     }
 
     async function startRecording() {
@@ -123,13 +150,18 @@ export default function LanguageApply() {
     }
 
     async function submit() {
-        if (!audioBlob || !selected) return;
+        if (!audioBlob || !selectedLanguage) return;
+        if (applicationType === 'phrase' && !selectedCompany) return;
         setLoading(true);
         setError("");
         try {
             const form = new FormData();
-            form.append("languageCode", selected.code);
-            form.append("recording", audioBlob, `lang_${selected.code}.wav`);
+            form.append("applicationType", applicationType);
+            if (applicationType === 'phrase') {
+                form.append("companyId", selectedCompany);
+            }
+            form.append("languageCode", selectedLanguage);
+            form.append("recording", audioBlob, `app_${applicationType}_${selectedCompany || 'call'}_${selectedLanguage}.wav`);
             const res = await fetch(`${BACKEND}/api/language-applications`, {
                 method: "POST", body: form, credentials: "include",
             });
@@ -139,7 +171,11 @@ export default function LanguageApply() {
                 if (data.error === "already_approved") throw new Error("You're already approved for this language!");
                 throw new Error(data.error || "Upload failed");
             }
-            setSuccess(`Your ${selected.name} application has been submitted! An admin will review it soon.`);
+            if (applicationType === 'phrase') {
+                setSuccess(`Your application for ${selectedCompany} (${selectedLanguage}) has been submitted!`);
+            } else {
+                setSuccess(`Your call application for (${selectedLanguage}) has been submitted!`);
+            }
             setPhase("done");
             load();
         } catch (e) {
@@ -151,8 +187,7 @@ export default function LanguageApply() {
 
     const fmt = s => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 
-    const statusBadge = (code) => {
-        const st = getStatus(code);
+    const statusBadge = (st) => {
         if (!st) return null;
         const cfg = {
             approved: "bg-success-100 text-success-700",
@@ -175,10 +210,10 @@ export default function LanguageApply() {
                 {/* Header */}
                 <div className="mb-8 animate-fade-in">
                     <button
-                        onClick={() => navigate("/call")}
+                        onClick={() => navigate(-1)}
                         className="inline-flex items-center gap-1 text-sm text-primary-600 hover:text-primary-700 font-medium mb-4 transition-colors"
                     >
-                        ← Back to Call
+                        ← Back
                     </button>
                     <h1 className="text-3xl md:text-4xl font-bold text-neutral-900 mb-2">Apply for a Language</h1>
                     <p className="text-neutral-600">Record a 2‑minute sample to demonstrate your fluency. An admin will review and approve your application.</p>
@@ -197,65 +232,128 @@ export default function LanguageApply() {
                     </div>
                 )}
 
-                {/* Language Selection */}
+                {/* Application Type Toggle */}
                 {(phase === "select" || phase === "done") && (
-                    <div className="card animate-slide-up">
-                        <h2 className="text-lg font-bold text-neutral-900 mb-1">Select Language</h2>
-                        <p className="text-sm text-neutral-500 mb-5">Choose a language to apply for. Already approved or pending languages cannot be reapplied.</p>
+                    <div className="flex bg-neutral-200/50 p-1 rounded-xl w-fit mb-6">
+                        <button
+                            onClick={() => { setApplicationType("call"); setSelectedLanguage(""); setSelectedCompany(""); }}
+                            className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${applicationType === "call" ? "bg-white text-primary-700 shadow-sm" : "text-neutral-500 hover:text-neutral-700"}`}
+                        >
+                            Call Application
+                        </button>
+                        <button
+                            onClick={() => { setApplicationType("phrase"); setSelectedLanguage(""); setSelectedCompany(""); }}
+                            className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${applicationType === "phrase" ? "bg-white text-primary-700 shadow-sm" : "text-neutral-500 hover:text-neutral-700"}`}
+                        >
+                            Phrase Studio Application
+                        </button>
+                    </div>
+                )}
+
+                {/* Project Selection */}
+                {(phase === "select" || phase === "done") && (
+                    <div className="card animate-slide-up max-w-2xl">
+                        <h2 className="text-lg font-bold text-neutral-900 mb-1">
+                            {applicationType === 'phrase' ? 'Select Project' : 'Select Language'}
+                        </h2>
+                        <p className="text-sm text-neutral-500 mb-5">
+                            {applicationType === 'phrase' ? 'Choose a project and language to apply for.' : 'Choose a language you want to participate in calls for.'}
+                        </p>
 
                         {pageLoading ? (
                             <div className="flex justify-center py-8">
                                 <div className="w-8 h-8 border-4 border-primary-200 border-t-primary-600 rounded-full animate-spin" />
                             </div>
-                        ) : languages.length === 0 ? (
-                            <p className="text-neutral-400 text-sm py-6 text-center">No languages available yet. Ask an admin to add languages.</p>
+                        ) : companies.length === 0 ? (
+                            <p className="text-neutral-400 text-sm py-6 text-center">No projects available yet.</p>
                         ) : (
-                            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-                                {languages.map(lang => {
-                                    const st = getStatus(lang.code);
-                                    const applicable = canApply(lang.code);
-                                    return (
-                                        <button
-                                            key={lang.code}
-                                            onClick={() => {
-                                                if (!applicable) return;
-                                                setSelected(lang);
-                                                setPhase("record");
-                                                setAudioBlob(null);
-                                                setAudioUrl(null);
-                                                setError("");
+                            <div className="space-y-4">
+                                {applicationType === 'phrase' && (
+                                    <div>
+                                        <label className="block text-sm font-semibold mb-2">Project</label>
+                                        <select 
+                                            className="input w-full"
+                                            value={selectedCompany}
+                                            onChange={(e) => {
+                                                setSelectedCompany(e.target.value);
+                                                setSelectedLanguage("");
                                             }}
-                                            disabled={!applicable}
-                                            className={`p-4 rounded-xl border-2 text-left transition-all ${applicable
-                                                ? "border-primary-200 hover:border-primary-500 hover:bg-primary-50 cursor-pointer"
-                                                : "border-neutral-200 bg-neutral-50 opacity-60 cursor-not-allowed"
-                                                }`}
                                         >
-                                            <div className="flex items-center justify-between mb-1">
-                                                <span className="font-semibold text-neutral-800">{lang.name}</span>
-                                                {statusBadge(lang.code)}
-                                            </div>
-                                            <p className="text-xs text-neutral-400">
-                                                {!st ? "Click to apply →" : st === "rejected" ? "Rejected — click to re-apply" : ""}
-                                            </p>
+                                            <option value="">-- Select Project --</option>
+                                            {companies.map(c => (
+                                                <option key={c._id} value={c.name}>{c.name}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                )}
+                                {(applicationType === 'call' || selectedCompany) && (
+                                    <div>
+                                        <label className="block text-sm font-semibold mb-2">Language</label>
+                                        <select 
+                                            className="input w-full"
+                                            value={selectedLanguage}
+                                            onChange={(e) => setSelectedLanguage(e.target.value)}
+                                        >
+                                            <option value="">-- Select Language --</option>
+                                            {globalLanguages.filter(lang => applicationType === 'phrase' ? true : lang.enabled).map(lang => (
+                                                <option key={lang._id || lang.code} value={lang.code}>
+                                                    {lang.name}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                )}
+                                
+                                {(applicationType === 'call' ? selectedLanguage : (selectedCompany && selectedLanguage)) && (
+                                    <div className="pt-4 border-t border-neutral-100">
+                                        <div className="mb-4">
+                                            <span className="block text-sm font-semibold mb-1">Status:</span>
+                                            {statusBadge(getStatus(selectedCompany, selectedLanguage, applicationType)) || <span className="text-neutral-500 text-sm">Not Applied</span>}
+                                        </div>
+                                        
+                                        <button
+                                            onClick={() => {
+                                                if (!canApply(selectedCompany, selectedLanguage, applicationType)) return;
+                                                if (applicationType === 'phrase') {
+                                                    fetchSamplePhrase(selectedCompany, selectedLanguage);
+                                                } else {
+                                                    setPhase("record");
+                                                    setSamplePhrase(null);
+                                                    setAudioBlob(null);
+                                                    setAudioUrl(null);
+                                                }
+                                            }}
+                                            disabled={!canApply(selectedCompany, selectedLanguage, applicationType) || loading}
+                                            className="btn btn-primary w-full py-3 font-semibold"
+                                        >
+                                            {loading ? "Fetching Sample Phrase..." : (getStatus(selectedCompany, selectedLanguage, applicationType) === "rejected" ? "Re-apply Now" : "Apply Now")}
                                         </button>
-                                    );
-                                })}
+                                    </div>
+                                )}
                             </div>
                         )}
                     </div>
                 )}
 
                 {/* Recording Phase */}
-                {phase === "record" && selected && (
+                {phase === "record" && (applicationType === 'call' || samplePhrase) && (
                     <div className="card animate-slide-up">
                         <div className="flex items-center justify-between mb-1">
-                            <h2 className="text-lg font-bold text-neutral-900">Record: {selected.name}</h2>
+                            <h2 className="text-lg font-bold text-neutral-900">Record Sample: {applicationType === 'phrase' ? selectedCompany : ''} {selectedLanguage && `(${selectedLanguage})`}</h2>
                             <button onClick={() => { stopRecording(); setPhase("select"); }} className="text-sm text-neutral-500 hover:text-neutral-700 transition-colors">
                                 ← Change
                             </button>
                         </div>
-                        <p className="text-sm text-neutral-500 mb-7">Speak naturally in {selected.name} for up to 2 minutes. Recording auto‑stops when time runs out.</p>
+                        <p className="text-sm text-neutral-500 mb-7">
+                            {applicationType === 'phrase' ? 'Read the sample phrase below naturally.' : 'Please record a brief introductory message speaking naturally in this language.'} Recording auto-stops when time runs out.
+                        </p>
+
+                        {/* Sample Phrase Box */}
+                        {applicationType === 'phrase' && samplePhrase && (
+                            <div className="bg-neutral-50 border border-neutral-200 p-6 rounded-xl mb-6">
+                                <p className="text-xl md:text-2xl font-medium leading-relaxed">"{samplePhrase.text}"</p>
+                            </div>
+                        )}
 
                         {/* Timer Ring */}
                         <div className="flex justify-center mb-7">
