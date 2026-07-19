@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { io } from "socket.io-client";
 import { useNavigate } from "react-router-dom";
 import Nav from "../components/Nav.jsx";
@@ -17,15 +17,21 @@ import FeedbackScreen from "../components/call/FeedbackScreen/FeedbackScreen.jsx
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:3001";
 
-function parseIceServers() {
-  const raw = import.meta.env.VITE_ICE_SERVERS;
-  if (!raw) return [{ urls: "stun:stun.l.google.com:19302" }, { urls: "stun:stun1.l.google.com:19302" }];
+const STUN_ONLY_FALLBACK = [
+  { urls: "stun:stun.l.google.com:19302" },
+  { urls: "stun:stun1.l.google.com:19302" },
+];
+
+async function fetchIceServers() {
   try {
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) && parsed.length > 0 ? parsed : [{ urls: "stun:stun.l.google.com:19302" }, { urls: "stun:stun1.l.google.com:19302" }];
-  } catch {
-    return [{ urls: "stun:stun.l.google.com:19302" }, { urls: "stun:stun1.l.google.com:19302" }];
+    const res = await apiGet("/api/turn/credentials");
+    if (Array.isArray(res?.iceServers) && res.iceServers.length > 0) {
+      return res.iceServers;
+    }
+  } catch (e) {
+    console.warn("TURN credential fetch failed, using STUN-only fallback:", e);
   }
+  return STUN_ONLY_FALLBACK;
 }
 
 export default function Call() {
@@ -50,6 +56,7 @@ export default function Call() {
   const remoteAudioRef = useRef(null);
   const socketRef = useRef(null);
   const pcRef = useRef(null);
+  const pendingCandidates = useRef([]);
   const localStreamRef = useRef(null);
   const audioContextRef = useRef(null);
   const workletNodeRef = useRef(null);
@@ -86,8 +93,6 @@ export default function Call() {
   const [countdownValue, setCountdownValue] = useState(5);
   const [showInstructionModal, setShowInstructionModal] = useState(false);
   const [currentInstructions, setCurrentInstructions] = useState("");
-
-  const iceServers = useMemo(() => parseIceServers(), []);
 
   // Fetch user info and today's call count on mount
   useEffect(() => {
@@ -337,7 +342,9 @@ export default function Call() {
   };
 
   async function ensureLocalStream() {
-    if (localStreamRef.current) return localStreamRef.current;
+    if (localStreamRef.current && localStreamRef.current.active) {
+      return localStreamRef.current;
+    }
     const rate = getCurrentSampleRate();
     localStreamRef.current = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, sampleRate: rate, channelCount: 1 } });
     return localStreamRef.current;
@@ -397,6 +404,7 @@ export default function Call() {
   async function createPeerConnection() {
     if (pcRef.current) return pcRef.current;
 
+    const iceServers = await fetchIceServers();
     const pc = new RTCPeerConnection({ iceServers });
     pcRef.current = pc;
 
@@ -524,18 +532,30 @@ export default function Call() {
         to: activePeerId,
         data: { type: "answer", sdp: pc.localDescription },
       });
+      // Drain pending candidates
+      for (const c of pendingCandidates.current) {
+        try { await pc.addIceCandidate(c); } catch {}
+      }
+      pendingCandidates.current = [];
       return;
     }
 
     if (data.type === "answer") {
       await pc.setRemoteDescription(data.sdp);
+      // Drain pending candidates
+      for (const c of pendingCandidates.current) {
+        try { await pc.addIceCandidate(c); } catch {}
+      }
+      pendingCandidates.current = [];
       return;
     }
 
     if (data.type === "ice") {
-      try {
-        await pc.addIceCandidate(data.candidate);
-      } catch { }
+      if (pc.remoteDescription) {
+        try { await pc.addIceCandidate(data.candidate); } catch { }
+      } else {
+        pendingCandidates.current.push(data.candidate);
+      }
     }
   }
 
@@ -548,7 +568,8 @@ export default function Call() {
     pcRef.current = null;
 
     if (remoteAudioRef.current) remoteAudioRef.current.srcObject = null;
-
+    workletNodeRef.current = null;
+    pendingCandidates.current = [];
     callRef.current = {
       callId: null,
       role: null,

@@ -46,7 +46,7 @@ export default function AdminMedia() {
     if (selectedKeys.length === 0) return;
     setDownloadingSelected(true);
     try {
-      const res = await apiFetch("/api/admin/phrases/download-selected", {
+      const res = await apiFetch("/api/admin/s3/download-selected", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ keys: selectedKeys }),
@@ -55,7 +55,7 @@ export default function AdminMedia() {
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = "selected_phrases.zip";
+      a.download = "selected_files.zip";
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -230,23 +230,44 @@ export default function AdminMedia() {
                               <pre>${JSON.stringify(f.context, null, 2)}</pre>
                             </div>
                           `;
-                          Swal.fire({ title: 'Raw Phrase Document', html: htmlBlock, width: 800, showConfirmButton: true, confirmButtonText: "Close" });
+                          Swal.fire({ title: 'Raw Document', html: htmlBlock, width: 800, showConfirmButton: true, confirmButtonText: "Close" });
                         }}
                         className="flex items-center gap-2 mb-2 hover:bg-primary-50 dark:hover:bg-primary-900/20 px-2 py-1 -ml-2 rounded transition-colors group cursor-pointer w-full text-left"
                       >
                         <FileText className="w-4 h-4 text-primary-500 group-hover:text-primary-600" />
                         <span className="font-bold text-xs uppercase text-primary-600 group-hover:text-primary-700 group-hover:underline">Raw Mongo Data Trace</span>
                       </button>
-                      <p className="italic text-neutral-600 dark:text-neutral-400 text-xs mb-3 line-clamp-2">"{f.context.text || 'No text linked'}"</p>
-                      
-                      <div className="flex flex-wrap gap-2 text-xs mb-2">
-                        <span className="bg-neutral-200 dark:bg-neutral-800 px-2 py-0.5 rounded font-medium border border-neutral-300 dark:border-neutral-700" title="Company">🏢 {typeof f.context.companyId === 'string' ? f.context.companyId : (f.context.companyId?.name || "No Company")}</span>
-                        <span className="bg-neutral-200 dark:bg-neutral-800 px-2 py-0.5 rounded font-medium border border-neutral-300 dark:border-neutral-700" title="Contributor">👤 {f.context.contributorId?.username || "Unknown"}</span>
-                      </div>
-                      <div className="flex gap-2 text-xs">
-                        <span className="bg-neutral-200 dark:bg-neutral-800 px-2 py-0.5 rounded">{f.context.language || '?'}</span>
-                        <span className={`px-2 py-0.5 rounded ${f.context.status === 'approved' ? 'bg-success-100 text-success-700' : f.context.status === 'rejected' ? 'bg-error-100 text-error-700' : 'bg-warning-100 text-warning-700'}`}>{f.context.status || 'unknown'}</span>
-                      </div>
+
+                      {f.context.text !== undefined ? (
+                        <>
+                          <p className="italic text-neutral-600 dark:text-neutral-400 text-xs mb-3 line-clamp-2">"{f.context.text || 'No text linked'}"</p>
+                          <div className="flex flex-wrap gap-2 text-xs mb-2">
+                            <span className="bg-neutral-200 dark:bg-neutral-800 px-2 py-0.5 rounded font-medium border border-neutral-300 dark:border-neutral-700" title="Company">🏢 {typeof f.context.companyId === 'string' ? f.context.companyId : (f.context.companyId?.name || "No Company")}</span>
+                            <span className="bg-neutral-200 dark:bg-neutral-800 px-2 py-0.5 rounded font-medium border border-neutral-300 dark:border-neutral-700" title="Contributor">👤 {f.context.contributorId?.username || "Unknown"}</span>
+                          </div>
+                          <div className="flex gap-2 text-xs">
+                            <span className="bg-neutral-200 dark:bg-neutral-800 px-2 py-0.5 rounded">{f.context.language || '?'}</span>
+                            <span className={`px-2 py-0.5 rounded ${f.context.status === 'approved' ? 'bg-success-100 text-success-700' : f.context.status === 'rejected' ? 'bg-error-100 text-error-700' : 'bg-warning-100 text-warning-700'}`}>{f.context.status || 'unknown'}</span>
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <p className="font-medium text-neutral-700 dark:text-neutral-300 text-xs mb-1">
+                            Topic: {f.context.topicId?.title || "Unknown"}
+                          </p>
+                          <p className="text-neutral-600 dark:text-neutral-400 text-xs mb-3 italic">
+                            {f.context.subtopicId?.title || "Unknown Subtopic"}
+                          </p>
+                          <div className="flex flex-wrap gap-2 text-xs mb-2">
+                            <span className="bg-neutral-200 dark:bg-neutral-800 px-2 py-0.5 rounded font-medium border border-neutral-300 dark:border-neutral-700" title="Speaker Role">🎙️ {f.context._fileSpeakerRole || "Unknown"}</span>
+                            <span className="bg-neutral-200 dark:bg-neutral-800 px-2 py-0.5 rounded font-medium border border-neutral-300 dark:border-neutral-700" title="Matched User">👤 {f.context._fileMatchedUser?.username || "Mixed / Unknown"}</span>
+                          </div>
+                          <div className="flex gap-2 text-xs mt-2">
+                            <span className="bg-neutral-200 dark:bg-neutral-800 px-2 py-0.5 rounded">{f.context.language || '?'}</span>
+                            <span className="bg-neutral-200 dark:bg-neutral-800 px-2 py-0.5 rounded">{Math.floor((f.context.durationMinutes || 0))} min</span>
+                          </div>
+                        </>
+                      )}
                     </div>
                   )}
                   

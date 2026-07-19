@@ -1,6 +1,5 @@
 import path from "path";
 import fs from "fs";
-import { pipeline } from "stream/promises";
 import { User } from "../models/User.js";
 import { CallSession } from "../models/CallSession.js";
 import { Feedback } from "../models/Feedback.js";
@@ -11,6 +10,9 @@ import { GetObjectCommand } from "@aws-sdk/client-s3";
 import { Upload } from "@aws-sdk/lib-storage";
 import { s3Client, BUCKET_NAME } from "../config/s3.js";
 import ffmpeg from "fluent-ffmpeg";
+import ffmpegInstaller from "@ffmpeg-installer/ffmpeg";
+
+ffmpeg.setFfmpegPath(ffmpegInstaller.path);
 
 const RECORDINGS_DIR = process.env.RECORDINGS_DIR || "recordings";
 
@@ -117,12 +119,17 @@ export async function submitLanguageApplication(req, res) {
   try {
     if (languageCode) {
       const lang = await Language.findOne({ code: languageCode, enabled: true });
-      if (!lang)
+      if (!lang) {
+        try { fs.unlinkSync(req.file.path); } catch (e) {}
         return res.status(404).json({ error: "Language not found or disabled" });
+      }
     }
 
     const user = await User.findById(req.user._id);
-    if (!user) return res.status(404).json({ error: "User not found" });
+    if (!user) {
+      try { fs.unlinkSync(req.file.path); } catch (e) {}
+      return res.status(404).json({ error: "User not found" });
+    }
 
     const existing = user.languageApplications.find(
       (a) => a.languageCode === languageCode && (applicationType === 'phrase' ? a.companyId === companyId : true) && a.applicationType === applicationType
@@ -135,7 +142,6 @@ export async function submitLanguageApplication(req, res) {
       try { fs.unlinkSync(req.file.path); } catch (e) {}
       return res.status(409).json({ error: "already_approved" });
     }
-
     const flacPath = req.file.path.replace(".wav", ".flac");
     await new Promise((resolve, reject) => {
       ffmpeg(req.file.path)
@@ -229,16 +235,12 @@ export async function streamLanguageRecording(req, res) {
     const s3Doc = await s3Client.send(command);
     res.setHeader("Content-Disposition", "inline");
     res.setHeader("X-Content-Type-Options", "nosniff");
-    res.setHeader("Content-Type", s3Doc.ContentType || "audio/webm");
-    try {
-      await pipeline(s3Doc.Body, res);
-    } catch (streamErr) {
-      if (!["ERR_STREAM_PREMATURE_CLOSE", "ECONNRESET", "ERR_STREAM_DESTROYED"].includes(streamErr?.code)) {
-        console.error("streamLanguageRecording pipe error:", streamErr);
-      }
-    }
+    res.setHeader("Content-Type", "audio/flac");
+    s3Doc.Body.on('error', (err) => {
+        console.error('S3 Stream error (intro recording):', err);
+    }).pipe(res);
   } catch (err) {
-    if (!res.headersSent) return res.status(404).json({ error: "File not found on AWS S3" });
+    return res.status(404).json({ error: "File not found on AWS S3" });
   }
 }
 
@@ -423,14 +425,10 @@ export async function streamRecording(req, res) {
     const s3Doc = await s3Client.send(command);
     const mimeType = fileName.endsWith(".ogg") ? "audio/ogg" : "audio/webm";
     res.setHeader("Content-Type", s3Doc.ContentType || mimeType);
-    try {
-      await pipeline(s3Doc.Body, res);
-    } catch (streamErr) {
-      if (!["ERR_STREAM_PREMATURE_CLOSE", "ECONNRESET", "ERR_STREAM_DESTROYED"].includes(streamErr?.code)) {
-        console.error("streamRecording pipe error:", streamErr);
-      }
-    }
+    s3Doc.Body.on('error', (err) => {
+        console.error('S3 Stream error (call recording):', err);
+    }).pipe(res);
   } catch (err) {
-    if (!res.headersSent) return res.status(404).json({ error: "recording_not_found" });
+    return res.status(404).json({ error: "recording_not_found" });
   }
 }

@@ -19,7 +19,7 @@ export default function AdminTopics() {
 
     // Form states
     const [topicForm, setTopicForm] = useState({ title: "", description: "", isEnabled: true, languages: [] });
-    const [subtopicForm, setSubtopicForm] = useState({ title: "", description: "", instructions: "", isEnabled: true });
+    const [subtopicForm, setSubtopicForm] = useState({ title: "", description: "", instructions: "", maxCalls: 3, isEnabled: true });
 
     useEffect(() => {
         loadTopics();
@@ -95,11 +95,12 @@ export default function AdminTopics() {
                 title: subtopic.title, 
                 description: subtopic.description || "", 
                 instructions: subtopic.instructions || "",
+                maxCalls: subtopic.maxCalls !== undefined ? subtopic.maxCalls : 3,
                 isEnabled: subtopic.isEnabled 
             });
         } else {
             setEditingSubtopic(null);
-            setSubtopicForm({ title: "", description: "", instructions: "", isEnabled: true });
+            setSubtopicForm({ title: "", description: "", instructions: "", maxCalls: 3, isEnabled: true });
         }
         setShowSubtopicModal(true);
     }
@@ -287,6 +288,9 @@ export default function AdminTopics() {
                                                             >
                                                                 {subtopic.isEnabled ? 'On' : 'Off'}
                                                             </button>
+                                                            <span className="text-xs text-warning-400 font-semibold px-2 py-0.5 bg-warning-900/30 rounded-full border border-warning-900/50">
+                                                                Limit: {subtopic.maxCalls !== undefined ? subtopic.maxCalls : 3} calls
+                                                            </span>
                                                         </div>
                                                         {subtopic.description && (
                                                             <div className="text-xs text-neutral-500 break-words whitespace-pre-wrap">{subtopic.description}</div>
@@ -464,6 +468,17 @@ export default function AdminTopics() {
                                     rows="4"
                                     placeholder="Specific instructions for this subtopic..."
                                 />
+                            </div>
+                            <div>
+                                <label className="block text-xs md:text-sm font-medium text-neutral-300 mb-2">Max Calls Allowed</label>
+                                <input
+                                    type="number"
+                                    min="1"
+                                    value={subtopicForm.maxCalls}
+                                    onChange={(e) => setSubtopicForm({ ...subtopicForm, maxCalls: parseInt(e.target.value) || 1 })}
+                                    className="w-full px-4 py-2 md:py-3 text-sm md:text-base rounded-lg border border-neutral-600 bg-neutral-700 text-white placeholder-neutral-400 focus:outline-none focus:ring-2 focus:ring-warning-500"
+                                />
+                                <p className="text-xs text-neutral-500 mt-1">Number of completed calls before this subtopic is removed (default 3).</p>
                             </div>
                             <div className="flex items-center space-x-2">
                                 <input

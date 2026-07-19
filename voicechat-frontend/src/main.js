@@ -49,6 +49,7 @@ let workletNode = null;
 let callId = null;
 let role = null;
 let peerId = null;
+let pendingCandidates = [];
 let startedRecording = false;
 
 async function ensureLocalStream() {
@@ -173,18 +174,27 @@ async function onSignal(data) {
       to: peerId,
       data: { type: "answer", sdp: pc.localDescription },
     });
+    for (const c of pendingCandidates) {
+      try { await pc.addIceCandidate(c); } catch {}
+    }
+    pendingCandidates = [];
     return;
   }
 
   if (data.type === "answer") {
     await pc.setRemoteDescription(data.sdp);
+    for (const c of pendingCandidates) {
+      try { await pc.addIceCandidate(c); } catch {}
+    }
+    pendingCandidates = [];
     return;
   }
 
   if (data.type === "ice") {
-    try {
-      await pc.addIceCandidate(data.candidate);
-    } catch {
+    if (pc.remoteDescription) {
+      try { await pc.addIceCandidate(data.candidate); } catch {}
+    } else {
+      pendingCandidates.push(data.candidate);
     }
   }
 }
@@ -199,6 +209,8 @@ function resetCallUi() {
   callId = null;
   role = null;
   peerId = null;
+  pendingCandidates = [];
+  statusEl.textContent = "Idle";
   callIdEl.textContent = "-";
   roleEl.textContent = "-";
   peerEl.textContent = "-";

@@ -1,4 +1,11 @@
 import "dotenv/config";
+
+process.on("uncaughtException", (err) => {
+  console.error("Uncaught Exception:", err);
+});
+process.on("unhandledRejection", (reason, promise) => {
+  console.error("Unhandled Rejection at:", promise, "reason:", reason);
+});
 import http from "http";
 import path from "path";
 import crypto from "crypto";
@@ -10,6 +17,18 @@ import multer from "multer";
 import multerS3 from "multer-s3";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
+
+// --- Async Route Error Handling Patch ---
+const Layer = express.Router.Layer;
+const origHandle = Layer.prototype.handle_request;
+Layer.prototype.handle_request = function handle(req, res, next) {
+  const fnReturn = origHandle.apply(this, arguments);
+  if (fnReturn && fnReturn.catch) {
+    fnReturn.catch(err => next(err));
+  }
+};
+// ----------------------------------------
+
 import { s3Client, BUCKET_NAME } from "./config/s3.js";
 import { Upload } from "@aws-sdk/lib-storage";
 import { GetObjectCommand } from "@aws-sdk/client-s3";
@@ -70,6 +89,7 @@ import topicsRoutes from "./routes/topics.js";
 import supportRoutes from "./routes/support.js";
 import phrasesRoutes from "./routes/phrases.js";
 import projectsRoutes from "./routes/projects.js";
+import turnRoutes from "./routes/turn.js";
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 function parseMaxCallMs(value, fallbackMs) {
@@ -96,41 +116,12 @@ const MAX_CALL_MS = parseMaxCallMs(process.env.MAX_CALL_MS, 20 * 60 * 1000);
 
 if (!JWT_SECRET) throw new Error("JWT_SECRET is required");
 
-// ─── Global safety net: keep the process alive on unexpected errors ──────────
-process.on("uncaughtException", (err) => {
-  console.error("UNCAUGHT EXCEPTION:", err);
-});
-process.on("unhandledRejection", (reason) => {
-  console.error("UNHANDLED REJECTION:", reason);
-});
-
 // ─── Express setup ────────────────────────────────────────────────────────────
 const app = express();
 
 // Trust the NGINX reverse proxy for correct IP rate limiting
 app.set("trust proxy", 1);
 
-// Application Security Routing Shields
-app.use(helmet()); 
-const globalLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes span
-  max: 2000, // Permitted requests natively
-  message: { error: "Global Speed Limit exceeded. Please try again later." },
-});
-const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, 
-  max: 10, // 10 Requests MAX per 15 mins for OTP/Login per user
-  message: { error: "Security Lockout: Wait 15 minutes before sending another OTP for this email." },
-  keyGenerator: (req) => {
-    // Isolate limit strictly to the specific email being requested bypassing NGINX proxy masking
-    return req.body?.email || req.ip; 
-  }
-});
-app.use("/api/", globalLimiter); // Protect generic /api hooks
-
-app.use(express.json({ limit: "50mb" }));
-app.use(express.urlencoded({ limit: "50mb", extended: true }));
-app.use(cookieParser());
 app.use(
   cors({
     origin: function (origin, callback) {
@@ -153,6 +144,32 @@ app.use(
     credentials: true,
   })
 );
+
+// Application Security Routing Shields
+app.use(helmet()); 
+const globalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes span
+  max: 20000, // Increased to prevent false-positives
+  message: { error: "Global Speed Limit exceeded. Please try again later." },
+  keyGenerator: (req) => {
+    const forwarded = req.headers['x-forwarded-for'];
+    return forwarded ? forwarded.split(',')[0] : req.ip;
+  }
+});
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, 
+  max: 10, // 10 Requests MAX per 15 mins for OTP/Login per user
+  message: { error: "Security Lockout: Wait 15 minutes before sending another OTP for this email." },
+  keyGenerator: (req) => {
+    // Isolate limit strictly to the specific email being requested bypassing NGINX proxy masking
+    return req.body?.email || req.ip; 
+  }
+});
+app.use("/api/", globalLimiter); // Protect generic /api hooks
+
+app.use(express.json({ limit: "50mb" }));
+app.use(express.urlencoded({ limit: "50mb", extended: true }));
+app.use(cookieParser());
 
 // ─── Multer: noise check (memory, ≤5 MB) ─────────────────────────────────────
 const noiseUpload = multer({
@@ -277,6 +294,7 @@ app.use("/api/topics", topicsRoutes);
 app.use("/api/support", supportRoutes);
 app.use("/api/phrases", phrasesRoutes);
 app.use("/api/projects", projectsRoutes);
+app.use("/api/turn", turnRoutes);
 
 // ─── HTTP + Socket.IO server ──────────────────────────────────────────────────
 const server = http.createServer(app);
@@ -292,6 +310,16 @@ const io = new Server(server, {
 
 // Wire login route now that io exists
 app.post("/api/auth/login", authLimiter, makeLogin(io));
+
+// --- Global Express Error Handler ---
+app.use((err, req, res, next) => {
+  console.error("Global Express Error:", err);
+  if (res.headersSent) {
+    return next(err);
+  }
+  res.status(500).json({ error: "Internal Server Error" });
+});
+// ------------------------------------
 
 // ─── Socket middleware ────────────────────────────────────────────────────────
 io.use((socket, next) => {
@@ -698,14 +726,15 @@ io.on("connection", (socket) => {
   });
 
   socket.on("find_match", async () => {
-    if (getCallIdForSocket(socket)) return;
+    try {
+      if (getCallIdForSocket(socket)) return;
 
-    if (!socket.data.systemCheckPassed) {
-      socket.emit("error_message", { message: "system_check_required" });
-      return;
-    }
+      if (!socket.data.systemCheckPassed) {
+        socket.emit("error_message", { message: "system_check_required" });
+        return;
+      }
 
-    // Check daily call limit
+      // Check daily call limit
     try {
       const user = await User.findById(socket.data.userId);
       if (!user) {
@@ -748,7 +777,7 @@ io.on("connection", (socket) => {
         .select("languageApplications")
         .lean();
       const langApp = freshUser?.languageApplications?.find(
-        (a) => a.languageCode === userLanguage && a.status === "approved" && (a.applicationType || 'phrase') === 'call'
+        (a) => a.languageCode === userLanguage && a.status === "approved" && (!a.applicationType || a.applicationType === 'call')
       );
       if (!langApp) {
         socket.emit("error_message", {
@@ -854,6 +883,10 @@ io.on("connection", (socket) => {
       negotiationMode: true,
       negotiationEndsAt,
     });
+    } catch (e) {
+      console.error("Error in find_match:", e);
+      socket.emit("error_message", { message: "server_error" });
+    }
   });
 
   socket.on("signal", ({ callId, to, data }) => {
@@ -921,65 +954,77 @@ io.on("connection", (socket) => {
   });
 
   socket.on("record_chunk", (chunk) => {
-    if (!socket.data.recording || !socket.data.recordStream) return;
+    try {
+      if (!socket.data.recording || !socket.data.recordStream) return;
 
-    let buf;
-    if (Buffer.isBuffer(chunk)) buf = chunk;
-    else if (chunk instanceof ArrayBuffer) buf = Buffer.from(chunk);
-    else if (ArrayBuffer.isView(chunk))
-      buf = Buffer.from(chunk.buffer, chunk.byteOffset, chunk.byteLength);
-    else return;
+      let buf;
+      if (Buffer.isBuffer(chunk)) buf = chunk;
+      else if (chunk instanceof ArrayBuffer) buf = Buffer.from(chunk);
+      else if (ArrayBuffer.isView(chunk))
+        buf = Buffer.from(chunk.buffer, chunk.byteOffset, chunk.byteLength);
+      else return;
 
-    socket.data.recordStream.write(buf);
+      socket.data.recordStream.write(buf);
+    } catch (e) {
+      console.error("Error writing record_chunk:", e);
+    }
   });
 
   socket.on("topic_claim", async ({ topicId, subtopicId }) => {
-    const callId = getCallIdForSocket(socket);
-    const call = calls.get(callId);
-    if (!call || call.rolesConfirmed) return;
+    try {
+      const callId = getCallIdForSocket(socket);
+      const call = calls.get(callId);
+      if (!call || call.rolesConfirmed) return;
 
-    call.claimedBy = socket.id;
-    call.selectedTopic = topicId;
-    call.selectedSubtopic = subtopicId;
-    call.topicSelectedBy = socket.data.userId;
+      call.claimedBy = socket.id;
+      call.selectedTopic = topicId;
+      call.selectedSubtopic = subtopicId;
+      call.topicSelectedBy = socket.data.userId;
 
-    let instructions = "";
-    if (subtopicId) {
-      try {
-        const sub = await Subtopic.findById(subtopicId).select("instructions").lean();
-        instructions = sub?.instructions || "";
-      } catch (e) {
-        console.error("Error fetching subtopic instructions:", e);
+      let instructions = "";
+      if (subtopicId) {
+        try {
+          const sub = await Subtopic.findById(subtopicId).select("instructions").lean();
+          instructions = sub?.instructions || "";
+        } catch (e) {
+          console.error("Error fetching subtopic instructions:", e);
+        }
       }
-    }
 
-    io.to(call.a).emit("topic_claimed", {
-      topicId,
-      subtopicId,
-      instructions,
-      byMe: call.a === socket.id,
-    });
-    io.to(call.b).emit("topic_claimed", {
-      topicId,
-      subtopicId,
-      instructions,
-      byMe: call.b === socket.id,
-    });
+      io.to(call.a).emit("topic_claimed", {
+        topicId,
+        subtopicId,
+        instructions,
+        byMe: call.a === socket.id,
+      });
+      io.to(call.b).emit("topic_claimed", {
+        topicId,
+        subtopicId,
+        instructions,
+        byMe: call.b === socket.id,
+      });
+    } catch (e) {
+      console.error("Error in topic_claim:", e);
+    }
   });
 
   socket.on("topic_selected", async ({ topicId, subtopicId }) => {
-    const callId = getCallIdForSocket(socket);
-    const call = calls.get(callId);
-    if (!call || call.rolesConfirmed || !call.selectedTopic) return;
+    try {
+      const callId = getCallIdForSocket(socket);
+      const call = calls.get(callId);
+      if (!call || call.rolesConfirmed || !call.selectedTopic) return;
 
-    io.to(call.a).emit("topic_selected", {
-      topicId: call.selectedTopic,
-      subtopicId: call.selectedSubtopic,
-    });
-    io.to(call.b).emit("topic_selected", {
-      topicId: call.selectedTopic,
-      subtopicId: call.selectedSubtopic,
-    });
+      io.to(call.a).emit("topic_selected", {
+        topicId: call.selectedTopic,
+        subtopicId: call.selectedSubtopic,
+      });
+      io.to(call.b).emit("topic_selected", {
+        topicId: call.selectedTopic,
+        subtopicId: call.selectedSubtopic,
+      });
+    } catch (e) {
+      console.error("Error in topic_selected:", e);
+    }
   });
 
   socket.on("role_selected", ({ role }) => {
@@ -1043,13 +1088,6 @@ io.on("connection", (socket) => {
     socket.data.peerId = null;
     socket.data.role = null;
   });
-});
-
-// ─── Global Express error handler (must be last app.use) ─────────────────────
-app.use((err, req, res, next) => {
-  console.error("Express error:", err);
-  if (res.headersSent) return next(err);
-  res.status(500).json({ error: "server_error" });
 });
 
 // ─── Start ────────────────────────────────────────────────────────────────────
