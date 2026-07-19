@@ -89,6 +89,7 @@ import topicsRoutes from "./routes/topics.js";
 import supportRoutes from "./routes/support.js";
 import phrasesRoutes from "./routes/phrases.js";
 import projectsRoutes from "./routes/projects.js";
+import turnRoutes from "./routes/turn.js";
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 function parseMaxCallMs(value, fallbackMs) {
@@ -293,6 +294,7 @@ app.use("/api/topics", topicsRoutes);
 app.use("/api/support", supportRoutes);
 app.use("/api/phrases", phrasesRoutes);
 app.use("/api/projects", projectsRoutes);
+app.use("/api/turn", turnRoutes);
 
 // ─── HTTP + Socket.IO server ──────────────────────────────────────────────────
 const server = http.createServer(app);

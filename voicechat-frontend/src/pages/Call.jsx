@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { io } from "socket.io-client";
 import { useNavigate } from "react-router-dom";
 import Nav from "../components/Nav.jsx";
@@ -17,15 +17,21 @@ import FeedbackScreen from "../components/call/FeedbackScreen/FeedbackScreen.jsx
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:3001";
 
-function parseIceServers() {
-  const raw = import.meta.env.VITE_ICE_SERVERS;
-  if (!raw) return [{ urls: "stun:stun.l.google.com:19302" }, { urls: "stun:stun1.l.google.com:19302" }];
+const STUN_ONLY_FALLBACK = [
+  { urls: "stun:stun.l.google.com:19302" },
+  { urls: "stun:stun1.l.google.com:19302" },
+];
+
+async function fetchIceServers() {
   try {
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) && parsed.length > 0 ? parsed : [{ urls: "stun:stun.l.google.com:19302" }, { urls: "stun:stun1.l.google.com:19302" }];
-  } catch {
-    return [{ urls: "stun:stun.l.google.com:19302" }, { urls: "stun:stun1.l.google.com:19302" }];
+    const res = await apiGet("/api/turn/credentials");
+    if (Array.isArray(res?.iceServers) && res.iceServers.length > 0) {
+      return res.iceServers;
+    }
+  } catch (e) {
+    console.warn("TURN credential fetch failed, using STUN-only fallback:", e);
   }
+  return STUN_ONLY_FALLBACK;
 }
 
 export default function Call() {
@@ -87,8 +93,6 @@ export default function Call() {
   const [countdownValue, setCountdownValue] = useState(5);
   const [showInstructionModal, setShowInstructionModal] = useState(false);
   const [currentInstructions, setCurrentInstructions] = useState("");
-
-  const iceServers = useMemo(() => parseIceServers(), []);
 
   // Fetch user info and today's call count on mount
   useEffect(() => {
@@ -400,6 +404,7 @@ export default function Call() {
   async function createPeerConnection() {
     if (pcRef.current) return pcRef.current;
 
+    const iceServers = await fetchIceServers();
     const pc = new RTCPeerConnection({ iceServers });
     pcRef.current = pc;
 
