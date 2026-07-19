@@ -19,14 +19,18 @@ import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 
 // --- Async Route Error Handling Patch ---
-const Layer = express.Router.Layer;
-const origHandle = Layer.prototype.handle_request;
-Layer.prototype.handle_request = function handle(req, res, next) {
-  const fnReturn = origHandle.apply(this, arguments);
-  if (fnReturn && fnReturn.catch) {
-    fnReturn.catch(err => next(err));
-  }
-};
+// express.Router.Layer was removed in Express 4.19+ / 5.x; skip the monkey-patch
+// on those versions since they already propagate async rejections to next(err).
+if (express.Router.Layer) {
+  const Layer = express.Router.Layer;
+  const origHandle = Layer.prototype.handle_request;
+  Layer.prototype.handle_request = function handle(req, res, next) {
+    const fnReturn = origHandle.apply(this, arguments);
+    if (fnReturn && fnReturn.catch) {
+      fnReturn.catch(err => next(err));
+    }
+  };
+}
 // ----------------------------------------
 
 import { s3Client, BUCKET_NAME } from "./config/s3.js";
