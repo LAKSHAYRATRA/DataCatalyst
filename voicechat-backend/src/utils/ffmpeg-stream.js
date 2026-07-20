@@ -37,7 +37,7 @@ export function getWavStream(s3ReadableStream) {
 // Resolves only once the whole file has been converted, and rejects on
 // any ffmpeg/stream error so the caller can reliably tell success from
 // failure (instead of silently producing a partial/empty entry).
-export function getWavBuffer(s3ReadableStream) {
+export function getWavBuffer(s3ReadableStream, { offsetMs, durationMs } = {}) {
   return new Promise((resolve, reject) => {
     const chunks = [];
     const pt = new PassThrough();
@@ -46,8 +46,23 @@ export function getWavBuffer(s3ReadableStream) {
     pt.on("end", () => resolve(Buffer.concat(chunks)));
     pt.on("error", reject);
 
-    ffmpeg(s3ReadableStream)
-      .format("wav")
+    const cmd = ffmpeg(s3ReadableStream);
+    const filters = [];
+
+    if (offsetMs && offsetMs > 0) {
+      filters.push(`adelay=${Math.round(offsetMs)}`);
+    }
+
+    if (durationMs && durationMs > 0) {
+      filters.push('apad');
+      cmd.duration(durationMs / 1000);
+    }
+
+    if (filters.length > 0) {
+      cmd.audioFilters(filters);
+    }
+
+    cmd.format("wav")
       .outputOptions([
         "-ar 48000",
         "-acodec pcm_s24le"

@@ -1984,7 +1984,29 @@ router.post("/s3/download-selected", async (req, res) => {
                     Bucket: BUCKET_NAME,
                     Key: key
                 }));
-                const wavBuffer = await getWavBuffer(s3Doc.Body);
+
+                let offsetMs = 0;
+                let durationMs = 0;
+
+                if (call && call.actualCallStartedAt && call.actualCallDuration) {
+                    const callStart = new Date(call.actualCallStartedAt).getTime();
+                    let recordingStart = callStart;
+
+                    if (call.recordingAFile === key && call.recordingAStartedAt) {
+                        recordingStart = new Date(call.recordingAStartedAt).getTime();
+                    } else if (call.recordingBFile === key && call.recordingBStartedAt) {
+                        recordingStart = new Date(call.recordingBStartedAt).getTime();
+                    }
+
+                    // If recording started after the call, we pad the beginning.
+                    if (recordingStart > callStart) {
+                        offsetMs = recordingStart - callStart;
+                    }
+                    
+                    durationMs = call.actualCallDuration * 1000;
+                }
+
+                const wavBuffer = await getWavBuffer(s3Doc.Body, { offsetMs, durationMs });
                 // Flat layout: every wav sits at the zip root (e.g. utt_xxx.wav)
                 archive.append(wavBuffer, { name: `${folderName}.wav` });
             } catch (err) {
