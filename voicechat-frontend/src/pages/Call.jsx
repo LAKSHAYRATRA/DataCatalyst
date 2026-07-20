@@ -350,42 +350,49 @@ export default function Call() {
     return localStreamRef.current;
   }
 
+  const isStartingRecordingRef = useRef(false);
+
   async function startCallRecording(activeCallId) {
     const socket = socketRef.current;
     const stream = localStreamRef.current;
     if (!socket || !stream || !activeCallId) return;
 
-    if (workletNodeRef.current) return; // already recording
+    if (workletNodeRef.current || isStartingRecordingRef.current) return; // already recording or starting
+    isStartingRecordingRef.current = true;
 
-    const rate = getCurrentSampleRate();
-    const audioCtx = new AudioContext({ sampleRate: rate });
-    audioContextRef.current = audioCtx;
-    
-    await audioCtx.audioWorklet.addModule("/pcm-worklet.js");
-    const workletNode = new AudioWorkletNode(audioCtx, "pcm-processor");
-    workletNodeRef.current = workletNode;
+    try {
+      // Create AudioContext without forcing a specific sampleRate.
+      // This prevents resampling bugs in the browser and captures at the exact native hardware rate.
+      const audioCtx = new AudioContext();
+      audioContextRef.current = audioCtx;
+      
+      await audioCtx.audioWorklet.addModule("/pcm-worklet.js");
+      const workletNode = new AudioWorkletNode(audioCtx, "pcm-processor");
+      workletNodeRef.current = workletNode;
 
-    const source = audioCtx.createMediaStreamSource(stream);
+      const source = audioCtx.createMediaStreamSource(stream);
 
-    const startTime = Date.now();
-    // Use the actual hardware stream sample rate. Because of a known bug in Chromium,
-    // createMediaStreamSource ignores audioCtx.sampleRate and pumps the raw native hardware rate.
-    // If we pass audioCtx.sampleRate (e.g. 22050), but the stream is 48000, FFmpeg stretches it 2.17x!
-    const actualStreamRate = stream.getAudioTracks()[0].getSettings().sampleRate || audioCtx.sampleRate;
-    socket.emit("record_start", { callId: activeCallId, mimeType: "audio/pcm", startTime, sampleRate: actualStreamRate });
+      const startTime = Date.now();
+      // Send the exact actual sample rate to the backend
+      const actualStreamRate = audioCtx.sampleRate;
+      socket.emit("record_start", { callId: activeCallId, mimeType: "audio/pcm", startTime, sampleRate: actualStreamRate });
 
-    workletNode.port.onmessage = (e) => {
-      const s2 = socketRef.current;
-      if (s2) {
-        s2.emit("record_chunk", e.data);
-      }
-    };
+      workletNode.port.onmessage = (e) => {
+        const s2 = socketRef.current;
+        if (s2) {
+          s2.emit("record_chunk", e.data);
+        }
+      };
 
-    const gain = audioCtx.createGain();
-    gain.gain.value = 0;
-    source.connect(workletNode);
-    workletNode.connect(gain);
-    gain.connect(audioCtx.destination);
+      const gain = audioCtx.createGain();
+      gain.gain.value = 0;
+      source.connect(workletNode);
+      workletNode.connect(gain);
+      gain.connect(audioCtx.destination);
+
+    } finally {
+      isStartingRecordingRef.current = false;
+    }
   }
 
   function stopCallRecording() {
