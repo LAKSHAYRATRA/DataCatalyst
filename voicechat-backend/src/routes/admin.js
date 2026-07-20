@@ -19,6 +19,7 @@ import { getPayoutOverview, getSingleUserPayout } from "../services/payouts.js";
 import { ListObjectsV2Command, DeleteObjectCommand, GetObjectCommand, CopyObjectCommand } from "@aws-sdk/client-s3";
 import { s3Client, BUCKET_NAME } from "../config/s3.js";
 import { streamS3ToWav, getWavStream, getWavBuffer } from "../utils/ffmpeg-stream.js";
+import { sendAgreementRejectionEmail } from "../util/emailService.js";
 
 const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET;
@@ -1127,7 +1128,7 @@ router.patch("/users/:userId/approve", async (req, res) => {
     try {
         const user = await User.findByIdAndUpdate(
             req.params.userId,
-            { accountStatus: "approved", rejectionReason: null },
+            { accountStatus: "approved", rejectionReason: null, introReviewedAt: new Date() },
             { new: true }
         ).select('username email accountStatus');
         if (!user) return res.status(404).json({ error: "User not found" });
@@ -1169,7 +1170,7 @@ router.patch("/users/:userId/reject", async (req, res) => {
 
         const user = await User.findByIdAndUpdate(
             req.params.userId,
-            { accountStatus: "rejected", rejectionReason: reason },
+            { accountStatus: "rejected", rejectionReason: reason, introReviewedAt: new Date() },
             { new: true }
         ).select('username email accountStatus rejectionReason');
         if (!user) return res.status(404).json({ error: "User not found" });
@@ -2082,6 +2083,299 @@ router.delete("/companies/:id", async (req, res) => {
         res.json({ message: "Company deleted" });
     } catch (e) {
         res.status(500).json({ error: e.message });
+    }
+});
+
+// ===== CONTRIBUTOR AGREEMENTS =====
+
+// List agreements pending admin review
+router.get("/contributor-agreements/pending", async (req, res) => {
+    try {
+        const users = await User.find({
+            "contributorAgreement.signed": true,
+            "contributorAgreement.adminReviewStatus": "pending",
+        })
+            .select("firstname lastname email username speaker_id accountStatus contributorAgreement.signedAt contributorAgreement.agreementVersion contributorAgreement.signerIp contributorAgreement.s3Key")
+            .sort({ "contributorAgreement.signedAt": 1 })
+            .lean();
+        res.json({
+            agreements: users.map(u => ({
+                userId: u._id.toString(),
+                firstname: u.firstname,
+                lastname: u.lastname,
+                email: u.email,
+                username: u.username,
+                speaker_id: u.speaker_id,
+                accountStatus: u.accountStatus,
+                signedAt: u.contributorAgreement?.signedAt || null,
+                agreementVersion: u.contributorAgreement?.agreementVersion || null,
+                signerIp: u.contributorAgreement?.signerIp || null,
+                hasPdf: !!u.contributorAgreement?.s3Key,
+            })),
+        });
+    } catch (err) {
+        console.error("[admin] pending agreements list failed:", err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// List fully-approved users (accountStatus=approved AND agreement admin-approved)
+router.get("/contributor-agreements/approved-users", async (req, res) => {
+    try {
+        const users = await User.find({
+            accountStatus: "approved",
+            "contributorAgreement.signed": true,
+            "contributorAgreement.adminReviewStatus": "approved",
+        })
+            .select("firstname lastname email username speaker_id dailyCallLimit overallCallLimit dailyPhraseLimit overallPhraseLimit contributorAgreement.signedAt contributorAgreement.adminReviewedAt contributorAgreement.agreementVersion contributorAgreement.s3Key")
+            .sort({ "contributorAgreement.adminReviewedAt": -1 })
+            .lean();
+        res.json({
+            users: users.map(u => ({
+                userId: u._id.toString(),
+                firstname: u.firstname,
+                lastname: u.lastname,
+                email: u.email,
+                username: u.username,
+                speaker_id: u.speaker_id,
+                dailyCallLimit: u.dailyCallLimit,
+                overallCallLimit: u.overallCallLimit,
+                dailyPhraseLimit: u.dailyPhraseLimit,
+                overallPhraseLimit: u.overallPhraseLimit,
+                signedAt: u.contributorAgreement?.signedAt || null,
+                approvedAt: u.contributorAgreement?.adminReviewedAt || null,
+                agreementVersion: u.contributorAgreement?.agreementVersion || null,
+                hasPdf: !!u.contributorAgreement?.s3Key,
+            })),
+        });
+    } catch (err) {
+        console.error("[admin] approved-users list failed:", err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Download any user's signed agreement PDF (admin only)
+router.get("/contributor-agreements/:userId/download", async (req, res) => {
+    try {
+        const user = await User.findById(req.params.userId).select("contributorAgreement firstname lastname username").lean();
+        if (!user || !user.contributorAgreement?.s3Key) {
+            return res.status(404).json({ error: "agreement_not_found" });
+        }
+        const command = new GetObjectCommand({ Bucket: BUCKET_NAME, Key: user.contributorAgreement.s3Key });
+        const s3Doc = await s3Client.send(command);
+        res.setHeader("Content-Type", "application/pdf");
+        res.setHeader(
+            "Content-Disposition",
+            `attachment; filename="Voclara-Contributor-Agreement-${user.username || user._id}.pdf"`
+        );
+        s3Doc.Body.on("error", (err) => {
+            console.error("[admin] S3 stream error (agreement):", err);
+        }).pipe(res);
+    } catch (err) {
+        console.error("[admin] agreement download failed:", err);
+        res.status(500).json({ error: "download_failed" });
+    }
+});
+
+// Approve a pending agreement
+router.post("/contributor-agreements/:userId/approve", async (req, res) => {
+    try {
+        const user = await User.findById(req.params.userId);
+        if (!user) return res.status(404).json({ error: "user_not_found" });
+        const ca = user.contributorAgreement;
+        if (!ca || !ca.signed) {
+            return res.status(400).json({ error: "not_signed" });
+        }
+        if (ca.adminReviewStatus === "approved") {
+            return res.json({ message: "Already approved" });
+        }
+        user.contributorAgreement.adminReviewStatus = "approved";
+        user.contributorAgreement.adminReviewedAt = new Date();
+        user.contributorAgreement.adminReviewedBy = req.user._id;
+        user.contributorAgreement.adminReviewReason = null;
+        await user.save();
+        res.json({ message: "Agreement approved" });
+    } catch (err) {
+        console.error("[admin] agreement approve failed:", err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Reject a pending agreement (soft — user can re-sign)
+router.post("/contributor-agreements/:userId/reject", async (req, res) => {
+    try {
+        const reason = String(req.body?.reason || "").trim();
+        if (!reason) return res.status(400).json({ error: "reason_required" });
+        const user = await User.findById(req.params.userId);
+        if (!user) return res.status(404).json({ error: "user_not_found" });
+        const ca = user.contributorAgreement;
+        if (!ca || !ca.signed) {
+            return res.status(400).json({ error: "not_signed" });
+        }
+
+        user.contributorAgreement.signed = false;
+        user.contributorAgreement.adminReviewStatus = "rejected";
+        user.contributorAgreement.adminReviewedAt = new Date();
+        user.contributorAgreement.adminReviewedBy = req.user._id;
+        user.contributorAgreement.adminReviewReason = reason;
+        await user.save();
+
+        // Best-effort email — don't fail the endpoint if email is down
+        try {
+            await sendAgreementRejectionEmail(user.email, user.firstname, reason);
+        } catch (mailErr) {
+            console.error("[admin] rejection email failed (non-fatal):", mailErr?.message || mailErr);
+        }
+
+        res.json({ message: "Agreement rejected — user notified" });
+    } catch (err) {
+        console.error("[admin] agreement reject failed:", err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Blacklist — hard delete account + related S3 files (per user preference: "delete the account")
+router.post("/contributor-agreements/:userId/blacklist", async (req, res) => {
+    try {
+        const reason = String(req.body?.reason || "").trim();
+        if (!reason) return res.status(400).json({ error: "reason_required" });
+        const user = await User.findById(req.params.userId).lean();
+        if (!user) return res.status(404).json({ error: "user_not_found" });
+
+        // Collect S3 keys to purge
+        const keys = [];
+        if (user.introRecordingFile) keys.push(user.introRecordingFile);
+        if (user.contributorAgreement?.s3Key) keys.push(user.contributorAgreement.s3Key);
+        for (const app of user.languageApplications || []) {
+            if (app.recordingFile) keys.push(app.recordingFile);
+        }
+        for (const key of keys) {
+            try {
+                await s3Client.send(new DeleteObjectCommand({ Bucket: BUCKET_NAME, Key: key }));
+            } catch (s3Err) {
+                console.error(`[admin] blacklist S3 delete failed for ${key}:`, s3Err?.message || s3Err);
+            }
+        }
+
+        // Delete the user document. Log the reason so we have an audit trail via server logs.
+        console.log(`[admin] BLACKLIST userId=${user._id} email=${user.email} username=${user.username} by=${req.user._id} reason="${reason}"`);
+        await User.deleteOne({ _id: user._id });
+
+        res.json({ message: "Account blacklisted and deleted", purgedFiles: keys.length });
+    } catch (err) {
+        console.error("[admin] agreement blacklist failed:", err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ===== PAN VERIFICATION (admin) =====
+
+// List users who have uploaded a PAN card, optionally filtered by verification status.
+router.get("/kyc/pans", async (req, res) => {
+    try {
+        const status = String(req.query.status || "pending").toLowerCase();
+        const filter = { "kyc.panCardS3Key": { $ne: null } };
+        if (["pending", "verified", "rejected"].includes(status)) {
+            filter["kyc.verificationStatus"] = status;
+        } else if (status !== "all") {
+            return res.status(400).json({ error: "invalid_status" });
+        }
+        const users = await User.find(filter)
+            .select("username email firstname lastname kyc")
+            .sort({ "kyc.submittedAt": -1 })
+            .lean();
+        res.json({
+            users: users.map((u) => ({
+                _id: u._id,
+                username: u.username,
+                email: u.email,
+                firstname: u.firstname,
+                lastname: u.lastname,
+                panNumber: u.kyc?.panNumber || null,
+                submittedAt: u.kyc?.submittedAt || null,
+                verificationStatus: u.kyc?.verificationStatus || null,
+                verifiedAt: u.kyc?.verifiedAt || null,
+                rejectionReason: u.kyc?.rejectionReason || null,
+            })),
+        });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// Stream a user's PAN card image from S3.
+router.get("/users/:userId/pan-card", async (req, res) => {
+    try {
+        const user = await User.findById(req.params.userId).select("kyc").lean();
+        if (!user) return res.status(404).json({ error: "User not found" });
+        const key = user.kyc?.panCardS3Key;
+        if (!key) return res.status(404).json({ error: "no_pan_card" });
+
+        const cmd = new GetObjectCommand({ Bucket: BUCKET_NAME, Key: key });
+        const s3Doc = await s3Client.send(cmd);
+        if (s3Doc.ContentLength) res.setHeader("Content-Length", s3Doc.ContentLength);
+        res.setHeader("Content-Type", s3Doc.ContentType || "image/jpeg");
+        res.setHeader("Cache-Control", "private, max-age=60");
+        s3Doc.Body.on("error", (err) => {
+            console.error("[admin] PAN card stream error:", err);
+        }).pipe(res);
+    } catch (err) {
+        console.error("[admin] PAN card fetch failed:", err);
+        return res.status(404).json({ error: "pan_card_not_found" });
+    }
+});
+
+// Mark a user's PAN as verified.
+router.post("/users/:userId/pan/verify", async (req, res) => {
+    try {
+        const user = await User.findById(req.params.userId).select("kyc").lean();
+        if (!user) return res.status(404).json({ error: "User not found" });
+        if (!user.kyc?.panCardS3Key) return res.status(400).json({ error: "no_pan_card" });
+
+        await User.updateOne(
+            { _id: req.params.userId },
+            {
+                $set: {
+                    "kyc.verificationStatus": "verified",
+                    "kyc.verifiedBy": req.user._id,
+                    "kyc.verifiedAt": new Date(),
+                    "kyc.rejectionReason": null,
+                },
+            }
+        );
+        res.json({ ok: true });
+    } catch (err) {
+        console.error("[admin] PAN verify failed:", err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Mark a user's PAN as rejected with a reason.
+router.post("/users/:userId/pan/reject", async (req, res) => {
+    try {
+        const reason = String(req.body?.reason || "").trim();
+        if (!reason) return res.status(400).json({ error: "reason_required" });
+        if (reason.length > 500) return res.status(400).json({ error: "reason_too_long" });
+
+        const user = await User.findById(req.params.userId).select("kyc").lean();
+        if (!user) return res.status(404).json({ error: "User not found" });
+        if (!user.kyc?.panCardS3Key) return res.status(400).json({ error: "no_pan_card" });
+
+        await User.updateOne(
+            { _id: req.params.userId },
+            {
+                $set: {
+                    "kyc.verificationStatus": "rejected",
+                    "kyc.verifiedBy": req.user._id,
+                    "kyc.verifiedAt": new Date(),
+                    "kyc.rejectionReason": reason,
+                },
+            }
+        );
+        res.json({ ok: true });
+    } catch (err) {
+        console.error("[admin] PAN reject failed:", err);
+        res.status(500).json({ error: err.message });
     }
 });
 

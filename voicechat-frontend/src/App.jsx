@@ -10,9 +10,11 @@ import AdminTopics from "./pages/AdminTopics.jsx";
 import AdminUsers from "./pages/AdminUsers.jsx";
 import AdminQA from "./pages/AdminQA.jsx";
 import AdminPayouts from "./pages/AdminPayouts.jsx";
+import AdminAgreements from "./pages/AdminAgreements.jsx";
 import AdminPayoutUser from "./pages/AdminPayoutUser.jsx";
 import IntroRecording from "./pages/IntroRecording.jsx";
 import PendingApproval from "./pages/PendingApproval.jsx";
+import ContributorAgreement from "./pages/ContributorAgreement.jsx";
 import LanguageApply from "./pages/LanguageApply.jsx";
 import AdminLanguages from "./pages/AdminLanguages.jsx";
 import AdminLanguageApps from "./pages/AdminLanguageApps.jsx";
@@ -20,6 +22,8 @@ import AdminCallApps from "./pages/AdminCallApps.jsx";
 import Landing from "./pages/Landing.jsx";
 import Support from "./pages/Support.jsx";
 import UserPayouts from "./pages/UserPayouts.jsx";
+import KycPan from "./pages/KycPan.jsx";
+import AdminPanVerification from "./pages/AdminPanVerification.jsx";
 import ForgotPassword from "./pages/ForgotPassword.jsx";
 import ResetPassword from "./pages/ResetPassword.jsx";
 import AdminPhrases from "./pages/AdminPhrases.jsx";
@@ -35,6 +39,21 @@ import Earnings from "./pages/Earnings.jsx";
 import Community from "./pages/Community.jsx";
 import RainbowCursor from "./components/RainbowCursor.jsx";
 
+function needsAgreementSigning(userInfo) {
+  if (!userInfo) return false;
+  if (userInfo.accountStatus !== "approved") return false;
+  const ca = userInfo.contributorAgreement || {};
+  // Not signed yet, OR admin rejected -> user must (re-)sign
+  return !ca.signed || ca.adminReviewStatus === "rejected";
+}
+
+function awaitingAgreementReview(userInfo) {
+  if (!userInfo) return false;
+  if (userInfo.accountStatus !== "approved") return false;
+  const ca = userInfo.contributorAgreement || {};
+  return ca.signed === true && ca.adminReviewStatus === "pending";
+}
+
 // Redirect logged-in users away from /login and /signup
 function RedirectIfAuthenticated({ children }) {
   const userInfo = getUserInfo();
@@ -45,10 +64,12 @@ function RedirectIfAuthenticated({ children }) {
   const s = userInfo.accountStatus;
   if (s === "pending_intro" || s === "rejected") return <Navigate to="/intro-recording" replace />;
   if (s === "pending_approval") return <Navigate to="/pending-approval" replace />;
+  if (needsAgreementSigning(userInfo)) return <Navigate to="/contributor-agreement" replace />;
+  if (awaitingAgreementReview(userInfo)) return <Navigate to="/dashboard" replace />;
   return <Navigate to="/call" replace />;
 }
 
-// Guard platform pages — must be logged-in AND approved, NOT a QA-only or admin-only user
+// Guard platform pages — must be logged-in AND approved (account + agreement), NOT QA-only/admin-only
 function RequireAuth({ children }) {
   const userInfo = getUserInfo();
   if (!userInfo) return <Navigate to="/login" replace />;
@@ -58,6 +79,36 @@ function RequireAuth({ children }) {
   const s = userInfo.accountStatus;
   if (s === "pending_intro" || s === "rejected") return <Navigate to="/intro-recording" replace />;
   if (s === "pending_approval") return <Navigate to="/pending-approval" replace />;
+  if (needsAgreementSigning(userInfo)) return <Navigate to="/contributor-agreement" replace />;
+  if (awaitingAgreementReview(userInfo)) return <Navigate to="/dashboard" replace />;
+  return children;
+}
+
+// Guard for Dashboard — allows awaiting-review users too (Dashboard shows the banner)
+function RequireDashboardAccess({ children }) {
+  const userInfo = getUserInfo();
+  if (!userInfo) return <Navigate to="/login" replace />;
+  if (userInfo.isQA && !userInfo.isAdmin) return <Navigate to="/admin/qa" replace />;
+  if (userInfo.isAdmin) return <Navigate to="/admin/dashboard" replace />;
+  const s = userInfo.accountStatus;
+  if (s === "pending_intro" || s === "rejected") return <Navigate to="/intro-recording" replace />;
+  if (s === "pending_approval") return <Navigate to="/pending-approval" replace />;
+  if (needsAgreementSigning(userInfo)) return <Navigate to="/contributor-agreement" replace />;
+  // awaitingAgreementReview users are allowed — Dashboard renders the banner
+  return children;
+}
+
+// Guard contributor-agreement — only if the user needs to (re-)sign
+function RequireAgreementAccess({ children }) {
+  const userInfo = getUserInfo();
+  if (!userInfo) return <Navigate to="/login" replace />;
+  if (userInfo.isQA && !userInfo.isAdmin) return <Navigate to="/admin/qa" replace />;
+  if (userInfo.isAdmin) return <Navigate to="/admin/dashboard" replace />;
+  const s = userInfo.accountStatus;
+  if (s === "pending_intro" || s === "rejected") return <Navigate to="/intro-recording" replace />;
+  if (s === "pending_approval") return <Navigate to="/pending-approval" replace />;
+  if (awaitingAgreementReview(userInfo)) return <Navigate to="/dashboard" replace />;
+  if (!needsAgreementSigning(userInfo)) return <Navigate to="/call" replace />;
   return children;
 }
 
@@ -138,11 +189,13 @@ export default function App() {
         {/* Approval flow */}
         <Route path="/intro-recording" element={<RequireIntroAccess><IntroRecording /></RequireIntroAccess>} />
         <Route path="/pending-approval" element={<RequirePendingAccess><PendingApproval /></RequirePendingAccess>} />
+        <Route path="/contributor-agreement" element={<RequireAgreementAccess><ContributorAgreement /></RequireAgreementAccess>} />
 
         {/* Protected platform routes */}
         <Route path="/call" element={<RequireAuth><Call /></RequireAuth>} />
-        <Route path="/dashboard" element={<RequireAuth><Dashboard /></RequireAuth>} />
+        <Route path="/dashboard" element={<RequireDashboardAccess><Dashboard /></RequireDashboardAccess>} />
         <Route path="/payouts" element={<RequireAuth><UserPayouts /></RequireAuth>} />
+        <Route path="/kyc/pan" element={<RequireAuth><KycPan /></RequireAuth>} />
 
         {/* Admin Routes */}
         <Route path="/admin/dashboard" element={<RequireAdmin><AdminDashboard /></RequireAdmin>} />
@@ -151,6 +204,8 @@ export default function App() {
         <Route path="/admin/users" element={<RequireAdmin><AdminUsers /></RequireAdmin>} />
         <Route path="/admin/payouts" element={<RequireAdmin><AdminPayouts /></RequireAdmin>} />
         <Route path="/admin/payouts/:userId" element={<RequireAdmin><AdminPayoutUser /></RequireAdmin>} />
+        <Route path="/admin/agreements" element={<RequireAdmin><AdminAgreements /></RequireAdmin>} />
+        <Route path="/admin/pan-verification" element={<RequireAdmin><AdminPanVerification /></RequireAdmin>} />
         <Route path="/admin/qa" element={<RequireAdminOrQA><AdminQA /></RequireAdminOrQA>} />
         <Route path="/admin/languages" element={<RequireAdmin><AdminLanguages /></RequireAdmin>} />
         <Route path="/admin/language-apps" element={<RequireAdminOrQA><AdminLanguageApps /></RequireAdminOrQA>} />

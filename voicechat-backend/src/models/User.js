@@ -52,7 +52,49 @@ const userSchema = new mongoose.Schema(
       default: "pending_intro",
     },
     introRecordingFile: { type: String, default: null }, // relative path
+    introRecordingUploadedAt: { type: Date, default: null },
+    introReviewedAt: { type: Date, default: null },
+    introConsent: {
+      tos: { type: Boolean, default: false },
+      privacy: { type: Boolean, default: false },
+      sample: { type: Boolean, default: false },
+      at: { type: Date, default: null },
+    },
     rejectionReason: { type: String, default: null },
+
+    // KYC — PAN card collection (Section 194O TDS threshold)
+    kyc: {
+      panNumber: { type: String, default: null, uppercase: true, trim: true },
+      panCardS3Key: { type: String, default: null },
+      submittedAt: { type: Date, default: null },
+      verificationStatus: {
+        type: String,
+        enum: [null, "pending", "verified", "rejected"],
+        default: null,
+      },
+      verifiedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+      verifiedAt: { type: Date, default: null },
+      rejectionReason: { type: String, default: null },
+    },
+
+    // Contributor Agreement signing state (Stage-2 gating)
+    contributorAgreement: {
+      signed: { type: Boolean, default: false },
+      signedAt: { type: Date, default: null },
+      s3Key: { type: String, default: null },
+      signerName: { type: String, default: null },
+      signerIp: { type: String, default: null },
+      agreementVersion: { type: String, default: null },
+      pdfHash: { type: String, default: null },
+      adminReviewStatus: {
+        type: String,
+        enum: [null, "pending", "approved", "rejected"],
+        default: null,
+      },
+      adminReviewedAt: { type: Date, default: null },
+      adminReviewedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+      adminReviewReason: { type: String, default: null },
+    },
 
     // Language applications — one entry per language the user has applied for
     languageApplications: [

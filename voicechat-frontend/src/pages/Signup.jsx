@@ -62,8 +62,15 @@ function FormField({ label, id, required, children, error }) {
   );
 }
 
+const MAX_DOB_DATE = (() => {
+  const d = new Date();
+  d.setFullYear(d.getFullYear() - 18);
+  return d.toISOString().slice(0, 10);
+})();
+
 export default function Signup() {
   const navigate = useNavigate();
+  const maxDobDate = MAX_DOB_DATE;
 
   // Step tracker
   const [step, setStep] = useState(1);
@@ -108,7 +115,20 @@ export default function Signup() {
     if (!gender) errs.gender = "Required";
     if (!regionalLanguage) errs.regionalLanguage = "Required";
     if (!locality) errs.locality = "Required";
-    if (!dob) errs.dob = "Required";
+    if (!dob) {
+      errs.dob = "Required";
+    } else {
+      const birth = new Date(dob);
+      if (Number.isNaN(birth.getTime())) {
+        errs.dob = "Invalid date";
+      } else {
+        const today = new Date();
+        let age = today.getFullYear() - birth.getFullYear();
+        const m = today.getMonth() - birth.getMonth();
+        if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) age--;
+        if (age < 18) errs.dob = "You must be at least 18 years old";
+      }
+    }
     return errs;
   }
 
@@ -237,6 +257,8 @@ export default function Signup() {
       const msg = e2.message;
       if (msg === "otp_invalid_or_expired") setGlobalError("OTP is incorrect or expired. Request a new one.");
       else if (msg === "user_exists") setGlobalError("An account with this email already exists.");
+      else if (msg === "underage") setGlobalError("You must be at least 18 years old to sign up.");
+      else if (msg === "invalid_dob") setGlobalError("Please enter a valid date of birth.");
       else setGlobalError(msg || "Signup failed. Please try again.");
     } finally {
       setLoading(false);
@@ -325,6 +347,7 @@ export default function Signup() {
 
               <FormField label="Date of Birth" id="dob" required error={fieldErrors.dob}>
                 <input id="dob" type="date" className={inputClass}
+                  max={maxDobDate}
                   value={dob} onChange={e => setDob(e.target.value)} />
               </FormField>
             </div>
@@ -465,6 +488,16 @@ export default function Signup() {
                     "Verify & Create Account"
                   )}
                 </button>
+
+                <p className="text-xs text-neutral-500 text-center leading-relaxed">
+                  By clicking Verify & Create Account, you agree to Voclara's{" "}
+                  <a href="/Legal/Voclara-ToS.html" target="_blank" rel="noopener noreferrer" className="text-primary-600 underline hover:text-primary-700">
+                    Terms of Service
+                  </a>{" "}and{" "}
+                  <a href="/Legal/Voclara-Privacy-Policy.html" target="_blank" rel="noopener noreferrer" className="text-primary-600 underline hover:text-primary-700">
+                    Privacy Policy
+                  </a>. Voice sample consent is captured separately before recording.
+                </p>
               </div>
             </form>
           )}

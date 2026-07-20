@@ -46,6 +46,12 @@ export default function IntroRecording() {
     const [mics, setMics] = useState([]); // [{ deviceId, label }]
     const [selectedMicId, setSelectedMicId] = useState(""); // "" = browser default
 
+    // Consent (must be re-affirmed each time — including on re-record after rejection)
+    const [agreeTos, setAgreeTos] = useState(false);
+    const [agreePrivacy, setAgreePrivacy] = useState(false);
+    const [agreeSample, setAgreeSample] = useState(false);
+    const allConsentGiven = agreeTos && agreePrivacy && agreeSample;
+
     const isRejected = userInfo?.accountStatus === "rejected";
     const rejectionReason = userInfo?.rejectionReason || null;
 
@@ -149,31 +155,50 @@ export default function IntroRecording() {
         };
     }, []);
 
-    // ─── Waveform ─────────────────────────────────────────────────────────────
+    // ─── Voice-activity frequency bars ────────────────────────────────────────
     function drawWaveform() {
         const canvas = canvasRef.current;
         const analyser = analyserRef.current;
         if (!canvas || !analyser) return;
         const ctx = canvas.getContext("2d");
-        const bufLen = analyser.frequencyBinCount;
-        const data = new Uint8Array(bufLen);
+        const data = new Uint8Array(analyser.frequencyBinCount);
+
+        const BAR_COUNT = 32;
+        const GAP = 3;
+        // Focus on voice-relevant frequency bins (~0-3 kHz at 48kHz sample rate).
+        const VOICE_BIN_RANGE = 128;
+        const binsPerBar = Math.floor(VOICE_BIN_RANGE / BAR_COUNT);
 
         function draw() {
             animFrameRef.current = requestAnimationFrame(draw);
-            analyser.getByteTimeDomainData(data);
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            ctx.lineWidth = 2;
-            ctx.strokeStyle = "#6366f1";
-            ctx.beginPath();
-            const sliceW = canvas.width / bufLen;
-            let x = 0;
-            for (let i = 0; i < bufLen; i++) {
-                const y = (data[i] / 128.0) * (canvas.height / 2);
-                i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
-                x += sliceW;
+            analyser.getByteFrequencyData(data);
+
+            const w = canvas.width;
+            const h = canvas.height;
+            ctx.clearRect(0, 0, w, h);
+
+            const barW = (w - GAP * (BAR_COUNT - 1)) / BAR_COUNT;
+            const gradient = ctx.createLinearGradient(0, 0, 0, h);
+            gradient.addColorStop(0, "#60a5fa");
+            gradient.addColorStop(1, "#2563eb");
+            ctx.fillStyle = gradient;
+
+            for (let i = 0; i < BAR_COUNT; i++) {
+                let sum = 0;
+                for (let j = 0; j < binsPerBar; j++) sum += data[i * binsPerBar + j];
+                const avg = sum / binsPerBar;
+                const barH = Math.max(2, (avg / 255) * h * 1.3);
+                const x = i * (barW + GAP);
+                const y = h - barH;
+                const r = Math.min(barW / 2, 4);
+                if (ctx.roundRect) {
+                    ctx.beginPath();
+                    ctx.roundRect(x, y, barW, barH, r);
+                    ctx.fill();
+                } else {
+                    ctx.fillRect(x, y, barW, barH);
+                }
             }
-            ctx.lineTo(canvas.width, canvas.height / 2);
-            ctx.stroke();
         }
         draw();
     }
@@ -219,7 +244,7 @@ export default function IntroRecording() {
 
             setPhase("recording");
             setSecondsLeft(MAX_SECONDS);
-            drawWaveform();
+            animFrameRef.current = requestAnimationFrame(() => drawWaveform());
 
             timerRef.current = setInterval(() => {
                 setSecondsLeft((s) => {
@@ -279,6 +304,10 @@ export default function IntroRecording() {
         try {
             const formData = new FormData();
             formData.append("recording", audioBlob, `intro.wav`);
+            formData.append("consent_tos", "true");
+            formData.append("consent_privacy", "true");
+            formData.append("consent_sample", "true");
+            formData.append("consent_timestamp", new Date().toISOString());
 
             const res = await fetch(`${BACKEND_URL}/api/user/intro-recording`, {
                 method: "POST",
@@ -416,20 +445,6 @@ export default function IntroRecording() {
                         )}
                     </div>
 
-                    {/* Instructions */}
-                    {phase === "idle" && (
-                        <div className="bg-primary-50 border border-primary-100 rounded-lg p-4 space-y-2">
-                            <p className="text-sm font-semibold text-primary-800">What to say in your introduction:</p>
-                            <ul className="text-sm text-primary-700 space-y-1 list-disc list-inside">
-                                <li>Your name and where you're from</li>
-                                <li>Your regional language and background</li>
-                                <li>Why you want to join Voclara</li>
-                                <li>Any topic you enjoy discussing</li>
-                            </ul>
-                            <p className="text-xs text-primary-600 mt-2">⏱ Maximum 2 minutes. Speak clearly into your microphone.</p>
-                        </div>
-                    )}
-
                     {/* Recording UI */}
                     {phase === "recording" && (
                         <div className="space-y-4">
@@ -437,7 +452,7 @@ export default function IntroRecording() {
                                 {/* Ring timer */}
                                 <div className="relative w-28 h-28">
                                     <svg className="w-28 h-28 -rotate-90" viewBox="0 0 112 112">
-                                        <circle cx="56" cy="56" r="48" fill="none" stroke="#e5e7eb" strokeWidth="8" />
+                                        <circle cx="56" cy="56" r="48" fill="none" stroke="#eff6ff" strokeWidth="8" />
                                         <circle cx="56" cy="56" r="48" fill="none"
                                             stroke={secondsLeft < 15 ? "#ef4444" : "#6366f1"}
                                             strokeWidth="8" strokeLinecap="round"
@@ -447,10 +462,10 @@ export default function IntroRecording() {
                                         />
                                     </svg>
                                     <div className="absolute inset-0 flex flex-col items-center justify-center">
-                                        <span className={`text-2xl font-bold font-mono ${secondsLeft < 15 ? "text-error-600" : "text-neutral-800"}`}>
+                                        <span className={`text-2xl font-bold font-mono ${secondsLeft < 15 ? "text-error-600 dark:text-error-400" : "text-neutral-800 dark:text-neutral-100"}`}>
                                             {String(mins).padStart(2, "0")}:{String(secs).padStart(2, "0")}
                                         </span>
-                                        <span className="text-xs text-neutral-500">remaining</span>
+                                        <span className="text-xs text-neutral-500 dark:text-neutral-400">remaining</span>
                                     </div>
                                 </div>
 
@@ -462,12 +477,12 @@ export default function IntroRecording() {
                                 </div>
                             </div>
 
-                            {/* Waveform */}
-                            <canvas ref={canvasRef} width={400} height={80}
-                                className="w-full h-20 rounded-lg bg-neutral-100 border border-neutral-200" />
+                            {/* Voice activity bars */}
+                            <canvas ref={canvasRef} width={400} height={64}
+                                className="w-full h-16 rounded-lg bg-neutral-100/60 dark:bg-neutral-900/40" />
 
                             <button onClick={stopRecording}
-                                className="btn w-full bg-error-600 hover:bg-error-700 text-white border-0 gap-2">
+                                className="btn w-full inline-flex items-center justify-center bg-error-600 hover:bg-error-700 text-white border-0 gap-2">
                                 <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
                                     <rect x="6" y="6" width="12" height="12" rx="2" />
                                 </svg>
@@ -512,18 +527,71 @@ export default function IntroRecording() {
                         </div>
                     )}
 
+                    {/* Consent checkboxes (idle phase only) */}
+                    {phase === "idle" && (
+                        <div className="space-y-2.5 rounded-lg bg-neutral-50 border border-neutral-200 p-4">
+                            <label className="flex items-start gap-2.5 text-sm text-neutral-700 cursor-pointer">
+                                <input
+                                    type="checkbox"
+                                    checked={agreeTos}
+                                    onChange={(e) => setAgreeTos(e.target.checked)}
+                                    className="mt-0.5 h-4 w-4 shrink-0 rounded border-neutral-300 text-primary-600 focus:ring-primary-500"
+                                />
+                                <span>
+                                    I have read and agree to the{" "}
+                                    <a href="/Legal/Voclara-ToS.html" target="_blank" rel="noopener noreferrer" className="text-primary-600 underline hover:text-primary-700">
+                                        Terms of Service
+                                    </a>.
+                                </span>
+                            </label>
+                            <label className="flex items-start gap-2.5 text-sm text-neutral-700 cursor-pointer">
+                                <input
+                                    type="checkbox"
+                                    checked={agreePrivacy}
+                                    onChange={(e) => setAgreePrivacy(e.target.checked)}
+                                    className="mt-0.5 h-4 w-4 shrink-0 rounded border-neutral-300 text-primary-600 focus:ring-primary-500"
+                                />
+                                <span>
+                                    I have read and agree to the{" "}
+                                    <a href="/Legal/Voclara-Privacy-Policy.html" target="_blank" rel="noopener noreferrer" className="text-primary-600 underline hover:text-primary-700">
+                                        Privacy Policy
+                                    </a>.
+                                </span>
+                            </label>
+                            <label className="flex items-start gap-2.5 text-sm text-neutral-700 cursor-pointer">
+                                <input
+                                    type="checkbox"
+                                    checked={agreeSample}
+                                    onChange={(e) => setAgreeSample(e.target.checked)}
+                                    className="mt-0.5 h-4 w-4 shrink-0 rounded border-neutral-300 text-primary-600 focus:ring-primary-500"
+                                />
+                                <span>
+                                    I consent to submitting my voice sample. I understand it will be used <strong>solely</strong> for approval assessment, will <strong>not</strong> be sold, licensed, or used to train AI models, and will be deleted within 180 days of upload (sooner if my account is rejected).
+                                </span>
+                            </label>
+                        </div>
+                    )}
+
                     {/* Start button (idle) */}
                     {phase === "idle" && (
                         <button
                             onClick={startRecording}
-                            disabled={mics.length === 0}
-                            className="btn btn-primary w-full gap-2 text-base py-3 disabled:opacity-40 disabled:cursor-not-allowed"
+                            disabled={mics.length === 0 || !allConsentGiven}
+                            className="btn btn-primary w-full inline-flex items-center justify-center gap-2 text-base py-3 disabled:opacity-40 disabled:cursor-not-allowed"
                         >
-                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2"
-                                    d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
-                            </svg>
-                            {mics.length === 0 ? "Connect a USB Mic to Continue" : "Start Recording"}
+                            {mics.length > 0 && allConsentGiven && (
+                                <svg className="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2"
+                                        d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                                </svg>
+                            )}
+                            <span className="whitespace-nowrap">
+                                {mics.length === 0
+                                    ? "Connect a USB Mic to Continue"
+                                    : !allConsentGiven
+                                        ? "Tick agreements to continue"
+                                        : "Start Recording"}
+                            </span>
                         </button>
                     )}
                 </div>

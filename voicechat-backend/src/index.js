@@ -47,6 +47,7 @@ ffmpeg.setFfmpegPath(ffmpegInstaller.path);
 
 import { connectDb } from "./db.js";
 import { requireAuth, verifyToken } from "./auth.js";
+import { requireSignedAgreement } from "./middleware/requireSignedAgreement.js";
 import { User } from "./models/User.js";
 import { CallSession } from "./models/CallSession.js";
 import { Subtopic } from "./models/Subtopic.js";
@@ -78,6 +79,11 @@ import {
   getMyPayout,
   submitFeedback,
   streamRecording,
+  getContributorAgreementStatus,
+  signContributorAgreement,
+  downloadContributorAgreement,
+  getKycStatus,
+  uploadPanCard,
 } from "./controllers/userController.js";
 
 import {
@@ -204,6 +210,16 @@ const introUpload = multer({
   },
 });
 
+// ─── Multer: KYC PAN card (memory, ≤5 MB, JPG/PNG only) ─────────────────────
+const panUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    if (/^image\/(jpe?g|png)$/.test(file.mimetype)) return cb(null, true);
+    cb(new Error("Only JPG or PNG images are allowed"));
+  },
+});
+
 // ─── Multer: language application recording ───────────────────────────────────
 const langUpload = multer({
   storage: multer.diskStorage({
@@ -262,6 +278,20 @@ app.post(
   uploadIntroRecording
 );
 
+// KYC — PAN card collection
+app.get("/api/user/kyc/status", requireAuth(JWT_SECRET), getKycStatus);
+app.post(
+  "/api/user/kyc/pan",
+  requireAuth(JWT_SECRET),
+  panUpload.single("panCard"),
+  uploadPanCard
+);
+
+// Contributor Agreement
+app.get("/api/user/contributor-agreement/status", requireAuth(JWT_SECRET), getContributorAgreementStatus);
+app.post("/api/user/contributor-agreement/sign", requireAuth(JWT_SECRET), signContributorAgreement);
+app.get("/api/user/contributor-agreement/download", requireAuth(JWT_SECRET), downloadContributorAgreement);
+
 // Languages
 app.get("/api/languages", requireAuth(JWT_SECRET), getLanguages);
 app.get(
@@ -272,6 +302,7 @@ app.get(
 app.post(
   "/api/language-applications",
   requireAuth(JWT_SECRET),
+  requireSignedAgreement,
   langUpload.single("recording"),
   submitLanguageApplication
 );
@@ -1098,6 +1129,9 @@ io.on("connection", (socket) => {
 
 // ─── Start ────────────────────────────────────────────────────────────────────
 await connectDb(MONGODB_URI);
+
+import { startPurgeIntroRecordingsCron } from "./jobs/purgeIntroRecordings.js";
+startPurgeIntroRecordingsCron();
 
 server.listen(PORT, "0.0.0.0", () => {
   console.log(`Backend listening on http://0.0.0.0:${PORT}`);

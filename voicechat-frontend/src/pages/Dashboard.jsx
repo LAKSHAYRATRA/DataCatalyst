@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import Nav from "../components/Nav.jsx";
 import { apiGet } from "../lib/api.js";
+import { getUserInfo } from "../lib/auth.js";
 import { motion } from "framer-motion";
 import { Link } from "react-router-dom";
 import { Phone, CheckCircle2, Clock, Activity, Mic2, AlertCircle, ChevronLeft, ChevronRight, MessageSquare } from "lucide-react";
@@ -11,7 +12,14 @@ export default function Dashboard() {
     const [loading, setLoading] = useState(true);
     const [currentPage, setCurrentPage] = useState(1);
     const [feedbackModal, setFeedbackModal] = useState(null);
+    const [showPanReminder, setShowPanReminder] = useState(false);
+    const [panRejected, setPanRejected] = useState(false);
+    const [panRejectionReason, setPanRejectionReason] = useState(null);
     const itemsPerPage = 8;
+
+    const userInfo = getUserInfo();
+    const awaitingReview = userInfo?.contributorAgreement?.signed === true
+        && userInfo?.contributorAgreement?.adminReviewStatus === "pending";
 
     useEffect(() => {
         (async () => {
@@ -22,6 +30,16 @@ export default function Dashboard() {
                 setError(e.message);
             } finally {
                 setLoading(false);
+            }
+        })();
+        (async () => {
+            try {
+                const kyc = await apiGet("/api/user/kyc/status");
+                setShowPanReminder(!!kyc.needsPanReminder);
+                setPanRejected(kyc.verificationStatus === "rejected");
+                setPanRejectionReason(kyc.rejectionReason || null);
+            } catch {
+                // silent — banner just stays hidden
             }
         })();
     }, []);
@@ -113,7 +131,7 @@ export default function Dashboard() {
             <div className="max-w-7xl mx-auto px-4 md:px-8 py-8 md:py-12">
 
                 {/* Header Sequence */}
-                <motion.div 
+                <motion.div
                     initial={{ opacity: 0, x: -20 }}
                     animate={{ opacity: 1, x: 0 }}
                     className="mb-10 flex flex-col md:flex-row md:items-end justify-between gap-6"
@@ -123,6 +141,52 @@ export default function Dashboard() {
                         <p className="text-lg text-neutral-500 dark:text-neutral-400 font-medium tracking-wide">Here's your performance overview today.</p>
                     </div>
                 </motion.div>
+
+                {showPanReminder && (
+                    <motion.div
+                        initial={{ opacity: 0, y: -8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="mb-6 rounded-2xl border border-error-400/40 bg-error-500/10 dark:bg-error-500/10 p-5 md:p-6 flex flex-col md:flex-row md:items-center gap-4"
+                    >
+                        <div className="w-11 h-11 rounded-full bg-error-500/20 flex items-center justify-center flex-shrink-0">
+                            <AlertCircle className="w-5 h-5 text-error-400" />
+                        </div>
+                        <div className="flex-1">
+                            <h3 className="text-lg font-semibold text-error-300">
+                                {panRejected ? "Your PAN was rejected -- please re-upload" : "Upload your PAN to save on TDS"}
+                            </h3>
+                            <p className="text-sm text-neutral-300 mt-1">
+                                {panRejected && panRejectionReason
+                                    ? <>Reason: <em>"{panRejectionReason}"</em>. Please upload a clearer or correct PAN card.</>
+                                    : "Without a PAN on file we're required to deduct 5% TDS from every payout under Section 206AA -- and that amount can't be reclaimed. With a PAN, no TDS is deducted until you cross Rs. 5,00,000 in a financial year."}
+                            </p>
+                        </div>
+                        <Link
+                            to="/kyc/pan"
+                            className="btn btn-primary whitespace-nowrap"
+                        >
+                            {panRejected ? "Re-upload PAN" : "Upload PAN"}
+                        </Link>
+                    </motion.div>
+                )}
+
+                {awaitingReview && (
+                    <motion.div
+                        initial={{ opacity: 0, y: -8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="mb-8 rounded-2xl border border-warning-400/40 bg-warning-500/10 dark:bg-warning-500/10 p-5 md:p-6 flex flex-col md:flex-row md:items-center gap-4"
+                    >
+                        <div className="w-11 h-11 rounded-full bg-warning-500/20 flex items-center justify-center flex-shrink-0">
+                            <Clock className="w-5 h-5 text-warning-400" />
+                        </div>
+                        <div className="flex-1">
+                            <h3 className="text-lg font-semibold text-warning-300">Awaiting Contributor Agreement Approval</h3>
+                            <p className="text-sm text-neutral-300 mt-1">
+                                Your signed agreement is being reviewed by our admin team. Once approved, you'll be able to start contributing. This usually takes 24–48 hours.
+                            </p>
+                        </div>
+                    </motion.div>
+                )}
 
                 {/* Phrase Studio Call to Action Widget */}
                 <motion.div 

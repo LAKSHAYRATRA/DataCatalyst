@@ -12,12 +12,17 @@ if (!process.env.S3_BUCKET_NAME) {
   console.warn("⚠️ S3_BUCKET_NAME is utterly missing from backend .env!");
 }
 
-export const s3Client = new S3Client({
+const s3ClientOpts = {
   region,
   credentials: {
     accessKeyId: process.env.AWS_ACCESS_KEY_ID || "",
     secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || "",
   },
-});
+};
+if (process.env.S3_ENDPOINT) {
+  s3ClientOpts.endpoint = process.env.S3_ENDPOINT;
+  s3ClientOpts.forcePathStyle = true;
+}
+export const s3Client = new S3Client(s3ClientOpts);
 
 export const BUCKET_NAME = process.env.S3_BUCKET_NAME || "";

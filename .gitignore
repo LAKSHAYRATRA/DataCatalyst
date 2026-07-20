@@ -1,0 +1,23 @@
+node_modules/
+.env
+.env.local
+dist/
+build/
+.cache/
+.claude/
+*.log
+.DS_Store
+Thumbs.db
+recordings/
+uploads/
+.vscode/
+*.vsix
+TODO.md
+AGREEMENT_TODO.md
+datacatalyst.in/
+
+# Local-only working notes / reference docs (not for public/shared history)
+DataCatalyst-Agreement.md
+DataCatalyst-Voclara-Agreement.pdf
+Oracle_TURN_Steps.txt
+turn.zip

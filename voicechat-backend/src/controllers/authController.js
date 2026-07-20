@@ -131,6 +131,16 @@ export async function signup(req, res) {
   if (!/^\d{6}$/.test(pincode))
     return res.status(400).json({ error: "invalid_pincode" });
 
+  const dobDate = new Date(dob);
+  if (Number.isNaN(dobDate.getTime()))
+    return res.status(400).json({ error: "invalid_dob" });
+  const today = new Date();
+  let age = today.getFullYear() - dobDate.getFullYear();
+  const m = today.getMonth() - dobDate.getMonth();
+  if (m < 0 || (m === 0 && today.getDate() < dobDate.getDate())) age--;
+  if (age < 18)
+    return res.status(400).json({ error: "underage" });
+
   const otp = await OtpCode.findOne({ email, type: "signup", used: false })
     .sort({ createdAt: -1 })
     .lean();
@@ -171,7 +181,7 @@ export async function signup(req, res) {
     address: { street, state, city, pincode },
     microphoneBrand,
     microphoneModel,
-    dob: new Date(dob),
+    dob: dobDate,
     isEmailVerified: true,
     speaker_id,
   });
@@ -315,6 +325,7 @@ export function logout(req, res) {
 // GET /api/auth/me
 export function getMe(req, res) {
   if (!req.user) return res.status(401).json({ error: "unauthorized" });
+  const ca = req.user.contributorAgreement || {};
   res.json({
     user: {
       id: req.user._id,
@@ -328,6 +339,13 @@ export function getMe(req, res) {
       qaLanguageCodes: req.user.qaLanguageCodes || [],
       dailyCallLimit: req.user.dailyCallLimit,
       accountStatus: req.user.accountStatus || "pending_intro",
+      contributorAgreement: {
+        signed: !!ca.signed,
+        agreementVersion: ca.agreementVersion || null,
+        signedAt: ca.signedAt || null,
+        adminReviewStatus: ca.adminReviewStatus || null,
+        adminReviewReason: ca.adminReviewReason || null,
+      },
     },
   });
 }
