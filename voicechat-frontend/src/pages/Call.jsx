@@ -60,6 +60,8 @@ export default function Call() {
   const localStreamRef = useRef(null);
   const audioContextRef = useRef(null);
   const workletNodeRef = useRef(null);
+  const pendingChunksRef = useRef(new Map());
+  const currentSeqRef = useRef(0);
   const callRef = useRef({
     callId: null,
     role: null,
@@ -288,15 +290,31 @@ export default function Call() {
 
   function handleEndConversation() {
     if (confirm("Are you sure you want to end the conversation?")) {
-      // Use 'hangup' event which is handled by backend to notify peer via 'call_ended'
-      if (socketRef.current) {
-        socketRef.current.emit("hangup");
+      const finishHangup = () => {
+        if (socketRef.current) socketRef.current.emit("hangup");
+      };
+
+      if (pendingChunksRef.current && pendingChunksRef.current.size > 0) {
+        log("waiting for audio to sync...");
+        
+        // Wait up to 5 seconds for pending chunks to clear
+        let checks = 0;
+        const interval = setInterval(() => {
+          checks++;
+          if (pendingChunksRef.current.size === 0 || checks > 20) {
+            clearInterval(interval);
+            finishHangup();
+          }
+        }, 250);
+      } else {
+        finishHangup();
       }
 
-      // Fallback: If network is completely dead, force cleanup after 5 seconds
+      // Fallback: If network is completely dead, force cleanup after 10 seconds
       setTimeout(() => {
         if (callRef.current && callRef.current.callId) {
-          setNegotiationMode(false);
+          stopCallRecording();
+          cleanupCallUi();
           setStatus("idle");
           setCallId(null);
           setTopicConfirmed(false);
@@ -305,7 +323,7 @@ export default function Call() {
           setTopics([]); 
           navigate("/call");
         }
-      }, 5000);
+      }, 10000);
     }
   }
 
@@ -362,6 +380,10 @@ export default function Call() {
     if (workletNodeRef.current || isStartingRecordingRef.current) return; // already recording or starting
     isStartingRecordingRef.current = true;
 
+    // Reset sequence tracking
+    currentSeqRef.current = 0;
+    pendingChunksRef.current.clear();
+
     try {
       // Create AudioContext without forcing a specific sampleRate.
       // This prevents resampling bugs in the browser and captures at the exact native hardware rate.
@@ -379,11 +401,25 @@ export default function Call() {
       const actualStreamRate = audioCtx.sampleRate;
       socket.emit("record_start", { callId: activeCallId, mimeType: "audio/pcm", startTime, sampleRate: actualStreamRate });
 
-      workletNode.port.onmessage = (e) => {
+      const sendChunk = (seq, data) => {
         const s2 = socketRef.current;
-        if (s2) {
-          s2.emit("record_chunk", e.data);
+        if (s2 && s2.connected) {
+          s2.emit("record_chunk", { seq, data, callId: activeCallId }, (ackSeq) => {
+            if (pendingChunksRef.current.has(ackSeq)) {
+              pendingChunksRef.current.delete(ackSeq);
+            }
+          });
         }
+      };
+
+      // Ensure sendChunk is globally accessible for reconnects
+      socketRef.current.sendChunk = sendChunk;
+
+      workletNode.port.onmessage = (e) => {
+        const data = e.data;
+        const seq = currentSeqRef.current++;
+        pendingChunksRef.current.set(seq, data);
+        sendChunk(seq, data);
       };
 
       const gain = audioCtx.createGain();
@@ -626,10 +662,19 @@ export default function Call() {
     socket.on("connect", () => {
       setConnected(true);
       log("connected");
-      const passed = getSystemCheckPassed();
+
+      const passed =
+        localStorage.getItem("systemCheckPassed") === "true" || systemCheckPassed;
       socket.emit("system_check_status", { passed });
 
-      if (!socket.recovered) {
+      if (socket.recovered) {
+        // Resend pending chunks
+        if (socket.sendChunk && pendingChunksRef.current.size > 0) {
+          for (const [seq, data] of pendingChunksRef.current.entries()) {
+            socket.sendChunk(seq, data);
+          }
+        }
+      } else {
         // If recovery failed (e.g. disconnected for >60s), the backend already ended the call.
         if (callRef.current && callRef.current.callId) {
           stopCallRecording();
