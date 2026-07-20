@@ -1988,7 +1988,12 @@ router.post("/s3/download-selected", async (req, res) => {
                 let offsetMs = 0;
                 let durationMs = 0;
 
-                if (call && call.actualCallStartedAt && call.actualCallDuration) {
+                let actualCallDuration = call ? call.actualCallDuration : 0;
+                if (!actualCallDuration && call && call.endedAt && call.actualCallStartedAt) {
+                    actualCallDuration = (new Date(call.endedAt).getTime() - new Date(call.actualCallStartedAt).getTime()) / 1000;
+                }
+
+                if (call && call.actualCallStartedAt && actualCallDuration) {
                     const callStart = new Date(call.actualCallStartedAt).getTime();
                     let recordingStart = callStart;
 
@@ -2003,7 +2008,7 @@ router.post("/s3/download-selected", async (req, res) => {
                         offsetMs = recordingStart - callStart;
                     }
                     
-                    durationMs = call.actualCallDuration * 1000;
+                    durationMs = actualCallDuration * 1000;
                 }
 
                 const wavBuffer = await getWavBuffer(s3Doc.Body, { offsetMs, durationMs });
