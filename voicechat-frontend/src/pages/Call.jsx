@@ -293,17 +293,19 @@ export default function Call() {
         socketRef.current.emit("hangup");
       }
 
-      // Reset State
-      setNegotiationMode(false);
-      setStatus("idle");
-      setCallId(null);
-      setTopicConfirmed(false);
-      setMyRole(null);
-      setPeerRole(null);
-      setTopics([]); // Clear topics to force reload next time or keep them? maybe keep.
-
-      // Go back to idle screen
-      // navigate("/call"); // Already there
+      // Fallback: If network is completely dead, force cleanup after 5 seconds
+      setTimeout(() => {
+        if (callRef.current && callRef.current.callId) {
+          setNegotiationMode(false);
+          setStatus("idle");
+          setCallId(null);
+          setTopicConfirmed(false);
+          setMyRole(null);
+          setPeerRole(null);
+          setTopics([]); 
+          navigate("/call");
+        }
+      }, 5000);
     }
   }
 
@@ -859,8 +861,19 @@ export default function Call() {
   function hangup() {
     const socket = socketRef.current;
     if (!socket) return;
+    
+    // Instead of instantly destroying the UI and stopping the recording stream,
+    // we emit hangup and wait for the server to reply with "call_ended".
+    // This guarantees both users stop recording at the exact same millisecond on the backend!
     socket.emit("hangup");
-    cleanupCallUi();
+    
+    // Fallback: If the network is completely dead and the server never responds,
+    // forcefully clean up the UI after 5 seconds so the user isn't stuck forever.
+    setTimeout(() => {
+      if (callRef.current && callRef.current.callId) {
+        cleanupCallUi();
+      }
+    }, 5000);
   }
 
   // Render Language Selection UI
