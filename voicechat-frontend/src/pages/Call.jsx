@@ -400,15 +400,27 @@ export default function Call() {
   function stopCallRecording() {
     const socket = socketRef.current;
     if (workletNodeRef.current) {
-        workletNodeRef.current.disconnect();
-        workletNodeRef.current = null;
+        workletNodeRef.current.port.postMessage("flush");
+        // Give it a tiny moment to post back the final buffer before disconnecting
+        setTimeout(() => {
+          if (workletNodeRef.current) {
+            workletNodeRef.current.disconnect();
+            workletNodeRef.current = null;
+          }
+          try { if (socket) socket.emit("record_stop"); } catch { }
+        }, 50);
+    } else {
+        try { if (socket) socket.emit("record_stop"); } catch { }
     }
+    
     if (audioContextRef.current) {
-        audioContextRef.current.close();
-        audioContextRef.current = null;
+        setTimeout(() => {
+          if (audioContextRef.current) {
+            audioContextRef.current.close();
+            audioContextRef.current = null;
+          }
+        }, 50);
     }
-
-    try { if (socket) socket.emit("record_stop"); } catch { }
   }
 
   async function createPeerConnection() {
