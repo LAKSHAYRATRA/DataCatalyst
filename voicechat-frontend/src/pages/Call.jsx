@@ -614,12 +614,22 @@ export default function Call() {
       log("connected");
       const passed = getSystemCheckPassed();
       socket.emit("system_check_status", { passed });
+
+      if (!socket.recovered) {
+        // If recovery failed (e.g. disconnected for >60s), the backend already ended the call.
+        if (callRef.current && callRef.current.callId) {
+          stopCallRecording();
+          cleanupCallUi();
+          alert("Network connection was lost for too long. The call has been ended.");
+        }
+      }
     });
 
     socket.on("disconnect", () => {
       setConnected(false);
       log("disconnected");
-      cleanupCallUi();
+      // Do NOT call cleanupCallUi() here. Allow Connection State Recovery 
+      // to restore the session. The call should only end when we receive "call_ended".
     });
 
     socket.on("force_logout", ({ reason }) => {
