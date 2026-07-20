@@ -49,21 +49,26 @@ async function repairFile(s3Key) {
     const { Body } = await s3Client.send(new GetObjectCommand({ Bucket: BUCKET_NAME, Key: s3Key }));
     await pipeline(Body, fs.createWriteStream(localTempPath));
 
-    // 2. Check sample rate
-    const sampleRate = await getSampleRate(localTempPath);
+    // 2. Check sample rate & duration
+    const metadata = await new Promise((resolve, reject) => {
+      ffmpeg.ffprobe(localTempPath, (err, meta) => {
+        if (err) return reject(err);
+        resolve(meta);
+      });
+    });
+    const audioStream = metadata.streams.find((s) => s.codec_type === "audio");
+    const sampleRate = audioStream ? parseInt(audioStream.sample_rate, 10) : null;
+    const duration = metadata.format.duration;
+    
     console.log(`  -> Detected Sample Rate: ${sampleRate} Hz`);
+    console.log(`  -> Detected Duration: ${duration} seconds (${(duration / 60).toFixed(2)} minutes)`);
 
-    if (sampleRate !== 22050) {
-      console.log(`  -> File is not 22050 Hz (it is ${sampleRate} Hz). Skipping repair.`);
-      return;
-    }
-
-    // 3. Repair audio (correcting the pitch and stretching)
-    console.log(`  -> Repairing file (speeding back up to 48000 Hz)...`);
+    // Force repair test
+    console.log(`  -> Attempting forced repair by speeding up 2.17x...`);
     await new Promise((resolve, reject) => {
       ffmpeg(localTempPath)
-        .audioFilters("asetrate=48000") // This changes the playback speed mapping!
-        .outputOptions(["-sample_fmt s32"]) // Preserve high depth
+        .audioFilters("atempo=2.17687") // Speed up by exactly 48000/22050
+        .outputOptions(["-sample_fmt s32"]) 
         .save(fixedTempPath)
         .on("end", resolve)
         .on("error", reject);
