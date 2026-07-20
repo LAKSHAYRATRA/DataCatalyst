@@ -368,10 +368,11 @@ export default function Call() {
     const source = audioCtx.createMediaStreamSource(stream);
 
     const startTime = Date.now();
-    // Use audioCtx.sampleRate (actual rate) not the requested rate — on some systems
-    // AudioContext silently falls back to a different rate (e.g. 44100 instead of 48000).
-    // Sending the wrong rate causes FFmpeg to misinterpret the PCM stream.
-    socket.emit("record_start", { callId: activeCallId, mimeType: "audio/pcm", startTime, sampleRate: audioCtx.sampleRate });
+    // Use the actual hardware stream sample rate. Because of a known bug in Chromium,
+    // createMediaStreamSource ignores audioCtx.sampleRate and pumps the raw native hardware rate.
+    // If we pass audioCtx.sampleRate (e.g. 22050), but the stream is 48000, FFmpeg stretches it 2.17x!
+    const actualStreamRate = stream.getAudioTracks()[0].getSettings().sampleRate || audioCtx.sampleRate;
+    socket.emit("record_start", { callId: activeCallId, mimeType: "audio/pcm", startTime, sampleRate: actualStreamRate });
 
     workletNode.port.onmessage = (e) => {
       const s2 = socketRef.current;
