@@ -24,6 +24,38 @@ import { sendAgreementRejectionEmail, sendIntroApprovalEmail, sendIntroRejection
 const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET;
 
+router.get("/fix-speaker-ids", async (req, res) => {
+    try {
+        const usersToUpdate = await User.find({
+            $or: [
+                { speaker_id: { $exists: false } },
+                { speaker_id: null },
+                { speaker_id: "" }
+            ]
+        }).sort({ createdAt: 1 });
+
+        let updatedCount = 0;
+        for (const user of usersToUpdate) {
+            const { seq } = await Counter.findOneAndUpdate(
+                { _id: "speaker_id" },
+                { $inc: { seq: 1 } },
+                { upsert: true, new: true }
+            );
+            
+            const speaker_id = `spk_${seq}`;
+            
+            await User.updateOne(
+                { _id: user._id },
+                { $set: { speaker_id } }
+            );
+            updatedCount++;
+        }
+        res.json({ success: true, updatedCount, totalUsersWithoutIdBefore: usersToUpdate.length });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 router.get("/companies", requireAuth(JWT_SECRET), async (req, res) => {
     try {
         const allCompanies = await Company.find({}).sort({ name: 1 }).lean();
