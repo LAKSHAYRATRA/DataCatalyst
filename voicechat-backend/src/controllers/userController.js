@@ -237,7 +237,9 @@ export async function submitLanguageApplication(req, res) {
         .run();
     });
 
-    const s3Key = `language-apps/${req.user._id}_${languageCode}_${Date.now()}.flac`;
+    const timestamp = Date.now();
+    const baseFileName = `${req.user._id}_${languageCode}_${timestamp}.flac`;
+    const s3Key = `language-apps/${baseFileName}`;
     let recordingFileRef = s3Key;
     let s3Uploaded = false;
 
@@ -268,7 +270,7 @@ export async function submitLanguageApplication(req, res) {
       if (!fs.existsSync(localDir)) {
         fs.mkdirSync(localDir, { recursive: true });
       }
-      const localFileName = `${req.user._id}_${languageCode}_${Date.now()}.flac`;
+      const localFileName = baseFileName;
       const targetLocalPath = path.join(localDir, localFileName);
       fs.copyFileSync(flacPath, targetLocalPath);
       recordingFileRef = `local:${localFileName}`;
@@ -334,15 +336,69 @@ export async function streamLanguageRecording(req, res) {
   if (!application.recordingFile)
     return res.status(404).json({ error: "Recording not found" });
 
-  if (application.recordingFile.startsWith("local:")) {
-    const localFileName = application.recordingFile.replace("local:", "");
-    const localFilePath = path.join(process.cwd(), "recordings", "language-apps", localFileName);
-    if (fs.existsSync(localFilePath)) {
-      res.setHeader("Content-Disposition", "inline");
-      res.setHeader("X-Content-Type-Options", "nosniff");
-      res.setHeader("Content-Type", "audio/flac");
-      return fs.createReadStream(localFilePath).pipe(res);
+  const localDir = path.join(process.cwd(), "recordings", "language-apps");
+  const exactLocalName = application.recordingFile.startsWith("local:") 
+    ? application.recordingFile.replace("local:", "") 
+    : path.basename(application.recordingFile);
+  
+  let resolvedFilePath = null;
+  const exactPath = path.join(localDir, exactLocalName);
+
+  if (fs.existsSync(exactPath)) {
+    resolvedFilePath = exactPath;
+  } else {
+    // Check if the directory exists and look for a timestamp-mismatched file
+    if (fs.existsSync(localDir)) {
+      const prefix = `${req.params.userId}_${requestedLanguageCode}_`;
+      const files = fs.readdirSync(localDir);
+      const matchingFiles = files.filter(f => f.startsWith(prefix) && f.endsWith(".flac"));
+      
+      if (matchingFiles.length > 0) {
+        // Parse DB timestamp from filename (e.g. USER_LANG_TIMESTAMP.flac)
+        const dbTsMatch = exactLocalName.match(/_(\d+)\.flac$/);
+        const dbTs = dbTsMatch ? parseInt(dbTsMatch[1]) : 0;
+
+        if (dbTs > 0) {
+          let closestFile = null;
+          let minDiff = Infinity;
+          for (const f of matchingFiles) {
+            const fTsMatch = f.match(/_(\d+)\.flac$/);
+            const fTs = fTsMatch ? parseInt(fTsMatch[1]) : 0;
+            const diff = Math.abs(fTs - dbTs);
+            if (diff < minDiff) {
+              minDiff = diff;
+              closestFile = f;
+            }
+          }
+          // If a file matches with a difference of up to 60 seconds (useful for long timeouts)
+          if (closestFile && minDiff < 60000) {
+            resolvedFilePath = path.join(localDir, closestFile);
+            console.log(`Matched timestamp-fallback file: ${closestFile} for requested: ${exactLocalName}`);
+          }
+        }
+
+        // If still not matched, fallback to the latest matching file
+        if (!resolvedFilePath) {
+          matchingFiles.sort((a, b) => {
+            const aTs = parseInt(a.match(/_(\d+)\.flac$/)?.[1] || 0);
+            const bTs = parseInt(b.match(/_(\d+)\.flac$/)?.[1] || 0);
+            return bTs - aTs;
+          });
+          resolvedFilePath = path.join(localDir, matchingFiles[0]);
+          console.log(`Matched latest-fallback file: ${matchingFiles[0]} for requested: ${exactLocalName}`);
+        }
+      }
     }
+  }
+
+  if (resolvedFilePath && fs.existsSync(resolvedFilePath)) {
+    res.setHeader("Content-Disposition", "inline");
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("Content-Type", "audio/flac");
+    return fs.createReadStream(resolvedFilePath).pipe(res);
+  }
+
+  if (application.recordingFile.startsWith("local:")) {
     return res.status(404).json({ error: "Local recording file not found" });
   }
 

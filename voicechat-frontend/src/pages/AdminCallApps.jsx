@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import AdminNav from "../components/AdminNav.jsx";
+import { fetchAndConvertToWav } from "../lib/audioToWav.js";
 
 const BASE = import.meta.env.VITE_BACKEND_URL || "http://localhost:3001";
 const REVIEW_BASE = "/api/admin/qa/language-applications";
@@ -38,6 +39,7 @@ export default function AdminCallApps() {
     const [error, setError] = useState("");
     const [actionLoading, setActionLoading] = useState(null);
     const [audioSrc, setAudioSrc] = useState({});
+    const [loadingAudio, setLoadingAudio] = useState({});
 
     useEffect(() => { loadApps(); }, [page, statusFilter]);
 
@@ -74,10 +76,19 @@ export default function AdminCallApps() {
         }
     }
 
-    function loadAudio(userId, appId) {
+    async function loadAudio(userId, appId) {
         const key = appId;
-        if (audioSrc[key]) return;
-        setAudioSrc(prev => ({ ...prev, [key]: `${BASE}/api/language-applications/${userId}/${appId}/recording` }));
+        if (audioSrc[key] || loadingAudio[key]) return;
+        setLoadingAudio(prev => ({ ...prev, [key]: true }));
+        try {
+            const url = `${BASE}/api/language-applications/${userId}/${appId}/recording`;
+            const wavBlob = await fetchAndConvertToWav(url);
+            setAudioSrc(prev => ({ ...prev, [key]: URL.createObjectURL(wavBlob) }));
+        } catch (e) {
+            setError("Failed to convert audio: " + e.message);
+        } finally {
+            setLoadingAudio(prev => ({ ...prev, [key]: false }));
+        }
     }
 
     return (
@@ -146,9 +157,10 @@ export default function AdminCallApps() {
                                                             !audioSrc[key] ? (
                                                                 <button
                                                                     onClick={() => loadAudio(app.userId, app.appId)}
-                                                                    className="px-3 py-1.5 bg-neutral-700 hover:bg-neutral-600 text-warning-400 text-xs font-semibold rounded-lg transition-colors"
+                                                                    disabled={loadingAudio[key]}
+                                                                    className="px-3 py-1.5 bg-neutral-700 hover:bg-neutral-600 text-warning-400 text-xs font-semibold rounded-lg transition-colors disabled:opacity-50"
                                                                 >
-                                                                    ▶ Load
+                                                                    {loadingAudio[key] ? "Converting..." : "▶ Load"}
                                                                 </button>
                                                             ) : (
                                                                 <audio src={audioSrc[key]} controls controlsList="nodownload noplaybackrate" onContextMenu={(e) => e.preventDefault()} className="h-8 w-48" />
