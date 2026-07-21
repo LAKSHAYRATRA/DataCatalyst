@@ -285,7 +285,7 @@ export default function LanguageApply() {
                             <div className="flex justify-center py-8">
                                 <div className="w-8 h-8 border-4 border-primary-200 border-t-primary-600 rounded-full animate-spin" />
                             </div>
-                        ) : (applicationType === 'call' && globalLanguages.filter(l => l.enabled && canApply(null, l.code, 'call')).length === 0) ? (
+                        ) : (applicationType === 'call' && globalLanguages.filter(l => l.enabled).length === 0) ? (
                             <p className="text-neutral-400 dark:text-neutral-500 text-sm py-6 text-center">No call languages available to apply for right now.</p>
                         ) : (applicationType === 'phrase' && companies.length === 0) ? (
                             <p className="text-neutral-400 dark:text-neutral-500 text-sm py-6 text-center">No phrase projects available yet.</p>

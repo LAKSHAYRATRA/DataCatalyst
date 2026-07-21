@@ -289,7 +289,7 @@ export async function submitLanguageApplication(req, res) {
         companyId,
         languageCode,
         status: "pending",
-        recordingFile: s3Key,
+        recordingFile: recordingFileRef,
         appliedAt: new Date(),
       });
     }
