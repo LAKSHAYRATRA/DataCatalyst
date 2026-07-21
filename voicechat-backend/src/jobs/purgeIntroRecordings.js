@@ -1,6 +1,8 @@
 import { DeleteObjectCommand } from "@aws-sdk/client-s3";
 import { s3Client, BUCKET_NAME } from "../config/s3.js";
 import { User } from "../models/User.js";
+import fs from "fs";
+import path from "path";
 
 const RETENTION_DAYS = 180;
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
@@ -25,7 +27,15 @@ export async function purgeIntroRecordings() {
   for (const user of users) {
     const key = user.introRecordingFile;
     try {
-      await s3Client.send(new DeleteObjectCommand({ Bucket: BUCKET_NAME, Key: key }));
+      if (key.startsWith("local:")) {
+        const localFileName = key.replace("local:", "");
+        const localFilePath = path.join(process.cwd(), "recordings", "intros", localFileName);
+        if (fs.existsSync(localFilePath)) {
+          fs.unlinkSync(localFilePath);
+        }
+      } else {
+        await s3Client.send(new DeleteObjectCommand({ Bucket: BUCKET_NAME, Key: key }));
+      }
       await User.updateOne(
         { _id: user._id },
         { $set: { introRecordingFile: null } }

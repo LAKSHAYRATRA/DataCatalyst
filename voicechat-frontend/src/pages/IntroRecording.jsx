@@ -371,7 +371,6 @@ export default function IntroRecording() {
                                 </svg>
                                 <div>
                                     <p className="font-semibold text-error-700 text-sm">Your previous recording was not approved</p>
-                                    {rejectionReason && <p className="text-error-600 text-sm mt-1 italic">"{rejectionReason}"</p>}
                                     <p className="text-error-600 text-xs mt-2">Please record a new introduction below.</p>
                                 </div>
                             </div>

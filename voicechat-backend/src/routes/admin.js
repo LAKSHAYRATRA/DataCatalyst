@@ -19,7 +19,7 @@ import { getPayoutOverview, getSingleUserPayout } from "../services/payouts.js";
 import { ListObjectsV2Command, DeleteObjectCommand, GetObjectCommand, CopyObjectCommand } from "@aws-sdk/client-s3";
 import { s3Client, BUCKET_NAME } from "../config/s3.js";
 import { streamS3ToWav, getWavStream, getWavBuffer } from "../utils/ffmpeg-stream.js";
-import { sendAgreementRejectionEmail } from "../util/emailService.js";
+import { sendAgreementRejectionEmail, sendIntroApprovalEmail, sendIntroRejectionEmail, sendIntroFinalDeletionEmail, sendAgreementApprovedEmail, sendProjectApplicationApprovedEmail, sendProjectApplicationRejectedEmail } from "../util/emailService.js";
 
 const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET;
@@ -147,6 +147,16 @@ async function approveLanguageApplication(req, res) {
         app.reviewedBy = req.user._id;
         app.reviewedAt = new Date();
         await user.save();
+
+        // Send project approved email
+        try {
+            const languageDoc = await Language.findOne({ code: languageCode });
+            const languageName = languageDoc?.name || app.languageCode;
+            await sendProjectApplicationApprovedEmail(user.email, user.firstname, languageName, app.applicationType);
+        } catch (mailErr) {
+            console.error("Failed to send project application approval email:", mailErr.message);
+        }
+
         res.json({ message: "Application approved" });
     } catch (e) {
         res.status(500).json({ error: e.message });
@@ -169,6 +179,16 @@ async function rejectLanguageApplication(req, res) {
         app.reviewedBy = req.user._id;
         app.reviewedAt = new Date();
         await user.save();
+
+        // Send project rejected email
+        try {
+            const languageDoc = await Language.findOne({ code: languageCode });
+            const languageName = languageDoc?.name || app.languageCode;
+            await sendProjectApplicationRejectedEmail(user.email, user.firstname, languageName, app.applicationType);
+        } catch (mailErr) {
+            console.error("Failed to send project application rejection email:", mailErr.message);
+        }
+
         res.json({ message: "Application rejected" });
     } catch (e) {
         res.status(500).json({ error: e.message });
@@ -1166,6 +1186,27 @@ router.get("/users/:userId/intro", async (req, res) => {
         if (!user) return res.status(404).json({ error: "User not found" });
         if (!user.introRecordingFile) return res.status(404).json({ error: "No intro recording" });
 
+        // Serve local files directly
+        if (user.introRecordingFile.startsWith("local:")) {
+            const localFileName = user.introRecordingFile.replace("local:", "");
+            const localFilePath = path.join(process.cwd(), "recordings", "intros", localFileName);
+            if (fs.existsSync(localFilePath)) {
+                res.setHeader("Content-Type", "audio/flac");
+                res.setHeader("Accept-Ranges", "bytes");
+                return fs.createReadStream(localFilePath).pipe(res);
+            }
+            return res.status(404).json({ error: "Local recording file not found" });
+        }
+
+        // Fallback: check if S3 key filename exists locally in recordings/intros
+        const baseName = path.basename(user.introRecordingFile);
+        const fallbackPath = path.join(process.cwd(), "recordings", "intros", baseName);
+        if (fs.existsSync(fallbackPath)) {
+            res.setHeader("Content-Type", "audio/flac");
+            res.setHeader("Accept-Ranges", "bytes");
+            return fs.createReadStream(fallbackPath).pipe(res);
+        }
+
         try {
             const command = new GetObjectCommand({
                 Bucket: BUCKET_NAME,
@@ -1197,8 +1238,16 @@ router.patch("/users/:userId/approve", async (req, res) => {
             req.params.userId,
             { accountStatus: "approved", rejectionReason: null, introReviewedAt: new Date() },
             { new: true }
-        ).select('username email accountStatus');
+        ).select('username email firstname accountStatus');
         if (!user) return res.status(404).json({ error: "User not found" });
+
+        // Send congratulatory email to sign agreement
+        try {
+            await sendIntroApprovalEmail(user.email, user.firstname);
+        } catch (mailErr) {
+            console.error("Failed to send intro approval email:", mailErr.message);
+        }
+
         res.json({ message: "User approved", user });
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -1235,12 +1284,57 @@ router.patch("/users/:userId/reject", async (req, res) => {
         const reason = String(req.body?.reason || "").trim();
         if (!reason) return res.status(400).json({ error: "Rejection reason is required" });
 
-        const user = await User.findByIdAndUpdate(
-            req.params.userId,
-            { accountStatus: "rejected", rejectionReason: reason, introReviewedAt: new Date() },
-            { new: true }
-        ).select('username email accountStatus rejectionReason');
+        const user = await User.findById(req.params.userId);
         if (!user) return res.status(404).json({ error: "User not found" });
+
+        const newCount = (user.introRejectionCount || 0) + 1;
+
+        if (newCount >= 2) {
+            // Delete recording file from disk/S3 first
+            if (user.introRecordingFile) {
+                const key = user.introRecordingFile;
+                try {
+                    if (key.startsWith("local:")) {
+                        const localFileName = key.replace("local:", "");
+                        const localFilePath = path.join(process.cwd(), "recordings", "intros", localFileName);
+                        if (fs.existsSync(localFilePath)) {
+                            fs.unlinkSync(localFilePath);
+                        }
+                    } else {
+                        await s3Client.send(new DeleteObjectCommand({ Bucket: BUCKET_NAME, Key: key }));
+                    }
+                } catch (cleanupErr) {
+                    console.error("Failed to cleanup intro recording for deleted user:", cleanupErr.message);
+                }
+            }
+
+            // Send final deletion email
+            try {
+                await sendIntroFinalDeletionEmail(user.email, user.firstname);
+            } catch (mailErr) {
+                console.error("Failed to send final deletion email:", mailErr.message);
+            }
+
+            // Delete the user from DB!
+            await User.findByIdAndDelete(req.params.userId);
+
+            return res.json({ message: "User rejected twice and account deleted", deleted: true });
+        }
+
+        // First rejection: update status and increment count
+        user.accountStatus = "rejected";
+        user.rejectionReason = reason;
+        user.introReviewedAt = new Date();
+        user.introRejectionCount = newCount;
+        await user.save();
+
+        // Send onboarding rejection email
+        try {
+            await sendIntroRejectionEmail(user.email, user.firstname, reason);
+        } catch (mailErr) {
+            console.error("Failed to send intro rejection email:", mailErr.message);
+        }
+
         res.json({ message: "User rejected", user });
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -1548,6 +1642,16 @@ router.patch("/language-applications/:userId/:appId/approve", async (req, res) =
         app.reviewedBy = req.user._id;
         app.reviewedAt = new Date();
         await user.save();
+
+        // Send project approved email
+        try {
+            const languageDoc = await Language.findOne({ code: app.languageCode });
+            const languageName = languageDoc?.name || app.languageCode;
+            await sendProjectApplicationApprovedEmail(user.email, user.firstname, languageName, app.applicationType);
+        } catch (mailErr) {
+            console.error("Failed to send project application approval email:", mailErr.message);
+        }
+
         res.json({ message: "Application approved" });
     } catch (e) {
         res.status(500).json({ error: e.message });
@@ -1565,6 +1669,16 @@ router.patch("/language-applications/:userId/:appId/reject", async (req, res) =>
         app.reviewedBy = req.user._id;
         app.reviewedAt = new Date();
         await user.save();
+
+        // Send project rejected email
+        try {
+            const languageDoc = await Language.findOne({ code: app.languageCode });
+            const languageName = languageDoc?.name || app.languageCode;
+            await sendProjectApplicationRejectedEmail(user.email, user.firstname, languageName, app.applicationType);
+        } catch (mailErr) {
+            console.error("Failed to send project application rejection email:", mailErr.message);
+        }
+
         res.json({ message: "Application rejected" });
     } catch (e) {
         res.status(500).json({ error: e.message });
@@ -2316,16 +2430,50 @@ router.get("/contributor-agreements/:userId/download", async (req, res) => {
         if (!user || !user.contributorAgreement?.s3Key) {
             return res.status(404).json({ error: "agreement_not_found" });
         }
-        const command = new GetObjectCommand({ Bucket: BUCKET_NAME, Key: user.contributorAgreement.s3Key });
-        const s3Doc = await s3Client.send(command);
-        res.setHeader("Content-Type", "application/pdf");
-        res.setHeader(
-            "Content-Disposition",
-            `attachment; filename="Voclara-Contributor-Agreement-${user.username || user._id}.pdf"`
-        );
-        s3Doc.Body.on("error", (err) => {
-            console.error("[admin] S3 stream error (agreement):", err);
-        }).pipe(res);
+        const key = user.contributorAgreement.s3Key;
+
+        // Serve local files directly
+        if (key.startsWith("local:")) {
+            const localFileName = key.replace("local:", "");
+            const localFilePath = path.join(process.cwd(), "recordings", "agreements", localFileName);
+            if (fs.existsSync(localFilePath)) {
+                res.setHeader("Content-Type", "application/pdf");
+                res.setHeader(
+                    "Content-Disposition",
+                    `attachment; filename="Voclara-Contributor-Agreement-${user.username || user._id}.pdf"`
+                );
+                return fs.createReadStream(localFilePath).pipe(res);
+            }
+            return res.status(404).json({ error: "Local agreement file not found" });
+        }
+
+        // Fallback: check if S3 key filename exists locally in recordings/agreements
+        const baseName = path.basename(key);
+        const fallbackPath = path.join(process.cwd(), "recordings", "agreements", baseName);
+        if (fs.existsSync(fallbackPath)) {
+            res.setHeader("Content-Type", "application/pdf");
+            res.setHeader(
+                "Content-Disposition",
+                `attachment; filename="Voclara-Contributor-Agreement-${user.username || user._id}.pdf"`
+            );
+            return fs.createReadStream(fallbackPath).pipe(res);
+        }
+
+        try {
+            const command = new GetObjectCommand({ Bucket: BUCKET_NAME, Key: key });
+            const s3Doc = await s3Client.send(command);
+            res.setHeader("Content-Type", "application/pdf");
+            res.setHeader(
+                "Content-Disposition",
+                `attachment; filename="Voclara-Contributor-Agreement-${user.username || user._id}.pdf"`
+            );
+            s3Doc.Body.on("error", (err) => {
+                console.error("[admin] S3 stream error (agreement):", err);
+            }).pipe(res);
+        } catch (s3error) {
+            console.error("S3 agreement streaming error:", s3error);
+            return res.status(404).json({ error: `Agreement cloud error: ${s3error.message}` });
+        }
     } catch (err) {
         console.error("[admin] agreement download failed:", err);
         res.status(500).json({ error: "download_failed" });
@@ -2349,6 +2497,14 @@ router.post("/contributor-agreements/:userId/approve", async (req, res) => {
         user.contributorAgreement.adminReviewedBy = req.user._id;
         user.contributorAgreement.adminReviewReason = null;
         await user.save();
+
+        // Send email notification of agreement approval
+        try {
+            await sendAgreementApprovedEmail(user.email, user.firstname, ca.s3Key);
+        } catch (mailErr) {
+            console.error("Failed to send agreement approval email:", mailErr.message);
+        }
+
         res.json({ message: "Agreement approved" });
     } catch (err) {
         console.error("[admin] agreement approve failed:", err);
@@ -2475,14 +2631,42 @@ router.get("/users/:userId/pan-card", async (req, res) => {
         const key = user.kyc?.panCardS3Key;
         if (!key) return res.status(404).json({ error: "no_pan_card" });
 
-        const cmd = new GetObjectCommand({ Bucket: BUCKET_NAME, Key: key });
-        const s3Doc = await s3Client.send(cmd);
-        if (s3Doc.ContentLength) res.setHeader("Content-Length", s3Doc.ContentLength);
-        res.setHeader("Content-Type", s3Doc.ContentType || "image/jpeg");
-        res.setHeader("Cache-Control", "private, max-age=60");
-        s3Doc.Body.on("error", (err) => {
-            console.error("[admin] PAN card stream error:", err);
-        }).pipe(res);
+        // Serve local files directly
+        if (key.startsWith("local:")) {
+            const localFileName = key.replace("local:", "");
+            const localFilePath = path.join(process.cwd(), "recordings", "kyc", localFileName);
+            if (fs.existsSync(localFilePath)) {
+                const ext = localFileName.endsWith("png") ? "image/png" : "image/jpeg";
+                res.setHeader("Content-Type", ext);
+                res.setHeader("Cache-Control", "private, max-age=60");
+                return fs.createReadStream(localFilePath).pipe(res);
+            }
+            return res.status(404).json({ error: "Local PAN card file not found" });
+        }
+
+        // Fallback: check if S3 key filename exists locally in recordings/kyc
+        const baseName = path.basename(key);
+        const fallbackPath = path.join(process.cwd(), "recordings", "kyc", baseName);
+        if (fs.existsSync(fallbackPath)) {
+            const ext = baseName.endsWith("png") ? "image/png" : "image/jpeg";
+            res.setHeader("Content-Type", ext);
+            res.setHeader("Cache-Control", "private, max-age=60");
+            return fs.createReadStream(fallbackPath).pipe(res);
+        }
+
+        try {
+            const cmd = new GetObjectCommand({ Bucket: BUCKET_NAME, Key: key });
+            const s3Doc = await s3Client.send(cmd);
+            if (s3Doc.ContentLength) res.setHeader("Content-Length", s3Doc.ContentLength);
+            res.setHeader("Content-Type", s3Doc.ContentType || "image/jpeg");
+            res.setHeader("Cache-Control", "private, max-age=60");
+            s3Doc.Body.on("error", (err) => {
+                console.error("[admin] PAN card stream error:", err);
+            }).pipe(res);
+        } catch (s3error) {
+            console.error("S3 PAN card streaming error:", s3error);
+            return res.status(404).json({ error: `PAN card cloud error: ${s3error.message}` });
+        }
     } catch (err) {
         console.error("[admin] PAN card fetch failed:", err);
         return res.status(404).json({ error: "pan_card_not_found" });

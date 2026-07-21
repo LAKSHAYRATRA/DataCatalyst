@@ -271,11 +271,11 @@ export default function AdminUsers() {
             {/* Reject Modal */}
             {rejectModal && (
                 <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
-                    <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl">
-                        <h3 className="text-lg font-bold text-neutral-900 mb-1">Reject User</h3>
-                        <p className="text-sm text-neutral-500 mb-4">The user will see this message and can re-record.</p>
+                    <div className="bg-neutral-800 border border-neutral-700 rounded-2xl p-6 w-full max-w-md shadow-2xl">
+                        <h3 className="text-lg font-bold text-white mb-1">Reject User</h3>
+                        <p className="text-sm text-neutral-400 mb-4">The user will see this message and can re-record.</p>
                         <textarea
-                            className="w-full border border-neutral-300 rounded-lg p-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-400 resize-none"
+                            className="w-full bg-neutral-700 text-white border border-neutral-600 rounded-lg p-3 text-sm focus:outline-none focus:ring-2 focus:ring-warning-500 resize-none"
                             rows={4}
                             placeholder="e.g. Background noise was too loud. Please record in a quieter environment."
                             value={rejectReason}
@@ -284,13 +284,13 @@ export default function AdminUsers() {
                         />
                         <div className="flex gap-3 mt-4">
                             <button onClick={() => { setRejectModal(null); setRejectReason(""); }}
-                                className="flex-1 px-4 py-2 border border-neutral-300 rounded-lg text-sm hover:bg-neutral-50">
+                                className="flex-1 px-4 py-2 bg-neutral-700 hover:bg-neutral-600 text-neutral-300 text-sm font-semibold rounded-lg transition-colors">
                                 Cancel
                             </button>
                             <button
                                 onClick={submitReject}
                                 disabled={!rejectReason.trim() || rejectLoading}
-                                className="flex-1 px-4 py-2 bg-error-600 hover:bg-error-700 text-white rounded-lg text-sm font-semibold disabled:opacity-50"
+                                className="flex-1 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-semibold disabled:opacity-50 transition-colors"
                             >
                                 {rejectLoading ? "Rejecting…" : "Reject"}
                             </button>

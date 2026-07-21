@@ -14,6 +14,7 @@ import { s3Client, BUCKET_NAME } from "../config/s3.js";
 import ffmpeg from "fluent-ffmpeg";
 import ffmpegInstaller from "@ffmpeg-installer/ffmpeg";
 import { generateSignedAgreementPdf, AGREEMENT_VERSION } from "../services/agreementPdf.js";
+import { sendIntroSubmissionEmail, sendAgreementSignedEmail, sendProjectApplicationReceivedEmail } from "../util/emailService.js";
 
 ffmpeg.setFfmpegPath(ffmpegInstaller.path);
 
@@ -64,18 +65,40 @@ export async function uploadIntroRecording(req, res) {
         .run();
     });
 
-    const s3Key = `intros/${req.user._id}_${Date.now()}.flac`;
+    const timestamp = Date.now();
+    const baseFileName = `${req.user._id}_${timestamp}.flac`;
+    const s3Key = `intros/${baseFileName}`;
+    let recordingFileRef = s3Key;
+    let s3Uploaded = false;
 
-    const uploader = new Upload({
-      client: s3Client,
-      params: {
-        Bucket: BUCKET_NAME,
-        Key: s3Key,
-        Body: fs.createReadStream(flacPath),
-        ContentType: "audio/flac",
-      },
-    });
-    await uploader.done();
+    if (process.env.AWS_ACCESS_KEY_ID && process.env.S3_BUCKET_NAME) {
+      try {
+        const uploader = new Upload({
+          client: s3Client,
+          params: {
+            Bucket: BUCKET_NAME,
+            Key: s3Key,
+            Body: fs.createReadStream(flacPath),
+            ContentType: "audio/flac",
+          },
+        });
+        await uploader.done();
+        s3Uploaded = true;
+      } catch (s3Err) {
+        console.warn("S3 upload skipped/failed for intro recording, saving locally:", s3Err.message);
+      }
+    }
+
+    if (!s3Uploaded) {
+      const localDir = path.join(process.cwd(), "recordings", "intros");
+      if (!fs.existsSync(localDir)) {
+        fs.mkdirSync(localDir, { recursive: true });
+      }
+      const localFileName = baseFileName;
+      const targetLocalPath = path.join(localDir, localFileName);
+      fs.copyFileSync(flacPath, targetLocalPath);
+      recordingFileRef = `local:${localFileName}`;
+    }
 
     try { fs.unlinkSync(req.file.path); } catch (e) {}
     try { fs.unlinkSync(flacPath); } catch (e) {}
@@ -84,7 +107,7 @@ export async function uploadIntroRecording(req, res) {
       { _id: req.user._id },
       {
         accountStatus: "pending_approval",
-        introRecordingFile: s3Key,
+        introRecordingFile: recordingFileRef,
         introRecordingUploadedAt: new Date(),
         introReviewedAt: null,
         introConsent: {
@@ -96,6 +119,18 @@ export async function uploadIntroRecording(req, res) {
         rejectionReason: null,
       }
     );
+
+    // Send confirmation email
+    try {
+      await sendIntroSubmissionEmail(
+        req.user.email,
+        req.user.firstname,
+        req.user.lastname
+      );
+    } catch (mailErr) {
+      console.error("Failed to send intro recording submission email:", mailErr.message);
+    }
+
     res.json({ ok: true, accountStatus: "pending_approval" });
   } catch (err) {
     console.error("Intro upload error:", err);
@@ -196,11 +231,12 @@ export async function submitLanguageApplication(req, res) {
         return res.status(400).json({ error: "No sample phrase available for this company and language." });
       }
     }
+    let lang;
     if (languageCode) {
       const filter = applicationType === "call"
         ? { code: languageCode, enabled: true }
         : { code: languageCode };
-      const lang = await Language.findOne(filter);
+      lang = await Language.findOne(filter);
       if (!lang) {
         try { fs.unlinkSync(req.file.path); } catch (e) {}
         return res.status(404).json({
@@ -297,6 +333,15 @@ export async function submitLanguageApplication(req, res) {
     }
 
     await user.save();
+
+    // Send application received email
+    try {
+      const languageName = lang?.name || languageCode;
+      await sendProjectApplicationReceivedEmail(user.email, user.firstname, languageName, applicationType);
+    } catch (mailErr) {
+      console.error("Failed to send project application received email:", mailErr.message);
+    }
+
     res.json({ ok: true, message: "Application submitted" });
   } catch (err) {
     console.error("Language app error:", err);
@@ -682,22 +727,38 @@ export async function uploadPanCard(req, res) {
   }
 
   const ext = req.file.mimetype === "image/png" ? "png" : "jpg";
-  const s3Key = `kyc/${req.user._id}_pan_${Date.now()}.${ext}`;
+  const timestamp = Date.now();
+  const s3Key = `kyc/${req.user._id}_pan_${timestamp}.${ext}`;
+  let recordingFileRef = s3Key;
+  let s3Uploaded = false;
 
-  try {
-    const uploader = new Upload({
-      client: s3Client,
-      params: {
-        Bucket: BUCKET_NAME,
-        Key: s3Key,
-        Body: req.file.buffer,
-        ContentType: req.file.mimetype,
-      },
-    });
-    await uploader.done();
-  } catch (err) {
-    console.error("[kyc] PAN card S3 upload failed:", err);
-    return res.status(502).json({ error: "storage_unavailable" });
+  if (process.env.AWS_ACCESS_KEY_ID && process.env.S3_BUCKET_NAME) {
+    try {
+      const uploader = new Upload({
+        client: s3Client,
+        params: {
+          Bucket: BUCKET_NAME,
+          Key: s3Key,
+          Body: req.file.buffer,
+          ContentType: req.file.mimetype,
+        },
+      });
+      await uploader.done();
+      s3Uploaded = true;
+    } catch (err) {
+      console.warn("[kyc] PAN card S3 upload failed, saving locally:", err.message);
+    }
+  }
+
+  if (!s3Uploaded) {
+    const localDir = path.join(process.cwd(), "recordings", "kyc");
+    if (!fs.existsSync(localDir)) {
+      fs.mkdirSync(localDir, { recursive: true });
+    }
+    const localFileName = `${req.user._id}_pan_${timestamp}.${ext}`;
+    const targetLocalPath = path.join(localDir, localFileName);
+    fs.writeFileSync(targetLocalPath, req.file.buffer);
+    recordingFileRef = `local:${localFileName}`;
   }
 
   const previousKey = req.user.kyc?.panCardS3Key;
@@ -708,7 +769,7 @@ export async function uploadPanCard(req, res) {
       {
         $set: {
           "kyc.panNumber": panNumber,
-          "kyc.panCardS3Key": s3Key,
+          "kyc.panCardS3Key": recordingFileRef,
           "kyc.submittedAt": new Date(),
           "kyc.verificationStatus": "pending",
           "kyc.verifiedBy": null,
@@ -810,21 +871,38 @@ export async function signContributorAgreement(req, res) {
     return res.status(500).json({ error: "pdf_generation_failed" });
   }
 
-  const s3Key = `contributor-agreements/${req.user._id}_${Date.now()}.pdf`;
-  try {
-    const uploader = new Upload({
-      client: s3Client,
-      params: {
-        Bucket: BUCKET_NAME,
-        Key: s3Key,
-        Body: pdfBytes,
-        ContentType: "application/pdf",
-      },
-    });
-    await uploader.done();
-  } catch (err) {
-    console.error("[contributorAgreement] S3 upload failed:", err);
-    return res.status(502).json({ error: "storage_unavailable" });
+  const timestampVal = Date.now();
+  const s3Key = `contributor-agreements/${req.user._id}_${timestampVal}.pdf`;
+  let recordingFileRef = s3Key;
+  let s3Uploaded = false;
+
+  if (process.env.AWS_ACCESS_KEY_ID && process.env.S3_BUCKET_NAME) {
+    try {
+      const uploader = new Upload({
+        client: s3Client,
+        params: {
+          Bucket: BUCKET_NAME,
+          Key: s3Key,
+          Body: pdfBytes,
+          ContentType: "application/pdf",
+        },
+      });
+      await uploader.done();
+      s3Uploaded = true;
+    } catch (err) {
+      console.warn("[contributorAgreement] S3 upload failed, saving locally:", err.message);
+    }
+  }
+
+  if (!s3Uploaded) {
+    const localDir = path.join(process.cwd(), "recordings", "agreements");
+    if (!fs.existsSync(localDir)) {
+      fs.mkdirSync(localDir, { recursive: true });
+    }
+    const localFileName = `${req.user._id}_${timestampVal}.pdf`;
+    const targetLocalPath = path.join(localDir, localFileName);
+    fs.writeFileSync(targetLocalPath, pdfBytes);
+    recordingFileRef = `local:${localFileName}`;
   }
 
   const signerName = `${req.user.firstname || ""} ${req.user.lastname || ""}`.trim();
@@ -835,7 +913,7 @@ export async function signContributorAgreement(req, res) {
         $set: {
           "contributorAgreement.signed": true,
           "contributorAgreement.signedAt": new Date(timestamp),
-          "contributorAgreement.s3Key": s3Key,
+          "contributorAgreement.s3Key": recordingFileRef,
           "contributorAgreement.signerName": signerName,
           "contributorAgreement.signerIp": ip,
           "contributorAgreement.agreementVersion": AGREEMENT_VERSION,
@@ -847,9 +925,16 @@ export async function signContributorAgreement(req, res) {
         },
       }
     );
+
+    // Send confirmation email
+    try {
+      await sendAgreementSignedEmail(req.user.email, req.user.firstname);
+    } catch (mailErr) {
+      console.error("Failed to send agreement signed email:", mailErr.message);
+    }
   } catch (err) {
     console.error("[contributorAgreement] DB update failed:", err);
-    return res.status(500).json({ error: "db_update_failed", s3Key });
+    return res.status(500).json({ error: "db_update_failed", s3Key: recordingFileRef });
   }
 
   res.json({
@@ -866,6 +951,33 @@ export async function downloadContributorAgreement(req, res) {
   if (!ca || !ca.signed || !ca.s3Key) {
     return res.status(404).json({ error: "not_signed" });
   }
+  // Serve local files directly
+  if (ca.s3Key.startsWith("local:")) {
+    const localFileName = ca.s3Key.replace("local:", "");
+    const localFilePath = path.join(process.cwd(), "recordings", "agreements", localFileName);
+    if (fs.existsSync(localFilePath)) {
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="Voclara-Contributor-Agreement-${ca.agreementVersion || "signed"}.pdf"`
+      );
+      return fs.createReadStream(localFilePath).pipe(res);
+    }
+    return res.status(404).json({ error: "Local agreement file not found" });
+  }
+
+  // Fallback: check if S3 key filename exists locally in recordings/agreements
+  const baseName = path.basename(ca.s3Key);
+  const fallbackPath = path.join(process.cwd(), "recordings", "agreements", baseName);
+  if (fs.existsSync(fallbackPath)) {
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="Voclara-Contributor-Agreement-${ca.agreementVersion || "signed"}.pdf"`
+    );
+    return fs.createReadStream(fallbackPath).pipe(res);
+  }
+
   try {
     const command = new GetObjectCommand({ Bucket: BUCKET_NAME, Key: ca.s3Key });
     const s3Doc = await s3Client.send(command);

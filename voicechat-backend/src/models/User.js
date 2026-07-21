@@ -54,6 +54,7 @@ const userSchema = new mongoose.Schema(
     introRecordingFile: { type: String, default: null }, // relative path
     introRecordingUploadedAt: { type: Date, default: null },
     introReviewedAt: { type: Date, default: null },
+    introRejectionCount: { type: Number, default: 0 },
     introConsent: {
       tos: { type: Boolean, default: false },
       privacy: { type: Boolean, default: false },
