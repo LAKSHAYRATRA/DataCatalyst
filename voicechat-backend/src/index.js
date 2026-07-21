@@ -84,6 +84,7 @@ import {
   downloadContributorAgreement,
   getKycStatus,
   uploadPanCard,
+  updateUpiId,
 } from "./controllers/userController.js";
 
 import {
@@ -278,7 +279,7 @@ app.post(
   uploadIntroRecording
 );
 
-// KYC — PAN card collection
+// KYC — PAN card collection & UPI
 app.get("/api/user/kyc/status", requireAuth(JWT_SECRET), getKycStatus);
 app.post(
   "/api/user/kyc/pan",
@@ -286,6 +287,7 @@ app.post(
   panUpload.single("panCard"),
   uploadPanCard
 );
+app.post("/api/user/upi", requireAuth(JWT_SECRET), updateUpiId);
 
 // Contributor Agreement
 app.get("/api/user/contributor-agreement/status", requireAuth(JWT_SECRET), getContributorAgreementStatus);
@@ -386,6 +388,7 @@ io.use((socket, next) => {
 // ─── Socket helpers ───────────────────────────────────────────────────────────
 const waitingQueue = [];
 const calls = new Map();
+const activeStreams = new Map();
 
 function removeFromQueue(socketId) {
   const idx = waitingQueue.findIndex((id) => id === socketId);
@@ -401,17 +404,21 @@ function getPeerId(socket) {
 }
 
 async function cleanupRecording(socket) {
-  const filePath = socket.data.recordFilePath;
+  const callId = getCallIdForSocket(socket);
+  const streamKey = `${callId}_${socket.data.userId}`;
+  const streamObj = activeStreams.get(streamKey);
+  const stream = streamObj?.stream;
+  const tempPath = streamObj?.tempLocalPath || socket.data.tempLocalPath;
+  const filePath = streamObj?.filePath || socket.data.recordFilePath;
   const isRecording = socket.data.recording;
-  const tempPath = socket.data.tempLocalPath;
-  const stream = socket.data.recordStream;
 
-  socket.data.recordChunks = null;
-  socket.data.recordStream = null;
-  socket.data.recordFileName = null;
-  socket.data.recordFilePath = null;
-  socket.data.tempLocalPath = null;
   socket.data.recording = false;
+  socket.data.tempLocalPath = null;
+  socket.data.recordFilePath = null;
+  
+  if (streamObj) {
+    activeStreams.delete(streamKey);
+  }
 
   if (isRecording && tempPath && filePath) {
     if (stream) {
@@ -938,17 +945,31 @@ io.on("connection", (socket) => {
     if (callId) endCall(callId, "hangup");
   });
 
-  socket.on("record_start", ({ callId, mimeType, startTime, sampleRate }) => {
+  socket.on("record_start", ({ callId, mimeType, startTime, clientOffsetMs, sampleRate }) => {
     const currentCallId = getCallIdForSocket(socket);
     if (!currentCallId || currentCallId !== callId) return;
+
+    const streamKey = `${callId}_${socket.data.userId}`;
+    let streamObj = activeStreams.get(streamKey);
+
+    if (streamObj) {
+      // Re-using existing stream if socket reconnected and fired record_start again
+      socket.data.recording = true;
+      socket.emit("record_ready", { fileName: streamObj.fileName });
+      return;
+    }
 
     cleanupRecording(socket).then(() => {
       const call = calls.get(callId);
 
-      socket.data.recordOffsetMs =
-        call?.expectedActualStartTime
-          ? Math.max(0, (startTime || Date.now()) - call.expectedActualStartTime)
-          : 0;
+      let offset = 0;
+      if (clientOffsetMs !== undefined) {
+        offset = clientOffsetMs;
+      } else if (call?.expectedActualStartTime) {
+        // Fallback using server-side timestamps to avoid client-server clock drift
+        offset = Math.max(0, Date.now() - call.expectedActualStartTime);
+      }
+      socket.data.recordOffsetMs = offset;
 
       socket.data.recordSampleRate = sampleRate || 48000;
 
@@ -963,20 +984,29 @@ io.on("connection", (socket) => {
       const cleanLanguage = String((socket.data.language || (call && call.language) || "english")).replace(/[^a-zA-Z0-9_\-\ ]/g, "").replace(/\s+/g, "_").trim();
       const folderName = `${callId}_${cleanLanguage}_${cleanTopic}`;
 
-      // Assign filename implicitly mapping the user's role origin natively!
       const fileName = (call && socket.data.userId === call.userAId) ? `speaker1.${ext}` : `speaker2.${ext}`;
-      const filePath = `calls/${folderName}/${fileName}`; // Systematic S3 Tier
+      const filePath = `calls/${folderName}/${fileName}`; 
 
-      // Systematic S3 Tier
       const localFileExt = isPcm ? "pcm" : ext;
       const tempLocalPath = path.join(process.cwd(), "recordings", `${socket.id}_${Date.now()}.${localFileExt}`);
 
       socket.data.recordChunks = null;
       socket.data.tempLocalPath = tempLocalPath;
-      socket.data.recordStream = fs.createWriteStream(tempLocalPath);
       socket.data.recordFileName = fileName;
-      socket.data.recordFilePath = filePath; // S3 specific object path
+      socket.data.recordFilePath = filePath; 
       socket.data.recording = true;
+
+      const newStream = fs.createWriteStream(tempLocalPath);
+      activeStreams.set(streamKey, {
+        stream: newStream,
+        expectedSeq: 0,
+        pendingChunks: new Map(),
+        fileName,
+        tempLocalPath,
+        filePath,
+        recordSampleRate: socket.data.recordSampleRate
+      });
+
       socket.emit("record_ready", { fileName });
 
       if (call) {
@@ -984,24 +1014,51 @@ io.on("connection", (socket) => {
           socket.data.userId === call.userAId
             ? { recordingAFile: filePath, recordingAStartedAt: new Date() }
             : { recordingBFile: filePath, recordingBStartedAt: new Date() };
-        // We push filePath so the DB points entirely at the unified AWS block natively
         CallSession.updateOne({ callId }, { $set: update }).catch(() => {});
       }
     });
   });
 
-  socket.on("record_chunk", (chunk) => {
+  socket.on("record_chunk", (payload, callback) => {
     try {
-      if (!socket.data.recording || !socket.data.recordStream) return;
+      if (!socket.data.recording) return;
+
+      const { seq, data, callId } = payload;
+      if (seq === undefined || data === undefined || !callId) return;
+
+      const streamKey = `${callId}_${socket.data.userId}`;
+      const streamObj = activeStreams.get(streamKey);
+      if (!streamObj || !streamObj.stream) return;
+
+      if (seq < streamObj.expectedSeq) {
+        if (callback) callback(seq); // Already processed, acknowledge it
+        return;
+      }
 
       let buf;
-      if (Buffer.isBuffer(chunk)) buf = chunk;
-      else if (chunk instanceof ArrayBuffer) buf = Buffer.from(chunk);
-      else if (ArrayBuffer.isView(chunk))
-        buf = Buffer.from(chunk.buffer, chunk.byteOffset, chunk.byteLength);
+      if (Buffer.isBuffer(data)) buf = data;
+      else if (data instanceof ArrayBuffer) buf = Buffer.from(data);
+      else if (ArrayBuffer.isView(data))
+        buf = Buffer.from(data.buffer, data.byteOffset, data.byteLength);
       else return;
 
-      socket.data.recordStream.write(buf);
+      if (seq === streamObj.expectedSeq) {
+        streamObj.stream.write(buf);
+        streamObj.expectedSeq++;
+        
+        // Process any subsequent pending chunks that have now arrived in order
+        while (streamObj.pendingChunks.has(streamObj.expectedSeq)) {
+          const nextBuf = streamObj.pendingChunks.get(streamObj.expectedSeq);
+          streamObj.stream.write(nextBuf);
+          streamObj.pendingChunks.delete(streamObj.expectedSeq);
+          streamObj.expectedSeq++;
+        }
+      } else {
+        // Out of order arrival, store in pending
+        streamObj.pendingChunks.set(seq, buf);
+      }
+
+      if (callback) callback(seq);
     } catch (e) {
       console.error("Error writing record_chunk:", e);
     }

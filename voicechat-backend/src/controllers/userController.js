@@ -5,6 +5,7 @@ import { CallSession } from "../models/CallSession.js";
 import { Feedback } from "../models/Feedback.js";
 import { Language } from "../models/Language.js";
 import { Phrase } from "../models/Phrase.js";
+import { Company } from "../models/Company.js";
 import { isNonEmptyString } from "../util/validators.js";
 import { getSingleUserPayout } from "../services/payouts.js";
 import { GetObjectCommand } from "@aws-sdk/client-s3";
@@ -119,7 +120,42 @@ export async function getMyLanguageApplications(req, res) {
     const user = await User.findById(req.user._id)
       .select("languageApplications")
       .lean();
-    res.json({ applications: user?.languageApplications || [] });
+    
+    let applications = user?.languageApplications || [];
+
+    if (!req.user.isAdmin) {
+      const activeCompanies = await Phrase.aggregate([
+        { $match: { status: { $in: ["pending", "locked", "rejected"] } } },
+        { $group: { _id: "$companyId", count: { $sum: 1 } } },
+        { $match: { count: { $gte: 1 } } }
+      ]);
+      const activeNames = activeCompanies.map(c => String(c._id).trim()).filter(Boolean);
+
+      applications = applications.filter(app => {
+        if (app.applicationType === "phrase" || !app.applicationType) {
+          const appCompany = String(app.companyId || "").trim();
+          return activeNames.includes(appCompany);
+        }
+        return true; // Keep call applications
+      });
+    }
+
+    const companies = await Company.find({}).select("name projectName").lean();
+    const companyMap = {};
+    for (const c of companies) {
+      companyMap[c._id.toString()] = c.projectName || c.name;
+      companyMap[c.name] = c.projectName || c.name;
+    }
+
+    applications = applications.map(app => {
+      const key = app.companyId ? app.companyId.toString() : "";
+      return {
+        ...app,
+        projectName: companyMap[key] || app.companyId || ""
+      };
+    });
+
+    res.json({ applications });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -139,11 +175,37 @@ export async function submitLanguageApplication(req, res) {
   }
 
   try {
+    if (applicationType === "phrase") {
+      let targetCompany = companyId;
+      try {
+        if (targetCompany.match(/^[0-9a-fA-F]{24}$/)) {
+          const companyDoc = await Company.findById(targetCompany);
+          if (companyDoc) {
+            targetCompany = companyDoc.name;
+          }
+        }
+      } catch (e) {}
+
+      const activePhrase = await Phrase.findOne({
+        companyId: targetCompany,
+        language: languageCode,
+        status: { $in: ["pending", "locked", "rejected"] }
+      });
+      if (!activePhrase) {
+        try { fs.unlinkSync(req.file.path); } catch (e) {}
+        return res.status(400).json({ error: "No sample phrase available for this company and language." });
+      }
+    }
     if (languageCode) {
-      const lang = await Language.findOne({ code: languageCode, enabled: true });
+      const filter = applicationType === "call"
+        ? { code: languageCode, enabled: true }
+        : { code: languageCode };
+      const lang = await Language.findOne(filter);
       if (!lang) {
         try { fs.unlinkSync(req.file.path); } catch (e) {}
-        return res.status(404).json({ error: "Language not found or disabled" });
+        return res.status(404).json({
+          error: applicationType === "call" ? "Language not found or disabled for calls" : "Language not found"
+        });
       }
     }
 
@@ -169,7 +231,6 @@ export async function submitLanguageApplication(req, res) {
       ffmpeg(req.file.path)
         .audioChannels(1)
         .audioCodec('flac')
-        .outputOptions(['-sample_fmt s32'])
         .output(flacPath)
         .on("end", resolve)
         .on("error", reject)
@@ -177,24 +238,48 @@ export async function submitLanguageApplication(req, res) {
     });
 
     const s3Key = `language-apps/${req.user._id}_${languageCode}_${Date.now()}.flac`;
+    let recordingFileRef = s3Key;
+    let s3Uploaded = false;
 
-    const uploader = new Upload({
-      client: s3Client,
-      params: {
-        Bucket: BUCKET_NAME,
-        Key: s3Key,
-        Body: fs.createReadStream(flacPath),
-        ContentType: "audio/flac",
-      },
-    });
-    await uploader.done();
+    // Only attempt S3 upload if S3 keys and bucket are properly configured
+    if (process.env.AWS_ACCESS_KEY_ID && process.env.S3_BUCKET_NAME) {
+      try {
+        const uploader = new Upload({
+          client: s3Client,
+          params: {
+            Bucket: BUCKET_NAME,
+            Key: s3Key,
+            Body: fs.createReadStream(flacPath),
+            ContentType: "audio/flac",
+          },
+        });
+        await Promise.race([
+          uploader.done(),
+          new Promise((_, reject) => setTimeout(() => reject(new Error("S3 Upload Timeout")), 2500))
+        ]);
+        s3Uploaded = true;
+      } catch (s3Err) {
+        console.warn("S3 upload skipped/failed for language application, saving locally:", s3Err.message);
+      }
+    }
+
+    if (!s3Uploaded) {
+      const localDir = path.join(process.cwd(), "recordings", "language-apps");
+      if (!fs.existsSync(localDir)) {
+        fs.mkdirSync(localDir, { recursive: true });
+      }
+      const localFileName = `${req.user._id}_${languageCode}_${Date.now()}.flac`;
+      const targetLocalPath = path.join(localDir, localFileName);
+      fs.copyFileSync(flacPath, targetLocalPath);
+      recordingFileRef = `local:${localFileName}`;
+    }
 
     try { fs.unlinkSync(req.file.path); } catch (e) {}
     try { fs.unlinkSync(flacPath); } catch (e) {}
 
     if (existing) {
       existing.status = "pending";
-      existing.recordingFile = s3Key;
+      existing.recordingFile = recordingFileRef;
       existing.appliedAt = new Date();
       existing.reviewedBy = null;
       existing.reviewedAt = null;
@@ -248,6 +333,18 @@ export async function streamLanguageRecording(req, res) {
 
   if (!application.recordingFile)
     return res.status(404).json({ error: "Recording not found" });
+
+  if (application.recordingFile.startsWith("local:")) {
+    const localFileName = application.recordingFile.replace("local:", "");
+    const localFilePath = path.join(process.cwd(), "recordings", "language-apps", localFileName);
+    if (fs.existsSync(localFilePath)) {
+      res.setHeader("Content-Disposition", "inline");
+      res.setHeader("X-Content-Type-Options", "nosniff");
+      res.setHeader("Content-Type", "audio/flac");
+      return fs.createReadStream(localFilePath).pipe(res);
+    }
+    return res.status(404).json({ error: "Local recording file not found" });
+  }
 
   try {
     const command = new GetObjectCommand({
@@ -465,31 +562,57 @@ export async function getKycStatus(req, res) {
   const verificationStatus = kyc.verificationStatus || null;
   const rejectionReason = verificationStatus === "rejected" ? kyc.rejectionReason || null : null;
 
-  let hasContributed = false;
-  if (!panSubmitted || verificationStatus === "rejected") {
-    const [callDone, phraseDone] = await Promise.all([
-      CallSession.exists({
-        $or: [{ userA: req.user._id }, { userB: req.user._id }],
-        callActuallyStarted: true,
-      }),
-      Phrase.exists({
-        contributorId: req.user._id,
-        recordedAt: { $ne: null },
-      }),
-    ]);
-    hasContributed = !!(callDone || phraseDone);
-  }
+  const [callDone, phraseDone, completedCallDone] = await Promise.all([
+    CallSession.exists({
+      $or: [{ userA: req.user._id }, { userB: req.user._id }],
+      callActuallyStarted: true,
+    }),
+    Phrase.exists({
+      contributorId: req.user._id,
+      recordedAt: { $ne: null },
+    }),
+    CallSession.exists({
+      $or: [{ userA: req.user._id }, { userB: req.user._id }],
+      callActuallyStarted: true,
+      endedAt: { $ne: null }
+    }),
+  ]);
+
+  const hasContributed = !!(callDone || phraseDone);
+  const hasCompletedCall = !!completedCallDone;
 
   const needsPanReminder =
     verificationStatus === "rejected" ||
     (!panSubmitted && hasContributed);
+
+  const needsUpiReminder = hasCompletedCall && !req.user.upiId;
 
   res.json({
     panSubmitted,
     verificationStatus,
     rejectionReason,
     needsPanReminder,
+    needsUpiReminder,
+    upiId: req.user.upiId || null,
+    hasCompletedCall,
   });
+}
+
+// ─── POST /api/user/upi ───────────────────────────────────────────────────────
+export async function updateUpiId(req, res) {
+  if (!req.user) return res.status(401).json({ error: "unauthorized" });
+  const upiId = String(req.body?.upiId || "").trim();
+  if (!upiId) {
+    return res.status(400).json({ error: "UPI ID is required" });
+  }
+  const upiRegex = /^[\w.\-_]{2,256}@[a-zA-Z]{2,64}$/;
+  if (!upiRegex.test(upiId)) {
+    return res.status(400).json({ error: "Invalid UPI ID format (e.g. username@upi or mobile@bank)" });
+  }
+
+  req.user.upiId = upiId;
+  await req.user.save();
+  return res.json({ success: true, upiId: req.user.upiId });
 }
 
 // ─── POST /api/user/kyc/pan ───────────────────────────────────────────────────

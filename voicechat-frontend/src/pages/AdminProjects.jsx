@@ -1,161 +1,260 @@
-import React, { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
-import { FolderGit2, Save, Loader2, CheckCircle2 } from 'lucide-react';
-import { apiGet, apiPutJson } from '../lib/api';
-import AdminNav from '../components/AdminNav.jsx';
+import React, { useEffect, useState } from "react";
+import AdminNav from "../components/AdminNav.jsx";
+
+const BASE = import.meta.env.VITE_BACKEND_URL || "http://localhost:3001";
+
+async function apiFetch(path, opts = {}) {
+    const res = await fetch(`${BASE}${path}`, { credentials: "include", ...opts });
+    const json = await res.json().catch(() => ({ error: "Request failed" }));
+    if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
+    return json;
+}
+const get = (p) => apiFetch(p, { method: "GET" });
+const postJson = (p, body) => apiFetch(p, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+const patch = (p, body = {}) => apiFetch(p, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+const del = (p) => apiFetch(p, { method: "DELETE" });
+
+function toSlug(name) {
+    return name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+}
 
 export default function AdminProjects() {
-  const [projects, setProjects] = useState([]);
-  const [languages, setLanguages] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [savingId, setSavingId] = useState(null);
-  const [message, setMessage] = useState('');
+    const [languages, setLanguages] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState("");
+    const [success, setSuccess] = useState("");
+    const [saving, setSaving] = useState(null);
 
-  useEffect(() => {
-    fetchData();
-  }, []);
+    // Modal state
+    const [showModal, setShowModal] = useState(false);
+    const [editingLanguage, setEditingLanguage] = useState(null);
+    const [modalName, setModalName] = useState("");
+    const [modalSaving, setModalSaving] = useState(false);
+    const [modalError, setModalError] = useState("");
 
-  async function fetchData() {
-    try {
-      const [projRes, langRes] = await Promise.all([
-        apiGet('/api/projects'),
-        apiGet('/api/languages')
-      ]);
-      setProjects(projRes.projects || []);
-      setLanguages(langRes.languages || []);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
+    useEffect(() => { load(); }, []);
+
+    async function load() {
+        setLoading(true);
+        try {
+            const data = await get("/api/admin/languages?type=phrase");
+            setLanguages(data.languages || []);
+        } catch (e) {
+            setError(e.message);
+        } finally {
+            setLoading(false);
+        }
     }
-  }
 
-  const handleRateChange = (projectId, langCode, value) => {
-    setProjects(prev => prev.map(p => {
-      if (p._id !== projectId) return p;
-      const newRates = [...(p.languageRates || [])];
-      const idx = newRates.findIndex(r => r.languageCode === langCode);
-      if (idx > -1) {
-        newRates[idx].hourlyPayout = Number(value);
-      } else {
-        newRates.push({ languageCode: langCode, hourlyPayout: Number(value) });
-      }
-      return { ...p, languageRates: newRates };
-    }));
-  };
-
-  const getRate = (project, langCode) => {
-    const rate = project.languageRates?.find(r => r.languageCode === langCode);
-    return rate ? rate.hourlyPayout : '';
-  };
-
-  const saveRates = async (projectId) => {
-    setSavingId(projectId);
-    setMessage('');
-    try {
-      const project = projects.find(p => p._id === projectId);
-      await apiPutJson(`/api/projects/${projectId}/rates`, {
-        languageRates: project.languageRates || []
-      });
-      setMessage('Rates saved successfully!');
-      setTimeout(() => setMessage(''), 3000);
-    } catch (err) {
-      alert('Failed to save rates: ' + err.message);
-    } finally {
-      setSavingId(null);
+    function openModal() {
+        setEditingLanguage(null);
+        setModalName("");
+        setModalError("");
+        setShowModal(true);
     }
-  };
 
-  if (loading) {
+    function openEditModal(language) {
+        setEditingLanguage(language);
+        setModalName(language.name || "");
+        setModalError("");
+        setShowModal(true);
+    }
+
+    function closeModal() {
+        setShowModal(false);
+        setEditingLanguage(null);
+        setModalName("");
+        setModalError("");
+    }
+
+    async function saveLanguage(e) {
+        e.preventDefault();
+        const name = modalName.trim();
+        if (!name) return setModalError("Language name is required.");
+        const code = editingLanguage ? editingLanguage.code : toSlug(name);
+        if (!editingLanguage && !code) return setModalError("Name must contain at least one letter or number.");
+
+        setModalSaving(true);
+        setModalError("");
+        try {
+            if (editingLanguage) {
+                await patch(`/api/admin/languages/${editingLanguage._id}`, { name });
+                setSuccess(`"${name}" updated successfully.`);
+            } else {
+                await postJson("/api/admin/languages", { name, code, type: "phrase" });
+                setSuccess(`"${name}" added successfully.`);
+            }
+            closeModal();
+            await load();
+        } catch (e) {
+            setModalError(e.message === "Language code already exists"
+                ? "A language with that name/code already exists."
+                : e.message);
+        } finally {
+            setModalSaving(false);
+        }
+    }
+
+    async function toggle(lang) {
+        setSaving(lang._id);
+        try { 
+            await patch(`/api/admin/languages/${lang._id}`, { enabled: !lang.enabled }); 
+            await load(); 
+        }
+        catch (e) { setError(e.message); }
+        finally { setSaving(null); }
+    }
+
+    async function remove(lang) {
+        if (!confirm(`Delete "${lang.name}"?`)) return;
+        setSaving(lang._id + "_del");
+        try { 
+            await del(`/api/admin/languages/${lang._id}`); 
+            await load(); 
+        }
+        catch (e) { setError(e.message); }
+        finally { setSaving(null); }
+    }
+
     return (
-      <div className="min-h-screen bg-neutral-50 dark:bg-neutral-900 flex transition-colors duration-300">
-        <AdminNav />
-        <main className="flex-1 md:ml-64 p-8 flex items-center justify-center">
-          <Loader2 className="w-8 h-8 animate-spin text-primary-500" />
-        </main>
-      </div>
-    );
-  }
+        <div className="min-h-screen bg-neutral-900 pt-16 md:pt-0 md:pl-64">
+            <AdminNav />
+            <div className="max-w-7xl mx-auto px-4 md:px-6 py-6 md:py-12">
 
-  return (
-    <div className="min-h-screen bg-neutral-50 dark:bg-neutral-900 flex transition-colors duration-300">
-      <AdminNav />
-      <main className="flex-1 md:ml-64 p-8 max-w-6xl mx-auto text-neutral-900 dark:text-neutral-50">
-        <motion.div 
-          initial={{ y: -20, opacity: 0 }}
-          animate={{ y: 0, opacity: 1 }}
-          className="mb-8"
-        >
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-3xl font-bold mb-2 flex items-center gap-2">
-                <FolderGit2 className="w-8 h-8 text-primary-500" />
-                Project Payrates
-              </h1>
-              <p className="text-neutral-500 dark:text-neutral-400">Manage custom hourly payouts for specific projects.</p>
-            </div>
-            {message && (
-              <span className="flex items-center gap-1 text-success-600 bg-success-100 dark:bg-success-900/30 px-4 py-2 rounded-lg font-medium text-sm">
-                <CheckCircle2 className="w-4 h-4" /> {message}
-              </span>
-            )}
-          </div>
-        </motion.div>
-
-        {projects.length === 0 ? (
-          <div className="card text-center py-12">
-            <FolderGit2 className="w-12 h-12 text-neutral-300 mx-auto mb-4" />
-            <h3 className="text-xl font-semibold mb-2">No Projects Found</h3>
-            <p className="text-neutral-500">Upload phrases with a Project Name to automatically create projects here.</p>
-          </div>
-        ) : (
-          <div className="grid gap-6">
-            {projects.map((project) => (
-              <motion.div 
-                key={project._id}
-                initial={{ scale: 0.98, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                className="card"
-              >
-                <div className="flex items-center justify-between mb-6">
-                  <h2 className="text-xl font-bold">{project.name}</h2>
-                  <button 
-                    onClick={() => saveRates(project._id)}
-                    disabled={savingId === project._id}
-                    className="btn btn-primary btn-sm flex items-center gap-2"
-                  >
-                    {savingId === project._id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                    Save Rates
-                  </button>
-                </div>
-                
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                  {languages.map(lang => (
-                    <div key={lang.code} className="bg-neutral-100 dark:bg-neutral-800 p-4 rounded-xl border border-neutral-200 dark:border-neutral-700">
-                      <label className="block text-xs font-semibold text-neutral-500 uppercase tracking-wider mb-2">
-                        {lang.name}
-                      </label>
-                      <div className="relative">
-                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500">$</span>
-                        <input 
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          className="input w-full pl-7"
-                          placeholder={lang.hourlyPayout}
-                          value={getRate(project, lang.code.toLowerCase())}
-                          onChange={(e) => handleRateChange(project._id, lang.code.toLowerCase(), e.target.value)}
-                        />
-                      </div>
-                      <p className="text-[10px] text-neutral-400 mt-1">Default: ${lang.hourlyPayout}/hr</p>
+                {/* Header */}
+                <div className="flex items-start justify-between mb-6">
+                    <div>
+                        <h1 className="text-2xl md:text-3xl font-bold text-white mb-1">Phrase Languages</h1>
+                        <p className="text-neutral-400 text-sm">Add and manage languages available for phrase studio and script recordings.</p>
                     </div>
-                  ))}
+                    <button
+                        onClick={openModal}
+                        className="px-5 py-2 bg-warning-600 hover:bg-warning-700 text-white text-sm font-semibold rounded-lg transition-colors whitespace-nowrap"
+                    >
+                        + Add Language
+                    </button>
                 </div>
-              </motion.div>
-            ))}
-          </div>
-        )}
-      </main>
-    </div>
-  );
+
+                {/* Alerts */}
+                {error && <div className="bg-red-900/50 border border-red-700 text-red-300 px-4 py-3 rounded-lg mb-4 flex justify-between"><span>{error}</span><button onClick={() => setError("")} className="text-red-400 hover:text-red-200 ml-3">✕</button></div>}
+                {success && <div className="bg-green-900/50 border border-green-700 text-green-300 px-4 py-3 rounded-lg mb-4 flex justify-between"><span>{success}</span><button onClick={() => setSuccess("")} className="text-green-400 hover:text-green-200 ml-3">✕</button></div>}
+
+                {/* Table */}
+                {loading ? (
+                    <div className="flex justify-center py-16">
+                        <div className="w-12 h-12 border-4 border-warning-200 border-t-warning-500 rounded-full animate-spin" />
+                    </div>
+                ) : languages.length === 0 ? (
+                    <div className="text-center py-16 text-neutral-500">No phrase languages yet. Click "+ Add Language" to create one.</div>
+                ) : (
+                    <div className="bg-neutral-800 border border-neutral-700 rounded-xl overflow-hidden">
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-sm">
+                                <thead className="bg-neutral-700">
+                                    <tr>
+                                        {["Name", "Code", "Status", "Actions"].map(h => (
+                                            <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-neutral-300 uppercase tracking-wider whitespace-nowrap">{h}</th>
+                                        ))}
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-neutral-700">
+                                    {languages.map(lang => (
+                                        <tr key={lang._id} className="hover:bg-neutral-700/40 transition-colors">
+                                            <td className="px-4 py-3 text-white font-medium">{lang.name}</td>
+                                            <td className="px-4 py-3 font-mono text-xs text-warning-300">{lang.code}</td>
+                                            <td className="px-4 py-3">
+                                                {lang.enabled
+                                                    ? <span className="inline-flex items-center gap-1 px-2 py-1 bg-green-900/50 text-green-300 text-xs font-semibold rounded-full">● Enabled</span>
+                                                    : <span className="inline-flex items-center gap-1 px-2 py-1 bg-neutral-700 text-neutral-400 text-xs font-semibold rounded-full">○ Disabled</span>
+                                                }
+                                            </td>
+                                            <td className="px-4 py-3">
+                                                <div className="flex gap-2">
+                                                    <button
+                                                        onClick={() => openEditModal(lang)}
+                                                        disabled={!!saving}
+                                                        className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition-colors disabled:opacity-50"
+                                                    >
+                                                        Edit
+                                                    </button>
+                                                    <button
+                                                        onClick={() => toggle(lang)}
+                                                        disabled={!!saving}
+                                                        className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors disabled:opacity-50 ${lang.enabled ? "bg-neutral-600 hover:bg-neutral-500 text-neutral-200" : "bg-warning-600 hover:bg-warning-700 text-white"}`}
+                                                    >
+                                                        {saving === lang._id ? "…" : lang.enabled ? "Disable" : "Enable"}
+                                                    </button>
+                                                    <button
+                                                        onClick={() => remove(lang)}
+                                                        disabled={!!saving}
+                                                        className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-red-900/60 hover:bg-red-800 text-red-300 transition-colors disabled:opacity-50"
+                                                    >
+                                                        {saving === lang._id + "_del" ? "…" : "Delete"}
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                )}
+            </div>
+
+            {/* Add/Edit Language Modal */}
+            {showModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+                    {/* Backdrop */}
+                    <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={closeModal} />
+
+                    {/* Modal Panel */}
+                    <div className="relative bg-neutral-800 border border-neutral-700 rounded-2xl shadow-2xl w-full max-w-md animate-fade-in">
+                        {/* Modal Header */}
+                        <div className="flex items-center justify-between px-6 py-4 border-b border-neutral-700">
+                            <h2 className="text-lg font-bold text-white">{editingLanguage ? "Edit Phrase Language" : "Add Phrase Language"}</h2>
+                            <button onClick={closeModal} className="text-neutral-400 hover:text-white transition-colors text-xl leading-none">✕</button>
+                        </div>
+
+                        {/* Modal Body */}
+                        <form onSubmit={saveLanguage} className="px-6 py-5 space-y-4">
+                            {modalError && (
+                                <div className="bg-red-900/50 border border-red-700 text-red-300 px-3 py-2 rounded-lg text-sm">
+                                    {modalError}
+                                </div>
+                            )}
+
+                            <div>
+                                <label className="block text-sm font-medium text-neutral-300 mb-1.5">Language Name</label>
+                                <input
+                                    autoFocus
+                                    className="w-full bg-neutral-700 border border-neutral-600 text-white placeholder-neutral-400 text-sm rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-warning-500"
+                                    placeholder="e.g. English, Hindi"
+                                    value={modalName}
+                                    onChange={e => setModalName(e.target.value)}
+                                />
+                            </div>
+
+                            <div className="flex justify-end gap-3 pt-4 border-t border-neutral-700">
+                                <button
+                                    type="button"
+                                    onClick={closeModal}
+                                    className="px-4 py-2 bg-neutral-700 hover:bg-neutral-600 text-neutral-300 text-sm font-semibold rounded-lg transition-colors"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="submit"
+                                    disabled={modalSaving}
+                                    className="px-5 py-2 bg-warning-600 hover:bg-warning-700 text-white text-sm font-semibold rounded-lg transition-colors disabled:opacity-50"
+                                >
+                                    {modalSaving ? "Saving…" : editingLanguage ? "Update Language" : "Add Language"}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
 }

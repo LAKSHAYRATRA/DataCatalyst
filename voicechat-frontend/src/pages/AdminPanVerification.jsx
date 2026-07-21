@@ -36,12 +36,13 @@ export default function AdminPanVerification() {
   const [error, setError] = useState("");
   const [busyId, setBusyId] = useState(null);
   const [zoomUser, setZoomUser] = useState(null);
+  const [search, setSearch] = useState("");
 
-  async function load() {
+  async function load(searchVal = search) {
     setError("");
     setLoading(true);
     try {
-      const data = await apiGet(`/api/admin/kyc/pans?status=${tab}`);
+      const data = await apiGet(`/api/admin/kyc/pans?status=${tab}&search=${encodeURIComponent(searchVal)}`);
       setRows(data.users || []);
     } catch (e) {
       setError(e?.body?.error || e.message || "Failed to load PAN submissions");
@@ -51,6 +52,11 @@ export default function AdminPanVerification() {
   }
 
   useEffect(() => { load(); }, [tab]);
+
+  const handleSearchSubmit = (e) => {
+    e.preventDefault();
+    load(search);
+  };
 
   async function handleVerify(row) {
     const result = await Swal.fire({
@@ -119,20 +125,32 @@ export default function AdminPanVerification() {
           </p>
         </div>
 
-        <div className="flex gap-2 mb-6 border-b border-neutral-700">
-          {STATUS_TABS.map((t) => (
-            <button
-              key={t.key}
-              onClick={() => setTab(t.key)}
-              className={`px-4 py-2 -mb-px text-sm font-medium border-b-2 transition-colors ${
-                tab === t.key
-                  ? "border-warning-500 text-warning-400"
-                  : "border-transparent text-neutral-400 hover:text-neutral-200"
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
+        <div className="flex flex-wrap items-center justify-between gap-4 mb-6 border-b border-neutral-700 pb-2">
+          <div className="flex gap-2">
+            {STATUS_TABS.map((t) => (
+              <button
+                key={t.key}
+                onClick={() => setTab(t.key)}
+                className={`px-4 py-2 -mb-px text-sm font-medium border-b-2 transition-colors ${
+                  tab === t.key
+                    ? "border-warning-500 text-warning-400"
+                    : "border-transparent text-neutral-400 hover:text-neutral-200"
+                }`}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+          <form onSubmit={handleSearchSubmit} className="flex items-center gap-2 mb-2">
+            <input
+              type="text"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Search name, email, username…"
+              className="w-64 px-3 py-2 bg-neutral-800 border border-neutral-700 rounded-xl text-sm placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-warning-500"
+            />
+            <button type="submit" className="px-4 py-2 rounded-xl bg-warning-600 hover:bg-warning-700 text-sm font-semibold text-white transition-all shadow-md active:scale-95">Search</button>
+          </form>
         </div>
 
         {error && (

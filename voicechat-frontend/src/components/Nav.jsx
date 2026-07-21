@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import { clearToken, getUserInfo } from "../lib/auth.js";
 import { motion } from "framer-motion";
-import { LayoutDashboard, PhoneCall, Wallet, LogOut, Menu, X, Mic2 } from "lucide-react";
+import { LayoutDashboard, PhoneCall, Wallet, LogOut, Menu, X, Mic2, FolderGit2 } from "lucide-react";
 
 function BrandLogo({ className = "" }) {
   return (
@@ -129,6 +129,18 @@ export default function Nav({ disabled = false }) {
           >
             <LayoutDashboard className={`w-5 h-5 ${isActive("/dashboard") ? "text-primary-600 dark:text-primary-400" : "group-hover:text-primary-500 transition-colors"}`} />
             <span>Dashboard</span>
+          </Link>
+
+          <Link
+            to="/language-apply"
+            onClick={handleLinkClick}
+            className={`flex items-center space-x-4 px-4 py-4 rounded-2xl text-sm font-bold transition-all duration-300 group ${isActive("/language-apply")
+              ? "bg-neutral-100 dark:bg-neutral-800 text-neutral-900 dark:text-white shadow-inner"
+              : "text-neutral-500 dark:text-neutral-400 hover:bg-neutral-50 dark:hover:bg-neutral-800/50 hover:text-neutral-900 dark:hover:text-neutral-200"
+              } ${disabled ? 'opacity-50 cursor-not-allowed pointer-events-none' : ''}`}
+          >
+            <FolderGit2 className={`w-5 h-5 ${isActive("/language-apply") ? "text-primary-600 dark:text-primary-400" : "group-hover:text-primary-500 transition-colors"}`} />
+            <span>Project Apply</span>
           </Link>
 
           <Link

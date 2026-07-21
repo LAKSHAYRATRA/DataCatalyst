@@ -12,6 +12,7 @@ export default function AdminCompanies() {
   const [message, setMessage] = useState('');
   
   const [newCompanyName, setNewCompanyName] = useState('');
+  const [newProjectName, setNewProjectName] = useState('');
   const [isCreating, setIsCreating] = useState(false);
 
   useEffect(() => {
@@ -43,7 +44,8 @@ export default function AdminCompanies() {
       const company = companies.find(c => c._id === companyId);
       await apiPatchJson(`/api/admin/companies/${companyId}`, {
         maxContributionMinutes: Number(company.maxContributionMinutes),
-        hourlyPayout: Number(company.hourlyPayout)
+        hourlyPayout: Number(company.hourlyPayout),
+        projectName: company.projectName || ''
       });
       setMessage('Company saved successfully!');
       setTimeout(() => setMessage(''), 3000);
@@ -60,10 +62,12 @@ export default function AdminCompanies() {
     try {
       await apiPostJson('/api/admin/companies', {
         name: newCompanyName.trim(),
+        projectName: newProjectName.trim(),
         maxContributionMinutes: 195,
         hourlyPayout: 0
       });
       setNewCompanyName('');
+      setNewProjectName('');
       setMessage('Company created successfully!');
       setTimeout(() => setMessage(''), 3000);
       fetchData();
@@ -77,7 +81,7 @@ export default function AdminCompanies() {
   const deleteCompany = async (companyId, companyName) => {
     const confirm = await Swal.fire({
       title: "Delete Company?",
-      text: `Are you sure you want to delete ${companyName}? This action cannot be undone.`,
+      text: `Are you sure you want to delete ${companyName}? All its pending phrases will also be permanently deleted. This action cannot be undone.`,
       icon: "warning",
       showCancelButton: true,
       confirmButtonColor: "#d33",
@@ -87,9 +91,12 @@ export default function AdminCompanies() {
     if (!confirm.isConfirmed) return;
 
     try {
-      await apiDeleteJson(`/api/admin/companies/${companyId}`);
-      setMessage('Company deleted!');
-      setTimeout(() => setMessage(''), 3000);
+      const res = await apiDeleteJson(`/api/admin/companies/${companyId}`);
+      const phraseMsg = res?.deletedPhrases > 0
+        ? ` (${res.deletedPhrases} pending phrase${res.deletedPhrases !== 1 ? 's' : ''} also deleted)`
+        : '';
+      setMessage(`Company deleted!${phraseMsg}`);
+      setTimeout(() => setMessage(''), 4000);
       fetchData();
     } catch (err) {
       Swal.fire('Error', 'Failed to delete company: ' + err.message, 'error');
@@ -139,13 +146,21 @@ export default function AdminCompanies() {
           className="card mb-8 flex flex-wrap items-end gap-4 bg-primary-50 dark:bg-primary-900/10 border border-primary-100 dark:border-primary-900/30"
         >
           <div className="flex-1 min-w-[250px]">
-            <label className="block text-sm font-semibold mb-2">Create New Company</label>
+            <label className="block text-sm font-semibold mb-2">Company Name (Internal/S3 Folder)</label>
             <input 
               type="text" 
-              className="input w-full" 
+              className="input w-full mb-3" 
               placeholder="e.g. Acme Corp..." 
               value={newCompanyName}
               onChange={(e) => setNewCompanyName(e.target.value)}
+            />
+            <label className="block text-sm font-semibold mb-2">Project Name (Shown to Contributors)</label>
+            <input 
+              type="text" 
+              className="input w-full" 
+              placeholder="e.g. Acme Speech Project..." 
+              value={newProjectName}
+              onChange={(e) => setNewProjectName(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && createCompany()}
             />
           </div>
@@ -194,7 +209,23 @@ export default function AdminCompanies() {
                     </button>
                   </div>
                 </div>
-                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                  {/* Project Display Name (Shown to Contributors) */}
+                  <div className="md:col-span-2 bg-neutral-100 dark:bg-neutral-800 p-5 rounded-xl border border-neutral-200 dark:border-neutral-700">
+                    <label className="block text-sm font-semibold text-neutral-700 dark:text-neutral-300 mb-1">
+                      Project Display Name (Shown to Contributors)
+                    </label>
+                    <p className="text-xs text-neutral-500 mb-4">The name of the project shown to contributors in their dashboard</p>
+                    <input 
+                      type="text"
+                      className="input w-full"
+                      placeholder="e.g. Acme Speech Project..."
+                      value={company.projectName || ''}
+                      onChange={(e) => handleFieldChange(company._id, 'projectName', e.target.value)}
+                    />
+                  </div>
+                </div>
+
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   {/* Contribution Limit */}
                   <div className="bg-neutral-100 dark:bg-neutral-800 p-5 rounded-xl border border-neutral-200 dark:border-neutral-700">

@@ -56,10 +56,12 @@ export default function AdminUsers() {
     const [usersLoading, setUsersLoading] = useState(false);
     const [editingUserId, setEditingUserId] = useState(null);
     const [newLimit, setNewLimit] = useState("");
+    const [searchQuery, setSearchQuery] = useState("");
 
     // Pending state
     const [pending, setPending] = useState([]);
     const [pendingLoading, setPendingLoading] = useState(false);
+    const [pendingSearch, setPendingSearch] = useState("");
 
     // Approved users state
     const [approvedUsers, setApprovedUsers] = useState([]);
@@ -82,8 +84,8 @@ export default function AdminUsers() {
     const [error, setError] = useState("");
 
     useEffect(() => {
-        if (tab === "pending") loadPending();
-        if (tab === "all") loadUsers();
+        if (tab === "pending") loadPending(pendingSearch);
+        if (tab === "all") loadUsers(searchQuery);
         if (tab === "approved") loadApprovedUsers();
         if (tab === "qa") loadQaUsers();
     }, [tab, pagination.page]);
@@ -107,11 +109,11 @@ export default function AdminUsers() {
         window.open(url, "_blank", "noopener");
     }
 
-    async function loadPending() {
+    async function loadPending(search = pendingSearch) {
         setPendingLoading(true);
         setError("");
         try {
-            const data = await apiGet("/api/admin/users/pending");
+            const data = await apiGet(`/api/admin/users/pending?search=${encodeURIComponent(search)}`);
             setPending(data.users);
         } catch (e) {
             setError(e.message);
@@ -121,11 +123,16 @@ export default function AdminUsers() {
         }
     }
 
-    async function loadUsers() {
+    const handlePendingSearchSubmit = (e) => {
+        e.preventDefault();
+        loadPending(pendingSearch);
+    };
+
+    async function loadUsers(search = searchQuery) {
         setUsersLoading(true);
         setError("");
         try {
-            const data = await apiGet(`/api/admin/users?page=${pagination.page}&limit=${pagination.limit}`);
+            const data = await apiGet(`/api/admin/users?page=${pagination.page}&limit=${pagination.limit}&search=${encodeURIComponent(search)}`);
             setUsers(data.users);
             setPagination(data.pagination);
         } catch (e) {
@@ -135,6 +142,12 @@ export default function AdminUsers() {
             setUsersLoading(false);
         }
     }
+
+    const handleSearchSubmit = (e) => {
+        e.preventDefault();
+        setPagination(p => ({ ...p, page: 1 }));
+        loadUsers(searchQuery);
+    };
 
     async function approveUser(userId) {
         setActionUserId(userId);
@@ -313,18 +326,31 @@ export default function AdminUsers() {
 
                 {/* ── Pending Tab ── */}
                 {tab === "pending" && (
-                    pendingLoading ? (
-                        <div className="flex justify-center py-16">
-                            <div className="w-10 h-10 border-4 border-primary-200 border-t-primary-600 rounded-full animate-spin" />
+                    <div className="space-y-4 animate-fade-in">
+                        <div className="flex justify-end">
+                            <form onSubmit={handlePendingSearchSubmit} className="flex items-center gap-2">
+                                <input
+                                    type="text"
+                                    value={pendingSearch}
+                                    onChange={e => setPendingSearch(e.target.value)}
+                                    placeholder="Search name, email, username…"
+                                    className="w-64 px-3 py-2 bg-neutral-800 border border-neutral-700 rounded-xl text-sm text-white placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-warning-500"
+                                />
+                                <button type="submit" className="px-4 py-2 rounded-xl bg-warning-500 hover:bg-warning-600 text-sm font-semibold text-neutral-900 transition-colors">Search</button>
+                            </form>
                         </div>
-                    ) : pending.length === 0 ? (
-                        <div className="text-center py-16 text-neutral-500">
-                            <div className="text-4xl mb-3">✅</div>
-                            <p className="font-medium">No pending approvals</p>
-                            <p className="text-sm mt-1">All users have been reviewed.</p>
-                        </div>
-                    ) : (
-                        <div className="space-y-4">
+                        {pendingLoading ? (
+                            <div className="flex justify-center py-16">
+                                <div className="w-10 h-10 border-4 border-primary-200 border-t-primary-600 rounded-full animate-spin" />
+                            </div>
+                        ) : pending.length === 0 ? (
+                            <div className="text-center py-16 text-neutral-500 bg-neutral-800 border border-neutral-700 rounded-2xl">
+                                <div className="text-4xl mb-3">✅</div>
+                                <p className="font-medium">{pendingSearch ? "No matching pending approvals" : "No pending approvals"}</p>
+                                <p className="text-sm mt-1">{pendingSearch ? "Try a different search term." : "All users have been reviewed."}</p>
+                            </div>
+                        ) : (
+                            <div className="space-y-4">
                             {pending.map((user) => (
                                 <div key={user._id} className="bg-neutral-800 border border-neutral-700 rounded-2xl p-5">
                                     <div className="flex flex-col md:flex-row md:items-start gap-4">
@@ -389,8 +415,9 @@ export default function AdminUsers() {
                                 </div>
                             ))}
                         </div>
-                    )
-                )}
+                    )}
+                </div>
+            )}
 
                 {/* ── All Users Tab ── */}
                 {tab === "all" && (
@@ -400,6 +427,21 @@ export default function AdminUsers() {
                         </div>
                     ) : (
                         <div className="bg-neutral-800 border border-neutral-700 rounded-xl overflow-hidden">
+                            <div className="px-4 py-3 flex flex-wrap gap-3 items-center justify-between border-b border-neutral-700">
+                                <div>
+                                    <h2 className="text-base font-bold text-white">All Registered Contributors</h2>
+                                </div>
+                                <form onSubmit={handleSearchSubmit} className="flex items-center gap-2">
+                                    <input
+                                        type="text"
+                                        value={searchQuery}
+                                        onChange={e => setSearchQuery(e.target.value)}
+                                        placeholder="Search name, email, username…"
+                                        className="w-64 px-3 py-2 bg-neutral-700 border border-neutral-600 rounded-lg text-sm text-white placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-warning-500"
+                                    />
+                                    <button type="submit" className="px-4 py-2 rounded-lg bg-warning-500 hover:bg-warning-600 text-sm font-semibold text-neutral-900 transition-colors">Search</button>
+                                </form>
+                            </div>
                             <div className="overflow-x-auto">
                                 <table className="w-full">
                                     <thead className="bg-neutral-700">

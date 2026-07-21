@@ -12,11 +12,12 @@ export default function AdminPayouts() {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [search, setSearch] = useState("");
 
-  async function load() {
+  async function load(searchVal = search) {
     try {
       setLoading(true);
-      const data = await apiGet("/api/admin/payouts/users");
+      const data = await apiGet(`/api/admin/payouts/users?search=${encodeURIComponent(searchVal)}`);
       setUsers(data.users || []);
     } catch (e) {
       setError(e.message);
@@ -28,6 +29,11 @@ export default function AdminPayouts() {
   useEffect(() => {
     load();
   }, []);
+
+  const handleSearchSubmit = (e) => {
+    e.preventDefault();
+    load(search);
+  };
 
   async function handlePayNow(entry) {
     const result = await Swal.fire({
@@ -105,50 +111,64 @@ export default function AdminPayouts() {
         ) : error ? (
           <div className="bg-red-900/50 border border-red-700 text-red-300 px-4 py-3 rounded-lg">{error}</div>
         ) : (
-          <div className="bg-neutral-800 border border-neutral-700 rounded-2xl overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-neutral-700">
-                  <tr>
-                    {["Name", "Email", "Calls (Appr/Tot)", "Phrases (Appr/Tot)", "Earned", "Remaining", "Action"].map((h) => (
-                      <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-neutral-300 uppercase tracking-wider whitespace-nowrap">{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-neutral-700">
-                  {users.map((entry) => (
-                    <tr key={entry.user.id} className="hover:bg-neutral-700/40 transition-colors">
-                      <td className="px-4 py-3 text-white font-medium whitespace-nowrap">{`${entry.user.firstname || ""} ${entry.user.lastname || ""}`.trim() || entry.user.username}</td>
-                      <td className="px-4 py-3 text-neutral-300">{entry.user.email}</td>
-                      <td className="px-4 py-3 text-neutral-300">
-                        <span className="text-green-300 font-medium">{entry.totalApprovedCalls}</span> / {entry.totalCallsMade}
-                      </td>
-                      <td className="px-4 py-3 text-neutral-300">
-                        <span className="text-green-300 font-medium">{entry.totalApprovedPhrases}</span> / {entry.totalPhrasesRecorded}
-                      </td>
-                      <td className="px-4 py-3 text-neutral-100 font-semibold">{money(entry.totalMoneyMadeUsd)}</td>
-                      <td className="px-4 py-3 text-warning-300 font-semibold">{money(entry.totalRemainingPayoutUsd)}</td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-2">
-                          <Link to={`/admin/payouts/${entry.user.id}`} className="inline-flex px-3 py-1.5 rounded-lg bg-neutral-700 hover:bg-neutral-600 text-white text-xs font-semibold whitespace-nowrap transition-colors">
-                            View
-                          </Link>
-                          {entry.totalRemainingPayoutUsd > 0 && (
-                            <button
-                              onClick={() => handlePayNow(entry)}
-                              className="inline-flex px-3 py-1.5 rounded-lg bg-warning-600 hover:bg-warning-700 text-white text-xs font-semibold whitespace-nowrap transition-colors"
-                            >
-                              Pay Now
-                            </button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+          <div className="space-y-4 animate-fade-in">
+            <div className="flex justify-end">
+              <form onSubmit={handleSearchSubmit} className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                  placeholder="Search name, email, username…"
+                  className="w-64 px-3 py-2 bg-neutral-800 border border-neutral-700 rounded-xl text-sm text-white placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-warning-500"
+                />
+                <button type="submit" className="px-4 py-2 rounded-xl bg-warning-600 hover:bg-warning-700 text-sm font-semibold text-white transition-all shadow-md active:scale-95">Search</button>
+              </form>
             </div>
-            {!users.length && <div className="text-center py-16 text-neutral-500">No payout data found.</div>}
+            <div className="bg-neutral-800 border border-neutral-700 rounded-2xl overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-neutral-700">
+                    <tr>
+                      {["Name", "Email", "Calls (Appr/Tot)", "Phrases (Appr/Tot)", "Earned", "Remaining", "Action"].map((h) => (
+                        <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-neutral-300 uppercase tracking-wider whitespace-nowrap">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-neutral-700">
+                    {users.map((entry) => (
+                      <tr key={entry.user.id} className="hover:bg-neutral-700/40 transition-colors">
+                        <td className="px-4 py-3 text-white font-medium whitespace-nowrap">{`${entry.user.firstname || ""} ${entry.user.lastname || ""}`.trim() || entry.user.username}</td>
+                        <td className="px-4 py-3 text-neutral-300">{entry.user.email}</td>
+                        <td className="px-4 py-3 text-neutral-300">
+                          <span className="text-green-300 font-medium">{entry.totalApprovedCalls}</span> / {entry.totalCallsMade}
+                        </td>
+                        <td className="px-4 py-3 text-neutral-300">
+                          <span className="text-green-300 font-medium">{entry.totalApprovedPhrases}</span> / {entry.totalPhrasesRecorded}
+                        </td>
+                        <td className="px-4 py-3 text-neutral-100 font-semibold">{money(entry.totalMoneyMadeUsd)}</td>
+                        <td className="px-4 py-3 text-warning-300 font-semibold">{money(entry.totalRemainingPayoutUsd)}</td>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-2">
+                            <Link to={`/admin/payouts/${entry.user.id}`} className="inline-flex px-3 py-1.5 rounded-lg bg-neutral-700 hover:bg-neutral-600 text-white text-xs font-semibold whitespace-nowrap transition-colors">
+                              View
+                            </Link>
+                            {entry.totalRemainingPayoutUsd > 0 && (
+                              <button
+                                onClick={() => handlePayNow(entry)}
+                                className="inline-flex px-3 py-1.5 rounded-lg bg-warning-600 hover:bg-warning-700 text-white text-xs font-semibold whitespace-nowrap transition-colors"
+                              >
+                                Pay Now
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {!users.length && <div className="text-center py-16 text-neutral-500">No payout data found.</div>}
+            </div>
           </div>
         )}
       </div>

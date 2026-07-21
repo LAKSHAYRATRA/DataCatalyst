@@ -133,7 +133,7 @@ export default function AdminLanguageApps() {
                                                         <div className="text-neutral-400 text-xs">@{app.username}</div>
                                                     </td>
                                                     <td className="px-4 py-3 text-white text-xs font-medium">
-                                                        {app.companyId || <span className="text-neutral-500 italic">None</span>}
+                                                        {app.projectName || app.companyId || <span className="text-neutral-500 italic">None</span>}
                                                     </td>
                                                     <td className="px-4 py-3">
                                                         <code className="bg-neutral-700 text-warning-300 px-2 py-0.5 rounded text-xs font-mono">{app.languageCode}</code>

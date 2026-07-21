@@ -7,8 +7,8 @@ import AdminNav from '../components/AdminNav.jsx';
 export default function AdminPhrases() {
   const [phrasesList, setPhrasesList] = useState([]);
   const [companiesList, setCompaniesList] = useState([]);
+  const [phraseLanguagesList, setPhraseLanguagesList] = useState([]);
   const [companyId, setCompanyId] = useState('');
-  const [projectName, setProjectName] = useState('');
   const [language, setLanguage] = useState('');
   const [file, setFile] = useState(null);
   const [pastedJson, setPastedJson] = useState('');
@@ -19,11 +19,21 @@ export default function AdminPhrases() {
   useEffect(() => {
     fetchPhrases();
     fetchCompanies();
+    fetchPhraseLanguages();
   }, []);
+
+  async function fetchPhraseLanguages() {
+    try {
+      const data = await apiGet('/api/admin/languages');
+      setPhraseLanguagesList(data.languages || []);
+    } catch (err) {
+      console.error(err);
+    }
+  }
 
   async function fetchCompanies() {
     try {
-      const data = await apiGet('/api/admin/companies');
+      const data = await apiGet('/api/admin/companies?forAdminSelect=true');
       setCompaniesList(data.companies || []);
     } catch (err) {
       console.error(err);
@@ -63,6 +73,8 @@ export default function AdminPhrases() {
   };
 
   const handleUpload = async () => {
+    if (!companyId.trim()) return setError('Company / Project selection is required to upload a phrase batch.');
+    if (!language.trim()) return setError('Language selection is required to upload a phrase batch.');
     if (!file && !pastedJson.trim()) return setError('Please select a JSON file or paste JSON payload.');
     
     setLoading(true);
@@ -74,17 +86,17 @@ export default function AdminPhrases() {
         const json = JSON.parse(pastedJson);
         const res = await apiPostJson('/api/phrases/admin/upload', {
           companyId: companyId.trim(),
-          projectName: projectName.trim(),
           language: language.trim(),
           phrases: extractPhrasesArray(json),
         });
-        setMessage(`Success! Inserted: ${res.inserted}, Updated: ${res.updated}`);
+        const dupMsg = res.duplicates > 0 ? ` (${res.duplicates} duplicate ID${res.duplicates !== 1 ? 's' : ''} found, not uploaded and ignored)` : '';
+        setMessage(`Success! Inserted: ${res.inserted}${dupMsg}`);
         setPastedJson('');
         setCompanyId('');
-        setProjectName('');
         setLanguage('');
         fetchPhrases();
         fetchCompanies();
+        fetchPhraseLanguages();
       } catch (err) {
         setError('Failed to parse pasted JSON or upload failed: ' + err.message);
       } finally {
@@ -99,17 +111,17 @@ export default function AdminPhrases() {
         const json = JSON.parse(e.target.result);
         const res = await apiPostJson('/api/phrases/admin/upload', {
           companyId: companyId.trim(),
-          projectName: projectName.trim(),
           language: language.trim(),
           phrases: extractPhrasesArray(json),
         });
-        setMessage(`Success! Inserted: ${res.inserted}, Updated: ${res.updated}`);
+        const dupMsg = res.duplicates > 0 ? ` (${res.duplicates} duplicate ID${res.duplicates !== 1 ? 's' : ''} found, not uploaded and ignored)` : '';
+        setMessage(`Success! Inserted: ${res.inserted}${dupMsg}`);
         setFile(null);
         setCompanyId('');
-        setProjectName('');
         setLanguage('');
         fetchPhrases();
         fetchCompanies();
+        fetchPhraseLanguages();
       } catch (err) {
         setError('Failed to parse file JSON or upload failed: ' + err.message);
       } finally {
@@ -141,46 +153,62 @@ export default function AdminPhrases() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div>
             <div className="mb-4">
-              <label className="block text-sm font-medium mb-2 opacity-80">Company Identifier (Optional)</label>
-              <input 
-                type="text" 
-                list="company-list"
-                className="input w-full" 
-                placeholder="e.g. Acme Corp..." 
+              <label className="block text-sm font-medium mb-2 opacity-80">
+                Company / Project <span className="text-error-500 font-bold">*</span> (Mandatory)
+              </label>
+              <select 
+                className="input w-full bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 cursor-pointer" 
                 value={companyId}
                 onChange={(e) => setCompanyId(e.target.value)}
-              />
-              <datalist id="company-list">
+                required
+              >
+                <option value="">-- Select Company / Project --</option>
                 {companiesList.map(c => (
-                  <option key={c._id} value={c.name} />
+                  <option key={c._id} value={c.name}>
+                    {c.name}{c.projectName && c.projectName !== c.name ? ` (${c.projectName})` : ''}
+                  </option>
                 ))}
-              </datalist>
+              </select>
+              {(() => {
+                const comp = companiesList.find(c => c.name === companyId);
+                if (!comp) return null;
+                return (
+                  <div className="mt-2 p-2.5 bg-neutral-100 dark:bg-neutral-800/80 rounded-lg text-xs flex flex-wrap gap-x-4 gap-y-1 items-center border border-neutral-200 dark:border-neutral-700">
+                    <div><span className="font-bold text-neutral-500 dark:text-neutral-400">Company:</span> {comp.name}</div>
+                    <div><span className="font-bold text-neutral-500 dark:text-neutral-400">Display Name:</span> {comp.projectName || comp.name}</div>
+                    <div><span className="font-bold text-neutral-500 dark:text-neutral-400">Hourly Pay:</span> ${comp.hourlyPayout ?? 0}/hr</div>
+                    <div><span className="font-bold text-neutral-500 dark:text-neutral-400">Max Limit:</span> {comp.maxContributionMinutes ?? 195}m</div>
+                  </div>
+                );
+              })()}
+              {companiesList.length === 0 && (
+                <p className="text-xs text-warning-500 mt-1">
+                  No companies created yet. Create a company first under Company Configs.
+                </p>
+              )}
             </div>
             <div className="mb-4">
-              <label className="block text-sm font-medium mb-2 opacity-80">Language (Optional)</label>
-              <input 
-                type="text" 
-                list="language-list"
-                className="input w-full" 
-                placeholder="e.g. english, spanish..." 
+              <label className="block text-sm font-medium mb-2 opacity-80">
+                Language <span className="text-error-500 font-bold">*</span> (Mandatory)
+              </label>
+              <select 
+                className="input w-full bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 cursor-pointer" 
                 value={language}
                 onChange={(e) => setLanguage(e.target.value)}
-              />
-              <datalist id="language-list">
-                {companyId && companiesList.find(c => c.name === companyId)?.languages?.map(lang => (
-                  <option key={lang} value={lang} />
+                required
+              >
+                <option value="">-- Select Phrase Language --</option>
+                {phraseLanguagesList.map(lang => (
+                  <option key={lang._id || lang.code} value={lang.code}>
+                    {lang.name}
+                  </option>
                 ))}
-              </datalist>
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-2 opacity-80">Project Name (Optional)</label>
-              <input 
-                type="text" 
-                className="input w-full" 
-                placeholder="e.g. Healthcare Model V2..." 
-                value={projectName}
-                onChange={(e) => setProjectName(e.target.value)}
-              />
+              </select>
+              {phraseLanguagesList.length === 0 && (
+                <p className="text-xs text-warning-500 mt-1">
+                  No phrase languages created yet. Add a phrase language first under Phrase Languages in the sidebar.
+                </p>
+              )}
             </div>
           </div>
           <div>
@@ -258,7 +286,23 @@ export default function AdminPhrases() {
             <tbody>
               {phrasesList.map((p) => (
                 <tr key={p._id} className="border-b border-neutral-100 dark:border-neutral-800 hover:bg-neutral-50 dark:hover:bg-neutral-800/50 transition-colors text-sm">
-                  <td className="p-3 font-medium">{p.companyId || 'N/A'}</td>
+                  <td className="p-3 font-medium">
+                    {(() => {
+                      const comp = companiesList.find(c => c.name.toLowerCase() === (p.companyId || '').toLowerCase());
+                      if (!comp) return p.companyId || 'N/A';
+                      return (
+                        <div>
+                          <span>{comp.name}</span>
+                          {comp.projectName && comp.projectName !== comp.name && (
+                            <span className="text-xs opacity-75 block text-primary-500 font-normal">{comp.projectName}</span>
+                          )}
+                          <span className="text-[11px] opacity-60 block font-mono">
+                            ${comp.hourlyPayout ?? 0}/hr • {comp.maxContributionMinutes ?? 195}m max
+                          </span>
+                        </div>
+                      );
+                    })()}
+                  </td>
                   <td className="p-3 font-mono opacity-80">{p.phraseId}</td>
                   <td className="p-3 capitalize">{p.language}</td>
                   <td className="p-3">

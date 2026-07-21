@@ -3,6 +3,7 @@ import path from "path";
 import { Phrase } from "../models/Phrase.js";
 import { User } from "../models/User.js";
 import { Company } from "../models/Company.js";
+import { Language } from "../models/Language.js";
 import { Project } from "../models/Project.js";
 import { GetObjectCommand, DeleteObjectCommand, CopyObjectCommand } from "@aws-sdk/client-s3";
 import { Upload } from "@aws-sdk/lib-storage";
@@ -25,53 +26,80 @@ if (!fs.existsSync(PHRASE_RECORDINGS_DIR)) {
 export async function uploadPhrases(req, res) {
   try {
     const { companyId, projectName, language, phrases } = req.body;
+    if (!companyId || !companyId.trim()) {
+      return res.status(400).json({ error: "Company is required when uploading a phrase batch." });
+    }
+    if (!language || !language.trim()) {
+      return res.status(400).json({ error: "Language is required when uploading a phrase batch." });
+    }
     if (!Array.isArray(phrases)) {
       return res.status(400).json({ error: "Phrases must be an array" });
     }
 
-    // Natively index new unique companies seamlessly during the bulk ingest
-    if (companyId && companyId.trim()) {
-      const trimmed = companyId.trim();
-      const langTrimmed = language ? language.trim().toLowerCase() : null;
-      
-      const updateOp = { $setOnInsert: { name: trimmed } };
-      if (langTrimmed) {
-        updateOp.$addToSet = { languages: langTrimmed };
-      }
-
-      await Company.findOneAndUpdate(
-        { name: trimmed },
-        updateOp,
-        { upsert: true }
-      );
+    const validPhrases = phrases.filter(p => p && (p.text || p.sentence || p.content || p.phrase || p.transcript));
+    if (validPhrases.length === 0) {
+      return res.status(400).json({ error: "At least one phrase with valid text content is required to create a phrase project." });
     }
 
-    // Natively index new unique projects
-    if (projectName && projectName.trim()) {
-      const trimmedProject = projectName.trim();
-      await Project.findOneAndUpdate(
-        { name: trimmedProject },
-        { $setOnInsert: { name: trimmedProject, languageRates: [] } },
-        { upsert: true }
+    const cleanLanguage = language.trim().toLowerCase();
+    const formattedLangName = cleanLanguage.charAt(0).toUpperCase() + cleanLanguage.slice(1);
+
+    // Auto-register language in Language collection if not present
+    await Language.findOneAndUpdate(
+      { code: cleanLanguage },
+      { 
+        $setOnInsert: { code: cleanLanguage, name: formattedLangName, hourlyPayout: 0, enabled: true },
+        $set: { isPhrase: true }
+      },
+      { upsert: true }
+    );
+
+    // Natively index new unique companies seamlessly during the bulk ingest
+    let targetCompanyName = companyId ? companyId.trim() : null;
+    if (targetCompanyName) {
+      const companyDoc = await Company.findOneAndUpdate(
+        { name: { $regex: new RegExp(`^${targetCompanyName}$`, "i") } },
+        { 
+          $setOnInsert: { name: targetCompanyName },
+          $addToSet: { languages: cleanLanguage }
+        },
+        { upsert: true, new: true }
       );
+      if (companyDoc && companyDoc.name) {
+        targetCompanyName = companyDoc.name;
+      }
     }
 
     let inserted = 0;
-    let updated = 0;
+    let duplicates = 0;
+    const seenBatchIds = new Set();
 
-    for (const p of phrases) {
-      // Flexibly map the phrase ID or auto-generate one
+    for (const p of validPhrases) {
       const givenId = p.id || p.phraseId || p._id || p.phrase_id || `auto_${Date.now()}_${Math.random().toString(36).substring(2,7)}`;
-      
+      const cleanId = String(givenId).trim();
+
+      // Check intra-batch duplicate
+      if (seenBatchIds.has(cleanId)) {
+        duplicates++;
+        continue;
+      }
+      seenBatchIds.add(cleanId);
+
+      // Check database duplicate for this specific company
+      const existing = await Phrase.findOne({ companyId: targetCompanyName, phraseId: cleanId });
+      if (existing) {
+        duplicates++;
+        continue;
+      }
+
       // Flexibly map the text content
       const text = p.text || p.sentence || p.content || p.phrase || p.transcript;
-      if (!text) continue; // We strictly need at least some text to be read
 
-      const existing = await Phrase.findOne({ phraseId: String(givenId) });
       const doc = {
-        companyId: companyId ? companyId.trim() : null,
+        phraseId: cleanId,
+        companyId: targetCompanyName,
         projectName: projectName ? projectName.trim() : null,
-        language: (language && language.trim()) ? language.trim().toLowerCase() : (p.language || p.lang || "english"),
+        language: cleanLanguage,
         script_type: p.script_type || p.scriptType || null,
         speaker_id: p.speaker_id || p.speakerId || p.speaker || null,
         text: text,
@@ -85,19 +113,11 @@ export async function uploadPhrases(req, res) {
         instructions: p.instructions || p.instruction || p.notes || p.metadata || null,
       };
 
-      if (existing) {
-        // Only update if it's still pending (don't overwrite already recorded)
-        if (existing.status === "pending") {
-          await Phrase.updateOne({ _id: existing._id }, { $set: doc });
-          updated++;
-        }
-      } else {
-        await Phrase.create({ phraseId: String(givenId), ...doc });
-        inserted++;
-      }
+      await Phrase.create(doc);
+      inserted++;
     }
 
-    res.json({ success: true, inserted, updated });
+    res.json({ success: true, inserted, duplicates, updated: 0 });
   } catch (error) {
     console.error("uploadPhrases error:", error);
     res.status(500).json({ error: error.message || "Server Error (Backend Crash)" });
@@ -164,14 +184,36 @@ export async function getAvailablePhrase(req, res) {
 
     const blockedCompanies = [...new Set([...maxedOutCompanies, ...waitingTestCompanies])];
 
+    const activeCompanies = await Phrase.aggregate([
+      { $match: { status: { $in: ["pending", "locked", "rejected"] } } },
+      { $group: { _id: "$companyId", count: { $sum: 1 } } },
+      { $match: { count: { $gt: 1 } } }
+    ]);
+    const activeNames = activeCompanies.map(c => c._id).filter(Boolean);
+
+    if (projectName && projectName !== "Any" && !activeNames.includes(projectName)) {
+      return res.json({ phrase: null, message: "No phrases available (project is currently inactive)." });
+    }
+
     if (baseQuery.companyId && blockedCompanies.includes(baseQuery.companyId)) {
       if (maxedOutCompanies.includes(baseQuery.companyId)) {
         return res.json({ phrase: null, message: `You have reached the maximum contribution time limit for company: ${baseQuery.companyId}.` });
       } else {
         return res.json({ phrase: null, message: `Your test phrase for company ${baseQuery.companyId} is currently under review by QA. Please wait for approval before contributing further.` });
       }
-    } else if (!baseQuery.companyId && blockedCompanies.length > 0) {
-      baseQuery.companyId = { $nin: blockedCompanies };
+    } else {
+      if (baseQuery.companyId) {
+        if (Array.isArray(baseQuery.companyId.$nin)) {
+          baseQuery.companyId = { $in: activeNames, $nin: baseQuery.companyId.$nin };
+        } else {
+          baseQuery.companyId = { $in: activeNames };
+        }
+      } else {
+        baseQuery.companyId = { $in: activeNames };
+        if (blockedCompanies.length > 0) {
+          baseQuery.companyId.$nin = blockedCompanies;
+        }
+      }
     }
 
     // 1. First see if the user already has a locked phrase they haven't finished
@@ -608,7 +650,23 @@ export async function getSamplePhrase(req, res) {
       return res.status(400).json({ error: "companyId is required" });
     }
 
-    const query = { companyId: typeof companyId === "string" ? companyId.trim() : companyId };
+    let targetCompany = companyId.trim();
+    // Resolve Company Name if companyId is a MongoDB ObjectId
+    try {
+      if (targetCompany.match(/^[0-9a-fA-F]{24}$/)) {
+        const companyDoc = await Company.findById(targetCompany);
+        if (companyDoc) {
+          targetCompany = companyDoc.name;
+        }
+      }
+    } catch (e) {
+      // Fallback to query as-is
+    }
+
+    const query = { 
+      companyId: targetCompany,
+      status: { $in: ["pending", "locked", "rejected"] }
+    };
     if (language) {
       query.language = language.trim().toLowerCase();
     }

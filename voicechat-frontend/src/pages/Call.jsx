@@ -60,6 +60,8 @@ export default function Call() {
   const localStreamRef = useRef(null);
   const audioContextRef = useRef(null);
   const workletNodeRef = useRef(null);
+  const pendingChunksRef = useRef(new Map());
+  const currentSeqRef = useRef(0);
   const callRef = useRef({
     callId: null,
     role: null,
@@ -282,28 +284,46 @@ export default function Call() {
       setNegotiationMode(false);
 
       // Start Recording
-      startCallRecording(callRef.current.callId);
+      startCallRecording(callRef.current.callId, localStartAt);
     }, countdownMs);
   }
 
   function handleEndConversation() {
     if (confirm("Are you sure you want to end the conversation?")) {
-      // Use 'hangup' event which is handled by backend to notify peer via 'call_ended'
-      if (socketRef.current) {
-        socketRef.current.emit("hangup");
+      const finishHangup = () => {
+        if (socketRef.current) socketRef.current.emit("hangup");
+      };
+
+      if (pendingChunksRef.current && pendingChunksRef.current.size > 0) {
+        log("waiting for audio to sync...");
+        
+        // Wait up to 5 seconds for pending chunks to clear
+        let checks = 0;
+        const interval = setInterval(() => {
+          checks++;
+          if (pendingChunksRef.current.size === 0 || checks > 20) {
+            clearInterval(interval);
+            finishHangup();
+          }
+        }, 250);
+      } else {
+        finishHangup();
       }
 
-      // Reset State
-      setNegotiationMode(false);
-      setStatus("idle");
-      setCallId(null);
-      setTopicConfirmed(false);
-      setMyRole(null);
-      setPeerRole(null);
-      setTopics([]); // Clear topics to force reload next time or keep them? maybe keep.
-
-      // Go back to idle screen
-      // navigate("/call"); // Already there
+      // Fallback: If network is completely dead, force cleanup after 10 seconds
+      setTimeout(() => {
+        if (callRef.current && callRef.current.callId) {
+          stopCallRecording();
+          cleanupCallUi();
+          setStatus("idle");
+          setCallId(null);
+          setTopicConfirmed(false);
+          setMyRole(null);
+          setPeerRole(null);
+          setTopics([]); 
+          navigate("/call");
+        }
+      }, 10000);
     }
   }
 
@@ -350,56 +370,100 @@ export default function Call() {
     return localStreamRef.current;
   }
 
-  async function startCallRecording(activeCallId) {
+  const isStartingRecordingRef = useRef(false);
+
+  async function startCallRecording(activeCallId, expectedStartTime) {
     const socket = socketRef.current;
     const stream = localStreamRef.current;
     if (!socket || !stream || !activeCallId) return;
 
-    if (workletNodeRef.current) return; // already recording
+    if (workletNodeRef.current || isStartingRecordingRef.current) return; // already recording or starting
+    isStartingRecordingRef.current = true;
 
-    const rate = getCurrentSampleRate();
-    const audioCtx = new AudioContext({ sampleRate: rate });
-    audioContextRef.current = audioCtx;
-    
-    await audioCtx.audioWorklet.addModule("/pcm-worklet.js");
-    const workletNode = new AudioWorkletNode(audioCtx, "pcm-processor");
-    workletNodeRef.current = workletNode;
+    // Reset sequence tracking
+    currentSeqRef.current = 0;
+    pendingChunksRef.current.clear();
 
-    const source = audioCtx.createMediaStreamSource(stream);
+    try {
+      // Create AudioContext without forcing a specific sampleRate.
+      // This prevents resampling bugs in the browser and captures at the exact native hardware rate.
+      const audioCtx = new AudioContext();
+      audioContextRef.current = audioCtx;
+      
+      await audioCtx.audioWorklet.addModule("/pcm-worklet.js");
+      const workletNode = new AudioWorkletNode(audioCtx, "pcm-processor");
+      workletNodeRef.current = workletNode;
 
-    const startTime = Date.now();
-    // Use the actual hardware stream sample rate. Because of a known bug in Chromium,
-    // createMediaStreamSource ignores audioCtx.sampleRate and pumps the raw native hardware rate.
-    // If we pass audioCtx.sampleRate (e.g. 22050), but the stream is 48000, FFmpeg stretches it 2.17x!
-    const actualStreamRate = stream.getAudioTracks()[0].getSettings().sampleRate || audioCtx.sampleRate;
-    socket.emit("record_start", { callId: activeCallId, mimeType: "audio/pcm", startTime, sampleRate: actualStreamRate });
+      const source = audioCtx.createMediaStreamSource(stream);
 
-    workletNode.port.onmessage = (e) => {
-      const s2 = socketRef.current;
-      if (s2) {
-        s2.emit("record_chunk", e.data);
-      }
-    };
+      const startTime = Date.now();
+      const clientOffsetMs = expectedStartTime ? Math.max(0, startTime - expectedStartTime) : 0;
+      // Send the exact actual sample rate to the backend
+      const actualStreamRate = audioCtx.sampleRate;
+      socket.emit("record_start", { 
+        callId: activeCallId, 
+        mimeType: "audio/pcm", 
+        startTime, 
+        clientOffsetMs,
+        sampleRate: actualStreamRate 
+      });
 
-    const gain = audioCtx.createGain();
-    gain.gain.value = 0;
-    source.connect(workletNode);
-    workletNode.connect(gain);
-    gain.connect(audioCtx.destination);
+      const sendChunk = (seq, data) => {
+        const s2 = socketRef.current;
+        if (s2 && s2.connected) {
+          s2.emit("record_chunk", { seq, data, callId: activeCallId }, (ackSeq) => {
+            if (pendingChunksRef.current.has(ackSeq)) {
+              pendingChunksRef.current.delete(ackSeq);
+            }
+          });
+        }
+      };
+
+      // Ensure sendChunk is globally accessible for reconnects
+      socketRef.current.sendChunk = sendChunk;
+
+      workletNode.port.onmessage = (e) => {
+        const data = e.data;
+        const seq = currentSeqRef.current++;
+        pendingChunksRef.current.set(seq, data);
+        sendChunk(seq, data);
+      };
+
+      const gain = audioCtx.createGain();
+      gain.gain.value = 0;
+      source.connect(workletNode);
+      workletNode.connect(gain);
+      gain.connect(audioCtx.destination);
+
+    } finally {
+      isStartingRecordingRef.current = false;
+    }
   }
 
   function stopCallRecording() {
     const socket = socketRef.current;
     if (workletNodeRef.current) {
-        workletNodeRef.current.disconnect();
-        workletNodeRef.current = null;
+        workletNodeRef.current.port.postMessage("flush");
+        // Give it a tiny moment to post back the final buffer before disconnecting
+        setTimeout(() => {
+          if (workletNodeRef.current) {
+            workletNodeRef.current.disconnect();
+            workletNodeRef.current = null;
+          }
+          try { if (socket) socket.emit("record_stop"); } catch { }
+        }, 50);
+    } else {
+        try { if (socket) socket.emit("record_stop"); } catch { }
     }
+    
     if (audioContextRef.current) {
-        audioContextRef.current.close();
-        audioContextRef.current = null;
+        setTimeout(() => {
+          if (audioContextRef.current) {
+            audioContextRef.current.close();
+            audioContextRef.current = null;
+          }
+        }, 50);
     }
-
-    try { if (socket) socket.emit("record_stop"); } catch { }
   }
 
   async function createPeerConnection() {
@@ -605,14 +669,33 @@ export default function Call() {
     socket.on("connect", () => {
       setConnected(true);
       log("connected");
-      const passed = getSystemCheckPassed();
+
+      const passed =
+        localStorage.getItem("systemCheckPassed") === "true" || systemCheckPassed;
       socket.emit("system_check_status", { passed });
+
+      if (socket.recovered) {
+        // Resend pending chunks
+        if (socket.sendChunk && pendingChunksRef.current.size > 0) {
+          for (const [seq, data] of pendingChunksRef.current.entries()) {
+            socket.sendChunk(seq, data);
+          }
+        }
+      } else {
+        // If recovery failed (e.g. disconnected for >60s), the backend already ended the call.
+        if (callRef.current && callRef.current.callId) {
+          stopCallRecording();
+          cleanupCallUi();
+          alert("Network connection was lost for too long. The call has been ended.");
+        }
+      }
     });
 
     socket.on("disconnect", () => {
       setConnected(false);
       log("disconnected");
-      cleanupCallUi();
+      // Do NOT call cleanupCallUi() here. Allow Connection State Recovery 
+      // to restore the session. The call should only end when we receive "call_ended".
     });
 
     socket.on("force_logout", ({ reason }) => {
@@ -842,8 +925,19 @@ export default function Call() {
   function hangup() {
     const socket = socketRef.current;
     if (!socket) return;
+    
+    // Instead of instantly destroying the UI and stopping the recording stream,
+    // we emit hangup and wait for the server to reply with "call_ended".
+    // This guarantees both users stop recording at the exact same millisecond on the backend!
     socket.emit("hangup");
-    cleanupCallUi();
+    
+    // Fallback: If the network is completely dead and the server never responds,
+    // forcefully clean up the UI after 5 seconds so the user isn't stuck forever.
+    setTimeout(() => {
+      if (callRef.current && callRef.current.callId) {
+        cleanupCallUi();
+      }
+    }, 5000);
   }
 
   // Render Language Selection UI
@@ -872,7 +966,7 @@ export default function Call() {
 
   // Render Call UI
   return (
-    <div className="min-h-screen bg-gradient-subtle pt-16 md:pt-0 md:pl-64">
+    <div className="min-h-screen bg-neutral-50 dark:bg-neutral-950 text-neutral-900 dark:text-neutral-50 pt-16 md:pt-0 md:pl-64 transition-colors duration-300">
       <Nav disabled={!!callId && !showFeedback} />
       <div className="max-w-full md:max-w-6xl mx-auto px-4 md:px-6 py-4 md:py-8 w-full">
         {/* Call Interface */}

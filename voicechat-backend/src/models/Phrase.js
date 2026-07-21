@@ -2,8 +2,7 @@ import mongoose from "mongoose";
 
 const phraseSchema = new mongoose.Schema(
   {
-    // Admin / Core JSON fields
-    phraseId: { type: String, required: true, unique: true },
+    phraseId: { type: String, required: true },
     companyId: { type: String, default: null }, // Optional company grouping
     projectName: { type: String, default: null }, // Optional project grouping
     language: { type: String, required: true },
@@ -42,5 +41,7 @@ const phraseSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
+phraseSchema.index({ companyId: 1, phraseId: 1 }, { unique: true });
 
 export const Phrase = mongoose.model("Phrase", phraseSchema);

@@ -5,6 +5,7 @@ import { apiGet } from '../lib/api';
 import { encodeWAV } from '../utils/wavBuilder.js';
 import { getUserInfo } from '../lib/auth.js';
 import { useNavigate, Link } from 'react-router-dom';
+import Nav from "../components/Nav.jsx";
 
 export default function PhraseRecording() {
   const navigate = useNavigate();
@@ -13,6 +14,7 @@ export default function PhraseRecording() {
   // These will be populated from the API
   const [approvedApps, setApprovedApps] = useState([]);
   const [approvedCompanies, setApprovedCompanies] = useState([]);
+  const approvedPhraseApps = approvedApps.filter(app => app.applicationType === 'phrase');
 
   const [stats, setStats] = useState({ 
     totalSeconds: 0, 
@@ -24,14 +26,14 @@ export default function PhraseRecording() {
   const [projects, setProjects] = useState([]);
   const [allLanguages, setAllLanguages] = useState([]);
   
-  const [projectName, setProjectName] = useState('Any');
+  const [projectName, setProjectName] = useState('');
   const [language, setLanguage] = useState('');
   const [availableLanguages, setAvailableLanguages] = useState([]);
 
   useEffect(() => {
     const newLangs = Array.from(new Set(
       approvedApps
-        .filter(a => projectName === 'Any' || a.companyId === projectName)
+        .filter(a => a.companyId === projectName)
         .map(a => a.languageCode)
     ));
     setAvailableLanguages(newLangs);
@@ -74,15 +76,17 @@ export default function PhraseRecording() {
       const myApps = appsData.applications || [];
       const approved = myApps.filter(app => app.status === 'approved');
       
-      if (approved.length === 0) {
-        navigate('/language-apply');
-        return;
-      }
-      
       setApprovedApps(approved);
-      const companies = ['Any', ...Array.from(new Set(approved.map(a => a.companyId).filter(Boolean)))];
+      const uniqueCompanyIds = Array.from(new Set(approved.map(a => a.companyId).filter(Boolean)));
+      const companies = uniqueCompanyIds.map(id => {
+        const app = approved.find(a => a.companyId === id);
+        return {
+          id: id,
+          label: app?.projectName || id
+        };
+      });
       setApprovedCompanies(companies);
-      setProjectName(companies[0] || 'Any');
+      setProjectName(companies[0]?.id || '');
 
       setStats({ 
           totalSeconds: statsData.totalSeconds || 0, 
@@ -102,13 +106,14 @@ export default function PhraseRecording() {
   // Calculate current payrate based on selection
   const currentPayrate = React.useMemo(() => {
     let rate = 0;
-    const baseLang = allLanguages.find(l => l.code.toLowerCase() === language.toLowerCase());
+    if (!language) return 0;
+    const baseLang = allLanguages.find(l => l.code && l.code.toLowerCase() === language.toLowerCase());
     if (baseLang) rate = Number(baseLang.hourlyPayout) || 0;
 
     if (projectName !== 'Any') {
       const proj = projects.find(p => p.name === projectName);
       if (proj && proj.languageRates) {
-        const specRate = proj.languageRates.find(r => r.languageCode === language.toLowerCase());
+        const specRate = proj.languageRates.find(r => r.languageCode && r.languageCode.toLowerCase() === language.toLowerCase());
         if (specRate) {
           rate = Number(specRate.hourlyPayout);
         }
@@ -324,14 +329,67 @@ export default function PhraseRecording() {
     return `${m}:${s < 10 ? '0' : ''}${s}`;
   };
 
+  if (approvedPhraseApps.length === 0) {
+    return (
+      <div className="min-h-screen bg-neutral-50 dark:bg-neutral-950 text-neutral-900 dark:text-neutral-50 pt-16 md:pt-0 md:pl-72 transition-colors duration-300">
+        <Nav />
+        <div className="max-w-6xl mx-auto px-4 py-8 md:py-12">
+          <motion.div 
+            initial={{ y: -20, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            className="mb-8 flex flex-col md:flex-row justify-between md:items-end gap-4"
+          >
+            <div>
+              <button
+                onClick={() => navigate('/dashboard')}
+                className="inline-flex items-center gap-1.5 text-sm text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300 font-semibold mb-4 transition-colors"
+              >
+                ← Back to Dashboard
+              </button>
+              <h1 className="text-3xl font-bold mb-2">TTS Recording Studio</h1>
+              <p className="text-neutral-500 dark:text-neutral-400">Contribute your voice to high-quality AI training sets.</p>
+            </div>
+          </motion.div>
+
+          <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-indigo-900 via-primary-900 to-indigo-950 text-white shadow-2xl shadow-primary-900/20 border border-primary-800/50 p-8 md:p-12 max-w-xl mx-auto mt-12 text-center animate-fade-in flex flex-col items-center justify-center">
+            {/* Background Deco */}
+            <div className="absolute top-0 right-0 w-32 h-32 bg-primary-500 rounded-full blur-[60px] opacity-20 pointer-events-none transform translate-x-1/2 -translate-y-1/2"></div>
+            
+            <div className="w-20 h-20 bg-white/10 backdrop-blur-md rounded-full flex items-center justify-center mb-6 border-4 border-white/20 text-white shadow-inner">
+              <Mic className="w-10 h-10" />
+            </div>
+            <h2 className="text-2xl font-extrabold text-white mb-3">No Approved Phrase Projects</h2>
+            <p className="text-primary-100/80 max-w-sm leading-relaxed mb-8 text-center px-6">
+              You have not applied to any phrase projects yet. Apply for a project under Project Apply in the sidebar to start recording scripts.
+            </p>
+            <button 
+              onClick={() => navigate('/language-apply?type=phrase')}
+              className="bg-white text-primary-900 font-extrabold text-base px-8 py-3.5 rounded-xl shadow-[0_0_20px_rgba(255,255,255,0.25)] hover:shadow-[0_0_35px_rgba(255,255,255,0.4)] transition-all"
+            >
+              Project Apply
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="p-4 md:p-8 max-w-6xl mx-auto min-h-screen text-neutral-900 dark:text-neutral-50 px-4">
-      <motion.div 
-        initial={{ y: -20, opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
-        className="mb-8 flex flex-col md:flex-row justify-between md:items-end gap-4"
-      >
+    <div className="min-h-screen bg-neutral-50 dark:bg-neutral-950 text-neutral-900 dark:text-neutral-50 pt-16 md:pt-0 md:pl-72 transition-colors duration-300">
+      <Nav />
+      <div className="max-w-6xl mx-auto px-4 py-8 md:py-12">
+        <motion.div 
+          initial={{ y: -20, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          className="mb-8 flex flex-col md:flex-row justify-between md:items-end gap-4"
+        >
         <div>
+          <button
+            onClick={() => navigate('/dashboard')}
+            className="inline-flex items-center gap-1.5 text-sm text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300 font-semibold mb-4 transition-colors"
+          >
+            ← Back to Dashboard
+          </button>
           <h1 className="text-3xl font-bold mb-2">TTS Recording Studio</h1>
           <p className="text-neutral-500 dark:text-neutral-400">Contribute your voice to high-quality AI training sets.</p>
         </div>
@@ -401,7 +459,7 @@ export default function PhraseRecording() {
                   disabled={loading || isRecording}
                 >
                   {approvedCompanies.map(c => (
-                    <option key={c} value={c}>{c}</option>
+                    <option key={c.id} value={c.id}>{c.label}</option>
                   ))}
                 </select>
               </div>
@@ -594,5 +652,6 @@ export default function PhraseRecording() {
 
       </div>
     </div>
-  );
+  </div>
+);
 }

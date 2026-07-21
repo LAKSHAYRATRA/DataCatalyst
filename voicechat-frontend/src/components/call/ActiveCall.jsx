@@ -108,33 +108,33 @@ export default function ActiveCall({
             <div className="animate-fade-in">
                 {/* Call Timer (Now at the top) */}
                 <div className="text-center mb-6 md:mb-8 pt-4">
-                    <div className="text-3xl md:text-5xl font-bold text-primary-600 mb-2 font-mono tabular-nums">
+                    <div className="text-3xl md:text-5xl font-bold text-primary-600 dark:text-primary-400 mb-2 font-mono tabular-nums">
                         {formatTime(timeRemaining)}
                     </div>
-                    <p className="text-xs md:text-sm text-neutral-500 mb-4">Time Remaining</p>
-                    <div className="inline-flex items-center space-x-2 px-3 md:px-4 py-1.5 md:py-2 bg-success-50 rounded-full">
+                    <p className="text-xs md:text-sm text-neutral-500 dark:text-neutral-400 mb-4">Time Remaining</p>
+                    <div className="inline-flex items-center space-x-2 px-3 md:px-4 py-1.5 md:py-2 bg-success-50 dark:bg-success-950/20 rounded-full">
                         <div className="w-2 h-2 bg-success-500 rounded-full animate-pulse"></div>
-                        <span className="text-xs md:text-sm font-medium text-success-700">Call in Progress with Anonymous Partner</span>
+                        <span className="text-xs md:text-sm font-medium text-success-700 dark:text-success-300">Call in Progress with Anonymous Partner</span>
                     </div>
                 </div>
 
                 {/* Topic Info (Now below timer) */}
                 {(selectedTopic || selectedSubtopic) && (
                     <div className="mb-6 md:mb-8">
-                        <div className="bg-neutral-50 rounded-xl p-4 md:p-6 border border-neutral-200 shadow-sm">
-                            <h4 className="text-sm font-semibold text-neutral-700 mb-3 uppercase tracking-wider text-center">Conversation Topic</h4>
+                        <div className="bg-neutral-50 dark:bg-neutral-900 rounded-xl p-4 md:p-6 border border-neutral-200 dark:border-neutral-800 shadow-sm transition-colors duration-300">
+                            <h4 className="text-sm font-semibold text-neutral-700 dark:text-neutral-400 mb-3 uppercase tracking-wider text-center">Conversation Topic</h4>
                             {selectedTopic && topics?.find(t => t._id === selectedTopic) && (
-                                <p className="text-lg md:text-xl font-bold text-neutral-900 mb-2 text-center">
+                                <p className="text-lg md:text-xl font-bold text-neutral-900 dark:text-white mb-2 text-center">
                                     {topics.find(t => t._id === selectedTopic)?.title}
                                 </p>
                             )}
                             {selectedSubtopic && topics?.find(t => t._id === selectedTopic)?.subtopics?.find(s => s._id === selectedSubtopic) && (
                                 <div className="text-center">
-                                    <p className="text-base md:text-lg text-neutral-800 font-medium mb-3">
+                                    <p className="text-base md:text-lg text-neutral-800 dark:text-neutral-200 font-medium mb-3">
                                         {topics.find(t => t._id === selectedTopic)?.subtopics?.find(s => s._id === selectedSubtopic)?.title}
                                     </p>
                                     {topics.find(t => t._id === selectedTopic)?.subtopics?.find(s => s._id === selectedSubtopic)?.description && (
-                                        <div className="mt-2 text-sm text-neutral-600 italic whitespace-pre-wrap text-left bg-white p-4 rounded-lg border border-neutral-100 shadow-sm">
+                                        <div className="mt-2 text-sm text-neutral-600 dark:text-neutral-400 italic whitespace-pre-wrap text-left bg-white dark:bg-neutral-950 p-4 rounded-lg border border-neutral-100 dark:border-neutral-800 shadow-sm transition-colors duration-300">
                                             {topics.find(t => t._id === selectedTopic)?.subtopics?.find(s => s._id === selectedSubtopic)?.description}
                                         </div>
                                     )}
@@ -158,7 +158,7 @@ export default function ActiveCall({
                             {isMuted ? (
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2"></path>
                             ) : (
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"></path>
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 5.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"></path>
                             )}
                         </svg>
                         {isMuted ? 'Unmute' : 'Mute'}
@@ -174,14 +174,14 @@ export default function ActiveCall({
                 </div>
 
                 {/* Call Info */}
-                <div className="grid grid-cols-2 gap-3 md:gap-4 pt-4 md:pt-6 border-t border-neutral-200">
+                <div className="grid grid-cols-2 gap-3 md:gap-4 pt-4 md:pt-6 border-t border-neutral-200 dark:border-neutral-800">
                     <div className="text-center">
-                        <p className="text-xs text-neutral-500 mb-1">Call ID</p>
-                        <p className="text-xs md:text-sm font-mono text-neutral-700 break-all">{callId?.slice(0, 8)}...</p>
+                        <p className="text-xs text-neutral-500 dark:text-neutral-400 mb-1">Call ID</p>
+                        <p className="text-xs md:text-sm font-mono text-neutral-700 dark:text-neutral-300 break-all">{callId?.slice(0, 8)}...</p>
                     </div>
                     <div className="text-center">
-                        <p className="text-xs text-neutral-500 mb-1">Role</p>
-                        <p className="text-xs md:text-sm font-semibold text-neutral-700 capitalize">{role || '-'}</p>
+                        <p className="text-xs text-neutral-500 dark:text-neutral-400 mb-1">Role</p>
+                        <p className="text-xs md:text-sm font-semibold text-neutral-700 dark:text-neutral-300 capitalize">{role || '-'}</p>
                     </div>
                 </div>
             </div>

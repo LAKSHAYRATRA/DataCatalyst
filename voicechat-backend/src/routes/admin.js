@@ -26,8 +26,45 @@ const JWT_SECRET = process.env.JWT_SECRET;
 
 router.get("/companies", requireAuth(JWT_SECRET), async (req, res) => {
     try {
-        const companies = await Company.find({}).sort({ name: 1 }).lean();
-        res.json({ companies });
+        const allCompanies = await Company.find({}).sort({ name: 1 }).lean();
+
+        // For admin management & batch upload selectors, return ALL companies
+        if (req.query.forApply !== "true") {
+            return res.json({ companies: allCompanies });
+        }
+
+        // For contributor apply page (?forApply=true), aggregate active phrases and ONLY list companies with actual sample phrases
+        const activeCombinations = await Phrase.aggregate([
+            { $match: { status: { $in: ["pending", "locked", "rejected"] } } },
+            { $group: { _id: { companyId: "$companyId", language: "$language" } } }
+        ]);
+
+        const companyActiveLangs = {};
+        for (const combo of activeCombinations) {
+            if (combo._id && combo._id.companyId && combo._id.language) {
+                const comp = String(combo._id.companyId).trim().toLowerCase();
+                const lang = String(combo._id.language).trim().toLowerCase();
+                if (!companyActiveLangs[comp]) {
+                    companyActiveLangs[comp] = new Set();
+                }
+                companyActiveLangs[comp].add(lang);
+            }
+        }
+
+        const filteredCompanies = allCompanies.map(c => {
+            const compKey = String(c.name || "").trim().toLowerCase();
+            const activeLangs = companyActiveLangs[compKey];
+
+            // If no sample phrases exist for this company, do NOT list it on the contributor apply page
+            if (!activeLangs || activeLangs.size === 0) return null;
+
+            return {
+                ...c,
+                languages: Array.from(activeLangs)
+            };
+        }).filter(Boolean);
+
+        res.json({ companies: filteredCompanies });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
@@ -581,7 +618,18 @@ router.get("/metadata/export", async (req, res) => {
 router.get("/payouts/users", async (req, res) => {
     try {
         const { summaries } = await getPayoutOverview();
-        res.json({ users: summaries });
+        let filtered = summaries;
+        if (req.query.search) {
+            const searchVal = String(req.query.search).trim().toLowerCase();
+            filtered = summaries.filter(s => {
+                const u = s.user;
+                return (u.firstname || '').toLowerCase().includes(searchVal) ||
+                       (u.lastname || '').toLowerCase().includes(searchVal) ||
+                       (u.username || '').toLowerCase().includes(searchVal) ||
+                       (u.email || '').toLowerCase().includes(searchVal);
+            });
+        }
+        res.json({ users: filtered });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
@@ -1058,6 +1106,15 @@ router.get("/users", async (req, res) => {
 
         const filter = { isAdmin: false };
         if (req.query.accountStatus) filter.accountStatus = req.query.accountStatus;
+        if (req.query.search) {
+            const searchRegex = new RegExp(req.query.search.trim(), "i");
+            filter.$or = [
+                { firstname: searchRegex },
+                { lastname: searchRegex },
+                { username: searchRegex },
+                { email: searchRegex }
+            ];
+        }
 
         const total = await User.countDocuments(filter);
         const users = await User.find(filter)
@@ -1083,7 +1140,17 @@ router.get("/users", async (req, res) => {
 // List users pending admin approval
 router.get("/users/pending", async (req, res) => {
     try {
-        const users = await User.find({ isAdmin: false, accountStatus: "pending_approval" })
+        const filter = { isAdmin: false, accountStatus: "pending_approval" };
+        if (req.query.search) {
+            const searchRegex = new RegExp(req.query.search.trim(), "i");
+            filter.$or = [
+                { firstname: searchRegex },
+                { lastname: searchRegex },
+                { username: searchRegex },
+                { email: searchRegex }
+            ];
+        }
+        const users = await User.find(filter)
             .select('username email firstname lastname gender regionalLanguage locality address microphoneBrand microphoneModel introRecordingFile createdAt')
             .sort({ createdAt: -1 });
         res.json({ users });
@@ -1398,11 +1465,25 @@ router.patch("/languages/:id", async (req, res) => {
     }
 });
 
-// Delete language
+// Delete language (removes category association or deletes document)
 router.delete("/languages/:id", async (req, res) => {
     try {
-        const lang = await Language.findByIdAndDelete(req.params.id);
+        const type = req.query.type;
+        const lang = await Language.findById(req.params.id);
         if (!lang) return res.status(404).json({ error: "Language not found" });
+
+        if (type === "call") lang.isCall = false;
+        else if (type === "phrase") lang.isPhrase = false;
+        else {
+            lang.isCall = false;
+            lang.isPhrase = false;
+        }
+
+        if (!lang.isCall && !lang.isPhrase) {
+            await Language.findByIdAndDelete(req.params.id);
+        } else {
+            await lang.save();
+        }
         res.json({ message: "Language deleted" });
     } catch (e) {
         res.status(500).json({ error: e.message });
@@ -1984,7 +2065,34 @@ router.post("/s3/download-selected", async (req, res) => {
                     Bucket: BUCKET_NAME,
                     Key: key
                 }));
-                const wavBuffer = await getWavBuffer(s3Doc.Body);
+
+                let offsetMs = 0;
+                let durationMs = 0;
+
+                let actualCallDuration = call ? call.actualCallDuration : 0;
+                if (!actualCallDuration && call && call.endedAt && call.actualCallStartedAt) {
+                    actualCallDuration = (new Date(call.endedAt).getTime() - new Date(call.actualCallStartedAt).getTime()) / 1000;
+                }
+
+                if (call && call.actualCallStartedAt && actualCallDuration) {
+                    const callStart = new Date(call.actualCallStartedAt).getTime();
+                    let recordingStart = callStart;
+
+                    if (call.recordingAFile === key && call.recordingAStartedAt) {
+                        recordingStart = new Date(call.recordingAStartedAt).getTime();
+                    } else if (call.recordingBFile === key && call.recordingBStartedAt) {
+                        recordingStart = new Date(call.recordingBStartedAt).getTime();
+                    }
+
+                    // If recording started after the call, we pad the beginning.
+                    if (recordingStart > callStart) {
+                        offsetMs = recordingStart - callStart;
+                    }
+                    
+                    durationMs = actualCallDuration * 1000;
+                }
+
+                const wavBuffer = await getWavBuffer(s3Doc.Body, { offsetMs, durationMs });
                 // Flat layout: every wav sits at the zip root (e.g. utt_xxx.wav)
                 archive.append(wavBuffer, { name: `${folderName}.wav` });
             } catch (err) {
@@ -2049,13 +2157,24 @@ router.post("/backfill-speaker-ids", async (req, res) => {
 // ===== COMPANY MANAGEMENT =====
 
 
-router.post("/companies", async (req, res) => {
+router.post("/companies", requireAuth(JWT_SECRET), async (req, res) => {
     try {
-        const { name, maxContributionMinutes, hourlyPayout } = req.body;
-        if (!name) return res.status(400).json({ error: "Company name is required" });
-        const company = new Company({ name, maxContributionMinutes, hourlyPayout });
-        await company.save();
-        res.json({ message: "Company created successfully", company });
+        const { name, maxContributionMinutes, hourlyPayout, projectName } = req.body;
+        if (!name || !name.trim()) return res.status(400).json({ error: "Company name is required" });
+
+        const cleanName = name.trim();
+        const existing = await Company.findOne({ name: { $regex: new RegExp(`^${cleanName}$`, "i") } });
+        if (existing) {
+            return res.status(400).json({ error: "A company with that identifier already exists." });
+        }
+
+        const company = await Company.create({ 
+            name: cleanName, 
+            maxContributionMinutes: Number.isFinite(Number(maxContributionMinutes)) ? Number(maxContributionMinutes) : 195, 
+            hourlyPayout: Number.isFinite(Number(hourlyPayout)) ? Number(hourlyPayout) : 0, 
+            projectName: projectName && projectName.trim() ? projectName.trim() : cleanName
+        });
+        res.status(201).json({ message: "Company created successfully", company });
     } catch (e) {
         if (e.code === 11000) return res.status(400).json({ error: "Company name already exists" });
         res.status(500).json({ error: e.message });
@@ -2064,10 +2183,11 @@ router.post("/companies", async (req, res) => {
 
 router.patch("/companies/:id", async (req, res) => {
     try {
-        const { maxContributionMinutes, hourlyPayout } = req.body;
+        const { maxContributionMinutes, hourlyPayout, projectName } = req.body;
         const updateData = {};
         if (maxContributionMinutes !== undefined) updateData.maxContributionMinutes = Number(maxContributionMinutes);
         if (hourlyPayout !== undefined) updateData.hourlyPayout = Number(hourlyPayout);
+        if (projectName !== undefined) updateData.projectName = String(projectName).trim();
         
         const company = await Company.findByIdAndUpdate(req.params.id, { $set: updateData }, { new: true });
         if (!company) return res.status(404).json({ error: "Company not found" });
@@ -2079,8 +2199,23 @@ router.patch("/companies/:id", async (req, res) => {
 
 router.delete("/companies/:id", async (req, res) => {
     try {
+        // Fetch the company first so we have its name (used as companyId in phrases)
+        const company = await Company.findById(req.params.id);
+        if (!company) return res.status(404).json({ error: "Company not found" });
+
+        // Delete all pending & locked phrases for this company
+        // (recorded/approved phrases are kept to preserve contributor history)
+        const deletedPhrases = await Phrase.deleteMany({
+            companyId: company.name,
+            status: { $in: ["pending", "locked"] },
+        });
+
         await Company.findByIdAndDelete(req.params.id);
-        res.json({ message: "Company deleted" });
+
+        res.json({
+            message: "Company deleted",
+            deletedPhrases: deletedPhrases.deletedCount,
+        });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
@@ -2091,10 +2226,20 @@ router.delete("/companies/:id", async (req, res) => {
 // List agreements pending admin review
 router.get("/contributor-agreements/pending", async (req, res) => {
     try {
-        const users = await User.find({
+        const filter = {
             "contributorAgreement.signed": true,
             "contributorAgreement.adminReviewStatus": "pending",
-        })
+        };
+        if (req.query.search) {
+            const searchRegex = new RegExp(req.query.search.trim(), "i");
+            filter.$or = [
+                { firstname: searchRegex },
+                { lastname: searchRegex },
+                { username: searchRegex },
+                { email: searchRegex }
+            ];
+        }
+        const users = await User.find(filter)
             .select("firstname lastname email username speaker_id accountStatus contributorAgreement.signedAt contributorAgreement.agreementVersion contributorAgreement.signerIp contributorAgreement.s3Key")
             .sort({ "contributorAgreement.signedAt": 1 })
             .lean();
@@ -2122,11 +2267,21 @@ router.get("/contributor-agreements/pending", async (req, res) => {
 // List fully-approved users (accountStatus=approved AND agreement admin-approved)
 router.get("/contributor-agreements/approved-users", async (req, res) => {
     try {
-        const users = await User.find({
+        const filter = {
             accountStatus: "approved",
             "contributorAgreement.signed": true,
             "contributorAgreement.adminReviewStatus": "approved",
-        })
+        };
+        if (req.query.search) {
+            const searchRegex = new RegExp(req.query.search.trim(), "i");
+            filter.$or = [
+                { firstname: searchRegex },
+                { lastname: searchRegex },
+                { username: searchRegex },
+                { email: searchRegex }
+            ];
+        }
+        const users = await User.find(filter)
             .select("firstname lastname email username speaker_id dailyCallLimit overallCallLimit dailyPhraseLimit overallPhraseLimit contributorAgreement.signedAt contributorAgreement.adminReviewedAt contributorAgreement.agreementVersion contributorAgreement.s3Key")
             .sort({ "contributorAgreement.adminReviewedAt": -1 })
             .lean();
@@ -2279,6 +2434,15 @@ router.get("/kyc/pans", async (req, res) => {
             filter["kyc.verificationStatus"] = status;
         } else if (status !== "all") {
             return res.status(400).json({ error: "invalid_status" });
+        }
+        if (req.query.search) {
+            const searchRegex = new RegExp(req.query.search.trim(), "i");
+            filter.$or = [
+                { firstname: searchRegex },
+                { lastname: searchRegex },
+                { username: searchRegex },
+                { email: searchRegex }
+            ];
         }
         const users = await User.find(filter)
             .select("username email firstname lastname kyc")

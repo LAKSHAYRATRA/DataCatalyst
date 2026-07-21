@@ -25,15 +25,16 @@ export default function AdminAgreements() {
   const [busyId, setBusyId] = useState(null);
   const [search, setSearch] = useState("");
 
-  async function load() {
+  async function load(searchVal = search) {
     setError("");
     setLoading(true);
     try {
+      const q = searchVal.trim() ? `?search=${encodeURIComponent(searchVal)}` : "";
       if (tab === "pending") {
-        const data = await apiGet("/api/admin/contributor-agreements/pending");
+        const data = await apiGet(`/api/admin/contributor-agreements/pending${q}`);
         setRows(data.agreements || []);
       } else {
-        const data = await apiGet("/api/admin/contributor-agreements/approved-users");
+        const data = await apiGet(`/api/admin/contributor-agreements/approved-users${q}`);
         setRows(data.users || []);
       }
     } catch (e) {
@@ -43,7 +44,7 @@ export default function AdminAgreements() {
     }
   }
 
-  useEffect(() => { load(); }, [tab]);
+  useEffect(() => { load(search); }, [tab]);
 
   function viewPdf(userId) {
     window.open(`${BACKEND_URL}/api/admin/contributor-agreements/${userId}/download`, "_blank", "noopener");

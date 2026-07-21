@@ -40,6 +40,28 @@ export default function AdminNav() {
 
     const isActive = (path) => location.pathname === path;
 
+    const [openMenus, setOpenMenus] = useState({
+        calls: false,
+        users: false,
+        phrases: false
+    });
+
+    useEffect(() => {
+        const path = location.pathname;
+        setOpenMenus({
+            calls: ['/admin/calls', '/admin/topics', '/admin/qa', '/admin/languages', '/admin/call-apps'].includes(path),
+            users: ['/admin/users', '/admin/payouts', '/admin/pan-verification', '/admin/agreements'].some(p => path.startsWith(p)),
+            phrases: ['/admin/qaphrase', '/admin/phrases', '/admin/language-apps', '/admin/projects', '/admin/companies'].includes(path)
+        });
+    }, [location.pathname]);
+
+    const toggleMenu = (menu) => {
+        setOpenMenus(prev => ({
+            ...prev,
+            [menu]: !prev[menu]
+        }));
+    };
+
     const logout = () => {
         clearToken();
         navigate('/login');
@@ -102,103 +124,153 @@ export default function AdminNav() {
 
                     {/* Navigation Links */}
                     <nav className="flex-1 overflow-y-auto py-6 px-3">
-                        <div className="space-y-1">
-                            {/* Admin-only links */}
-                            {isAdmin && (<>
+                        <div className="space-y-2">
+                            {/* Dashboard */}
+                            {isAdmin && (
                                 <Link to="/admin/dashboard" onClick={() => setIsMobileMenuOpen(false)}
-                                    className={`flex items-center space-x-3 px-4 py-3 rounded-lg text-sm font-medium transition-all ${isActive('/admin/dashboard') ? 'bg-neutral-700 text-warning-400 shadow-sm' : 'text-neutral-300 hover:bg-neutral-700/50 hover:text-white'}`}>
+                                    className={`flex items-center space-x-3 px-4 py-3 rounded-lg text-sm font-semibold transition-all ${isActive('/admin/dashboard') ? 'bg-neutral-700 text-warning-400 shadow-sm' : 'text-neutral-300 hover:bg-neutral-700/50 hover:text-white'}`}>
                                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>
                                     <span>Dashboard</span>
                                 </Link>
-                                <Link to="/admin/calls" onClick={() => setIsMobileMenuOpen(false)}
-                                    className={`flex items-center space-x-3 px-4 py-3 rounded-lg text-sm font-medium transition-all ${isActive('/admin/calls') ? 'bg-neutral-700 text-warning-400 shadow-sm' : 'text-neutral-300 hover:bg-neutral-700/50 hover:text-white'}`}>
-                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" /></svg>
-                                    <span>Calls</span>
-                                </Link>
-                                <Link to="/admin/topics" onClick={() => setIsMobileMenuOpen(false)}
-                                    className={`flex items-center space-x-3 px-4 py-3 rounded-lg text-sm font-medium transition-all ${isActive('/admin/topics') ? 'bg-neutral-700 text-warning-400 shadow-sm' : 'text-neutral-300 hover:bg-neutral-700/50 hover:text-white'}`}>
-                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" /></svg>
-                                    <span>Topics</span>
-                                </Link>
-                                <Link to="/admin/users" onClick={() => setIsMobileMenuOpen(false)}
-                                    className={`flex items-center space-x-3 px-4 py-3 rounded-lg text-sm font-medium transition-all ${isActive('/admin/users') ? 'bg-neutral-700 text-warning-400 shadow-sm' : 'text-neutral-300 hover:bg-neutral-700/50 hover:text-white'}`}>
-                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
-                                    <span>Users</span>
-                                </Link>
-                                <Link to="/admin/payouts" onClick={() => setIsMobileMenuOpen(false)}
-                                    className={`flex items-center space-x-3 px-4 py-3 rounded-lg text-sm font-medium transition-all ${isActive('/admin/payouts') || location.pathname.startsWith('/admin/payouts/') ? 'bg-neutral-700 text-warning-400 shadow-sm' : 'text-neutral-300 hover:bg-neutral-700/50 hover:text-white'}`}>
-                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8c-3.314 0-6 1.343-6 3s2.686 3 6 3 6 1.343 6 3-2.686 3-6 3m0-12c3.314 0 6 1.343 6 3m-6-3V5m0 3v12m0 0v-3m0 3c-3.314 0-6-1.343-6-3" /></svg>
-                                    <span>Payouts</span>
-                                </Link>
-                                <Link to="/admin/agreements" onClick={() => setIsMobileMenuOpen(false)}
-                                    className={`flex items-center space-x-3 px-4 py-3 rounded-lg text-sm font-medium transition-all ${isActive('/admin/agreements') ? 'bg-neutral-700 text-warning-400 shadow-sm' : 'text-neutral-300 hover:bg-neutral-700/50 hover:text-white'}`}>
-                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-                                    <span>Agreements</span>
-                                </Link>
-                                <Link to="/admin/pan-verification" onClick={() => setIsMobileMenuOpen(false)}
-                                    className={`flex items-center space-x-3 px-4 py-3 rounded-lg text-sm font-medium transition-all ${isActive('/admin/pan-verification') ? 'bg-neutral-700 text-warning-400 shadow-sm' : 'text-neutral-300 hover:bg-neutral-700/50 hover:text-white'}`}>
-                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 6H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V8a2 2 0 00-2-2h-5m-4 0V4a2 2 0 114 0v2m-4 0a2 2 0 104 0m-5 8a2 2 0 100-4 2 2 0 000 4zm0 0c1.306 0 2.417.835 2.83 2M9 14a3.001 3.001 0 00-2.83 2M15 11h3m-3 4h2" /></svg>
-                                    <span>PAN Verification</span>
-                                </Link>
-                                <Link to="/admin/phrases" onClick={() => setIsMobileMenuOpen(false)}
-                                    className={`flex items-center space-x-3 px-4 py-3 rounded-lg text-sm font-medium transition-all ${isActive('/admin/phrases') ? 'bg-neutral-700 text-warning-400 shadow-sm' : 'text-neutral-300 hover:bg-neutral-700/50 hover:text-white'}`}>
-                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
-                                    <span>Phrase Workloads</span>
-                                </Link>
+                            )}
+
+                            {/* Calls Menu */}
+                            {(isAdmin || isQA) && (
+                                <div className="space-y-1">
+                                    <button 
+                                        onClick={() => toggleMenu('calls')}
+                                        className="w-full flex items-center justify-between px-4 py-3 rounded-lg text-sm font-semibold text-neutral-300 hover:bg-neutral-700/50 hover:text-white transition-all focus:outline-none"
+                                    >
+                                        <div className="flex items-center space-x-3">
+                                            <svg className="w-5 h-5 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" /></svg>
+                                            <span>Calls</span>
+                                        </div>
+                                        <svg className={`w-4 h-4 transform transition-transform duration-200 ${openMenus.calls ? 'rotate-180 text-warning-400' : 'text-neutral-500'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M19 9l-7 7-7-7"></path>
+                                        </svg>
+                                    </button>
+                                    {openMenus.calls && (
+                                        <div className="mt-1 ml-4 pl-3 border-l border-neutral-700 space-y-1">
+                                            {isAdmin && (
+                                                <Link to="/admin/calls" onClick={() => setIsMobileMenuOpen(false)}
+                                                    className={`flex items-center px-3 py-2 rounded-lg text-xs font-semibold transition-all ${isActive('/admin/calls') ? 'bg-neutral-700 text-warning-400' : 'text-neutral-400 hover:text-white'}`}>
+                                                    <span>Calls Completed</span>
+                                                </Link>
+                                            )}
+                                            {isAdmin && (
+                                                <Link to="/admin/topics" onClick={() => setIsMobileMenuOpen(false)}
+                                                    className={`flex items-center px-3 py-2 rounded-lg text-xs font-semibold transition-all ${isActive('/admin/topics') ? 'bg-neutral-700 text-warning-400' : 'text-neutral-400 hover:text-white'}`}>
+                                                    <span>Topic</span>
+                                                </Link>
+                                            )}
+                                            <Link to="/admin/qa" onClick={() => setIsMobileMenuOpen(false)}
+                                                className={`flex items-center px-3 py-2 rounded-lg text-xs font-semibold transition-all ${isActive('/admin/qa') ? 'bg-neutral-700 text-warning-400' : 'text-neutral-400 hover:text-white'}`}>
+                                                <span>Call QA Review</span>
+                                            </Link>
+                                            {isAdmin && (
+                                                <Link to="/admin/languages" onClick={() => setIsMobileMenuOpen(false)}
+                                                    className={`flex items-center px-3 py-2 rounded-lg text-xs font-semibold transition-all ${isActive('/admin/languages') ? 'bg-neutral-700 text-warning-400' : 'text-neutral-400 hover:text-white'}`}>
+                                                    <span>Call Languages</span>
+                                                </Link>
+                                            )}
+                                            <Link to="/admin/call-apps" onClick={() => setIsMobileMenuOpen(false)}
+                                                className={`flex items-center px-3 py-2 rounded-lg text-xs font-semibold transition-all ${isActive('/admin/call-apps') ? 'bg-neutral-700 text-warning-400' : 'text-neutral-400 hover:text-white'}`}>
+                                                <span>Call Apps</span>
+                                            </Link>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
+                            {/* User Management Menu */}
+                            {isAdmin && (
+                                <div className="space-y-1">
+                                    <button 
+                                        onClick={() => toggleMenu('users')}
+                                        className="w-full flex items-center justify-between px-4 py-3 rounded-lg text-sm font-semibold text-neutral-300 hover:bg-neutral-700/50 hover:text-white transition-all focus:outline-none"
+                                    >
+                                        <div className="flex items-center space-x-3">
+                                            <svg className="w-5 h-5 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
+                                            <span>User Management</span>
+                                        </div>
+                                        <svg className={`w-4 h-4 transform transition-transform duration-200 ${openMenus.users ? 'rotate-180 text-warning-400' : 'text-neutral-500'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M19 9l-7 7-7-7"></path>
+                                        </svg>
+                                    </button>
+                                    {openMenus.users && (
+                                        <div className="mt-1 ml-4 pl-3 border-l border-neutral-700 space-y-1 animate-fade-in">
+                                            <Link to="/admin/users" onClick={() => setIsMobileMenuOpen(false)}
+                                                className={`flex items-center px-3 py-2 rounded-lg text-xs font-semibold transition-all ${isActive('/admin/users') ? 'bg-neutral-700 text-warning-400' : 'text-neutral-400 hover:text-white'}`}>
+                                                <span>Users</span>
+                                            </Link>
+                                            <Link to="/admin/payouts" onClick={() => setIsMobileMenuOpen(false)}
+                                                className={`flex items-center px-3 py-2 rounded-lg text-xs font-semibold transition-all ${isActive('/admin/payouts') || location.pathname.startsWith('/admin/payouts/') ? 'bg-neutral-700 text-warning-400' : 'text-neutral-400 hover:text-white'}`}>
+                                                <span>Payouts</span>
+                                            </Link>
+                                            <Link to="/admin/pan-verification" onClick={() => setIsMobileMenuOpen(false)}
+                                                className={`flex items-center px-3 py-2 rounded-lg text-xs font-semibold transition-all ${isActive('/admin/pan-verification') ? 'bg-neutral-700 text-warning-400' : 'text-neutral-400 hover:text-white'}`}>
+                                                <span>PAN Verification</span>
+                                            </Link>
+                                            <Link to="/admin/agreements" onClick={() => setIsMobileMenuOpen(false)}
+                                                className={`flex items-center px-3 py-2 rounded-lg text-xs font-semibold transition-all ${isActive('/admin/agreements') ? 'bg-neutral-700 text-warning-400' : 'text-neutral-400 hover:text-white'}`}>
+                                                <span>Agreements</span>
+                                            </Link>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
+                            {/* Phrases Menu */}
+                            {(isAdmin || isQA) && (
+                                <div className="space-y-1">
+                                    <button 
+                                        onClick={() => toggleMenu('phrases')}
+                                        className="w-full flex items-center justify-between px-4 py-3 rounded-lg text-sm font-semibold text-neutral-300 hover:bg-neutral-700/50 hover:text-white transition-all focus:outline-none"
+                                    >
+                                        <div className="flex items-center space-x-3">
+                                            <svg className="w-5 h-5 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
+                                            <span>Phrases</span>
+                                        </div>
+                                        <svg className={`w-4 h-4 transform transition-transform duration-200 ${openMenus.phrases ? 'rotate-180 text-warning-400' : 'text-neutral-500'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M19 9l-7 7-7-7"></path>
+                                        </svg>
+                                    </button>
+                                    {openMenus.phrases && (
+                                        <div className="mt-1 ml-4 pl-3 border-l border-neutral-700 space-y-1 animate-fade-in">
+                                            <Link to="/admin/qaphrase" onClick={() => setIsMobileMenuOpen(false)}
+                                                className={`flex items-center px-3 py-2 rounded-lg text-xs font-semibold transition-all ${isActive('/admin/qaphrase') ? 'bg-neutral-700 text-warning-400' : 'text-neutral-400 hover:text-white'}`}>
+                                                <span>Phrases Review</span>
+                                            </Link>
+                                            {isAdmin && (
+                                                <Link to="/admin/phrases" onClick={() => setIsMobileMenuOpen(false)}
+                                                    className={`flex items-center px-3 py-2 rounded-lg text-xs font-semibold transition-all ${isActive('/admin/phrases') ? 'bg-neutral-700 text-warning-400' : 'text-neutral-400 hover:text-white'}`}>
+                                                    <span>Phrase Workloads</span>
+                                                </Link>
+                                            )}
+                                            <Link to="/admin/language-apps" onClick={() => setIsMobileMenuOpen(false)}
+                                                className={`flex items-center px-3 py-2 rounded-lg text-xs font-semibold transition-all ${isActive('/admin/language-apps') ? 'bg-neutral-700 text-warning-400' : 'text-neutral-400 hover:text-white'}`}>
+                                                <span>Phrase Apps</span>
+                                            </Link>
+
+                                            {isAdmin && (
+                                                <Link to="/admin/companies" onClick={() => setIsMobileMenuOpen(false)}
+                                                    className={`flex items-center px-3 py-2 rounded-lg text-xs font-semibold transition-all ${isActive('/admin/companies') ? 'bg-neutral-700 text-warning-400' : 'text-neutral-400 hover:text-white'}`}>
+                                                    <span>Company Phrase Configs</span>
+                                                </Link>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
+                            {/* Standalone S3 Media Library Link */}
+                            {isAdmin && (
                                 <Link to="/admin/media" onClick={() => setIsMobileMenuOpen(false)}
-                                    className={`flex items-center space-x-3 px-4 py-3 rounded-lg text-sm font-medium transition-all ${isActive('/admin/media') ? 'bg-neutral-700 text-warning-400 shadow-sm' : 'text-neutral-300 hover:bg-neutral-700/50 hover:text-white'}`}>
-                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" /></svg>
+                                    className={`flex items-center space-x-3 px-4 py-3 rounded-lg text-sm font-semibold transition-all ${isActive('/admin/media') ? 'bg-neutral-700 text-warning-400 shadow-sm' : 'text-neutral-300 hover:bg-neutral-700/50 hover:text-white'}`}>
+                                    <svg className="w-5 h-5 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" /></svg>
                                     <span>S3 Media Library</span>
                                 </Link>
-                                <Link to="/admin/projects" onClick={() => setIsMobileMenuOpen(false)}
-                                    className={`flex items-center space-x-3 px-4 py-3 rounded-lg text-sm font-medium transition-all ${isActive('/admin/projects') ? 'bg-neutral-700 text-warning-400 shadow-sm' : 'text-neutral-300 hover:bg-neutral-700/50 hover:text-white'}`}>
-                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" /></svg>
-                                    <span>Project Payrates</span>
-                                </Link>
-                                <Link to="/admin/companies" onClick={() => setIsMobileMenuOpen(false)}
-                                    className={`flex items-center space-x-3 px-4 py-3 rounded-lg text-sm font-medium transition-all ${isActive('/admin/companies') ? 'bg-neutral-700 text-warning-400 shadow-sm' : 'text-neutral-300 hover:bg-neutral-700/50 hover:text-white'}`}>
-                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" /></svg>
-                                    <span>Company Configs</span>
-                                </Link>
-                                {/* Divider before Q/A */}
-                                <div className="h-px bg-neutral-700 my-2" />
-                            </>)}
-
-                            {/* Q/A Review — visible to both admin and QA users */}
-                            {(isAdmin || isQA) && (<>
-                                <Link to="/admin/qa" onClick={() => setIsMobileMenuOpen(false)}
-                                    className={`flex items-center space-x-3 px-4 py-3 rounded-lg text-sm font-medium transition-all ${isActive('/admin/qa') ? 'bg-neutral-700 text-warning-400 shadow-sm' : 'text-neutral-300 hover:bg-neutral-700/50 hover:text-white'}`}>
-                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                                    <span>Q/A Review (Calls)</span>
-                                </Link>
-                                <Link to="/admin/qaphrase" onClick={() => setIsMobileMenuOpen(false)}
-                                    className={`flex items-center space-x-3 px-4 py-3 rounded-lg text-sm font-medium transition-all ${isActive('/admin/qaphrase') ? 'bg-neutral-700 text-warning-400 shadow-sm' : 'text-neutral-300 hover:bg-neutral-700/50 hover:text-white'}`}>
-                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                                    <span>Q/A Review (Phrases)</span>
-                                </Link>
-                            </>)}
-
-                            {/* Language links */}
-                            {(isAdmin || isQA) && (<>
-                                <div className="h-px bg-neutral-700 my-2" />
-                                {isAdmin && (
-                                    <Link to="/admin/languages" onClick={() => setIsMobileMenuOpen(false)}
-                                        className={`flex items-center space-x-3 px-4 py-3 rounded-lg text-sm font-medium transition-all ${isActive('/admin/languages') ? 'bg-neutral-700 text-warning-400 shadow-sm' : 'text-neutral-300 hover:bg-neutral-700/50 hover:text-white'}`}>
-                                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9h7M11 21l5-10 5 10M12.751 5C11.783 10.77 8.07 15.61 3 18.129" /></svg>
-                                        <span>Languages</span>
-                                    </Link>
-                                )}
-                                <Link to="/admin/call-apps" onClick={() => setIsMobileMenuOpen(false)}
-                                    className={`flex items-center space-x-3 px-4 py-3 rounded-lg text-sm font-medium transition-all ${isActive('/admin/call-apps') ? 'bg-neutral-700 text-warning-400 shadow-sm' : 'text-neutral-300 hover:bg-neutral-700/50 hover:text-white'}`}>
-                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" /></svg>
-                                    <span>Call Apps</span>
-                                </Link>
-                                <Link to="/admin/language-apps" onClick={() => setIsMobileMenuOpen(false)}
-                                    className={`flex items-center space-x-3 px-4 py-3 rounded-lg text-sm font-medium transition-all ${isActive('/admin/language-apps') ? 'bg-neutral-700 text-warning-400 shadow-sm' : 'text-neutral-300 hover:bg-neutral-700/50 hover:text-white'}`}>
-                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-                                    <span>Phrase Apps</span>
-                                </Link>
-                            </>)}
+                            )}
                         </div>
                     </nav>
 

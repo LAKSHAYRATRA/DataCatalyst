@@ -4,7 +4,7 @@ import { apiGet } from "../lib/api.js";
 import { getUserInfo } from "../lib/auth.js";
 import { motion } from "framer-motion";
 import { Link } from "react-router-dom";
-import { Phone, CheckCircle2, Clock, Activity, Mic2, AlertCircle, ChevronLeft, ChevronRight, MessageSquare } from "lucide-react";
+import { Phone, CheckCircle2, Clock, Activity, Mic2, AlertCircle, ChevronLeft, ChevronRight, MessageSquare, CreditCard } from "lucide-react";
 
 export default function Dashboard() {
     const [sessions, setSessions] = useState([]);
@@ -15,6 +15,7 @@ export default function Dashboard() {
     const [showPanReminder, setShowPanReminder] = useState(false);
     const [panRejected, setPanRejected] = useState(false);
     const [panRejectionReason, setPanRejectionReason] = useState(null);
+    const [showUpiReminder, setShowUpiReminder] = useState(false);
     const itemsPerPage = 8;
 
     const userInfo = getUserInfo();
@@ -38,6 +39,7 @@ export default function Dashboard() {
                 setShowPanReminder(!!kyc.needsPanReminder);
                 setPanRejected(kyc.verificationStatus === "rejected");
                 setPanRejectionReason(kyc.rejectionReason || null);
+                setShowUpiReminder(!!kyc.needsUpiReminder);
             } catch {
                 // silent — banner just stays hidden
             }
@@ -166,6 +168,32 @@ export default function Dashboard() {
                             className="btn btn-primary whitespace-nowrap"
                         >
                             {panRejected ? "Re-upload PAN" : "Upload PAN"}
+                        </Link>
+                    </motion.div>
+                )}
+
+                {showUpiReminder && (
+                    <motion.div
+                        initial={{ opacity: 0, y: -8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="mb-6 rounded-2xl border border-error-400/40 bg-error-500/10 dark:bg-error-500/10 p-5 md:p-6 flex flex-col md:flex-row md:items-center gap-4"
+                    >
+                        <div className="w-11 h-11 rounded-full bg-error-500/20 flex items-center justify-center flex-shrink-0">
+                            <CreditCard className="w-5 h-5 text-error-400" />
+                        </div>
+                        <div className="flex-1">
+                            <h3 className="text-lg font-semibold text-error-300">
+                                Add your UPI ID for Payouts
+                            </h3>
+                            <p className="text-sm text-neutral-300 mt-1">
+                                You have completed at least one call! Please add your UPI ID in the Earnings tab so we can process your payouts.
+                            </p>
+                        </div>
+                        <Link
+                            to="/payouts"
+                            className="btn btn-primary whitespace-nowrap"
+                        >
+                            Go to Earnings
                         </Link>
                     </motion.div>
                 )}

@@ -47,6 +47,7 @@ function getCallEntryForUser(call, userId) {
     endedAt: call.endedAt || null,
     language: call.language || null,
     topic: call.topicId?.title || "-",
+    subtopic: call.subtopicId?.title || "-",
     peer: peer ? {
       id: String(peer._id || peer),
       username: peer.username || `${peer.firstname || ""} ${peer.lastname || ""}`.trim() || "Unknown",
@@ -104,6 +105,7 @@ function createSummary(user, callEntries, phraseEntries, payments) {
       lastname: user.lastname,
       username: user.username,
       email: user.email,
+      upiId: user.upiId || null,
     },
     ...stats,
   };
@@ -113,7 +115,7 @@ async function loadUsers(userIds) {
   const filter = { isAdmin: false, isQA: false };
   if (userIds?.length) filter._id = { $in: userIds };
   return User.find(filter)
-    .select("firstname lastname username email isAdmin isQA")
+    .select("firstname lastname username email upiId isAdmin isQA")
     .sort({ firstname: 1, lastname: 1, email: 1 })
     .lean();
 }
@@ -127,6 +129,7 @@ async function loadCallsForUsers(userIds) {
     .populate("userA", "firstname lastname username email")
     .populate("userB", "firstname lastname username email")
     .populate("topicId", "title")
+    .populate("subtopicId", "title")
     .sort({ startedAt: -1 })
     .lean();
 }

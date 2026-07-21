@@ -24,7 +24,7 @@ export default function SystemCheck({ onComplete, noisy = false }) {
     };
 
     return (
-        <div className="min-h-screen bg-gradient-subtle flex flex-col pt-16 md:pt-0 md:pl-64">
+        <div className="min-h-screen bg-neutral-50 dark:bg-neutral-950 text-neutral-900 dark:text-neutral-50 flex flex-col pt-16 md:pt-0 md:pl-64 transition-colors duration-300">
             <div className="max-w-5xl mx-auto px-4 py-4 md:py-8 flex-1 flex items-center justify-center w-full">
                 {/* Start Screen */}
                 {currentStep === 'start' && (
@@ -41,9 +41,6 @@ export default function SystemCheck({ onComplete, noisy = false }) {
                         <div className="flex flex-col items-center justify-center px-4 gap-4">
                             <button onClick={startInternetCheck} className="btn btn-primary w-full sm:w-auto">
                                 Start System Check
-                            </button>
-                            <button onClick={onComplete} className="text-sm text-neutral-400 hover:underline">
-                                Skip (Testing Only)
                             </button>
                         </div>
                     </div>
