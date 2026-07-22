@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Navigate, Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import Login from "./pages/Login.jsx";
 import Signup from "./pages/Signup.jsx";
 import Call from "./pages/Call.jsx";
@@ -37,6 +37,9 @@ import { apiGet } from "./lib/api.js";
 import { SystemCheckProvider } from "./context/SystemCheckContext.jsx";
 import Earnings from "./pages/Earnings.jsx";
 import Community from "./pages/Community.jsx";
+import About from "./pages/About.jsx";
+import Terms from "./pages/Terms.jsx";
+import Privacy from "./pages/Privacy.jsx";
 import RainbowCursor from "./components/RainbowCursor.jsx";
 
 function needsAgreementSigning(userInfo) {
@@ -154,6 +157,11 @@ function RequireAdminOrQA({ children }) {
 
 export default function App() {
   const [loading, setLoading] = useState(true);
+  const { pathname } = useLocation();
+
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [pathname]);
 
   useEffect(() => {
     async function checkAuth() {
@@ -224,6 +232,9 @@ export default function App() {
         <Route path="/reset-password" element={<RedirectIfAuthenticated><ResetPassword /></RedirectIfAuthenticated>} />
         <Route path="/earnings" element={<Earnings />} />
         <Route path="/community" element={<Community />} />
+        <Route path="/about" element={<About />} />
+        <Route path="/terms" element={<Terms />} />
+        <Route path="/privacy" element={<Privacy />} />
         <Route path="/" element={<Landing />} />
         <Route path="/support" element={<Support />} />
         <Route path="*" element={<Navigate to="/" replace />} />

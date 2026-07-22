@@ -143,6 +143,27 @@ export async function uploadIntroRecording(req, res) {
 export async function getLanguages(req, res) {
   try {
     const langs = await Language.find({ enabled: true }).sort({ name: 1 }).lean();
+    
+    if (req.user) {
+      const userId = req.user._id;
+      const languagesWithProgress = await Promise.all(
+        langs.map(async (lang) => {
+          const sessions = await CallSession.find({
+            $or: [{ userA: userId }, { userB: userId }],
+            language: lang.code,
+            callActuallyStarted: true,
+          }).select("actualCallDuration");
+          
+          const totalSeconds = sessions.reduce((sum, s) => sum + (s.actualCallDuration || 0), 0);
+          return {
+            ...lang,
+            userDurationSeconds: totalSeconds,
+          };
+        })
+      );
+      return res.json({ languages: languagesWithProgress });
+    }
+
     res.json({ languages: langs });
   } catch (e) {
     res.status(500).json({ error: e.message });

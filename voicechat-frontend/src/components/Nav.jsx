@@ -101,66 +101,66 @@ export default function Nav({ disabled = false }) {
         top-0
       `}>
         {/* Logo & Brand */}
-        <div className="p-8 border-b border-neutral-100 dark:border-neutral-800">
-          <Link to="/" className="flex items-center space-x-3 group">
+        <div className="p-5 md:py-6 md:px-5 border-b border-neutral-100 dark:border-neutral-800">
+          <Link to="/" className="flex items-center space-x-2.5 group">
             <motion.div 
               whileHover={!disabled ? { scale: 1.05, rotate: -5 } : {}}
-              className="bg-primary-50 dark:bg-primary-900/30 p-2 rounded-xl"
+              className="bg-primary-50 dark:bg-primary-900/30 p-1.5 rounded-lg"
             >
-              <BrandLogo className="h-10 w-12 shrink-0 drop-shadow-md" />
+              <BrandLogo className="h-8 w-10 shrink-0 drop-shadow-md" />
             </motion.div>
-            <span className="text-3xl font-extrabold tracking-tight text-neutral-900 dark:text-white group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors">
+            <span className="text-2xl font-extrabold tracking-tight text-neutral-900 dark:text-white group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors">
               Voclara
             </span>
           </Link>
         </div>
 
         {/* Navigation Links */}
-        <div className="flex-1 px-4 py-8 space-y-2 overflow-y-auto custom-scrollbar">
-          <div className="text-xs font-bold text-neutral-400 dark:text-neutral-500 uppercase tracking-widest mb-6 px-4">Menu</div>
+        <div className="flex-1 px-4 py-4 md:py-5 space-y-1.5 overflow-y-auto custom-scrollbar">
+          <div className="text-xs font-bold text-neutral-400 dark:text-neutral-500 uppercase tracking-widest mb-3 px-4">Menu</div>
 
           <Link
             to="/dashboard"
             onClick={handleLinkClick}
-            className={`flex items-center space-x-4 px-4 py-4 rounded-2xl text-sm font-bold transition-all duration-300 group ${isActive("/dashboard")
+            className={`flex items-center space-x-3 px-4 py-2.5 rounded-xl text-sm font-bold transition-all duration-300 group ${isActive("/dashboard")
               ? "bg-neutral-100 dark:bg-neutral-800 text-neutral-900 dark:text-white shadow-inner"
               : "text-neutral-500 dark:text-neutral-400 hover:bg-neutral-50 dark:hover:bg-neutral-800/50 hover:text-neutral-900 dark:hover:text-neutral-200"
               } ${disabled ? 'opacity-50 cursor-not-allowed pointer-events-none' : ''}`}
           >
-            <LayoutDashboard className={`w-5 h-5 ${isActive("/dashboard") ? "text-primary-600 dark:text-primary-400" : "group-hover:text-primary-500 transition-colors"}`} />
+            <LayoutDashboard className={`w-4 h-4 ${isActive("/dashboard") ? "text-primary-600 dark:text-primary-400" : "group-hover:text-primary-500 transition-colors"}`} />
             <span>Dashboard</span>
           </Link>
 
           <Link
             to="/language-apply"
             onClick={handleLinkClick}
-            className={`flex items-center space-x-4 px-4 py-4 rounded-2xl text-sm font-bold transition-all duration-300 group ${isActive("/language-apply")
+            className={`flex items-center space-x-3 px-4 py-2.5 rounded-xl text-sm font-bold transition-all duration-300 group ${isActive("/language-apply")
               ? "bg-neutral-100 dark:bg-neutral-800 text-neutral-900 dark:text-white shadow-inner"
               : "text-neutral-500 dark:text-neutral-400 hover:bg-neutral-50 dark:hover:bg-neutral-800/50 hover:text-neutral-900 dark:hover:text-neutral-200"
               } ${disabled ? 'opacity-50 cursor-not-allowed pointer-events-none' : ''}`}
           >
-            <FolderGit2 className={`w-5 h-5 ${isActive("/language-apply") ? "text-primary-600 dark:text-primary-400" : "group-hover:text-primary-500 transition-colors"}`} />
+            <FolderGit2 className={`w-4 h-4 ${isActive("/language-apply") ? "text-primary-600 dark:text-primary-400" : "group-hover:text-primary-500 transition-colors"}`} />
             <span>Project Apply</span>
           </Link>
 
           <Link
             to="/call"
             onClick={handleLinkClick}
-            className={`flex items-center space-x-4 px-4 py-4 rounded-2xl text-sm font-bold transition-all duration-300 group ${isActive("/call")
+            className={`flex items-center space-x-3 px-4 py-2.5 rounded-xl text-sm font-bold transition-all duration-300 group ${isActive("/call")
               ? "bg-neutral-100 dark:bg-neutral-800 text-neutral-900 dark:text-white shadow-inner"
               : "text-neutral-500 dark:text-neutral-400 hover:bg-neutral-50 dark:hover:bg-neutral-800/50 hover:text-neutral-900 dark:hover:text-neutral-200"
               } ${disabled ? 'opacity-50 cursor-not-allowed pointer-events-none' : ''}`}
           >
-            <PhoneCall className={`w-5 h-5 ${isActive("/call") ? "text-primary-600 dark:text-primary-400" : "group-hover:text-primary-500 transition-colors"}`} />
+            <PhoneCall className={`w-4 h-4 ${isActive("/call") ? "text-primary-600 dark:text-primary-400" : "group-hover:text-primary-500 transition-colors"}`} />
             <span>Active Call</span>
-            {disabled && <span className="ml-auto text-[10px] bg-error-100 dark:bg-error-900/50 text-error-600 dark:text-error-400 px-2 py-1 rounded-full uppercase tracking-wider animate-pulse">In Call</span>}
+            {disabled && <span className="ml-auto text-[10px] bg-error-100 dark:bg-error-900/50 text-error-600 dark:text-error-400 px-2 py-0.5 rounded-full uppercase tracking-wider animate-pulse">In Call</span>}
           </Link>
 
           {/* Premium High-Priority Link for Phrase Studio */}
           <Link
             to="/phrases"
             onClick={handleLinkClick}
-            className={`relative overflow-hidden flex items-center space-x-4 px-4 py-4 rounded-2xl text-sm font-bold transition-all duration-300 group ${isActive("/phrases")
+            className={`relative overflow-hidden flex items-center space-x-3 px-4 py-2.5 rounded-xl text-sm font-bold transition-all duration-300 group ${isActive("/phrases")
               ? "bg-gradient-to-r from-primary-600 to-indigo-600 text-white shadow-lg shadow-primary-500/30"
               : "bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-300 hover:bg-primary-100 dark:hover:bg-primary-900/40 border border-primary-100 dark:border-primary-800/50"
               } ${disabled ? 'opacity-50 cursor-not-allowed pointer-events-none' : ''}`}
@@ -169,7 +169,7 @@ export default function Nav({ disabled = false }) {
               animate={isActive("/phrases") ? {} : { rotate: [0, 5, -5, 0] }}
               transition={{ repeat: Infinity, duration: 2, ease: "easeInOut" }}
             >
-              <Mic2 className={`w-5 h-5 ${isActive("/phrases") ? "text-white" : "text-primary-600 dark:text-primary-400"}`} />
+              <Mic2 className={`w-4 h-4 ${isActive("/phrases") ? "text-white" : "text-primary-600 dark:text-primary-400"}`} />
             </motion.div>
             <span className="flex-1">Phrase Studio</span>
             {!isActive("/phrases") && (
@@ -185,37 +185,51 @@ export default function Nav({ disabled = false }) {
             )}
           </Link>
 
-          <div className="my-6 !mt-8">
+          <div className="my-3.5">
              <div className="h-px bg-neutral-100 dark:bg-neutral-800 w-full" />
           </div>
 
           <Link
             to="/payouts"
             onClick={handleLinkClick}
-            className={`flex items-center space-x-4 px-4 py-4 rounded-2xl text-sm font-bold transition-all duration-300 group ${isActive("/payouts")
+            className={`flex items-center space-x-3 px-4 py-2.5 rounded-xl text-sm font-bold transition-all duration-300 group ${isActive("/payouts")
               ? "bg-neutral-100 dark:bg-neutral-800 text-neutral-900 dark:text-white shadow-inner"
               : "text-neutral-500 dark:text-neutral-400 hover:bg-neutral-50 dark:hover:bg-neutral-800/50 hover:text-neutral-900 dark:hover:text-neutral-200"
               } ${disabled ? 'opacity-50 cursor-not-allowed pointer-events-none' : ''}`}
           >
-            <Wallet className={`w-5 h-5 ${isActive("/payouts") ? "text-success-600 dark:text-success-400" : "group-hover:text-success-500 transition-colors"}`} />
+            <Wallet className={`w-4 h-4 ${isActive("/payouts") ? "text-success-600 dark:text-success-400" : "group-hover:text-success-500 transition-colors"}`} />
             <span>Earnings</span>
           </Link>
+
+          <div className="pt-2 px-1">
+            <a
+              href="https://discord.gg/TVuj7Brytq"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="w-full flex items-center justify-center gap-2.5 bg-[#5865F2] hover:bg-[#4752C4] text-white px-4 py-2.5 rounded-xl font-bold text-sm shadow-md shadow-indigo-500/10 hover:shadow-indigo-500/20 transition-all cursor-pointer"
+            >
+              <svg className="w-4 h-4 fill-current text-white shrink-0" viewBox="0 0 127.14 116.29" xmlns="http://www.w3.org/2000/svg">
+                <path d="M107.7,8.07A105.15,105.15,0,0,0,77.26,0a77.19,77.19,0,0,0-3.3,6.83A96.67,96.67,0,0,0,52.8,6.83,77.19,77.19,0,0,0,49.5,0,105.15,105.15,0,0,0,19.06,8.07C-1.87,39.38-7.51,69.91,5.2,100a105.77,105.77,0,0,0,32,16.29,78.69,78.69,0,0,0,6.72-11A67.36,67.36,0,0,1,33.12,99.8c.84-.62,1.65-1.28,2.44-2a68.64,68.64,0,0,0,82.72,0c.79.67,1.6,1.33,2.44,2a67.36,67.36,0,0,1-10.84,5.49,78.69,78.69,0,0,0,6.72,11,105.77,105.77,0,0,0,32-16.29C135.82,69.91,129.74,39.38,107.7,8.07ZM42.45,65.69C36.18,65.69,31,60,31,53S36.18,40.36,42.45,40.36,53.87,46,53.87,53,48.72,65.69,42.45,65.69Zm42.24,0C78.41,65.69,73.24,60,73.24,53S78.41,40.36,84.69,40.36,96.11,46,96.11,53,91,65.69,84.69,65.69Z" />
+              </svg>
+              <span>Join our Discord</span>
+            </a>
+          </div>
         </div>
 
         {/* User Info & Logout */}
-        <div className="p-6 border-t border-neutral-100 dark:border-neutral-800 bg-neutral-50/50 dark:bg-neutral-900/50 backdrop-blur-md">
-          <div className="mb-4">
-            <div className="text-xs font-bold text-neutral-400 dark:text-neutral-500 uppercase tracking-widest mb-3 px-2">Account</div>
+        <div className="p-4 md:p-5 border-t border-neutral-100 dark:border-neutral-800 bg-neutral-50/50 dark:bg-neutral-900/50 backdrop-blur-md">
+          <div className="mb-3">
+            <div className="text-xs font-bold text-neutral-400 dark:text-neutral-500 uppercase tracking-widest mb-2 px-2">Account</div>
             {userInfo && (
-              <div className="flex items-center space-x-3 px-4 py-3 rounded-2xl bg-white dark:bg-neutral-800 shadow-sm border border-neutral-100 dark:border-neutral-700 mb-4 transition-colors">
-                <div className="w-10 h-10 bg-gradient-primary rounded-full flex items-center justify-center text-white text-sm font-bold shadow-inner shrink-0">
+              <div className="flex items-center space-x-3 px-3 py-2 rounded-xl bg-white dark:bg-neutral-800 shadow-sm border border-neutral-100 dark:border-neutral-700 mb-3 transition-colors">
+                <div className="w-8 h-8 bg-gradient-primary rounded-full flex items-center justify-center text-white text-xs font-bold shadow-inner shrink-0">
                   {userInfo.firstname?.[0]}{userInfo.lastname?.[0]}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="text-sm font-bold text-neutral-900 dark:text-white truncate">
+                  <div className="text-xs font-bold text-neutral-900 dark:text-white truncate">
                     {userInfo.firstname} {userInfo.lastname}
                   </div>
-                  <div className="text-xs text-neutral-500 dark:text-neutral-400 font-medium truncate mt-0.5" title={userInfo.email}>
+                  <div className="text-[10px] text-neutral-500 dark:text-neutral-400 font-medium truncate mt-0.5" title={userInfo.email}>
                     {userInfo.email}
                   </div>
                 </div>
@@ -234,7 +248,7 @@ export default function Nav({ disabled = false }) {
               navigate("/login");
             }}
             disabled={disabled}
-            className={`w-full flex items-center justify-center space-x-2 px-4 py-3.5 rounded-xl border-2 text-sm font-bold transition-all duration-300 group ${disabled
+            className={`w-full flex items-center justify-center space-x-2 px-4 py-2.5 rounded-xl border-2 text-sm font-bold transition-all duration-300 group ${disabled
               ? 'opacity-50 cursor-not-allowed bg-neutral-100 dark:bg-neutral-800 border-neutral-200 dark:border-neutral-700 text-neutral-400'
               : 'bg-transparent border-error-100 dark:border-error-900/50 text-error-600 dark:text-error-400 hover:bg-error-50 dark:hover:bg-error-900/20 hover:border-error-200 dark:hover:border-error-800'
               }`}

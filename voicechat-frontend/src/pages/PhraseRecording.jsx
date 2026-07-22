@@ -309,7 +309,7 @@ export default function PhraseRecording() {
         if (check.ok) {
           const { status } = await check.json();
           if (status !== 'recorded' && status !== 'approved') {
-            alert('Upload failed. Please try again.');
+            alert(err.message || 'Upload failed. Please try again.');
             return;
           }
         }

@@ -161,25 +161,30 @@ export async function getAvailablePhrase(req, res) {
     const companies = await Company.find({}).lean();
     const companyLimits = Object.fromEntries(companies.map(c => [c.name, (c.maxContributionMinutes || 195) * 60]));
 
-    // Check Company-specific contribution limit & Test Phrase status
+    // Check Company-specific contribution limit & Test Phrase status (language-wise)
     const companyStats = await Phrase.aggregate([
       { $match: { contributorId: user._id, status: { $in: ["recorded", "approved"] }, companyId: { $ne: null } } },
       { $group: { 
-          _id: "$companyId", 
+          _id: { companyId: "$companyId", language: { $toLower: "$language" } }, 
           totalDuration: { $sum: "$duration" },
           approvedCount: { $sum: { $cond: [{ $eq: ["$status", "approved"] }, 1, 0] } },
           recordedCount: { $sum: { $cond: [{ $eq: ["$status", "recorded"] }, 1, 0] } }
       }}
     ]);
 
+    const reqLang = (language || user.regionalLanguage || "english").trim().toLowerCase();
     const maxedOutCompanies = [];
     const waitingTestCompanies = [];
 
     for (const c of companyStats) {
-        // Find company limit, default to 11700 (3h 15m) if company not explicitly in DB
-        const limitSecs = companyLimits[c._id] || 11700;
-        if (c.totalDuration >= limitSecs) maxedOutCompanies.push(c._id);
-        if (c.approvedCount === 0 && c.recordedCount > 0) waitingTestCompanies.push(c._id);
+        const compId = c._id.companyId;
+        const lang = c._id.language;
+        if (lang === reqLang) {
+            // Find company limit, default to 11700 (3h 15m) if company not explicitly in DB
+            const limitSecs = companyLimits[compId] || 11700;
+            if (c.totalDuration >= limitSecs) maxedOutCompanies.push(compId);
+            if (c.approvedCount === 0 && c.recordedCount > 0) waitingTestCompanies.push(compId);
+        }
     }
 
     const blockedCompanies = [...new Set([...maxedOutCompanies, ...waitingTestCompanies])];
@@ -334,11 +339,18 @@ export async function submitPhraseRecording(req, res) {
       }
     }
 
-    // Enforce Project-specific limits and detect Test Phrases
+    // Enforce Project-specific limits and detect Test Phrases (language-wise)
     let isTestPhrase = false;
     if (phrase.projectName) {
       const projectStats = await Phrase.aggregate([
-        { $match: { contributorId: req.user._id, projectName: phrase.projectName, status: { $in: ["recorded", "approved"] } } },
+        { 
+          $match: { 
+            contributorId: req.user._id, 
+            projectName: phrase.projectName, 
+            language: { $regex: new RegExp(`^${phrase.language}$`, "i") },
+            status: { $in: ["recorded", "approved"] } 
+          } 
+        },
         { $group: { 
             _id: null, 
             totalDuration: { $sum: "$duration" },
@@ -350,7 +362,7 @@ export async function submitPhraseRecording(req, res) {
 
       if (totalSecs >= 10800) { // 3 hours = 10800 seconds
         fs.unlinkSync(req.file.path);
-        return res.status(400).json({ error: `You have reached the 3-hour maximum contribution limit for project: ${phrase.projectName}.` });
+        return res.status(400).json({ error: `You have reached the 3-hour maximum contribution limit for project: ${phrase.projectName} in ${phrase.language}.` });
       }
 
       if (approvedCount === 0) {

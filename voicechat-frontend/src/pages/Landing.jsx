@@ -3,7 +3,6 @@ import { Link } from 'react-router-dom';
 import { getUserInfo, clearToken } from '../lib/auth.js';
 import { motion } from 'framer-motion';
 import { Mic, Globe2, Ear, Coins, PlayCircle, TrendingUp, Sparkles, ChevronDown, LayoutDashboard, LogOut, ChevronRight } from 'lucide-react';
-
 export default function Landing() {
   const [userInfo, setUserInfo] = useState(null);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
@@ -63,6 +62,10 @@ export default function Landing() {
             </Link>
             <Link to="/community" className="text-sm font-bold text-neutral-600 dark:text-neutral-400 hover:text-primary-600 dark:hover:text-white transition-colors uppercase tracking-widest relative group">
               Community
+              <span className="absolute -bottom-2 left-0 w-0 h-0.5 bg-primary-500 group-hover:w-full transition-all duration-300"></span>
+            </Link>
+            <Link to="/about" className="text-sm font-bold text-neutral-600 dark:text-neutral-400 hover:text-primary-600 dark:hover:text-white transition-colors uppercase tracking-widest relative group">
+              About
               <span className="absolute -bottom-2 left-0 w-0 h-0.5 bg-primary-500 group-hover:w-full transition-all duration-300"></span>
             </Link>
           </nav>
@@ -166,18 +169,7 @@ export default function Landing() {
                   </a>
                 </motion.div>
 
-                <motion.div variants={fadeIn} className="mt-12 flex items-center gap-4">
-                   <div className="flex -space-x-4">
-                      {[1, 2, 3, 4].map(i => (
-                        <div key={i} className={`w-12 h-12 rounded-full border-2 border-white dark:border-neutral-950 bg-gradient-to-br from-neutral-200 to-neutral-300 dark:from-neutral-700 dark:to-neutral-800 flex items-center justify-center text-xs font-bold shadow-sm z-[${10-i}]`}>
-                           U{i}
-                        </div>
-                      ))}
-                   </div>
-                   <div className="text-sm font-bold text-neutral-600 dark:text-neutral-400">
-                      Join <span className="text-neutral-900 dark:text-white">40,000+</span> voice contributors globally.
-                   </div>
-                </motion.div>
+
               </motion.div>
 
               {/* Right Visual Jaw Dropping 3D Element */}
@@ -205,9 +197,9 @@ export default function Landing() {
                            </div>
                         </div>
                      </div>
-                     <div className="bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 px-4 py-2 rounded-xl font-black font-mono text-xl shadow-lg">
-                        $28<span className="text-sm opacity-60">/hr</span>
-                     </div>
+                      <div className="bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 px-4 py-2 rounded-xl font-extrabold text-sm shadow-lg uppercase tracking-wider">
+                         Verified
+                      </div>
                   </div>
 
                   <div className="bg-neutral-100/50 dark:bg-neutral-950/50 rounded-2xl p-6 border border-neutral-200/50 dark:border-neutral-800/50 backdrop-blur-sm">
@@ -234,8 +226,8 @@ export default function Landing() {
                       <Coins className="w-6 h-6 text-success-600 dark:text-success-400" />
                    </div>
                    <div>
-                      <div className="text-xs font-bold text-neutral-400 uppercase tracking-widest">Payout Ready</div>
-                      <div className="text-xl font-black text-neutral-900 dark:text-white">$412.50</div>
+                      <div className="text-xs font-bold text-neutral-400 uppercase tracking-widest">Monthly Earnings</div>
+                      <div className="text-xl font-black text-neutral-900 dark:text-white">$18.50</div>
                    </div>
                 </motion.div>
 
@@ -312,9 +304,9 @@ export default function Landing() {
                           High Demand
                        </span>
                     </div>
-                    <div className="text-5xl mb-6">🏜️</div>
-                    <h4 className="text-2xl font-black text-neutral-900 dark:text-white mb-3">Marwadi Calls</h4>
-                    <p className="text-neutral-500 dark:text-neutral-400">Engage in structured voice-only calls in native Marwadi. Subject matter experts preferred.</p>
+                    <div className="text-5xl mb-6">🇮🇳</div>
+                    <h4 className="text-2xl font-black text-neutral-900 dark:text-white mb-3">Hindi Conversational</h4>
+                    <p className="text-neutral-500 dark:text-neutral-400">Engage in structured voice-only calls in native Hindi. Subject matter experts preferred.</p>
                  </div>
                  <Link to="/signup" className="mt-8 font-black text-primary-600 dark:text-primary-400 flex items-center group-hover:gap-2 transition-all">
                      Apply Now <ChevronRight className="w-5 h-5 opacity-0 -ml-5 group-hover:opacity-100 group-hover:ml-0 transition-all" />
@@ -336,9 +328,9 @@ export default function Landing() {
                           Consistent
                        </span>
                     </div>
-                    <div className="text-5xl mb-6">🇮🇳</div>
-                    <h4 className="text-2xl font-black text-neutral-900 dark:text-white mb-3">Hindi Chat</h4>
-                    <p className="text-neutral-500 dark:text-neutral-400">Record natural 15-minute voice-only conversations about everyday topics in native Hindi.</p>
+                    <div className="text-5xl mb-6">🇬🇧</div>
+                    <h4 className="text-2xl font-black text-neutral-900 dark:text-white mb-3">English Conversational</h4>
+                    <p className="text-neutral-500 dark:text-neutral-400">Record natural 15-minute voice-only conversations about everyday topics in native English.</p>
                  </div>
                  <Link to="/signup" className="mt-8 font-black text-primary-600 dark:text-primary-400 flex items-center group-hover:gap-2 transition-all">
                      Apply Now <ChevronRight className="w-5 h-5 opacity-0 -ml-5 group-hover:opacity-100 group-hover:ml-0 transition-all" />
@@ -369,7 +361,7 @@ export default function Landing() {
                   {[
                      { num: 1, title: 'Get Matched', desc: 'Sign in to the dashboard and our system instantly pairs you with a partner who speaks your language natively, or assigns you phrase scripts.' },
                      { num: 2, title: 'Hit Record', desc: 'Join the browser-based studio. Read the topic prompt and just have a natural, casual voice call or read aloud.' },
-                     { num: 3, title: 'Cash Out', desc: 'Once the recording finishes and is verified for clarity, your hourly rate is instantly logged to your balance for withdrawal.' }
+                     { num: 3, title: 'Monthly Payout', desc: 'Once the recording finishes and is verified for clarity, your approved earnings are added to your balance for payment on the 21st of every month.' }
                   ].map((step, i) => (
                      <div key={i} className="flex gap-6 group">
                         <div className="w-16 h-16 rounded-2xl bg-neutral-900 border border-neutral-700/50 flex items-center justify-center font-black text-2xl text-white shrink-0 group-hover:border-primary-500 group-hover:bg-primary-900/20 group-hover:text-primary-400 transition-all shadow-xl">
@@ -436,9 +428,9 @@ export default function Landing() {
               </span>
             </div>
             <div className="flex flex-wrap justify-center gap-8">
-              <a href="#" className="font-bold text-neutral-500 hover:text-neutral-900 dark:hover:text-white transition-colors uppercase tracking-widest text-sm">About</a>
-              <a href="#" className="font-bold text-neutral-500 hover:text-neutral-900 dark:hover:text-white transition-colors uppercase tracking-widest text-sm">Terms</a>
-              <a href="#" className="font-bold text-neutral-500 hover:text-neutral-900 dark:hover:text-white transition-colors uppercase tracking-widest text-sm">Privacy</a>
+              <Link to="/about" className="font-bold text-neutral-500 hover:text-neutral-900 dark:hover:text-white transition-colors uppercase tracking-widest text-sm">About</Link>
+              <Link to="/terms" className="font-bold text-neutral-500 hover:text-neutral-900 dark:hover:text-white transition-colors uppercase tracking-widest text-sm">Terms</Link>
+              <Link to="/privacy" className="font-bold text-neutral-500 hover:text-neutral-900 dark:hover:text-white transition-colors uppercase tracking-widest text-sm">Privacy</Link>
               <Link to="/support" className="font-bold text-neutral-500 hover:text-neutral-900 dark:hover:text-white transition-colors uppercase tracking-widest text-sm">Support</Link>
             </div>
           </div>

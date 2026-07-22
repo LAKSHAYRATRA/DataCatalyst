@@ -863,6 +863,10 @@ export default function Call() {
       } else if (message === "daily_limit_exceeded") {
         const limitText = limit !== undefined ? limit : callLimit;
         alert(`Daily call limit exceeded! You have reached your daily limit of ${limitText} calls. Please try again tomorrow.`);
+      } else if (message === "language_limit_reached") {
+        const langName = language || selectedLanguage || "this language";
+        alert(`You have reached the maximum contribution limit for "${langName}". Please select another language.`);
+        setShowLanguageSelection(true);
       } else if (message === "language_not_approved") {
         const langName = language || selectedLanguage || "this language";
         if (confirm(`You are not approved to call in "${langName}" yet.\n\nWould you like to apply now?`)) {

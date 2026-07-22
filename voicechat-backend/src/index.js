@@ -51,6 +51,7 @@ import { requireSignedAgreement } from "./middleware/requireSignedAgreement.js";
 import { User } from "./models/User.js";
 import { CallSession } from "./models/CallSession.js";
 import { Subtopic } from "./models/Subtopic.js";
+import { Language } from "./models/Language.js";
 
 // ─── Controllers ──────────────────────────────────────────────────────────────
 import {
@@ -295,6 +296,7 @@ app.post("/api/user/contributor-agreement/sign", requireAuth(JWT_SECRET), signCo
 app.get("/api/user/contributor-agreement/download", requireAuth(JWT_SECRET), downloadContributorAgreement);
 
 // Languages
+app.get("/api/public/languages", getLanguages);
 app.get("/api/languages", requireAuth(JWT_SECRET), getLanguages);
 app.get(
   "/api/language-applications/my",
@@ -832,6 +834,33 @@ io.on("connection", (socket) => {
       }
     } catch (error) {
       console.error("Error checking language approval:", error);
+      socket.emit("error_message", { message: "server_error" });
+      return;
+    }
+
+    // Verify contribution duration limits for this language
+    try {
+      const languageDoc = await Language.findOne({ code: userLanguage });
+      if (languageDoc && languageDoc.maxHoursPerContributor !== undefined && languageDoc.maxHoursPerContributor !== -1) {
+        const sessions = await CallSession.find({
+          $or: [{ userA: socket.data.userId }, { userB: socket.data.userId }],
+          language: userLanguage,
+          callActuallyStarted: true,
+        }).select("actualCallDuration");
+        
+        const totalSeconds = sessions.reduce((sum, s) => sum + (s.actualCallDuration || 0), 0);
+        const limitSeconds = languageDoc.maxHoursPerContributor * 3600;
+        
+        if (totalSeconds >= limitSeconds) {
+          socket.emit("error_message", {
+            message: "language_limit_reached",
+            language: languageDoc.name,
+          });
+          return;
+        }
+      }
+    } catch (error) {
+      console.error("Error checking language contribution limit:", error);
       socket.emit("error_message", { message: "server_error" });
       return;
     }

@@ -373,9 +373,13 @@ export default function LanguageApply() {
                                         
                                         {(() => {
                                             const currentSt = getStatus(selectedCompany, selectedLanguage, applicationType);
-                                            const isApplied = currentSt === "pending" || currentSt === "approved";
+                                            const langInfo = applicationType === 'call' ? globalLanguages.find(l => l.code === selectedLanguage) : null;
+                                            const isLangLimitReached = langInfo && langInfo.maxHoursPerContributor !== undefined && langInfo.maxHoursPerContributor !== -1 && (langInfo.userDurationSeconds || 0) >= langInfo.maxHoursPerContributor * 3600;
+                                            
+                                            const isApplied = currentSt === "pending" || currentSt === "approved" || isLangLimitReached;
                                             let buttonLabel = "Apply Now";
-                                            if (currentSt === "pending") buttonLabel = "Already Applied (Pending Review)";
+                                            if (isLangLimitReached) buttonLabel = "Language Limit Reached";
+                                            else if (currentSt === "pending") buttonLabel = "Already Applied (Pending Review)";
                                             else if (currentSt === "approved") buttonLabel = "Already Approved";
                                             else if (currentSt === "rejected") buttonLabel = "Re-apply Now";
 

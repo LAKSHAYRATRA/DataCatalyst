@@ -7,6 +7,7 @@ const languageSchema = new mongoose.Schema(
         hourlyPayout: { type: Number, required: true, min: 0 },
         sampleRate: { type: Number, default: 48000 },
         enabled: { type: Boolean, default: true },
+        maxHoursPerContributor: { type: Number, default: -1 }, // -1 means unlimited
     },
     { timestamps: true }
 );

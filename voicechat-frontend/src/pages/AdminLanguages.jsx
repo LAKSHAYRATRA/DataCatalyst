@@ -32,6 +32,7 @@ export default function AdminLanguages() {
     const [modalName, setModalName] = useState("");
     const [modalHourlyPayout, setModalHourlyPayout] = useState("");
     const [modalSampleRate, setModalSampleRate] = useState("48000");
+    const [modalMaxHoursPerContributor, setModalMaxHoursPerContributor] = useState("");
     const [modalSaving, setModalSaving] = useState(false);
     const [modalError, setModalError] = useState("");
 
@@ -54,6 +55,7 @@ export default function AdminLanguages() {
         setModalName("");
         setModalHourlyPayout("");
         setModalSampleRate("48000");
+        setModalMaxHoursPerContributor("");
         setModalError("");
         setShowModal(true);
     }
@@ -63,6 +65,11 @@ export default function AdminLanguages() {
         setModalName(language.name || "");
         setModalHourlyPayout(String(language.hourlyPayout ?? ""));
         setModalSampleRate(String(language.sampleRate ?? 48000));
+        setModalMaxHoursPerContributor(
+            language.maxHoursPerContributor !== undefined && language.maxHoursPerContributor !== -1
+                ? String(language.maxHoursPerContributor)
+                : ""
+        );
         setModalError("");
         setShowModal(true);
     }
@@ -73,6 +80,7 @@ export default function AdminLanguages() {
         setModalName("");
         setModalHourlyPayout("");
         setModalSampleRate("48000");
+        setModalMaxHoursPerContributor("");
         setModalError("");
     }
 
@@ -81,9 +89,15 @@ export default function AdminLanguages() {
         const name = modalName.trim();
         const hourlyPayout = Number(modalHourlyPayout);
         const sampleRate = Number(modalSampleRate);
+        const maxHours = modalMaxHoursPerContributor.trim() === "" ? -1 : Number(modalMaxHoursPerContributor);
+
         if (!name) return setModalError("Language name is required.");
         if (!Number.isFinite(hourlyPayout) || hourlyPayout < 0) return setModalError("A valid hourly payout is required.");
         if (!Number.isFinite(sampleRate) || sampleRate <= 0) return setModalError("A valid sample rate is required.");
+        if (modalMaxHoursPerContributor.trim() !== "" && (!Number.isFinite(maxHours) || maxHours < 0)) {
+            return setModalError("A valid max contribution limit (hours) is required.");
+        }
+
         const code = editingLanguage ? editingLanguage.code : toSlug(name);
         if (!editingLanguage && !code) return setModalError("Name must contain at least one letter or number.");
 
@@ -91,10 +105,10 @@ export default function AdminLanguages() {
         setModalError("");
         try {
             if (editingLanguage) {
-                await patch(`/api/admin/languages/${editingLanguage._id}`, { name, hourlyPayout, sampleRate });
+                await patch(`/api/admin/languages/${editingLanguage._id}`, { name, hourlyPayout, sampleRate, maxHoursPerContributor: maxHours });
                 setSuccess(`"${name}" updated successfully.`);
             } else {
-                await postJson("/api/admin/languages", { name, code, hourlyPayout, sampleRate });
+                await postJson("/api/admin/languages", { name, code, hourlyPayout, sampleRate, maxHoursPerContributor: maxHours });
                 setSuccess(`"${name}" added successfully.`);
             }
             closeModal();
@@ -159,7 +173,7 @@ export default function AdminLanguages() {
                             <table className="w-full text-sm">
                                 <thead className="bg-neutral-700">
                                     <tr>
-                                        {["Name", "Hourly Payout", "Sample Rate", "Status", "Actions"].map(h => (
+                                        {["Name", "Hourly Payout", "Sample Rate", "Max Limit", "Status", "Actions"].map(h => (
                                             <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-neutral-300 uppercase tracking-wider whitespace-nowrap">{h}</th>
                                         ))}
                                     </tr>
@@ -170,6 +184,12 @@ export default function AdminLanguages() {
                                             <td className="px-4 py-3 text-white font-medium">{lang.name}</td>
                                             <td className="px-4 py-3 text-neutral-300 font-medium">${lang.hourlyPayout ?? 0}/hr</td>
                                             <td className="px-4 py-3 text-neutral-300 font-medium">{lang.sampleRate ?? 48000} Hz</td>
+                                            <td className="px-4 py-3 text-neutral-300 font-medium">
+                                                {lang.maxHoursPerContributor === undefined || lang.maxHoursPerContributor === -1
+                                                    ? "Unlimited"
+                                                    : `${lang.maxHoursPerContributor} hrs`
+                                                }
+                                            </td>
                                             <td className="px-4 py-3">
                                                 {lang.enabled
                                                     ? <span className="inline-flex items-center gap-1 px-2 py-1 bg-green-900/50 text-green-300 text-xs font-semibold rounded-full">● Enabled</span>
@@ -266,6 +286,19 @@ export default function AdminLanguages() {
                                     placeholder="e.g. 48000"
                                     value={modalSampleRate}
                                     onChange={e => setModalSampleRate(e.target.value)}
+                                />
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-neutral-300 mb-1.5">Max Contribution Limit (Hours)</label>
+                                <input
+                                    type="number"
+                                    min="0"
+                                    step="0.01"
+                                    className="w-full bg-neutral-700 border border-neutral-600 text-white placeholder-neutral-400 text-sm rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-warning-500"
+                                    placeholder="e.g. 10 (Leave blank for unlimited)"
+                                    value={modalMaxHoursPerContributor}
+                                    onChange={e => setModalMaxHoursPerContributor(e.target.value)}
                                 />
                             </div>
 

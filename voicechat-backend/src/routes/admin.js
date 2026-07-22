@@ -1541,6 +1541,7 @@ router.post("/languages", async (req, res) => {
     const { name, code } = req.body;
     const hourlyPayout = Number(req.body?.hourlyPayout);
     const sampleRate = req.body?.sampleRate !== undefined ? Number(req.body.sampleRate) : 48000;
+    const maxHoursPerContributor = req.body?.maxHoursPerContributor !== undefined ? Number(req.body.maxHoursPerContributor) : -1;
     if (!name || !code) return res.status(400).json({ error: "name and code are required" });
     if (!Number.isFinite(hourlyPayout) || hourlyPayout < 0) {
         return res.status(400).json({ error: "A valid hourly payout is required" });
@@ -1548,12 +1549,16 @@ router.post("/languages", async (req, res) => {
     if (!Number.isFinite(sampleRate) || sampleRate <= 0) {
         return res.status(400).json({ error: "A valid sample rate is required" });
     }
+    if (!Number.isFinite(maxHoursPerContributor) || (maxHoursPerContributor < 0 && maxHoursPerContributor !== -1)) {
+        return res.status(400).json({ error: "A valid max contribution limit (hours) is required" });
+    }
     try {
         const lang = await Language.create({
             name: name.trim(),
             code: code.trim().toLowerCase(),
             hourlyPayout,
             sampleRate,
+            maxHoursPerContributor,
             enabled: true
         });
         res.status(201).json({ language: lang });
@@ -1581,6 +1586,13 @@ router.patch("/languages/:id", async (req, res) => {
             return res.status(400).json({ error: "A valid sample rate is required" });
         }
         updates.sampleRate = sampleRate;
+    }
+    if (req.body.maxHoursPerContributor !== undefined) {
+        const maxHours = Number(req.body.maxHoursPerContributor);
+        if (!Number.isFinite(maxHours) || (maxHours < 0 && maxHours !== -1)) {
+            return res.status(400).json({ error: "A valid max contribution limit (hours) is required" });
+        }
+        updates.maxHoursPerContributor = maxHours;
     }
     try {
         const lang = await Language.findByIdAndUpdate(req.params.id, updates, { new: true });

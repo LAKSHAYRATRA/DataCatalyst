@@ -46,7 +46,8 @@ export default function LanguageSelection({ onLanguageSelect, callCount, callLim
     const otherLangs = languages.filter(l => getStatus(l.code) !== 'approved');
 
     const handleSelect = (lang) => {
-        if (isLimitReached) return;
+        const isLangLimitReached = lang.maxHoursPerContributor !== undefined && lang.maxHoursPerContributor !== -1 && (lang.userDurationSeconds || 0) >= lang.maxHoursPerContributor * 3600;
+        if (isLimitReached || isLangLimitReached) return;
         setSelected(lang.code);
         setTimeout(() => onLanguageSelect(lang.code), 300);
     };
@@ -74,26 +75,30 @@ export default function LanguageSelection({ onLanguageSelect, callCount, callLim
                         {/* Approved language cards */}
                         {approvedLangs.length > 0 ? (
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8 animate-slide-up">
-                                {approvedLangs.map(lang => (
-                                    <div
-                                        key={lang.code}
-                                        onClick={() => handleSelect(lang)}
-                                        className={`relative overflow-hidden rounded-2xl bg-gradient-to-br from-indigo-900 via-primary-900 to-indigo-950 text-white shadow-xl shadow-primary-900/20 border border-primary-800/50 hover-lift cursor-pointer transition-all text-left ${isLimitReached ? 'opacity-50 cursor-not-allowed' : ''} ${selected === lang.code ? 'ring-4 ring-primary-500 scale-102' : ''}`}
-                                    >
-                                        {/* Background Deco */}
-                                        <div className="absolute top-0 right-0 w-32 h-32 bg-primary-500 rounded-full blur-[60px] opacity-20 pointer-events-none transform translate-x-1/2 -translate-y-1/2"></div>
-                                        
-                                        <div className="py-6 px-8 relative z-10 flex flex-col items-center justify-center gap-4">
-                                            <h2 className="text-2xl font-extrabold text-white tracking-tight text-center">{lang.name}</h2>
-                                            <button
-                                                disabled={isLimitReached}
-                                                className={`bg-white text-primary-900 font-extrabold text-base px-8 py-3 rounded-xl shadow-[0_0_20px_rgba(255,255,255,0.2)] hover:shadow-[0_0_30px_rgba(255,255,255,0.35)] transition-all ${isLimitReached ? 'opacity-50 cursor-not-allowed' : ''}`}
-                                            >
-                                                {isLimitReached ? 'Limit Reached' : 'Join a Call'}
-                                            </button>
+                                {approvedLangs.map(lang => {
+                                    const isLangLimitReached = lang.maxHoursPerContributor !== undefined && lang.maxHoursPerContributor !== -1 && (lang.userDurationSeconds || 0) >= lang.maxHoursPerContributor * 3600;
+                                    const isBlocked = isLimitReached || isLangLimitReached;
+                                    return (
+                                        <div
+                                            key={lang.code}
+                                            onClick={() => handleSelect(lang)}
+                                            className={`relative overflow-hidden rounded-2xl bg-gradient-to-br from-indigo-900 via-primary-900 to-indigo-950 text-white shadow-xl shadow-primary-900/20 border border-primary-800/50 hover-lift cursor-pointer transition-all text-left ${isBlocked ? 'opacity-50 cursor-not-allowed' : ''} ${selected === lang.code ? 'ring-4 ring-primary-500 scale-102' : ''}`}
+                                        >
+                                            {/* Background Deco */}
+                                            <div className="absolute top-0 right-0 w-32 h-32 bg-primary-500 rounded-full blur-[60px] opacity-20 pointer-events-none transform translate-x-1/2 -translate-y-1/2"></div>
+                                            
+                                            <div className="py-6 px-8 relative z-10 flex flex-col items-center justify-center gap-4">
+                                                <h2 className="text-2xl font-extrabold text-white tracking-tight text-center">{lang.name}</h2>
+                                                <button
+                                                    disabled={isBlocked}
+                                                    className={`bg-white text-primary-900 font-extrabold text-base px-8 py-3 rounded-xl shadow-[0_0_20px_rgba(255,255,255,0.2)] hover:shadow-[0_0_30px_rgba(255,255,255,0.35)] transition-all ${isBlocked ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                                >
+                                                    {isLangLimitReached ? 'Language Limit Reached' : isLimitReached ? 'Limit Reached' : 'Join a Call'}
+                                                </button>
+                                            </div>
                                         </div>
-                                    </div>
-                                ))}
+                                    );
+                                })}
                             </div>
                         ) : (
                             <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-indigo-900 via-primary-900 to-indigo-950 text-white shadow-2xl shadow-primary-900/20 border border-primary-800/50 p-8 md:p-12 max-w-xl mx-auto mt-6 text-center animate-fade-in flex flex-col items-center justify-center">

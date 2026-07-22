@@ -26,8 +26,23 @@ export default function Community() {
                         <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-primary-100 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400 mb-8 mt-12 shadow-inner">
                             <Users className="w-10 h-10" />
                         </div>
-                        <h1 className="text-5xl md:text-7xl font-black text-neutral-900 dark:text-white mb-6 tracking-tighter">40,000+ Voices Strong.</h1>
+                        <h1 className="text-5xl md:text-7xl font-black text-neutral-900 dark:text-white mb-6 tracking-tighter">A Community of Voices.</h1>
                         <p className="text-xl text-neutral-600 dark:text-neutral-400 max-w-2xl mx-auto leading-relaxed font-medium">Join a massive, globally distributed remote workforce. From rural villages to dense cities, our contributors are powering the next era of AI.</p>
+                        <div className="mt-10 flex justify-center">
+                            <motion.a
+                                href="https://discord.gg/TVuj7Brytq"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                whileHover={{ scale: 1.05, y: -2 }}
+                                whileTap={{ scale: 0.98 }}
+                                className="inline-flex items-center gap-3 bg-[#5865F2] hover:bg-[#4752C4] text-white px-8 py-4 rounded-full font-bold text-lg shadow-lg shadow-indigo-500/20 hover:shadow-indigo-500/30 transition-all cursor-pointer"
+                            >
+                                <svg className="w-6 h-6 fill-current" viewBox="0 0 127.14 116.29" xmlns="http://www.w3.org/2000/svg">
+                                    <path d="M107.7,8.07A105.15,105.15,0,0,0,77.26,0a77.19,77.19,0,0,0-3.3,6.83A96.67,96.67,0,0,0,52.8,6.83,77.19,77.19,0,0,0,49.5,0,105.15,105.15,0,0,0,19.06,8.07C-1.87,39.38-7.51,69.91,5.2,100a105.77,105.77,0,0,0,32,16.29,78.69,78.69,0,0,0,6.72-11A67.36,67.36,0,0,1,33.12,99.8c.84-.62,1.65-1.28,2.44-2a68.64,68.64,0,0,0,82.72,0c.79.67,1.6,1.33,2.44,2a67.36,67.36,0,0,1-10.84,5.49,78.69,78.69,0,0,0,6.72,11,105.77,105.77,0,0,0,32-16.29C135.82,69.91,129.74,39.38,107.7,8.07ZM42.45,65.69C36.18,65.69,31,60,31,53S36.18,40.36,42.45,40.36,53.87,46,53.87,53,48.72,65.69,42.45,65.69Zm42.24,0C78.41,65.69,73.24,60,73.24,53S78.41,40.36,84.69,40.36,96.11,46,96.11,53,91,65.69,84.69,65.69Z" />
+                                </svg>
+                                Join our Discord
+                            </motion.a>
+                        </div>
                     </div>
                 </motion.div>
 
