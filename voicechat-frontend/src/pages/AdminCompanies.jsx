@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Building2, Save, Loader2, CheckCircle2, Plus, Trash2 } from 'lucide-react';
 import { apiGet, apiPostJson, apiPatchJson, apiDeleteJson } from '../lib/api';
@@ -6,6 +7,7 @@ import AdminNav from '../components/AdminNav.jsx';
 import Swal from 'sweetalert2';
 
 export default function AdminCompanies() {
+  const navigate = useNavigate();
   const [companies, setCompanies] = useState([]);
   const [loading, setLoading] = useState(true);
   const [savingId, setSavingId] = useState(null);
@@ -193,7 +195,19 @@ export default function AdminCompanies() {
               >
                 <div className="flex items-center justify-between mb-6 border-b border-neutral-100 dark:border-neutral-800 pb-4">
                   <h2 className="text-xl font-bold">{company.name}</h2>
-                  <div className="flex gap-2">
+                  <div className="flex flex-wrap gap-2">
+                    <button 
+                      onClick={() => navigate(`/admin/companies/${company._id}/user-customizations`)}
+                      className="btn btn-sm bg-neutral-200 hover:bg-neutral-300 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-neutral-800 dark:text-neutral-200 font-semibold"
+                    >
+                      Users Customizations
+                    </button>
+                    <button 
+                      onClick={() => navigate(`/admin/companies/${company._id}/download-customizations`)}
+                      className="btn btn-sm bg-neutral-200 hover:bg-neutral-300 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-neutral-800 dark:text-neutral-200 font-semibold"
+                    >
+                      Downloads Customizations
+                    </button>
                     <button 
                       onClick={() => deleteCompany(company._id, company.name)}
                       className="btn btn-sm bg-error-50 text-error-600 hover:bg-error-100 dark:bg-error-900/20 dark:hover:bg-error-900/40"

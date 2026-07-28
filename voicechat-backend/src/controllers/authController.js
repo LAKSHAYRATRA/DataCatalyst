@@ -33,6 +33,8 @@ function formatUserResponse(user) {
     qaLanguageCodes: user.qaLanguageCodes || [],
     dailyCallLimit: user.dailyCallLimit,
     accountStatus: user.accountStatus || "pending_intro",
+    accent: user.accent || null,
+    dialect: user.dialect || null,
     contributorAgreement: {
       signed: !!ca.signed,
       agreementVersion: ca.agreementVersion || null,

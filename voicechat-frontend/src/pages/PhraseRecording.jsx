@@ -43,6 +43,7 @@ export default function PhraseRecording() {
   }, [projectName, approvedApps]);
 
   const [currentPhrase, setCurrentPhrase] = useState(null);
+  const [userCustomizations, setUserCustomizations] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
@@ -134,8 +135,10 @@ export default function PhraseRecording() {
       const data = await apiGet(url);
       if (data.phrase) {
         setCurrentPhrase(data.phrase);
+        setUserCustomizations(data.userCustomizations || []);
       } else {
         setCurrentPhrase(null);
+        setUserCustomizations([]);
         setError(data.message || 'No phrases available for this language right now.');
       }
     } catch (err) {
@@ -558,12 +561,20 @@ export default function PhraseRecording() {
                   {currentPhrase.intent && <div><span className="block text-xs uppercase opacity-60 mb-1">Intent</span><span className="font-medium">{currentPhrase.intent}</span></div>}
                   {currentPhrase.pitch && <div><span className="block text-xs uppercase opacity-60 mb-1">Pitch</span><span className="font-medium">{currentPhrase.pitch}</span></div>}
                   {currentPhrase.volume && <div><span className="block text-xs uppercase opacity-60 mb-1">Volume</span><span className="font-medium">{currentPhrase.volume}</span></div>}
-                  {currentPhrase.tags && Object.entries(currentPhrase.tags).map(([key, val]) => (
-                    <div key={key}>
-                      <span className="block text-xs uppercase opacity-60 mb-1">{key.replace(/_/g, ' ')}</span>
-                      <span className="font-medium">{val}</span>
-                    </div>
-                  ))}
+                  {currentPhrase.tags && Object.entries(currentPhrase.tags)
+                    .filter(([key]) => {
+                      if (userCustomizations && userCustomizations.length > 0) {
+                        return userCustomizations.some(uk => uk.toLowerCase() === key.toLowerCase());
+                      }
+                      return true;
+                    })
+                    .map(([key, val]) => (
+                      <div key={key}>
+                        <span className="block text-xs uppercase opacity-60 mb-1">{key.replace(/_/g, ' ')}</span>
+                        <span className="font-medium">{val}</span>
+                      </div>
+                    ))
+                  }
                   {currentPhrase.instructions && <div className="col-span-2 md:col-span-3 mt-2"><span className="block text-xs uppercase opacity-60 mb-1">Notes</span><p className="text-sm border-l-2 border-primary-300 pl-3">{currentPhrase.instructions}</p></div>}
                 </div>
 

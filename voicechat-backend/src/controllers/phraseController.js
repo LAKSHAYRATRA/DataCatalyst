@@ -315,7 +315,10 @@ export async function getAvailablePhrase(req, res) {
       return res.json({ phrase: null, message: "No phrases available" });
     }
 
-    res.json({ phrase });
+    const companyDoc = await Company.findOne({ name: phrase.companyId }).select("userCustomizations").lean();
+    const userCustomizations = companyDoc ? companyDoc.userCustomizations : [];
+
+    res.json({ phrase, userCustomizations });
   } catch (error) {
     console.error("getAvailablePhrase error:", error);
     res.status(500).json({ error: "Server error" });
@@ -455,15 +458,15 @@ export async function submitPhraseRecording(req, res) {
     // Generate/fetch speaker_id for the contributor
     const contributor = await User.findById(req.user._id);
     if (contributor) {
-      if (!contributor.speaker_id) {
-        const { seq } = await Counter.findOneAndUpdate(
-          { _id: "speaker_id" },
-          { $inc: { seq: 1 } },
-          { upsert: true, new: true }
-        );
-        contributor.speaker_id = `spk_${seq}`;
-        await contributor.save();
-      }
+        if (!contributor.speaker_id) {
+          const { seq } = await Counter.findOneAndUpdate(
+            { _id: "speaker_id" },
+            { $inc: { seq: 1 } },
+            { upsert: true, new: true }
+          );
+          contributor.speaker_id = `spk_${seq}`;
+          await contributor.save();
+        }
       phrase.speaker_id = contributor.speaker_id;
     }
     
@@ -601,6 +604,25 @@ export async function reviewPhrase(req, res) {
       await phrase.save();
     } else {
       return res.status(400).json({ error: "Invalid action" });
+    }
+
+    // If this is a test phrase, automatically update the user's language application status
+    if (phrase.isTestPhrase && phrase.contributorId) {
+      const contributor = await User.findById(phrase.contributorId);
+      if (contributor) {
+        const app = contributor.languageApplications.find(a => 
+          a.applicationType === "phrase" &&
+          String(a.companyId || "").trim().toLowerCase() === String(phrase.companyId || "").trim().toLowerCase() &&
+          String(a.languageCode || "").trim().toLowerCase() === String(phrase.language || "").trim().toLowerCase() &&
+          a.status === "pending"
+        );
+        if (app) {
+          app.status = action === "approve" ? "approved" : "rejected";
+          app.reviewedAt = new Date();
+          app.reviewedBy = req.user._id;
+          await contributor.save();
+        }
+      }
     }
 
     res.json({ success: true, phrase });

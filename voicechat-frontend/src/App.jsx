@@ -32,6 +32,8 @@ import PhraseRecording from "./pages/PhraseRecording.jsx";
 import AdminMedia from "./pages/AdminMedia.jsx";
 import AdminProjects from "./pages/AdminProjects.jsx";
 import AdminCompanies from "./pages/AdminCompanies.jsx";
+import AdminCompanyUserCustomizations from "./pages/AdminCompanyUserCustomizations.jsx";
+import AdminCompanyDownloadCustomizations from "./pages/AdminCompanyDownloadCustomizations.jsx";
 import AdminPhraseDownloads from "./pages/AdminPhraseDownloads.jsx";
 import { getUserInfo, setUserInfo, clearToken } from "./lib/auth.js";
 import { apiGet, apiPatchJson } from "./lib/api.js";
@@ -334,6 +336,8 @@ export default function App() {
         <Route path="/admin/phrases/downloads" element={<RequireAdmin><AdminPhraseDownloads /></RequireAdmin>} />
         <Route path="/admin/projects" element={<RequireAdmin><AdminProjects /></RequireAdmin>} />
         <Route path="/admin/companies" element={<RequireAdmin><AdminCompanies /></RequireAdmin>} />
+        <Route path="/admin/companies/:id/user-customizations" element={<RequireAdmin><AdminCompanyUserCustomizations /></RequireAdmin>} />
+        <Route path="/admin/companies/:id/download-customizations" element={<RequireAdmin><AdminCompanyDownloadCustomizations /></RequireAdmin>} />
         <Route path="/admin/qaphrase" element={<RequireAdminOrQA><QaPhrases /></RequireAdminOrQA>} />
         <Route path="/admin/media" element={<RequireAdmin><AdminMedia /></RequireAdmin>} />
         <Route path="/language-apply" element={<RequireAuth><RequireProfileFields><LanguageApply /></RequireProfileFields></RequireAuth>} />

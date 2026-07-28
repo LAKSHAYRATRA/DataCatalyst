@@ -127,6 +127,33 @@ router.get("/companies", requireAuth(JWT_SECRET), async (req, res) => {
     }
 });
 
+router.get("/companies/:id", requireAuth(JWT_SECRET), async (req, res) => {
+    try {
+        const company = await Company.findById(req.params.id).lean();
+        if (!company) return res.status(404).json({ error: "Company not found" });
+
+        // Compute available tags for this company
+        const samplePhrases = await Phrase.find({ companyId: company.name }).limit(100).select("tags").lean();
+        const tagKeys = new Set();
+        for (const p of samplePhrases) {
+            if (p.tags) {
+                for (const k of Object.keys(p.tags)) {
+                    tagKeys.add(k);
+                }
+            }
+        }
+
+        res.json({
+            company: {
+                ...company,
+                availableTags: Array.from(tagKeys)
+            }
+        });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 function getReviewerLanguageCodes(user) {
     if (!user?.isQA || user?.isAdmin) return [];
     if (user?.qaLanguageCode) {
@@ -2263,6 +2290,9 @@ router.patch("/language-applications/:userId/:appId/reject", async (req, res) =>
     }
 });
 
+// Analyze a user's language application audio
+router.post("/language-applications/:userId/:appId/analyze", analyzeLanguageApplication);
+
 // ─── AWS S3 MEDIA LIBRARY ──────────────────────────────────────────────────────
 router.get("/s3-explorer", async (req, res) => {
     try {
@@ -2456,34 +2486,125 @@ router.get("/s3-download-wav", async (req, res) => {
 
 router.get("/phrases/download-company", async (req, res) => {
     try {
-        const { company } = req.query;
+        const { company, type = "phrases" } = req.query;
         if (!company) return res.status(400).json({ error: "Company name is required" });
 
         // Normalize company name the same way it is stored in DB/S3
         const companyFolder = company.replace(/[^a-zA-Z0-9_\-\ ]/g, "").trim();
+
+        if (type === "approved_apps" || type === "all_apps") {
+            // Find all matching users who applied for this company
+            const users = await User.find({
+                "languageApplications.companyId": { $regex: new RegExp(`^${companyFolder}$`, "i") },
+                "languageApplications.applicationType": "phrase"
+            }).lean();
+
+            const appRecords = [];
+            for (const u of users) {
+                for (const app of (u.languageApplications || [])) {
+                    if (app.applicationType !== "phrase") continue;
+                    const appCompany = String(app.companyId || "").replace(/[^a-zA-Z0-9_\-\ ]/g, "").trim();
+                    if (appCompany.toLowerCase() !== companyFolder.toLowerCase()) continue;
+                    
+                    if (type === "approved_apps" && app.status !== "approved") continue;
+                    
+                    // We need a valid recording file to download
+                    if (!app.recordingFile) continue;
+                    
+                    appRecords.push({
+                        app,
+                        speakerId: u.speaker_id || `spk_unknown_${u._id}`,
+                        language: String(app.languageCode || "unknown").toLowerCase().trim()
+                    });
+                }
+            }
+
+            if (appRecords.length === 0) {
+                return res.status(404).json({ error: `No ${type === "approved_apps" ? "approved" : "total"} applications found for this company.` });
+            }
+
+            res.setHeader("Content-Type", "application/zip");
+            res.setHeader("Content-Disposition", `attachment; filename="${companyFolder}_${type}.zip"`);
+
+            let ZipArchive;
+            try {
+                const archiverModule = await import("archiver");
+                ZipArchive = archiverModule.ZipArchive || archiverModule.default?.ZipArchive;
+                if (!ZipArchive) {
+                    const { createRequire } = await import("module");
+                    const require = createRequire(import.meta.url);
+                    ZipArchive = require("archiver").ZipArchive;
+                }
+            } catch (err) {
+                console.error("Archiver package not found.", err);
+                return res.status(500).json({ error: "Server missing 'archiver' dependency." });
+            }
+
+            const archive = new ZipArchive({ zlib: { level: 0 } });
+            archive.on("error", (err) => {
+                console.error("Archiver Error:", err);
+                if (!res.headersSent) res.status(500).json({ error: err.message });
+            });
+
+            res.on('error', (err) => console.error('Response stream error:', err));
+            archive.pipe(res);
+
+            for (const record of appRecords) {
+                const app = record.app;
+                const origExt = app.recordingFile.split(".").pop() || "flac";
+                const baseFileName = app.recordingFile.split("/").pop().replace("local:", "");
+                const destFileName = `${record.speakerId}__${companyFolder}__${record.language}.${origExt}`;
+                const zipPath = `${record.language}/${destFileName}`;
+
+                if (app.recordingFile.startsWith("local:")) {
+                    const localPath = path.join(process.cwd(), "recordings", "language-apps", baseFileName);
+                    if (fs.existsSync(localPath)) {
+                        archive.file(localPath, { name: zipPath });
+                    }
+                } else {
+                    try {
+                        const s3Doc = await s3Client.send(new GetObjectCommand({
+                            Bucket: BUCKET_NAME,
+                            Key: app.recordingFile
+                        }));
+                        archive.append(s3Doc.Body, { name: zipPath });
+                    } catch (s3Err) {
+                        console.error(`Failed to stream S3 file ${app.recordingFile}:`, s3Err.message);
+                    }
+                }
+            }
+
+            await archive.finalize();
+            return;
+        }
         const isAlreadyDownloadedFolder = company.endsWith("_downloaded") || companyFolder.endsWith("_downloaded");
 
-        // Enumerate EVERY object actually present in this company's S3 folder.
-        // We drive the batch off the real folder contents (not a DB query) so
-        // that no file is ever skipped because of a status / companyId mismatch.
-        const folderPrefix = `phrases/${companyFolder}/`;
+        // Enumerate EVERY object actually present in this company's S3 folder and downloaded folder.
+        const folderPrefixes = [];
+        if (type === "fresh_phrases") {
+            folderPrefixes.push(`phrases/${companyFolder}/`);
+        } else {
+            folderPrefixes.push(`phrases/${companyFolder}/`);
+            folderPrefixes.push(`phrases/${companyFolder}_downloaded/`);
+        }
         const objectKeys = [];
-        let ContinuationToken;
-        do {
-            const listResp = await s3Client.send(new ListObjectsV2Command({
-                Bucket: BUCKET_NAME,
-                Prefix: folderPrefix,
-                ContinuationToken
-            }));
-            for (const obj of (listResp.Contents || [])) {
-                // Skip the folder placeholder object itself
-                if (obj.Key && obj.Key !== folderPrefix) objectKeys.push(obj.Key);
-            }
-            ContinuationToken = listResp.IsTruncated ? listResp.NextContinuationToken : undefined;
-        } while (ContinuationToken);
+        for (const prefix of folderPrefixes) {
+            let ContinuationToken;
+            do {
+                const listResp = await s3Client.send(new ListObjectsV2Command({
+                    Bucket: BUCKET_NAME,
+                    Prefix: prefix,
+                    ContinuationToken
+                }));
+                for (const obj of (listResp.Contents || [])) {
+                    if (obj.Key && obj.Key !== prefix) objectKeys.push(obj.Key);
+                }
+                ContinuationToken = listResp.IsTruncated ? listResp.NextContinuationToken : undefined;
+            } while (ContinuationToken);
+        }
 
         if (objectKeys.length === 0) {
-            return res.status(404).json({ error: "No files found in this company's folder." });
+            return res.status(404).json({ error: "No files found in this company's folders." });
         }
 
         // Pull any matching phrase records so we can attach metadata when it exists.
@@ -2606,8 +2727,15 @@ router.get("/phrases/download-company", async (req, res) => {
                     instruction: phrase.instructions || ""
                 };
                 if (phrase.tags) {
+                    const downloadCustomizations = companyDoc?.downloadCustomizations || [];
                     for (const [tagKey, tagVal] of Object.entries(phrase.tags)) {
-                        utterance[tagKey] = tagVal;
+                        if (downloadCustomizations && downloadCustomizations.length > 0) {
+                            if (downloadCustomizations.some(dk => dk.toLowerCase() === tagKey.toLowerCase())) {
+                                utterance[tagKey] = tagVal;
+                            }
+                        } else {
+                            utterance[tagKey] = tagVal;
+                        }
                     }
                 }
                 combinedUtterances.push(utterance);
@@ -2943,9 +3071,9 @@ router.post("/backfill-speaker-ids", async (req, res) => {
             const { seq } = await Counter.findOneAndUpdate(
                 { _id: "speaker_id" },
                 { $inc: { seq: 1 } },
-                { upsert: true, new: true }
             );
-            await User.updateOne({ _id: user._id }, { $set: { speaker_id: `spk_${seq}` } });
+            const speaker_id = `spk_${seq}`;
+            await User.updateOne({ _id: user._id }, { $set: { speaker_id } });
             updated++;
         }
         res.json({ message: `Backfilled ${updated} users with speaker IDs` });
@@ -2968,12 +3096,22 @@ router.get("/phrases/download-stats", requireAuth(JWT_SECRET), async (req, res) 
 
         const companyStats = {};
         for (const item of stats) {
-            const companyId = item._id.companyId || "Unknown";
+            const rawCompanyId = item._id.companyId || "Unknown";
+            const isDownloaded = rawCompanyId.endsWith("_downloaded");
+            const companyId = isDownloaded ? rawCompanyId.replace(/_downloaded$/, "") : rawCompanyId;
             const status = item._id.status;
+
             if (!companyStats[companyId]) {
-                companyStats[companyId] = { pending: 0, recorded: 0, approved: 0, rejected: 0 };
+                companyStats[companyId] = { pending: 0, recorded: 0, approved: 0, rejected: 0, freshApproved: 0 };
             }
-            companyStats[companyId][status] = item.count;
+            
+            // Add to total status count
+            companyStats[companyId][status] = (companyStats[companyId][status] || 0) + item.count;
+            
+            // Count fresh approved separately
+            if (status === "approved" && !isDownloaded) {
+                companyStats[companyId].freshApproved = (companyStats[companyId].freshApproved || 0) + item.count;
+            }
         }
 
         res.json({ success: true, stats: companyStats });
@@ -3012,12 +3150,14 @@ router.post("/companies", requireAuth(JWT_SECRET), async (req, res) => {
 
 router.patch("/companies/:id", async (req, res) => {
     try {
-        const { maxContributionMinutes, hourlyPayout, projectName, namingPattern } = req.body;
+        const { maxContributionMinutes, hourlyPayout, projectName, namingPattern, userCustomizations, downloadCustomizations } = req.body;
         const updateData = {};
         if (maxContributionMinutes !== undefined) updateData.maxContributionMinutes = Number(maxContributionMinutes);
         if (hourlyPayout !== undefined) updateData.hourlyPayout = Number(hourlyPayout);
         if (projectName !== undefined) updateData.projectName = String(projectName).trim();
         if (namingPattern !== undefined) updateData.namingPattern = String(namingPattern).trim();
+        if (userCustomizations !== undefined) updateData.userCustomizations = userCustomizations;
+        if (downloadCustomizations !== undefined) updateData.downloadCustomizations = downloadCustomizations;
         
         const company = await Company.findByIdAndUpdate(req.params.id, { $set: updateData }, { new: true });
         if (!company) return res.status(404).json({ error: "Company not found" });

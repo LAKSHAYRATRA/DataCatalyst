@@ -27,7 +27,16 @@ export default function QaPhrases() {
     try {
       setLoading(true);
       const data = await apiGet('/api/phrases/qa/queue');
-      setQueue(data.phrases || []);
+      const phrases = data.phrases || [];
+      setQueue(phrases);
+      
+      // Auto-reset project filter if the selected project is no longer in the active queue
+      if (filterProject !== 'All') {
+        const activeProjects = new Set(phrases.map(q => q.projectName || q.companyId).filter(Boolean));
+        if (!activeProjects.has(filterProject)) {
+          setFilterProject('All');
+        }
+      }
     } catch (err) {
       console.error(err);
     } finally {

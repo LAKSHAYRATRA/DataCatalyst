@@ -34,16 +34,32 @@ export default function AdminPhraseDownloads() {
     loadData();
   }, []);
 
-  const handleDownload = async (companyName) => {
-    const companyStats = stats[companyName] || { approved: 0 };
-    if (!companyStats.approved || companyStats.approved === 0) {
-      Swal.fire("No Approved Phrases", "There are no QA-approved phrases available for download under this company.", "warning");
-      return;
+  const handleDownload = async (companyName, type = "phrases") => {
+    if (type === "phrases") {
+      const companyStats = stats[companyName] || { approved: 0 };
+      if (!companyStats.approved || companyStats.approved === 0) {
+        Swal.fire("No Approved Phrases", "There are no QA-approved phrases available for download under this company.", "warning");
+        return;
+      }
+    }
+
+    let title = "Download ZIP?";
+    let text = "";
+    if (type === "phrases") {
+      const companyStats = stats[companyName] || { approved: 0 };
+      title = "Download QA Approved Phrases?";
+      text = `This will bundle all ${companyStats.approved} approved phrases for "${companyName}" into a ZIP archive.`;
+    } else if (type === "approved_apps") {
+      title = "Download Approved Apps?";
+      text = `This will bundle all approved mic check applications for "${companyName}" into a ZIP archive, organized language-wise.`;
+    } else {
+      title = "Download All Apps?";
+      text = `This will bundle all mic check applications (approved, pending, or rejected) for "${companyName}" into a ZIP archive, organized language-wise.`;
     }
 
     const confirm = await Swal.fire({
-      title: "Download QA Approved ZIP?",
-      text: `This will bundle all ${companyStats.approved} approved phrases for "${companyName}" into a ZIP archive and archive them in S3.`,
+      title: title,
+      text: text,
       icon: "info",
       showCancelButton: true,
       confirmButtonText: "Download ZIP",
@@ -55,7 +71,7 @@ export default function AdminPhraseDownloads() {
     try {
       const token = getClientToken();
       const backendUrl = import.meta.env.VITE_BACKEND_URL || "http://localhost:3001";
-      const url = `${backendUrl}/api/admin/phrases/download-company?company=${encodeURIComponent(companyName)}${token ? `&token=${encodeURIComponent(token)}` : ""}`;
+      const url = `${backendUrl}/api/admin/phrases/download-company?company=${encodeURIComponent(companyName)}&type=${type}${token ? `&token=${encodeURIComponent(token)}` : ""}`;
       
       // Trigger download
       window.location.href = url;
@@ -178,18 +194,52 @@ export default function AdminPhraseDownloads() {
                   </div>
                 </div>
 
-                <button
-                  onClick={() => handleDownload(c.name)}
-                  disabled={!hasApproved}
-                  className={`w-full py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-all ${
-                    hasApproved
-                      ? "bg-warning-500 hover:bg-warning-600 text-neutral-950 shadow-lg shadow-warning-500/10 hover:shadow-warning-500/25"
-                      : "bg-neutral-200 dark:bg-neutral-700 text-neutral-400 dark:text-neutral-500 cursor-not-allowed"
-                  }`}
-                >
-                  <Download className="w-5 h-5" />
-                  {hasApproved ? "Download Approved Phrases ZIP" : "No Approved Phrases Available"}
-                </button>
+                <div className="space-y-2 mt-4 pt-4 border-t border-neutral-100 dark:border-neutral-700">
+                  <span className="block text-xs font-semibold text-neutral-400 uppercase tracking-wider mb-2">Download Packages</span>
+                  <div className="flex flex-col gap-2">
+                    <button
+                      onClick={() => handleDownload(c.name, "phrases")}
+                      disabled={!hasApproved}
+                      className={`w-full py-2.5 rounded-xl font-bold flex items-center justify-center gap-2 transition-all ${
+                        hasApproved
+                          ? "bg-warning-500 hover:bg-warning-600 text-neutral-950 shadow-md shadow-warning-500/10 hover:shadow-warning-500/20 text-sm"
+                          : "bg-neutral-100 dark:bg-neutral-750 text-neutral-400 dark:text-neutral-500 cursor-not-allowed text-xs"
+                      }`}
+                    >
+                      <Download className="w-4 h-4" />
+                      {hasApproved ? `Download Approved Phrases (${cStats.approved})` : "No Approved Phrases Available"}
+                    </button>
+
+                    <button
+                      onClick={() => handleDownload(c.name, "fresh_phrases")}
+                      disabled={!cStats.freshApproved}
+                      className={`w-full py-2.5 rounded-xl font-bold flex items-center justify-center gap-2 transition-all ${
+                        cStats.freshApproved
+                          ? "bg-emerald-500 hover:bg-emerald-600 text-white shadow-md shadow-emerald-500/10 hover:shadow-emerald-500/20 text-sm"
+                          : "bg-neutral-100 dark:bg-neutral-750 text-neutral-400 dark:text-neutral-500 cursor-not-allowed text-xs"
+                      }`}
+                    >
+                      <Download className="w-4 h-4" />
+                      {cStats.freshApproved ? `Download Fresh Approved Phrases (${cStats.freshApproved})` : "No Fresh Approved Phrases"}
+                    </button>
+                    
+                    <button
+                      onClick={() => handleDownload(c.name, "approved_apps")}
+                      className="w-full py-2.5 rounded-xl font-bold flex items-center justify-center gap-2 bg-neutral-200 hover:bg-neutral-300 dark:bg-neutral-700 dark:hover:bg-neutral-650 text-neutral-800 dark:text-neutral-200 text-sm transition-all shadow-sm"
+                    >
+                      <Download className="w-4 h-4" />
+                      Download Approved Apps
+                    </button>
+                    
+                    <button
+                      onClick={() => handleDownload(c.name, "all_apps")}
+                      className="w-full py-2.5 rounded-xl font-bold flex items-center justify-center gap-2 border border-neutral-300 dark:border-neutral-600 text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-750 text-sm transition-all"
+                    >
+                      <Download className="w-4 h-4" />
+                      Download All Apps (Language Wise)
+                    </button>
+                  </div>
+                </div>
               </div>
             );
           })}

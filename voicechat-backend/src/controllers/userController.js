@@ -6,6 +6,7 @@ import { Feedback } from "../models/Feedback.js";
 import { Language } from "../models/Language.js";
 import { Phrase } from "../models/Phrase.js";
 import { Company } from "../models/Company.js";
+import { Counter } from "../models/Counter.js";
 import { isNonEmptyString } from "../util/validators.js";
 import { getSingleUserPayout } from "../services/payouts.js";
 import { GetObjectCommand } from "@aws-sdk/client-s3";
@@ -298,12 +299,24 @@ export async function submitLanguageApplication(req, res) {
         .run();
     });
 
-    const timestamp = Date.now();
-    const baseFileName = `${req.user._id}_${languageCode}_${timestamp}.flac`;
+    // Generate speaker_id if not present
+    if (!user.speaker_id) {
+      const { seq } = await Counter.findOneAndUpdate(
+        { _id: "speaker_id" },
+        { $inc: { seq: 1 } },
+        { upsert: true, new: true }
+      );
+      user.speaker_id = `spk_${seq}`;
+      await user.save();
+    }
+
+    const companyFolder = companyId ? companyId.replace(/[^a-zA-Z0-9_\-\ ]/g, "").trim() : "No_Company";
+    const baseFileName = applicationType === "phrase"
+      ? `${user.speaker_id}__${companyFolder}__${languageCode}.flac`
+      : `${user._id}_${languageCode}_${Date.now()}.flac`;
     
     let s3Key;
     if (applicationType === "phrase" && companyId) {
-      const companyFolder = companyId.replace(/[^a-zA-Z0-9_\-\ ]/g, "").trim();
       s3Key = `phrases/${companyFolder}/phrase apps/${baseFileName}`;
     } else {
       s3Key = `language-apps/${baseFileName}`;
