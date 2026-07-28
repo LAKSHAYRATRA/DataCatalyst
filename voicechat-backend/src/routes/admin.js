@@ -2605,6 +2605,11 @@ router.get("/phrases/download-company", async (req, res) => {
                     events: phrase.events ? phrase.events.split(",").map(e => e.trim()) : [],
                     instruction: phrase.instructions || ""
                 };
+                if (phrase.tags) {
+                    for (const [tagKey, tagVal] of Object.entries(phrase.tags)) {
+                        utterance[tagKey] = tagVal;
+                    }
+                }
                 combinedUtterances.push(utterance);
             }
 

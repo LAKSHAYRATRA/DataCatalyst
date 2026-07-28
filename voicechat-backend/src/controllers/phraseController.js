@@ -100,6 +100,24 @@ export async function uploadPhrases(req, res) {
       const text = p.text || p.sentence || p.content || p.phrase || p.transcript;
 
       const tags = {};
+      const standardKeys = new Set([
+        "id", "phraseid", "_id", "phrase_id",
+        "text", "sentence", "content", "phrase", "transcript",
+        "script_type", "scripttype",
+        "speaker_id", "speakerid", "speaker",
+        "emotion", "style", "intent", "pitch", "speed", "volume", "events",
+        "instructions", "instruction", "notes", "metadata"
+      ]);
+
+      // Auto-extract all custom keys from the JSON object
+      for (const [k, val] of Object.entries(p)) {
+        const lowerK = k.toLowerCase();
+        if (!standardKeys.has(lowerK) && val !== undefined && val !== null) {
+          tags[k] = typeof val === "object" ? JSON.stringify(val) : String(val).trim();
+        }
+      }
+
+      // Apply explicitly declared metadataKeys fallback/override
       if (Array.isArray(metadataKeys)) {
         for (const key of metadataKeys) {
           const jsonKey = Object.keys(p).find(k => k.toLowerCase() === key.toLowerCase());
