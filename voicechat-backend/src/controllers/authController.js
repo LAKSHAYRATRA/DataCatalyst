@@ -19,6 +19,30 @@ function cookieOptions() {
   };
 }
 
+function formatUserResponse(user) {
+  const ca = user.contributorAgreement || {};
+  return {
+    id: user._id.toString(),
+    firstname: user.firstname || "",
+    lastname: user.lastname || "",
+    username: user.username || "",
+    email: user.email,
+    isAdmin: user.isAdmin || false,
+    isQA: user.isQA || false,
+    qaLanguageCode: user.qaLanguageCode || user.qaLanguageCodes?.[0] || null,
+    qaLanguageCodes: user.qaLanguageCodes || [],
+    dailyCallLimit: user.dailyCallLimit,
+    accountStatus: user.accountStatus || "pending_intro",
+    contributorAgreement: {
+      signed: !!ca.signed,
+      agreementVersion: ca.agreementVersion || null,
+      signedAt: ca.signedAt || null,
+      adminReviewStatus: ca.adminReviewStatus || null,
+      adminReviewReason: ca.adminReviewReason || null,
+    },
+  };
+}
+
 // POST /api/auth/check-email
 export async function checkEmail(req, res) {
   const email = normalizeEmail(req.body?.email);
@@ -101,6 +125,8 @@ export async function signup(req, res) {
   const pincode = String(req.body?.address?.pincode || "").trim();
   const microphoneBrand = String(req.body?.microphoneBrand || "").trim();
   const microphoneModel = String(req.body?.microphoneModel || "").trim();
+  const accent = String(req.body?.accent || "").trim();
+  const dialect = String(req.body?.dialect || "").trim();
   const dob = req.body?.dob;
   const otpCode = String(req.body?.otpCode || "").trim();
 
@@ -118,6 +144,8 @@ export async function signup(req, res) {
     !isNonEmptyString(pincode) ||
     !isNonEmptyString(microphoneBrand) ||
     !isNonEmptyString(microphoneModel) ||
+    !isNonEmptyString(accent) ||
+    !isNonEmptyString(dialect) ||
     !dob ||
     !isNonEmptyString(otpCode)
   ) {
@@ -181,6 +209,8 @@ export async function signup(req, res) {
     address: { street, state, city, pincode },
     microphoneBrand,
     microphoneModel,
+    accent,
+    dialect,
     dob: dobDate,
     isEmailVerified: true,
     speaker_id,
@@ -192,19 +222,11 @@ export async function signup(req, res) {
   );
 
   res.cookie("vc_token", token, cookieOptions());
+  res.cookie("vc_token_client", token, { ...cookieOptions(), httpOnly: false });
 
   res.json({
-    user: {
-      id: user._id.toString(),
-      firstname: user.firstname,
-      lastname: user.lastname,
-      email: user.email,
-      isAdmin: user.isAdmin || false,
-      isQA: user.isQA || false,
-      qaLanguageCode: user.qaLanguageCode || user.qaLanguageCodes?.[0] || null,
-      qaLanguageCodes: user.qaLanguageCodes || [],
-      accountStatus: user.accountStatus || "pending_intro",
-    },
+    token,
+    user: formatUserResponse(user),
   });
 }
 
@@ -294,19 +316,11 @@ export function makeLogin(io) {
     );
 
     res.cookie("vc_token", token, cookieOptions());
+    res.cookie("vc_token_client", token, { ...cookieOptions(), httpOnly: false });
 
     res.json({
-      user: {
-        id: user._id.toString(),
-        firstname: user.firstname || "",
-        lastname: user.lastname || "",
-        email: user.email,
-        isAdmin: user.isAdmin || false,
-        isQA: user.isQA || false,
-        qaLanguageCode: user.qaLanguageCode || user.qaLanguageCodes?.[0] || null,
-        qaLanguageCodes: user.qaLanguageCodes || [],
-        accountStatus: user.accountStatus || "pending_intro",
-      },
+      token,
+      user: formatUserResponse(user),
     });
   };
 }
@@ -319,34 +333,20 @@ export function logout(req, res) {
     sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
     path: "/",
   });
+  res.clearCookie("vc_token_client", {
+    httpOnly: false,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+    path: "/",
+  });
   res.json({ ok: true });
 }
 
 // GET /api/auth/me
 export function getMe(req, res) {
   if (!req.user) return res.status(401).json({ error: "unauthorized" });
-  const ca = req.user.contributorAgreement || {};
   res.json({
-    user: {
-      id: req.user._id,
-      firstname: req.user.firstname,
-      lastname: req.user.lastname,
-      username: req.user.username,
-      email: req.user.email,
-      isAdmin: req.user.isAdmin || false,
-      isQA: req.user.isQA || false,
-      qaLanguageCode: req.user.qaLanguageCode || req.user.qaLanguageCodes?.[0] || null,
-      qaLanguageCodes: req.user.qaLanguageCodes || [],
-      dailyCallLimit: req.user.dailyCallLimit,
-      accountStatus: req.user.accountStatus || "pending_intro",
-      contributorAgreement: {
-        signed: !!ca.signed,
-        agreementVersion: ca.agreementVersion || null,
-        signedAt: ca.signedAt || null,
-        adminReviewStatus: ca.adminReviewStatus || null,
-        adminReviewReason: ca.adminReviewReason || null,
-      },
-    },
+    user: formatUserResponse(req.user),
   });
 }
 

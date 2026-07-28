@@ -33,6 +33,8 @@ export default function AdminLanguages() {
     const [modalHourlyPayout, setModalHourlyPayout] = useState("");
     const [modalSampleRate, setModalSampleRate] = useState("48000");
     const [modalMaxHoursPerContributor, setModalMaxHoursPerContributor] = useState("");
+    const [modalMaxDailyCallLimit, setModalMaxDailyCallLimit] = useState("5");
+    const [modalNoisy, setModalNoisy] = useState(false);
     const [modalSaving, setModalSaving] = useState(false);
     const [modalError, setModalError] = useState("");
 
@@ -56,6 +58,9 @@ export default function AdminLanguages() {
         setModalHourlyPayout("");
         setModalSampleRate("48000");
         setModalMaxHoursPerContributor("");
+        setModalMaxDailyCallLimit("5");
+        setModalNoisy(false);
+        setModalNoisy(false);
         setModalError("");
         setShowModal(true);
     }
@@ -70,6 +75,8 @@ export default function AdminLanguages() {
                 ? String(language.maxHoursPerContributor)
                 : ""
         );
+        setModalMaxDailyCallLimit(String(language.maxDailyCallLimit ?? 5));
+        setModalNoisy(!!language.noisy);
         setModalError("");
         setShowModal(true);
     }
@@ -81,6 +88,7 @@ export default function AdminLanguages() {
         setModalHourlyPayout("");
         setModalSampleRate("48000");
         setModalMaxHoursPerContributor("");
+        setModalMaxDailyCallLimit("5");
         setModalError("");
     }
 
@@ -90,12 +98,16 @@ export default function AdminLanguages() {
         const hourlyPayout = Number(modalHourlyPayout);
         const sampleRate = Number(modalSampleRate);
         const maxHours = modalMaxHoursPerContributor.trim() === "" ? -1 : Number(modalMaxHoursPerContributor);
+        const maxDailyCallLimit = Number(modalMaxDailyCallLimit);
 
         if (!name) return setModalError("Language name is required.");
         if (!Number.isFinite(hourlyPayout) || hourlyPayout < 0) return setModalError("A valid hourly payout is required.");
         if (!Number.isFinite(sampleRate) || sampleRate <= 0) return setModalError("A valid sample rate is required.");
         if (modalMaxHoursPerContributor.trim() !== "" && (!Number.isFinite(maxHours) || maxHours < 0)) {
             return setModalError("A valid max contribution limit (hours) is required.");
+        }
+        if (!Number.isFinite(maxDailyCallLimit) || maxDailyCallLimit < 1) {
+            return setModalError("A valid max daily call limit is required.");
         }
 
         const code = editingLanguage ? editingLanguage.code : toSlug(name);
@@ -105,10 +117,10 @@ export default function AdminLanguages() {
         setModalError("");
         try {
             if (editingLanguage) {
-                await patch(`/api/admin/languages/${editingLanguage._id}`, { name, hourlyPayout, sampleRate, maxHoursPerContributor: maxHours });
+                await patch(`/api/admin/languages/${editingLanguage._id}`, { name, hourlyPayout, sampleRate, maxHoursPerContributor: maxHours, maxDailyCallLimit, noisy: modalNoisy });
                 setSuccess(`"${name}" updated successfully.`);
             } else {
-                await postJson("/api/admin/languages", { name, code, hourlyPayout, sampleRate, maxHoursPerContributor: maxHours });
+                await postJson("/api/admin/languages", { name, code, hourlyPayout, sampleRate, maxHoursPerContributor: maxHours, maxDailyCallLimit, noisy: modalNoisy });
                 setSuccess(`"${name}" added successfully.`);
             }
             closeModal();
@@ -173,7 +185,7 @@ export default function AdminLanguages() {
                             <table className="w-full text-sm">
                                 <thead className="bg-neutral-700">
                                     <tr>
-                                        {["Name", "Hourly Payout", "Sample Rate", "Max Limit", "Status", "Actions"].map(h => (
+                                        {["Name", "Hourly Payout", "Sample Rate", "Max Limit", "Max Daily Limit", "Status", "Actions"].map(h => (
                                             <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-neutral-300 uppercase tracking-wider whitespace-nowrap">{h}</th>
                                         ))}
                                     </tr>
@@ -181,7 +193,14 @@ export default function AdminLanguages() {
                                 <tbody className="divide-y divide-neutral-700">
                                     {languages.map(lang => (
                                         <tr key={lang._id} className="hover:bg-neutral-700/40 transition-colors">
-                                            <td className="px-4 py-3 text-white font-medium">{lang.name}</td>
+                                            <td className="px-4 py-3">
+                                                <div className="text-white font-medium">{lang.name}</div>
+                                                {lang.noisy && (
+                                                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 mt-1 bg-yellow-950 text-warning-400 text-[10px] font-bold rounded border border-warning-900/50">
+                                                        ⚠️ Noisy
+                                                    </span>
+                                                )}
+                                            </td>
                                             <td className="px-4 py-3 text-neutral-300 font-medium">${lang.hourlyPayout ?? 0}/hr</td>
                                             <td className="px-4 py-3 text-neutral-300 font-medium">{lang.sampleRate ?? 48000} Hz</td>
                                             <td className="px-4 py-3 text-neutral-300 font-medium">
@@ -190,6 +209,7 @@ export default function AdminLanguages() {
                                                     : `${lang.maxHoursPerContributor} hrs`
                                                 }
                                             </td>
+                                            <td className="px-4 py-3 text-neutral-300 font-medium">{lang.maxDailyCallLimit ?? 5} calls</td>
                                             <td className="px-4 py-3">
                                                 {lang.enabled
                                                     ? <span className="inline-flex items-center gap-1 px-2 py-1 bg-green-900/50 text-green-300 text-xs font-semibold rounded-full">● Enabled</span>
@@ -300,6 +320,32 @@ export default function AdminLanguages() {
                                     value={modalMaxHoursPerContributor}
                                     onChange={e => setModalMaxHoursPerContributor(e.target.value)}
                                 />
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-neutral-300 mb-1.5">Max Daily Call Limit</label>
+                                <input
+                                    type="number"
+                                    min="1"
+                                    step="1"
+                                    className="w-full bg-neutral-700 border border-neutral-600 text-white placeholder-neutral-400 text-sm rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-warning-500"
+                                    placeholder="e.g. 5"
+                                    value={modalMaxDailyCallLimit}
+                                    onChange={e => setModalMaxDailyCallLimit(e.target.value)}
+                                />
+                            </div>
+
+                            <div className="flex items-center gap-2.5 pt-1">
+                                <input
+                                    type="checkbox"
+                                    id="noisy-lang-checkbox"
+                                    checked={modalNoisy}
+                                    onChange={e => setModalNoisy(e.target.checked)}
+                                    className="w-4.5 h-4.5 text-warning-600 bg-neutral-700 border-neutral-600 rounded focus:ring-warning-500 focus:ring-2 focus:ring-offset-neutral-800"
+                                />
+                                <label htmlFor="noisy-lang-checkbox" className="text-sm font-medium text-neutral-300 select-none cursor-pointer">
+                                    Noisy Language (Bypasses YAMNet noise scanning)
+                                </label>
                             </div>
 
                             {/* Auto-generated slug preview */}

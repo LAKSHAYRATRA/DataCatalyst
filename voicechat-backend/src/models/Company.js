@@ -6,7 +6,8 @@ const companySchema = new mongoose.Schema(
     projectName: { type: String, default: "" },
     maxContributionMinutes: { type: Number, default: 195 }, // 3 hours 15 mins default
     hourlyPayout: { type: Number, default: 0 },
-    languages: [{ type: String, lowercase: true, trim: true }]
+    languages: [{ type: String, lowercase: true, trim: true }],
+    namingPattern: { type: String, default: "{phraseId}" }
   },
   { timestamps: true }
 );

@@ -166,7 +166,7 @@ export default function AdminLanguageApps() {
                                                                     {loadingAudio[key] ? "Converting..." : "▶ Load"}
                                                                 </button>
                                                             ) : (
-                                                                <audio src={audioSrc[key]} controls controlsList="nodownload noplaybackrate" onContextMenu={(e) => e.preventDefault()} className="h-8 w-48" />
+                                                                <audio src={audioSrc[key]} controls controlsList="nodownload noplaybackrate" onContextMenu={(e) => e.preventDefault()} className="h-8 w-64" />
                                                             )
                                                         ) : (
                                                             <span className="text-neutral-600 text-xs">—</span>

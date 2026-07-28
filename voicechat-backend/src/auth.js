@@ -25,6 +25,11 @@ export function requireAuth(jwtSecret) {
       }
     }
 
+    // Fallback to query parameter token for download links
+    if (!token && req.query.token) {
+      token = req.query.token;
+    }
+
     if (!token) {
       res.status(401).json({ error: "unauthorized" });
       return;

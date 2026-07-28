@@ -1,7 +1,10 @@
 import fs from "fs";
 import path from "path";
+import { spawn } from "child_process";
+import os from "os";
 import { Phrase } from "../models/Phrase.js";
 import { User } from "../models/User.js";
+import { Counter } from "../models/Counter.js";
 import { Company } from "../models/Company.js";
 import { Language } from "../models/Language.js";
 import { Project } from "../models/Project.js";
@@ -10,6 +13,7 @@ import { Upload } from "@aws-sdk/lib-storage";
 import { s3Client, BUCKET_NAME } from "../config/s3.js";
 import ffmpeg from "fluent-ffmpeg";
 import ffmpegInstaller from "@ffmpeg-installer/ffmpeg";
+import { invokeAudioQC } from "../config/lambda.js";
 
 ffmpeg.setFfmpegPath(ffmpegInstaller.path);
 
@@ -25,7 +29,7 @@ if (!fs.existsSync(PHRASE_RECORDINGS_DIR)) {
  */
 export async function uploadPhrases(req, res) {
   try {
-    const { companyId, projectName, language, phrases } = req.body;
+    const { companyId, projectName, language, phrases, metadataKeys } = req.body;
     if (!companyId || !companyId.trim()) {
       return res.status(400).json({ error: "Company is required when uploading a phrase batch." });
     }
@@ -95,6 +99,16 @@ export async function uploadPhrases(req, res) {
       // Flexibly map the text content
       const text = p.text || p.sentence || p.content || p.phrase || p.transcript;
 
+      const tags = {};
+      if (Array.isArray(metadataKeys)) {
+        for (const key of metadataKeys) {
+          const jsonKey = Object.keys(p).find(k => k.toLowerCase() === key.toLowerCase());
+          if (jsonKey && p[jsonKey] !== undefined && p[jsonKey] !== null) {
+            tags[key] = String(p[jsonKey]).trim();
+          }
+        }
+      }
+
       const doc = {
         phraseId: cleanId,
         companyId: targetCompanyName,
@@ -111,6 +125,7 @@ export async function uploadPhrases(req, res) {
         volume: p.volume || null,
         events: p.events ? (Array.isArray(p.events) ? p.events.join(", ") : JSON.stringify(p.events)) : null,
         instructions: p.instructions || p.instruction || p.notes || p.metadata || null,
+        tags,
       };
 
       await Phrase.create(doc);
@@ -137,7 +152,7 @@ export async function getAvailablePhrase(req, res) {
       baseQuery.language = { $regex: new RegExp(`^${language}$`, "i") };
     }
     if (projectName && projectName !== "Any") {
-      baseQuery.projectName = projectName;
+      baseQuery.companyId = projectName;
     }
 
     // Check Limits
@@ -176,6 +191,15 @@ export async function getAvailablePhrase(req, res) {
     const maxedOutCompanies = [];
     const waitingTestCompanies = [];
 
+    const isAppApproved = (compId) => {
+      return (user.languageApplications || []).some(a => 
+          a.applicationType === "phrase" && 
+          a.status === "approved" && 
+          String(a.companyId || "").trim().toLowerCase() === String(compId).trim().toLowerCase() &&
+          String(a.languageCode || "").trim().toLowerCase() === reqLang
+      );
+    };
+
     for (const c of companyStats) {
         const compId = c._id.companyId;
         const lang = c._id.language;
@@ -183,7 +207,9 @@ export async function getAvailablePhrase(req, res) {
             // Find company limit, default to 11700 (3h 15m) if company not explicitly in DB
             const limitSecs = companyLimits[compId] || 11700;
             if (c.totalDuration >= limitSecs) maxedOutCompanies.push(compId);
-            if (c.approvedCount === 0 && c.recordedCount > 0) waitingTestCompanies.push(compId);
+            if (c.approvedCount === 0 && c.recordedCount > 0 && !isAppApproved(compId)) {
+                waitingTestCompanies.push(compId);
+            }
         }
     }
 
@@ -407,6 +433,21 @@ export async function submitPhraseRecording(req, res) {
 
     phrase.status = "recorded";
     phrase.contributorId = req.user._id;
+
+    // Generate/fetch speaker_id for the contributor
+    const contributor = await User.findById(req.user._id);
+    if (contributor) {
+      if (!contributor.speaker_id) {
+        const { seq } = await Counter.findOneAndUpdate(
+          { _id: "speaker_id" },
+          { $inc: { seq: 1 } },
+          { upsert: true, new: true }
+        );
+        contributor.speaker_id = `spk_${seq}`;
+        await contributor.save();
+      }
+      phrase.speaker_id = contributor.speaker_id;
+    }
     
     // Clear lock metadata since it is successfully recorded
     phrase.lockedAt = null;
@@ -482,70 +523,50 @@ export async function reviewPhrase(req, res) {
       phrase.qaId = req.user._id;
       phrase.qaComment = comment || null;
       phrase.reviewedAt = new Date();
-      await phrase.save();
-    } else if (action === "reject") {
-      // 1. Move the submitted payload to _rejected folder instead of deleting.
-      let newAudioFile = phrase.audioFile;
-      const oldAudioFile = phrase.audioFile;
-      if (phrase.audioFile) {
-        try {
-          const companyStr = phrase.companyId ? String(phrase.companyId).replace(/[^a-zA-Z0-9_\-\ ]/g, "").trim() : "No_Company";
-          const newKey = `phrases/${companyStr}_rejected/${phrase.audioFile.split("/").pop()}`;
-          
-          await s3Client.send(new CopyObjectCommand({
-            Bucket: BUCKET_NAME,
-            CopySource: `${BUCKET_NAME}/${phrase.audioFile}`,
-            Key: newKey
-          }));
-          newAudioFile = newKey;
-        } catch (s3err) {
-          console.error("Failed to move rejected S3 Audio:", s3err);
+
+      const contributor = await User.findById(phrase.contributorId);
+      if (contributor) {
+        if (!contributor.speaker_id) {
+          const { seq } = await Counter.findOneAndUpdate(
+            { _id: "speaker_id" },
+            { $inc: { seq: 1 } },
+            { upsert: true, new: true }
+          );
+          contributor.speaker_id = `spk_${seq}`;
+          await contributor.save();
         }
+        phrase.speaker_id = contributor.speaker_id;
       }
 
-      // 2. Freeze the current rejected phrase to permanently maintain the history log
-      const originalPhraseId = phrase.phraseId;
-      phrase.status = "rejected";
-      phrase.phraseId = `${originalPhraseId}_rejected_${Date.now()}`;
-      phrase.qaId = req.user._id;
-      phrase.audioFile = newAudioFile; // Point to the rejected folder
-      phrase.qaComment = comment || null;
-      phrase.reviewedAt = new Date();
       await phrase.save();
-
-      // Only delete original file if copy AND save succeeded
-      if (phrase.audioFile && phrase.audioFile !== oldAudioFile) {
+    } else if (action === "reject") {
+      // 1. Delete original audio file from S3 completely
+      if (phrase.audioFile) {
         try {
           await s3Client.send(new DeleteObjectCommand({
             Bucket: BUCKET_NAME,
-            Key: oldAudioFile
+            Key: phrase.audioFile
           }));
         } catch (s3err) {
-          console.error("Failed to delete original S3 Audio after move:", s3err);
+          console.error("Failed to delete rejected S3 Audio:", s3err);
         }
       }
 
-      // 2. Spawn a pristine clone mapping to the core phraseId to re-enter the queue
-      const phraseObj = phrase.toObject();
-      delete phraseObj._id;
-      delete phraseObj.createdAt;
-      delete phraseObj.updatedAt;
-      
-      const newPhrase = new Phrase({
-        ...phraseObj,
-        phraseId: originalPhraseId,
-        status: "pending",
-        contributorId: null,
-        lockedAt: null,
-        lockedBy: null,
-        audioFile: null,
-        duration: 0,
-        qaId: null,
-        qaComment: null,
-        recordedAt: null,
-        reviewedAt: null
-      });
-      await newPhrase.save();
+      // 2. Reset the phrase document directly so it goes back to the recording pipeline
+      phrase.status = "pending";
+      phrase.contributorId = null;
+      phrase.speaker_id = null;
+      phrase.audioFile = null;
+      phrase.duration = 0;
+      phrase.recordedAt = null;
+      phrase.reviewedAt = null;
+      phrase.qaId = null;
+      phrase.qaComment = null;
+      phrase.qcResult = null;
+      phrase.lockedAt = null;
+      phrase.lockedBy = null;
+
+      await phrase.save();
     } else {
       return res.status(400).json({ error: "Invalid action" });
     }
@@ -683,7 +704,7 @@ export async function getSamplePhrase(req, res) {
       query.language = language.trim().toLowerCase();
     }
 
-    const phrase = await Phrase.findOne(query).sort({ _id: 1 }).select("phraseId text language emotion style speed intent pitch volume instructions").lean();
+    const phrase = await Phrase.findOne(query).sort({ _id: 1 }).select("phraseId text language emotion style speed intent pitch volume instructions tags").lean();
 
     if (!phrase) {
       return res.status(404).json({ error: "No sample phrase found for this project and language." });
@@ -765,5 +786,124 @@ export async function approveRejectedPhrase(req, res) {
   } catch (error) {
     console.error("approveRejectedPhrase error:", error);
     res.status(500).json({ error: "Server error" });
+  }
+}
+
+/**
+ * POST /api/phrases/qa/analyze/:phraseId
+ * Run Freq2 audio analysis on a phrase recording.
+ */
+export async function analyzePhrase(req, res) {
+  let tempInputPath = null;
+  let plotPath = null;
+  try {
+    const { phraseId } = req.params;
+    const phrase = await Phrase.findById(phraseId);
+    if (!phrase) return res.status(404).json({ error: "Phrase not found" });
+
+    // Check if there is cached QC results
+    if (phrase.qcResult && req.query.force !== "true") {
+      return res.json(phrase.qcResult);
+    }
+
+    if (!phrase.audioFile) {
+      return res.status(400).json({ error: "No audio file recorded for this phrase yet." });
+    }
+
+    let finalQC;
+
+    if (phrase.audioFile.startsWith("local:") || process.env.LOCAL_QC_FALLBACK === "true") {
+      // Local fallback (development environment only)
+      tempInputPath = path.join(os.tmpdir(), `phrase_input_${Date.now()}_${phraseId}.wav`);
+      const command = new GetObjectCommand({
+        Bucket: BUCKET_NAME,
+        Key: phrase.audioFile, 
+      });
+      const s3Response = await s3Client.send(command);
+      const fileStream = fs.createWriteStream(tempInputPath);
+      await new Promise((resolve, reject) => {
+        s3Response.Body.pipe(fileStream);
+        s3Response.Body.on("error", reject);
+        fileStream.on("finish", resolve);
+        fileStream.on("error", reject);
+      });
+
+      const PYTHON_BIN = process.env.YAMNET_PYTHON || "python";
+      const freqScriptPath = path.resolve(process.cwd(), "..", "python scripts", "freq2.py");
+      const freqResult = await new Promise((resolve, reject) => {
+        const py = spawn(PYTHON_BIN, [
+          freqScriptPath,
+          tempInputPath,
+          "--json"
+        ]);
+        let stdout = "";
+        let stderr = "";
+        py.stdout.on("data", (d) => { stdout += d.toString(); });
+        py.stderr.on("data", (d) => { stderr += d.toString(); });
+        py.on("close", (code) => {
+          if (code !== 0) {
+            console.error("[Freq QC] phrase failed:", stderr);
+            reject(new Error(`Freq Script exited with code ${code}: ${stderr.slice(0, 300)}`));
+            return;
+          }
+          try {
+            const jsonLine = stdout.split("\n").find(l => l.trim().startsWith("{"));
+            if (!jsonLine) throw new Error("No JSON object found in Freq Script output");
+            resolve(JSON.parse(jsonLine.trim()));
+          } catch (e) {
+            reject(new Error("Failed to parse Freq Script output: " + e.message));
+          }
+        });
+        py.on("error", reject);
+      });
+
+      let plotBase64 = "";
+      if (freqResult.plot_path && fs.existsSync(freqResult.plot_path)) {
+        plotPath = freqResult.plot_path;
+        const plotBuffer = fs.readFileSync(plotPath);
+        plotBase64 = plotBuffer.toString("base64");
+      }
+
+      finalQC = {
+        freq: {
+          noise_floor: freqResult.noise_floor_db,
+          crest_factor: freqResult.crest_factor,
+          bit_depth: freqResult.bit_verdict,
+          processing_verdict: freqResult.processing_verdict,
+          spectrogram_img: plotBase64 || null
+        },
+        analyzedAt: new Date()
+      };
+    } else {
+      // Production: Invoke AWS Lambda Audio QC
+      const lambdaResult = await invokeAudioQC({
+        bucket: BUCKET_NAME,
+        key: phrase.audioFile,
+        skip_yamnet: true,
+        return_base64_plot: true
+      });
+
+      finalQC = {
+        freq: {
+          noise_floor: lambdaResult.freq.noise_floor,
+          crest_factor: lambdaResult.freq.crest_factor,
+          bit_depth: lambdaResult.freq.bit_depth,
+          processing_verdict: lambdaResult.freq.processing_verdict,
+          spectrogram_img: lambdaResult.freq.spectrogram_img || null
+        },
+        analyzedAt: new Date()
+      };
+    }
+
+    phrase.qcResult = finalQC;
+    await Phrase.updateOne({ _id: phraseId }, { $set: { qcResult: finalQC } });
+
+    res.json(finalQC);
+  } catch (err) {
+    console.error("Phrase QC Analysis failed:", err);
+    res.status(500).json({ error: err.message });
+  } finally {
+    if (tempInputPath && fs.existsSync(tempInputPath)) try { fs.unlinkSync(tempInputPath); } catch {}
+    if (plotPath && fs.existsSync(plotPath)) try { fs.unlinkSync(plotPath); } catch {}
   }
 }

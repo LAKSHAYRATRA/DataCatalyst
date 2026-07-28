@@ -136,7 +136,7 @@ export default function PhraseRecording() {
         setCurrentPhrase(data.phrase);
       } else {
         setCurrentPhrase(null);
-        setError('No phrases available for this language right now.');
+        setError(data.message || 'No phrases available for this language right now.');
       }
     } catch (err) {
       setError('Failed to fetch phrase.');
@@ -185,10 +185,26 @@ export default function PhraseRecording() {
       }
 
       // Browser fallback path
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, sampleRate: 48000, channelCount: 1 } });
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: false,
+          noiseSuppression: false,
+          autoGainControl: false,
+          googEchoCancellation: false,
+          googAutoGainControl: false,
+          googNoiseSuppression: false,
+          googHighpassFilter: false,
+          channelCount: 1,
+          sampleRate: { min: 48000, ideal: 96000 }
+        }
+      });
       resetRecording();
 
-      const audioCtx = new AudioContext({ sampleRate: 48000 });
+      const track = stream.getAudioTracks()[0];
+      const settings = track ? track.getSettings() : {};
+      const trackSampleRate = settings.sampleRate || 48000;
+
+      const audioCtx = new AudioContext({ sampleRate: trackSampleRate });
       await audioCtx.audioWorklet.addModule("/pcm-worklet.js");
       const source = audioCtx.createMediaStreamSource(stream);
       const workletNode = new AudioWorkletNode(audioCtx, "pcm-processor");
@@ -542,6 +558,12 @@ export default function PhraseRecording() {
                   {currentPhrase.intent && <div><span className="block text-xs uppercase opacity-60 mb-1">Intent</span><span className="font-medium">{currentPhrase.intent}</span></div>}
                   {currentPhrase.pitch && <div><span className="block text-xs uppercase opacity-60 mb-1">Pitch</span><span className="font-medium">{currentPhrase.pitch}</span></div>}
                   {currentPhrase.volume && <div><span className="block text-xs uppercase opacity-60 mb-1">Volume</span><span className="font-medium">{currentPhrase.volume}</span></div>}
+                  {currentPhrase.tags && Object.entries(currentPhrase.tags).map(([key, val]) => (
+                    <div key={key}>
+                      <span className="block text-xs uppercase opacity-60 mb-1">{key.replace(/_/g, ' ')}</span>
+                      <span className="font-medium">{val}</span>
+                    </div>
+                  ))}
                   {currentPhrase.instructions && <div className="col-span-2 md:col-span-3 mt-2"><span className="block text-xs uppercase opacity-60 mb-1">Notes</span><p className="text-sm border-l-2 border-primary-300 pl-3">{currentPhrase.instructions}</p></div>}
                 </div>
 

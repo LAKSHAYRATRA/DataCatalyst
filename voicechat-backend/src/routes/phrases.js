@@ -18,6 +18,7 @@ import {
   getContributorStats,
   getSamplePhrase,
   approveRejectedPhrase,
+  analyzePhrase,
 } from "../controllers/phraseController.js";
 
 const JWT_SECRET = process.env.JWT_SECRET;
@@ -73,6 +74,7 @@ router.get("/admin/all", requireAuth(JWT_SECRET), requireAdmin, getAllPhrasesAdm
 /* -------------------------------------------------------------------------- */
 router.get("/qa/queue", requireAuth(JWT_SECRET), requireQAOrAdmin, getQaQueue);
 router.post("/qa/review/:phraseId", requireAuth(JWT_SECRET), requireQAOrAdmin, reviewPhrase);
+router.post("/qa/analyze/:phraseId", requireAuth(JWT_SECRET), requireQAOrAdmin, analyzePhrase);
 
 /* -------------------------------------------------------------------------- */
 /*                              Contributor Routes                            */

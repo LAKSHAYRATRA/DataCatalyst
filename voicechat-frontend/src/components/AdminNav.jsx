@@ -51,7 +51,7 @@ export default function AdminNav() {
         setOpenMenus({
             calls: ['/admin/calls', '/admin/topics', '/admin/qa', '/admin/languages', '/admin/call-apps'].includes(path),
             users: ['/admin/users', '/admin/payouts', '/admin/pan-verification', '/admin/agreements'].some(p => path.startsWith(p)),
-            phrases: ['/admin/qaphrase', '/admin/phrases', '/admin/language-apps', '/admin/projects', '/admin/companies'].includes(path)
+            phrases: ['/admin/qaphrase', '/admin/phrases', '/admin/language-apps', '/admin/projects', '/admin/companies', '/admin/phrases/downloads'].includes(path)
         });
     }, [location.pathname]);
 
@@ -256,6 +256,12 @@ export default function AdminNav() {
                                                 <Link to="/admin/companies" onClick={() => setIsMobileMenuOpen(false)}
                                                     className={`flex items-center px-3 py-2 rounded-lg text-xs font-semibold transition-all ${isActive('/admin/companies') ? 'bg-neutral-700 text-warning-400' : 'text-neutral-400 hover:text-white'}`}>
                                                     <span>Company Phrase Configs</span>
+                                                </Link>
+                                            )}
+                                            {isAdmin && (
+                                                <Link to="/admin/phrases/downloads" onClick={() => setIsMobileMenuOpen(false)}
+                                                    className={`flex items-center px-3 py-2 rounded-lg text-xs font-semibold transition-all ${isActive('/admin/phrases/downloads') ? 'bg-neutral-700 text-warning-400' : 'text-neutral-400 hover:text-white'}`}>
+                                                    <span>Phrase Downloads</span>
                                                 </Link>
                                             )}
                                         </div>

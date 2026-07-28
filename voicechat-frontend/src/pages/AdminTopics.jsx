@@ -277,21 +277,40 @@ export default function AdminTopics() {
                                             {topic.subtopics.map((subtopic) => (
                                                 <div key={subtopic._id} className="bg-neutral-800 border border-neutral-700 rounded-lg p-3 md:p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
                                                     <div className="flex-1 w-full">
-                                                        <div className="flex items-center space-x-2 mb-1 flex-wrap">
-                                                            <div className="text-white font-medium text-sm md:text-base break-words">{subtopic.title}</div>
-                                                            <button
-                                                                onClick={() => toggleSubtopicEnabled(subtopic)}
-                                                                className={`px-2 py-0.5 rounded-full text-xs flex-shrink-0 ${subtopic.isEnabled
-                                                                    ? 'bg-success-900/50 text-success-300'
-                                                                    : 'bg-neutral-700 text-neutral-500'
-                                                                    }`}
-                                                            >
-                                                                {subtopic.isEnabled ? 'On' : 'Off'}
-                                                            </button>
-                                                            <span className="text-xs text-warning-400 font-semibold px-2 py-0.5 bg-warning-900/30 rounded-full border border-warning-900/50">
-                                                                Limit: {subtopic.maxCalls !== undefined ? subtopic.maxCalls : 3} calls
-                                                            </span>
-                                                        </div>
+                                                        <div className="flex items-center space-x-2 mb-1.5 flex-wrap gap-y-1">
+                                                             <div className="text-white font-medium text-sm md:text-base break-words mr-1">{subtopic.title}</div>
+                                                             
+                                                             {/* Computed Status Badge */}
+                                                             {subtopic.calculatedStatus === "enabled" && (
+                                                                 <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-green-950 text-green-400 border border-green-900/30">
+                                                                     Enabled
+                                                                 </span>
+                                                             )}
+                                                             {subtopic.calculatedStatus === "froze" && (
+                                                                 <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-yellow-950 text-warning-400 border border-warning-900/30 animate-pulse">
+                                                                     ❄️ Froze
+                                                                 </span>
+                                                             )}
+                                                             {subtopic.calculatedStatus === "disabled" && (
+                                                                 <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-neutral-900 text-neutral-500 border border-neutral-800">
+                                                                     Disabled
+                                                                 </span>
+                                                             )}
+
+                                                             <button
+                                                                 onClick={() => toggleSubtopicEnabled(subtopic)}
+                                                                 className={`px-2 py-0.5 rounded-full text-[10px] uppercase tracking-wider font-bold flex-shrink-0 transition-colors ${subtopic.isEnabled
+                                                                     ? 'bg-neutral-700 hover:bg-neutral-600 text-neutral-200'
+                                                                     : 'bg-red-950/40 hover:bg-red-900/30 text-red-400 border border-red-900/50'
+                                                                     }`}
+                                                             >
+                                                                 {subtopic.isEnabled ? 'Pause' : 'Activate'}
+                                                             </button>
+
+                                                             <span className="text-[11px] text-neutral-400 font-medium px-2 py-0.5 bg-neutral-900/80 rounded border border-neutral-700">
+                                                                 Approved: <strong className="text-success-400">{subtopic.approvedCount ?? 0}</strong> / Pending: <strong className="text-warning-400">{subtopic.pendingCount ?? 0}</strong> / Limit: <strong className="text-white">{subtopic.maxCalls !== undefined ? subtopic.maxCalls : 3}</strong>
+                                                             </span>
+                                                         </div>
                                                         {subtopic.description && (
                                                             <div className="text-xs text-neutral-500 break-words whitespace-pre-wrap">{subtopic.description}</div>
                                                         )}

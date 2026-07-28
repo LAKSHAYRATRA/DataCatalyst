@@ -108,11 +108,15 @@ const userSchema = new mongoose.Schema(
         appliedAt: { type: Date, default: Date.now },
         reviewedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
         reviewedAt: { type: Date, default: null },
+        qcResult: { type: mongoose.Schema.Types.Mixed, default: null },
       },
     ],
     
     // Speaker ID (e.g. spk_1, spk_2, ...)
     speaker_id: { type: String, unique: true, sparse: true, default: null },
+
+    accent: { type: String, default: null, trim: true },
+    dialect: { type: String, default: null, trim: true },
 
     // Payout UPI ID
     upiId: { type: String, default: null, trim: true },

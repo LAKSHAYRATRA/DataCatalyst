@@ -105,6 +105,12 @@ export default function AdminMedia() {
     }
   };
 
+  const getClientToken = () => {
+    const vcCookie = document.cookie.split(";").find(c => c.trim().startsWith("vc_token_client="));
+    if (vcCookie) return vcCookie.split("=")[1];
+    return localStorage.getItem("vc_token") || "";
+  };
+
   const handleDownloadCompany = async (companyName) => {
     const confirm = await Swal.fire({
       title: "Download Company Batch?",
@@ -116,14 +122,20 @@ export default function AdminMedia() {
 
     if (!confirm.isConfirmed) return;
 
-    const url = `${import.meta.env.VITE_BACKEND_URL || "http://localhost:3001"}/api/admin/phrases/download-company?company=${encodeURIComponent(companyName)}`;
-    window.location.href = url;
+    try {
+      const token = getClientToken();
+      const url = `${import.meta.env.VITE_BACKEND_URL || "http://localhost:3001"}/api/admin/phrases/download-company?company=${encodeURIComponent(companyName)}${token ? `&token=${encodeURIComponent(token)}` : ""}`;
+      
+      window.location.href = url;
 
-    Swal.fire("Started", "Download has started. S3 files will be moved automatically in the background.", "success");
-    setTimeout(() => {
-      // Traverse up to phrases/ since the current folder will be moved
-      loadExplorer("phrases/");
-    }, 3000);
+      Swal.fire("Started", "Download completed successfully.", "success");
+      setTimeout(() => {
+        // Traverse up to phrases/ since the current folder will be moved
+        loadExplorer("phrases/");
+      }, 3000);
+    } catch (e) {
+      Swal.fire("Error", e.message || "Failed to download company batch", "error");
+    }
   };
 
   return (

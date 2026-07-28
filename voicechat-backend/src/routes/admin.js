@@ -16,10 +16,18 @@ import { Phrase } from "../models/Phrase.js";
 import { Company } from "../models/Company.js";
 import { Counter } from "../models/Counter.js";
 import { getPayoutOverview, getSingleUserPayout } from "../services/payouts.js";
-import { ListObjectsV2Command, DeleteObjectCommand, GetObjectCommand, CopyObjectCommand } from "@aws-sdk/client-s3";
+import { ListObjectsV2Command, DeleteObjectCommand, GetObjectCommand, CopyObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
 import { s3Client, BUCKET_NAME } from "../config/s3.js";
 import { streamS3ToWav, getWavStream, getWavBuffer } from "../utils/ffmpeg-stream.js";
 import { sendAgreementRejectionEmail, sendIntroApprovalEmail, sendIntroRejectionEmail, sendIntroFinalDeletionEmail, sendAgreementApprovedEmail, sendProjectApplicationApprovedEmail, sendProjectApplicationRejectedEmail } from "../util/emailService.js";
+import { updateLimitAndBlacklist } from "../services/limitService.js";
+import { spawn } from "child_process";
+import os from "os";
+import ffmpeg from "fluent-ffmpeg";
+import ffmpegInstaller from "@ffmpeg-installer/ffmpeg";
+import { invokeAudioQC } from "../config/lambda.js";
+
+ffmpeg.setFfmpegPath(ffmpegInstaller.path);
 
 const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET;
@@ -62,7 +70,24 @@ router.get("/companies", requireAuth(JWT_SECRET), async (req, res) => {
 
         // For admin management & batch upload selectors, return ALL companies
         if (req.query.forApply !== "true") {
-            return res.json({ companies: allCompanies });
+            const companiesWithTags = await Promise.all(
+                allCompanies.map(async (c) => {
+                    const samplePhrases = await Phrase.find({ companyId: c.name }).limit(100).select("tags").lean();
+                    const tagKeys = new Set();
+                    for (const p of samplePhrases) {
+                        if (p.tags) {
+                            for (const k of Object.keys(p.tags)) {
+                                tagKeys.add(k);
+                            }
+                        }
+                    }
+                    return {
+                        ...c,
+                        availableTags: Array.from(tagKeys)
+                    };
+                })
+            );
+            return res.json({ companies: companiesWithTags });
         }
 
         // For contributor apply page (?forApply=true), aggregate active phrases and ONLY list companies with actual sample phrases
@@ -227,6 +252,171 @@ async function rejectLanguageApplication(req, res) {
     }
 }
 
+async function analyzeLanguageApplication(req, res) {
+    let tempInputPath = null;
+    let yamnetWavPath = null;
+    let freqWavPath = null;
+    try {
+        const userId = req.params.userId;
+        const appId = req.params.appId;
+        const user = await User.findById(userId);
+        if (!user) return res.status(404).json({ error: "User not found" });
+        const app = user.languageApplications.find((a) => String(a._id) === String(appId));
+        if (!app) return res.status(404).json({ error: "Application not found" });
+
+        const languageCode = String(app.languageCode || "").trim().toLowerCase();
+        if (!hasLanguageAccess(req.user, languageCode)) {
+            return res.status(403).json({ error: "Forbidden: language access required" });
+        }
+
+        // Check if there is cached QC results
+        if (app.qcResult && req.query.force !== "true") {
+            return res.json(app.qcResult);
+        }
+
+        if (!app.recordingFile) {
+            return res.status(404).json({ error: "Recording file not found" });
+        }
+
+        // 1. Resolve recording file path
+        const localDir = path.join(process.cwd(), "recordings", "language-apps");
+        const exactLocalName = app.recordingFile.startsWith("local:") 
+          ? app.recordingFile.replace("local:", "") 
+          : path.basename(app.recordingFile);
+        
+        let resolvedFilePath = null;
+        const exactPath = path.join(localDir, exactLocalName);
+        if (fs.existsSync(exactPath)) {
+            resolvedFilePath = exactPath;
+        } else {
+            if (fs.existsSync(localDir)) {
+                const prefix = `${userId}_${languageCode}_`;
+                const files = fs.readdirSync(localDir);
+                const matchingFiles = files.filter(f => f.startsWith(prefix) && f.endsWith(".flac"));
+                if (matchingFiles.length > 0) {
+                    const dbTsMatch = exactLocalName.match(/_(\d+)\.flac$/);
+                    const dbTs = dbTsMatch ? parseInt(dbTsMatch[1]) : 0;
+                    if (dbTs > 0) {
+                        let closestFile = null;
+                        let minDiff = Infinity;
+                        for (const f of matchingFiles) {
+                            const fTsMatch = f.match(/_(\d+)\.flac$/);
+                            const fTs = fTsMatch ? parseInt(fTsMatch[1]) : 0;
+                            const diff = Math.abs(fTs - dbTs);
+                            if (diff < minDiff) {
+                                minDiff = diff;
+                                closestFile = f;
+                            }
+                        }
+                        if (closestFile && minDiff < 60000) {
+                            resolvedFilePath = path.join(localDir, closestFile);
+                        }
+                    }
+                    if (!resolvedFilePath) {
+                        matchingFiles.sort((a, b) => {
+                            const aTs = parseInt(a.match(/_(\d+)\.flac$/)?.[1] || 0);
+                            const bTs = parseInt(b.match(/_(\d+)\.flac$/)?.[1] || 0);
+                            return bTs - aTs;
+                        });
+                        resolvedFilePath = path.join(localDir, matchingFiles[0]);
+                    }
+                }
+            }
+        }
+
+        let finalQC;
+
+        if (resolvedFilePath && fs.existsSync(resolvedFilePath)) {
+            // Local fallback (development environment only)
+            tempInputPath = path.join(os.tmpdir(), `input_${Date.now()}_${userId}.flac`);
+            fs.copyFileSync(resolvedFilePath, tempInputPath);
+
+            const PYTHON_BIN = process.env.YAMNET_PYTHON || "python";
+            const freqScriptPath = path.resolve(process.cwd(), "..", "python scripts", "freq2.py");
+            const freqResult = await new Promise((resolve, reject) => {
+                const py = spawn(PYTHON_BIN, [
+                    freqScriptPath,
+                    tempInputPath,
+                    "--json"
+                ]);
+                let stdout = "";
+                let stderr = "";
+                py.stdout.on("data", (d) => { stdout += d.toString(); });
+                py.stderr.on("data", (d) => { stderr += d.toString(); });
+                py.on("close", (code) => {
+                    if (code !== 0) {
+                        console.error("[Freq QC] failed:", stderr);
+                        reject(new Error(`Freq Script exited with code ${code}: ${stderr.slice(0, 300)}`));
+                        return;
+                    }
+                    try {
+                        const jsonLine = stdout.split("\n").find(l => l.trim().startsWith("{"));
+                        if (!jsonLine) throw new Error("No JSON object found in Freq Script output");
+                        resolve(JSON.parse(jsonLine.trim()));
+                    } catch (e) {
+                        reject(new Error("Failed to parse Freq Script output: " + e.message));
+                    }
+                });
+                py.on("error", reject);
+            });
+
+            let plotBase64 = "";
+            if (freqResult.plot_path && fs.existsSync(freqResult.plot_path)) {
+                plotPath = freqResult.plot_path;
+                const plotBuffer = fs.readFileSync(plotPath);
+                plotBase64 = plotBuffer.toString("base64");
+            }
+
+            finalQC = {
+                freq: {
+                    noise_floor: freqResult.noise_floor_db,
+                    crest_factor: freqResult.crest_factor,
+                    bit_depth: freqResult.bit_verdict,
+                    processing_verdict: freqResult.processing_verdict,
+                    spectrogram_img: plotBase64 || null
+                },
+                analyzedAt: new Date()
+            };
+        } else {
+            // Production: Invoke AWS Lambda Audio QC
+            if (app.recordingFile.startsWith("local:")) {
+                return res.status(404).json({ error: "Local recording file not found" });
+            }
+            const lambdaResult = await invokeAudioQC({
+                bucket: BUCKET_NAME,
+                key: app.recordingFile,
+                skip_yamnet: true,
+                return_base64_plot: true
+            });
+
+            finalQC = {
+                freq: {
+                    noise_floor: lambdaResult.freq.noise_floor,
+                    crest_factor: lambdaResult.freq.crest_factor,
+                    bit_depth: lambdaResult.freq.bit_depth,
+                    processing_verdict: lambdaResult.freq.processing_verdict,
+                    spectrogram_img: lambdaResult.freq.spectrogram_img || null
+                },
+                analyzedAt: new Date()
+            };
+        }
+
+        app.qcResult = finalQC;
+        user.markModified("languageApplications");
+        await user.save();
+
+        res.json(finalQC);
+    } catch (e) {
+        console.error("Language application analysis failed:", e);
+        res.status(500).json({ error: e.message });
+    } finally {
+        try { if (tempInputPath && fs.existsSync(tempInputPath)) fs.unlinkSync(tempInputPath); } catch {}
+        try { if (yamnetWavPath && fs.existsSync(yamnetWavPath)) fs.unlinkSync(yamnetWavPath); } catch {}
+        try { if (freqWavPath && fs.existsSync(freqWavPath)) fs.unlinkSync(freqWavPath); } catch {}
+        try { if (plotPath && fs.existsSync(plotPath)) fs.unlinkSync(plotPath); } catch {}
+    }
+}
+
 // ===== QA CALL REVIEW (admin OR QA) — mounted BEFORE isAdmin so QA users can access =====
 // Uses its own requireAuth + isAdminOrQA guard instead of relying on the parent isAdmin.
 const qaCallRouter = express.Router();
@@ -368,6 +558,7 @@ qaCallRouter.patch("/calls/:callId/approve/:userId", async (req, res) => {
         }
         await applyRecordingDecision(call, userId, "approved", req.user._id, req.body?.note);
         await call.save();
+        await updateLimitAndBlacklist(userId, call.language, true);
 
         res.json({ message: "Recording approved successfully", call });
     } catch (e) {
@@ -386,10 +577,248 @@ qaCallRouter.patch("/calls/:callId/reject/:userId", async (req, res) => {
         }
         await applyRecordingDecision(call, userId, "rejected", req.user._id, req.body?.note);
         await call.save();
+        await updateLimitAndBlacklist(userId, call.language, false);
 
         res.json({ message: "Recording rejected successfully", call });
     } catch (e) {
         res.status(e.statusCode || 500).json({ error: e.message });
+    }
+});
+
+// Stream generated spectrogram plot from S3
+qaCallRouter.get("/calls/:callId/spectrogram/:userId", async (req, res) => {
+    try {
+        const { callId, userId } = req.params;
+        const call = await CallSession.findOne({ callId }).lean();
+        if (!call) return res.status(404).json({ error: "Call not found" });
+
+        const isUserA = String(call.userA) === String(userId);
+        const qcResult = isUserA ? call.recordingAQCResult : call.recordingBQCResult;
+        
+        if (!qcResult || !qcResult.spectrogramS3Key) {
+            return res.status(404).json({ error: "Spectrogram not found" });
+        }
+
+        const s3Command = new GetObjectCommand({
+            Bucket: BUCKET_NAME,
+            Key: qcResult.spectrogramS3Key
+        });
+        const s3Response = await s3Client.send(s3Command);
+        res.setHeader("Content-Type", "image/png");
+        s3Response.Body.pipe(res);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// Run audio QC checks using YAMNet and freq2 python scripts
+qaCallRouter.post("/calls/:callId/analyze/:userId", async (req, res) => {
+    const { callId, userId } = req.params;
+    let tempInputPath = "";
+    let yamnetWavPath = "";
+    let freqWavPath = "";
+    let plotPath = "";
+
+    try {
+        const call = await CallSession.findOne({ callId });
+        if (!call) return res.status(404).json({ error: "Call not found" });
+
+        let recordingFile;
+        if (call.userA.toString() === userId) {
+            recordingFile = call.recordingAFile;
+        } else if (call.userB.toString() === userId) {
+            recordingFile = call.recordingBFile;
+        } else {
+            return res.status(404).json({ error: "User not part of this call" });
+        }
+
+        if (!recordingFile) {
+            return res.status(404).json({ error: "Recording file not found on call session" });
+        }
+
+        // Check if language is configured as "noisy"
+        const langDoc = await Language.findOne({ code: call.language?.toLowerCase() });
+        const isNoisy = langDoc ? !!langDoc.noisy : false;
+
+        let qcData;
+        let plotBase64 = "";
+
+        if (recordingFile.startsWith("local:") || process.env.LOCAL_QC_FALLBACK === "true") {
+            // Local fallback (development environment only)
+            const ext = path.extname(recordingFile) || ".wav";
+            tempInputPath = path.join(os.tmpdir(), `input_${Date.now()}_${userId}${ext}`);
+
+            const s3Command = new GetObjectCommand({
+                Bucket: BUCKET_NAME,
+                Key: recordingFile
+            });
+            const s3Response = await s3Client.send(s3Command);
+            
+            const fileStream = fs.createWriteStream(tempInputPath);
+            await new Promise((resolve, reject) => {
+                s3Response.Body.pipe(fileStream);
+                s3Response.Body.on("error", reject);
+                fileStream.on("finish", resolve);
+                fileStream.on("error", reject);
+            });
+
+            let yamnetResult = {
+                suspicion_rating: 0,
+                rating_label: "Clean (YAMNet bypassed - noisy language config)",
+                top_noise_events: "None",
+                events: []
+            };
+
+            const conversions = [];
+            if (!isNoisy) {
+                yamnetWavPath = path.join(os.tmpdir(), `yamnet_${Date.now()}_${userId}.wav`);
+                conversions.push(new Promise((resolve, reject) => {
+                    ffmpeg(tempInputPath)
+                        .audioChannels(1)
+                        .audioFrequency(16000)
+                        .toFormat("wav")
+                        .on("end", resolve)
+                        .on("error", reject)
+                        .save(yamnetWavPath);
+                }));
+                await Promise.all(conversions);
+            }
+
+            const PYTHON_BIN = process.env.YAMNET_PYTHON || "python";
+            const analyses = [];
+
+            let yamnetPromise = Promise.resolve(yamnetResult);
+            if (!isNoisy) {
+                const yamnetScriptPath = path.resolve(process.cwd(), "..", "python scripts", "yamnet_noise_analyzer_v4.py");
+                yamnetPromise = new Promise((resolve, reject) => {
+                    const py = spawn(PYTHON_BIN, [
+                        yamnetScriptPath,
+                        "--input", yamnetWavPath,
+                        "--threshold", "0.20",
+                        "--json"
+                    ]);
+                    let stdout = "";
+                    let stderr = "";
+                    py.stdout.on("data", (d) => { stdout += d.toString(); });
+                    py.stderr.on("data", (d) => { stderr += d.toString(); });
+                    py.on("close", (code) => {
+                        if (code !== 0) {
+                            console.error("[YAMNet QC] failed:", stderr);
+                            reject(new Error(`YAMNet exited with code ${code}: ${stderr.slice(0, 300)}`));
+                            return;
+                        }
+                        try {
+                            const jsonLine = stdout.split("\n").find(l => l.trim().startsWith("{"));
+                            if (!jsonLine) throw new Error("No JSON object found in YAMNet output");
+                            resolve(JSON.parse(jsonLine.trim()));
+                        } catch (e) {
+                            reject(new Error("Failed to parse YAMNet output: " + e.message));
+                        }
+                    });
+                    py.on("error", reject);
+                });
+            }
+            analyses.push(yamnetPromise);
+
+            const freqScriptPath = path.resolve(process.cwd(), "..", "python scripts", "freq2.py");
+            const freqPromise = new Promise((resolve, reject) => {
+                const py = spawn(PYTHON_BIN, [
+                    freqScriptPath,
+                    tempInputPath,
+                    "--json"
+                ]);
+                let stdout = "";
+                let stderr = "";
+                py.stdout.on("data", (d) => { stdout += d.toString(); });
+                py.stderr.on("data", (d) => { stderr += d.toString(); });
+                py.on("close", (code) => {
+                    if (code !== 0) {
+                        console.error("[Freq2 QC] failed:", stderr);
+                        reject(new Error(`Freq2 exited with code ${code}: ${stderr.slice(0, 300)}`));
+                        return;
+                    }
+                    try {
+                        const jsonLine = stdout.split("\n").find(l => l.trim().startsWith("{"));
+                        if (!jsonLine) throw new Error("No JSON object found in Freq2 output");
+                        resolve(JSON.parse(jsonLine.trim()));
+                    } catch (e) {
+                        reject(new Error("Failed to parse Freq2 output: " + e.message));
+                    }
+                });
+                py.on("error", reject);
+            });
+            analyses.push(freqPromise);
+
+            const [resolvedYamnet, resolvedFreq] = await Promise.all(analyses);
+            yamnetResult = resolvedYamnet;
+            const freqResult = resolvedFreq;
+
+            const spectrogramS3Key = `qc_plots/${callId}_${userId}_spectrogram.png`;
+            if (freqResult.plot_path && fs.existsSync(freqResult.plot_path)) {
+                plotPath = freqResult.plot_path;
+                const plotBuffer = fs.readFileSync(plotPath);
+                plotBase64 = plotBuffer.toString("base64");
+
+                await s3Client.send(new PutObjectCommand({
+                    Bucket: BUCKET_NAME,
+                    Key: spectrogramS3Key,
+                    Body: plotBuffer,
+                    ContentType: "image/png"
+                }));
+            }
+
+            qcData = {
+                yamnet: yamnetResult,
+                freq: freqResult,
+                spectrogramS3Key: freqResult.plot_path ? spectrogramS3Key : null,
+                analyzedAt: new Date()
+            };
+        } else {
+            // Production: Invoke AWS Lambda Audio QC
+            const lambdaResult = await invokeAudioQC({
+                bucket: BUCKET_NAME,
+                key: recordingFile,
+                skip_yamnet: isNoisy,
+                return_base64_plot: true
+            });
+
+            qcData = {
+                yamnet: lambdaResult.yamnet,
+                freq: {
+                    noise_floor_db: lambdaResult.freq.noise_floor_db,
+                    noise_floor: lambdaResult.freq.noise_floor,
+                    crest_factor: lambdaResult.freq.crest_factor,
+                    bit_verdict: lambdaResult.freq.bit_verdict,
+                    bit_depth: lambdaResult.freq.bit_depth,
+                    processing_verdict: lambdaResult.freq.processing_verdict,
+                },
+                spectrogramS3Key: lambdaResult.freq.spectrogram_s3_key || null,
+                analyzedAt: new Date()
+            };
+            plotBase64 = lambdaResult.freq.spectrogram_img || "";
+        }
+
+        const isUserA = String(call.userA) === String(userId);
+        const updateField = isUserA ? "recordingAQCResult" : "recordingBQCResult";
+
+        await CallSession.updateOne(
+            { callId },
+            { $set: { [updateField]: qcData } }
+        );
+
+        res.json({
+            ...qcData,
+            spectrogram: plotBase64
+        });
+
+    } catch (err) {
+        console.error("[QC Analysis error]:", err);
+        res.status(500).json({ error: "Audio QC Analysis failed", details: err.message });
+    } finally {
+        if (tempInputPath && fs.existsSync(tempInputPath)) try { fs.unlinkSync(tempInputPath); } catch (e) {}
+        if (yamnetWavPath && fs.existsSync(yamnetWavPath)) try { fs.unlinkSync(yamnetWavPath); } catch (e) {}
+        if (freqWavPath && fs.existsSync(freqWavPath)) try { fs.unlinkSync(freqWavPath); } catch (e) {}
+        if (plotPath && fs.existsSync(plotPath)) try { fs.unlinkSync(plotPath); } catch (e) {}
     }
 });
 
@@ -444,6 +873,7 @@ qaCallRouter.get("/calls/:callId/recording/:userId", async (req, res) => {
 qaCallRouter.get("/language-applications", listLanguageApplications);
 qaCallRouter.patch("/language-applications/:userId/:appId/approve", approveLanguageApplication);
 qaCallRouter.patch("/language-applications/:userId/:appId/reject", rejectLanguageApplication);
+qaCallRouter.post("/language-applications/:userId/:appId/analyze", analyzeLanguageApplication);
 
 
 // Mount QA router BEFORE isAdmin — this must stay here
@@ -455,6 +885,7 @@ sharedLanguageReviewRouter.use(isAdminOrQA);
 sharedLanguageReviewRouter.get("/language-applications", listLanguageApplications);
 sharedLanguageReviewRouter.patch("/language-applications/:userId/:appId/approve", approveLanguageApplication);
 sharedLanguageReviewRouter.patch("/language-applications/:userId/:appId/reject", rejectLanguageApplication);
+sharedLanguageReviewRouter.post("/language-applications/:userId/:appId/analyze", analyzeLanguageApplication);
 router.use("/", sharedLanguageReviewRouter);
 
 // All routes below this line require full admin access
@@ -491,7 +922,7 @@ router.get("/metadata/export", async (req, res) => {
     try {
         const [users, calls, languages, topics, subtopics, feedbackCount, payoutPayments] = await Promise.all([
             User.find()
-                .select("firstname lastname username email isAdmin isQA qaLanguageCode qaLanguageCodes accountStatus dailyCallLimit regionalLanguage locality languageApplications createdAt updatedAt")
+                .select("firstname lastname username email isAdmin isQA qaLanguageCode qaLanguageCodes accountStatus dailyCallLimit regionalLanguage locality languageApplications accent dialect createdAt updatedAt")
                 .lean(),
             CallSession.find()
                 .select("callId userA userB startedAt endedAt endReason callActuallyStarted callStatus recordingAStatus recordingBStatus recordingAReviewNote recordingBReviewNote recordingADurationMinutes recordingBDurationMinutes recordingAPayoutUsd recordingBPayoutUsd language topicId subtopicId actualCallDuration negotiationDuration reviewedAt reviewedBy createdAt updatedAt")
@@ -607,6 +1038,8 @@ router.get("/metadata/export", async (req, res) => {
                 dailyCallLimit: user.dailyCallLimit,
                 regionalLanguage: user.regionalLanguage || null,
                 locality: user.locality || null,
+                accent: user.accent || null,
+                dialect: user.dialect || null,
                 qaLanguageCode: user.qaLanguageCode || (Array.isArray(user.qaLanguageCodes) ? user.qaLanguageCodes[0] || null : null),
                 languageApplications: (user.languageApplications || []).map((app) => ({
                     languageCode: app.languageCode,
@@ -768,7 +1201,13 @@ router.get("/calls", async (req, res) => {
 
         const query = {};
         if (req.query.status) {
-            query.endReason = req.query.status;
+            if (req.query.status === "logs" || req.query.status === "reviewed") {
+                query.callStatus = { $in: ["approved", "rejected"] };
+            } else if (["pending", "approved", "rejected"].includes(req.query.status)) {
+                query.callStatus = req.query.status;
+            } else {
+                query.endReason = req.query.status;
+            }
         }
         if (req.query.dateFrom || req.query.dateTo) {
             query.startedAt = {};
@@ -784,6 +1223,7 @@ router.get("/calls", async (req, res) => {
             .populate("subtopicId", "title description instructions")
             .populate("questionerUserId", "firstname lastname username")
             .populate("answererUserId", "firstname lastname username")
+            .populate("reviewedBy", "firstname lastname username email")
             .sort({ startedAt: -1 })
             .skip(skip)
             .limit(limit);
@@ -797,6 +1237,48 @@ router.get("/calls", async (req, res) => {
                 pages: Math.ceil(total / limit),
             },
         });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// ===== BULK DELETE ALL REJECTED CALLS S3 FILES =====
+router.post("/calls/purge-rejected", async (req, res) => {
+    try {
+        const callsToPurge = await CallSession.find({
+            recordingAStatus: "rejected",
+            recordingBStatus: "rejected",
+            $or: [
+                { recordingAFile: { $ne: null } },
+                { recordingBFile: { $ne: null } },
+                { mixedRecordingFile: { $ne: null } }
+            ]
+        });
+
+        let purgedCount = 0;
+
+        for (const call of callsToPurge) {
+            const keysToDelete = [call.recordingAFile, call.recordingBFile, call.mixedRecordingFile].filter(Boolean);
+            
+            for (const key of keysToDelete) {
+                try {
+                    await s3Client.send(new DeleteObjectCommand({
+                        Bucket: BUCKET_NAME,
+                        Key: key
+                    }));
+                } catch (err) {
+                    console.error(`Failed to delete S3 file: ${key} for call ${call.callId}`, err);
+                }
+            }
+
+            call.recordingAFile = null;
+            call.recordingBFile = null;
+            call.mixedRecordingFile = null;
+            await call.save();
+            purgedCount++;
+        }
+
+        res.json({ message: "Rejected calls purged successfully", purgedCount });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
@@ -934,9 +1416,40 @@ router.get("/topics", async (req, res) => {
         const topicsWithSubtopics = await Promise.all(
             topics.map(async (topic) => {
                 const subtopics = await Subtopic.find({ topicId: topic._id }).sort({ createdAt: -1 });
+                const subtopicsWithStatus = await Promise.all(
+                    subtopics.map(async (sub) => {
+                        const approvedCount = await CallSession.countDocuments({
+                            subtopicId: sub._id,
+                            callActuallyStarted: true,
+                            callStatus: "approved"
+                        });
+                        const pendingCount = await CallSession.countDocuments({
+                            subtopicId: sub._id,
+                            callActuallyStarted: true,
+                            callStatus: "pending"
+                        });
+                        const limit = sub.maxCalls !== undefined ? sub.maxCalls : 3;
+
+                        let calculatedStatus = "enabled";
+                        if (!sub.isEnabled) {
+                            calculatedStatus = "disabled";
+                        } else if (approvedCount >= limit) {
+                            calculatedStatus = "disabled";
+                        } else if (approvedCount + pendingCount >= limit) {
+                            calculatedStatus = "froze";
+                        }
+
+                        return {
+                            ...sub.toObject(),
+                            approvedCount,
+                            pendingCount,
+                            calculatedStatus
+                        };
+                    })
+                );
                 return {
                     ...topic.toObject(),
-                    subtopics,
+                    subtopics: subtopicsWithStatus,
                 };
             })
         );
@@ -1089,6 +1602,7 @@ router.patch("/calls/:callId/approve/:userId", async (req, res) => {
 
         await applyRecordingDecision(call, userId, "approved", req.user._id, req.body?.note);
         await call.save();
+        await updateLimitAndBlacklist(userId, call.language, true);
 
         res.json({ message: "Recording approved successfully", call });
     } catch (error) {
@@ -1108,6 +1622,7 @@ router.patch("/calls/:callId/reject/:userId", async (req, res) => {
 
         await applyRecordingDecision(call, userId, "rejected", req.user._id, req.body?.note);
         await call.save();
+        await updateLimitAndBlacklist(userId, call.language, false);
 
         res.json({ message: "Recording rejected successfully", call });
     } catch (error) {
@@ -1125,6 +1640,8 @@ router.patch("/calls/:callId/approve", async (req, res) => {
         await applyRecordingDecision(call, call.userA.toString(), "approved", req.user._id, req.body?.recordingAReviewNote);
         await applyRecordingDecision(call, call.userB.toString(), "approved", req.user._id, req.body?.recordingBReviewNote);
         await call.save();
+        await updateLimitAndBlacklist(call.userA.toString(), call.language, true);
+        await updateLimitAndBlacklist(call.userB.toString(), call.language, true);
 
         res.json({ message: "Call approved successfully", call });
     } catch (error) {
@@ -1142,6 +1659,8 @@ router.patch("/calls/:callId/reject", async (req, res) => {
         await applyRecordingDecision(call, call.userA.toString(), "rejected", req.user._id, req.body?.recordingAReviewNote);
         await applyRecordingDecision(call, call.userB.toString(), "rejected", req.user._id, req.body?.recordingBReviewNote);
         await call.save();
+        await updateLimitAndBlacklist(call.userA.toString(), call.language, false);
+        await updateLimitAndBlacklist(call.userB.toString(), call.language, false);
 
         res.json({ message: "Call rejected successfully", call });
     } catch (error) {
@@ -1542,6 +2061,7 @@ router.post("/languages", async (req, res) => {
     const hourlyPayout = Number(req.body?.hourlyPayout);
     const sampleRate = req.body?.sampleRate !== undefined ? Number(req.body.sampleRate) : 48000;
     const maxHoursPerContributor = req.body?.maxHoursPerContributor !== undefined ? Number(req.body.maxHoursPerContributor) : -1;
+    const maxDailyCallLimit = req.body?.maxDailyCallLimit !== undefined ? Number(req.body.maxDailyCallLimit) : 5;
     if (!name || !code) return res.status(400).json({ error: "name and code are required" });
     if (!Number.isFinite(hourlyPayout) || hourlyPayout < 0) {
         return res.status(400).json({ error: "A valid hourly payout is required" });
@@ -1552,14 +2072,20 @@ router.post("/languages", async (req, res) => {
     if (!Number.isFinite(maxHoursPerContributor) || (maxHoursPerContributor < 0 && maxHoursPerContributor !== -1)) {
         return res.status(400).json({ error: "A valid max contribution limit (hours) is required" });
     }
+    if (!Number.isFinite(maxDailyCallLimit) || maxDailyCallLimit < 1) {
+        return res.status(400).json({ error: "A valid max daily call limit is required" });
+    }
     try {
+        const noisy = req.body?.noisy !== undefined ? !!req.body.noisy : false;
         const lang = await Language.create({
             name: name.trim(),
             code: code.trim().toLowerCase(),
             hourlyPayout,
             sampleRate,
             maxHoursPerContributor,
-            enabled: true
+            maxDailyCallLimit,
+            enabled: true,
+            noisy
         });
         res.status(201).json({ language: lang });
     } catch (e) {
@@ -1573,6 +2099,7 @@ router.patch("/languages/:id", async (req, res) => {
     const updates = {};
     if (req.body.name !== undefined) updates.name = req.body.name.trim();
     if (req.body.enabled !== undefined) updates.enabled = !!req.body.enabled;
+    if (req.body.noisy !== undefined) updates.noisy = !!req.body.noisy;
     if (req.body.hourlyPayout !== undefined) {
         const hourlyPayout = Number(req.body.hourlyPayout);
         if (!Number.isFinite(hourlyPayout) || hourlyPayout < 0) {
@@ -1593,6 +2120,13 @@ router.patch("/languages/:id", async (req, res) => {
             return res.status(400).json({ error: "A valid max contribution limit (hours) is required" });
         }
         updates.maxHoursPerContributor = maxHours;
+    }
+    if (req.body.maxDailyCallLimit !== undefined) {
+        const maxDaily = Number(req.body.maxDailyCallLimit);
+        if (!Number.isFinite(maxDaily) || maxDaily < 1) {
+            return res.status(400).json({ error: "A valid max daily call limit is required" });
+        }
+        updates.maxDailyCallLimit = maxDaily;
     }
     try {
         const lang = await Language.findByIdAndUpdate(req.params.id, updates, { new: true });
@@ -1735,17 +2269,31 @@ router.get("/s3-explorer", async (req, res) => {
         const prefix = req.query.prefix || "";
         const command = new ListObjectsV2Command({
             Bucket: BUCKET_NAME,
-            Prefix: prefix,
-            Delimiter: "/"
+            Prefix: prefix
         });
         const response = await s3Client.send(command);
         
-        const folders = (response.CommonPrefixes || []).map(p => p.Prefix);
-        let files = (response.Contents || []).map(f => ({
-            key: f.Key,
-            size: f.Size,
-            lastModified: f.LastModified
-        })).filter(f => f.key !== prefix);
+        const foldersSet = new Set();
+        const rawFiles = [];
+
+        for (const item of (response.Contents || [])) {
+            if (!item.Key || item.Key === prefix) continue;
+            const relative = item.Key.slice(prefix.length);
+            const slashIdx = relative.indexOf("/");
+            if (slashIdx !== -1) {
+                const folderPrefix = prefix + relative.slice(0, slashIdx + 1);
+                foldersSet.add(folderPrefix);
+            } else {
+                rawFiles.push({
+                    key: item.Key,
+                    size: item.Size,
+                    lastModified: item.LastModified
+                });
+            }
+        }
+
+        const folders = Array.from(foldersSet).sort();
+        let files = rawFiles;
 
         // --- Context Injection Engine ---
         const ObjectKeysExtracted = files.map(f => f.key);
@@ -1834,7 +2382,26 @@ router.get("/s3-download", async (req, res) => {
         res.setHeader("Content-Type", s3Doc.ContentType || "audio/webm");
 
         if (dl === "1") {
-            const filename = key.split("/").pop();
+            let filename = key.split("/").pop();
+            const ext = key.includes(".") ? key.split(".").pop() : "";
+
+            const phrase = await Phrase.findOne({ audioFile: key });
+            if (phrase) {
+                filename = phrase.phraseId + (ext ? `.${ext}` : "");
+            } else {
+                const call = await CallSession.findOne({
+                    $or: [
+                        { recordingAFile: key },
+                        { recordingBFile: key },
+                        { mixedRecordingFile: key }
+                    ]
+                });
+                if (call) {
+                    const baseName = key.split("/").pop().split(".")[0];
+                    filename = `${call.callId}_${baseName}` + (ext ? `.${ext}` : "");
+                }
+            }
+
             res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
         } else {
             res.setHeader("Content-Disposition", "inline");
@@ -1860,7 +2427,25 @@ router.get("/s3-download-wav", async (req, res) => {
         });
         const s3Doc = await s3Client.send(command);
         
-        const filename = key.split("/").pop().split(".")[0];
+        let filename = key.split("/").pop().split(".")[0];
+
+        const phrase = await Phrase.findOne({ audioFile: key });
+        if (phrase) {
+            filename = phrase.phraseId;
+        } else {
+            const call = await CallSession.findOne({
+                $or: [
+                    { recordingAFile: key },
+                    { recordingBFile: key },
+                    { mixedRecordingFile: key }
+                ]
+            });
+            if (call) {
+                const baseName = key.split("/").pop().split(".")[0];
+                filename = `${call.callId}_${baseName}`;
+            }
+        }
+
         // JIT Pipe logic streams natively executing FFMPEG bridging
         streamS3ToWav(s3Doc.Body, res, filename);
     } catch (e) {
@@ -1906,6 +2491,11 @@ router.get("/phrases/download-company", async (req, res) => {
             .populate("contributorId").lean();
         const phraseByKey = new Map(phraseDocs.map((p) => [p.audioFile, p]));
 
+        // Fetch the company config to read custom namingPattern
+        const baseCompanyName = companyFolder.replace(/_downloaded$/, "");
+        const companyDoc = await Company.findOne({ name: { $regex: new RegExp(`^${baseCompanyName}$`, "i") } }).lean();
+        const filenamePattern = companyDoc?.namingPattern || "{phraseId}";
+
         res.setHeader("Content-Type", "application/zip");
         res.setHeader("Content-Disposition", `attachment; filename="${companyFolder}_phrases.zip"`);
 
@@ -1923,7 +2513,7 @@ router.get("/phrases/download-company", async (req, res) => {
             return res.status(500).json({ error: "Server missing 'archiver' dependency." });
         }
 
-        const archive = new ZipArchive({ zlib: { level: 9 } });
+        const archive = new ZipArchive({ zlib: { level: 0 } });
 
         archive.on("error", (err) => {
             console.error("Archiver Error:", err);
@@ -1945,12 +2535,34 @@ router.get("/phrases/download-company", async (req, res) => {
             // Folder name inside the zip: the phraseId when we have a DB record,
             // otherwise the file's base name so the file is still included.
             const baseName = key.substring(key.lastIndexOf("/") + 1).replace(/\.[^.]+$/, "");
-            const folderName = phrase?.phraseId || baseName;
+            let folderName = phrase?.phraseId || baseName;
 
             // Attach metadata JSON only when a phrase record exists for this file.
             if (phrase) {
                 const phraseId = phrase.phraseId;
-                const speakerId = contributor.speaker_id || `spk_${contributor._id}`;
+                const speakerId = contributor.speaker_id || phrase.speaker_id || "";
+
+                // Compute flexible/custom filename from namingPattern
+                let computedName = filenamePattern
+                    .replace(/{phraseId}/g, phraseId || "")
+                    .replace(/{language}/g, phrase.language || "")
+                    .replace(/{speaker_id}/g, speakerId || `spk_${contributor._id || "unknown"}`)
+                    .replace(/{gender}/g, contributor.gender || "unknown")
+                    .replace(/{baseName}/g, baseName);
+                
+                // Support dynamic tag replacement e.g. {emotion}, {style}
+                if (phrase.tags) {
+                    for (const [tagKey, tagVal] of Object.entries(phrase.tags)) {
+                        const regex = new RegExp(`{${tagKey}}`, 'g');
+                        computedName = computedName.replace(regex, tagVal || "");
+                    }
+                }
+
+                // Sanitize filename of any illegal characters
+                computedName = computedName.replace(/[^a-zA-Z0-9_\-\ ]/g, "").trim();
+                if (computedName) {
+                    folderName = computedName;
+                }
 
                 // Generate speaker_metadata.json
                 const speakerInfo = {
@@ -1960,8 +2572,8 @@ router.get("/phrases/download-company", async (req, res) => {
                     native_language: contributor.regionalLanguage || "unknown",
                     primary_language: contributor.regionalLanguage || "unknown",
                     languages_spoken: contributor.languageApplications ? contributor.languageApplications.map(app => app.languageCode) : [],
-                    accent: "unknown",
-                    dialect: "unknown",
+                    accent: contributor.accent || "unknown",
+                    dialect: contributor.dialect || "unknown",
                     region: contributor.locality || "unknown",
                     state: contributor.address?.state || "unknown",
                     consent_provided: true,
@@ -1979,10 +2591,10 @@ router.get("/phrases/download-company", async (req, res) => {
 
                 // Build the utterance entry (only used for the combined file).
                 const utterance = {
-                    id: phraseId,
+                    id: folderName,
                     language: phrase.language,
                     script_type: phrase.script_type || "orthographic",
-                    speaker_id: contributor.speaker_id || `spk_${contributor._id}`,
+                    speaker_id: contributor.speaker_id || phrase.speaker_id || "",
                     text: phrase.text,
                     emotion: phrase.emotion || "neutral",
                     style: phrase.style || "conversational",
@@ -2007,8 +2619,11 @@ router.get("/phrases/download-company", async (req, res) => {
                 });
                 const s3Doc = await s3Client.send(audioCommand);
                 const wavBuffer = await getWavBuffer(s3Doc.Body);
-                // Flat layout: every wav sits at the zip root (e.g. utt_xxx.wav)
-                archive.append(wavBuffer, { name: `${folderName}.wav` });
+                
+                const isPhraseApp = key.includes("/phrase apps/");
+                const entryName = isPhraseApp ? `phrase apps/${folderName}.wav` : `${folderName}.wav`;
+                
+                archive.append(wavBuffer, { name: entryName });
                 successfullyProcessed.push({ key, phrase });
             } catch (err) {
                 console.error(`Failed to fetch S3 audio for ${key}:`, err);
@@ -2031,6 +2646,11 @@ router.get("/phrases/download-company", async (req, res) => {
 
             for (const { key: oldKey, phrase } of successfullyProcessed) {
                 try {
+                    // Preserve phrase application files in place (do not move them to _downloaded)
+                    if (oldKey.includes("/phrase apps/")) {
+                        continue;
+                    }
+
                     const newKey = oldKey.replace(`phrases/${companyFolder}/`, `phrases/${companyFolder}_downloaded/`);
 
                     if (oldKey === newKey) continue;
@@ -2119,7 +2739,7 @@ router.post("/s3/download-selected", async (req, res) => {
             return res.status(500).json({ error: "Server missing 'archiver' dependency." });
         }
 
-        const archive = new ZipArchive({ zlib: { level: 9 } });
+        const archive = new ZipArchive({ zlib: { level: 0 } });
         archive.on("error", (err) => {
             console.error("Archiver Error:", err);
             if (!res.headersSent) res.status(500).json({ error: err.message });
@@ -2143,7 +2763,7 @@ router.post("/s3/download-selected", async (req, res) => {
                 folderName = phrase.phraseId || baseName;
                 const contributor = phrase.contributorId || {};
                 const phraseId = phrase.phraseId;
-                const speakerId = contributor.speaker_id || `spk_${contributor._id}`;
+                const speakerId = contributor.speaker_id || phrase.speaker_id || `spk_${contributor._id}`;
 
                 const speakerInfo = {
                     speaker_id: speakerId,
@@ -2152,8 +2772,8 @@ router.post("/s3/download-selected", async (req, res) => {
                     native_language: contributor.regionalLanguage || "unknown",
                     primary_language: contributor.regionalLanguage || "unknown",
                     languages_spoken: contributor.languageApplications ? contributor.languageApplications.map(app => app.languageCode) : [],
-                    accent: "unknown",
-                    dialect: "unknown",
+                    accent: contributor.accent || "unknown",
+                    dialect: contributor.dialect || "unknown",
                     region: contributor.locality || "unknown",
                     state: contributor.address?.state || "unknown",
                     consent_provided: true,
@@ -2173,7 +2793,7 @@ router.post("/s3/download-selected", async (req, res) => {
                     id: phraseId,
                     language: phrase.language,
                     script_type: phrase.script_type || "orthographic",
-                    speaker_id: contributor.speaker_id || `spk_${contributor._id}`,
+                    speaker_id: contributor.speaker_id || phrase.speaker_id || "",
                     text: phrase.text,
                     emotion: phrase.emotion || "neutral",
                     style: phrase.style || "conversational",
@@ -2200,6 +2820,23 @@ router.post("/s3/download-selected", async (req, res) => {
                     speakerRole = "Mixed";
                 }
 
+                let durationMinutes = "";
+                if (speakerRole === "Speaker A") {
+                    durationMinutes = call.recordingADurationMinutes !== undefined ? call.recordingADurationMinutes : 0;
+                } else if (speakerRole === "Speaker B") {
+                    durationMinutes = call.recordingBDurationMinutes !== undefined ? call.recordingBDurationMinutes : 0;
+                } else if (speakerRole === "Mixed") {
+                    let actualCallDur = call.actualCallDuration;
+                    if (!actualCallDur && call.endedAt && call.actualCallStartedAt) {
+                        actualCallDur = (new Date(call.endedAt).getTime() - new Date(call.actualCallStartedAt).getTime()) / 1000;
+                    }
+                    durationMinutes = actualCallDur ? (actualCallDur / 60) : 0;
+                }
+
+                if (typeof durationMinutes === "number") {
+                    durationMinutes = Math.round(durationMinutes * 100) / 100;
+                }
+
                 const callMetadata = {
                     file_name: `${folderName}.wav`,
                     call_id: call.callId,
@@ -2213,7 +2850,7 @@ router.post("/s3/download-selected", async (req, res) => {
                     speaker_accent: matchedUser?.locality || "",
                     speaker_dialect: matchedUser?.regionalLanguage || "",
                     negotiation_duration_seconds: call.negotiationDuration || 0,
-                    duration_minutes: call.durationMinutes || ""
+                    duration_minutes: durationMinutes
                 };
                 combinedCalls.push(callMetadata);
             }
@@ -2312,12 +2949,40 @@ router.post("/backfill-speaker-ids", async (req, res) => {
     }
 });
 
+// ===== PHRASE DOWNLOAD STATS =====
+router.get("/phrases/download-stats", requireAuth(JWT_SECRET), async (req, res) => {
+    try {
+        const stats = await Phrase.aggregate([
+            {
+                $group: {
+                    _id: { companyId: "$companyId", status: "$status" },
+                    count: { $sum: 1 }
+                }
+            }
+        ]);
+
+        const companyStats = {};
+        for (const item of stats) {
+            const companyId = item._id.companyId || "Unknown";
+            const status = item._id.status;
+            if (!companyStats[companyId]) {
+                companyStats[companyId] = { pending: 0, recorded: 0, approved: 0, rejected: 0 };
+            }
+            companyStats[companyId][status] = item.count;
+        }
+
+        res.json({ success: true, stats: companyStats });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 // ===== COMPANY MANAGEMENT =====
 
 
 router.post("/companies", requireAuth(JWT_SECRET), async (req, res) => {
     try {
-        const { name, maxContributionMinutes, hourlyPayout, projectName } = req.body;
+        const { name, maxContributionMinutes, hourlyPayout, projectName, namingPattern } = req.body;
         if (!name || !name.trim()) return res.status(400).json({ error: "Company name is required" });
 
         const cleanName = name.trim();
@@ -2330,7 +2995,8 @@ router.post("/companies", requireAuth(JWT_SECRET), async (req, res) => {
             name: cleanName, 
             maxContributionMinutes: Number.isFinite(Number(maxContributionMinutes)) ? Number(maxContributionMinutes) : 195, 
             hourlyPayout: Number.isFinite(Number(hourlyPayout)) ? Number(hourlyPayout) : 0, 
-            projectName: projectName && projectName.trim() ? projectName.trim() : cleanName
+            projectName: projectName && projectName.trim() ? projectName.trim() : cleanName,
+            namingPattern: namingPattern && namingPattern.trim() ? namingPattern.trim() : "{phraseId}"
         });
         res.status(201).json({ message: "Company created successfully", company });
     } catch (e) {
@@ -2341,11 +3007,12 @@ router.post("/companies", requireAuth(JWT_SECRET), async (req, res) => {
 
 router.patch("/companies/:id", async (req, res) => {
     try {
-        const { maxContributionMinutes, hourlyPayout, projectName } = req.body;
+        const { maxContributionMinutes, hourlyPayout, projectName, namingPattern } = req.body;
         const updateData = {};
         if (maxContributionMinutes !== undefined) updateData.maxContributionMinutes = Number(maxContributionMinutes);
         if (hourlyPayout !== undefined) updateData.hourlyPayout = Number(hourlyPayout);
         if (projectName !== undefined) updateData.projectName = String(projectName).trim();
+        if (namingPattern !== undefined) updateData.namingPattern = String(namingPattern).trim();
         
         const company = await Company.findByIdAndUpdate(req.params.id, { $set: updateData }, { new: true });
         if (!company) return res.status(404).json({ error: "Company not found" });

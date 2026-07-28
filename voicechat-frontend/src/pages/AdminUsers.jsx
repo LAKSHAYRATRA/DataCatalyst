@@ -371,6 +371,16 @@ export default function AdminUsers() {
                                                 <span className="bg-neutral-700 text-neutral-300 rounded px-2 py-0.5">
                                                     🎙 {user.microphoneBrand} {user.microphoneModel}
                                                 </span>
+                                                {user.accent && (
+                                                    <span className="bg-neutral-700 text-neutral-300 rounded px-2 py-0.5">
+                                                        🗣 Accent: {user.accent}
+                                                    </span>
+                                                )}
+                                                {user.dialect && (
+                                                    <span className="bg-neutral-700 text-neutral-300 rounded px-2 py-0.5">
+                                                        🗣 Dialect: {user.dialect}
+                                                    </span>
+                                                )}
                                             </div>
                                             <div className="text-xs text-neutral-500 mt-1">Joined {formatDate(user.createdAt)}</div>
                                         </div>

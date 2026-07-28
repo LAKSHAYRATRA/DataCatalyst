@@ -45,7 +45,8 @@ export default function AdminCompanies() {
       await apiPatchJson(`/api/admin/companies/${companyId}`, {
         maxContributionMinutes: Number(company.maxContributionMinutes),
         hourlyPayout: Number(company.hourlyPayout),
-        projectName: company.projectName || ''
+        projectName: company.projectName || '',
+        namingPattern: company.namingPattern || '{phraseId}'
       });
       setMessage('Company saved successfully!');
       setTimeout(() => setMessage(''), 3000);
@@ -64,7 +65,8 @@ export default function AdminCompanies() {
         name: newCompanyName.trim(),
         projectName: newProjectName.trim(),
         maxContributionMinutes: 195,
-        hourlyPayout: 0
+        hourlyPayout: 0,
+        namingPattern: '{phraseId}'
       });
       setNewCompanyName('');
       setNewProjectName('');
@@ -211,7 +213,7 @@ export default function AdminCompanies() {
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
                   {/* Project Display Name (Shown to Contributors) */}
-                  <div className="md:col-span-2 bg-neutral-100 dark:bg-neutral-800 p-5 rounded-xl border border-neutral-200 dark:border-neutral-700">
+                  <div className="bg-neutral-100 dark:bg-neutral-800 p-5 rounded-xl border border-neutral-200 dark:border-neutral-700">
                     <label className="block text-sm font-semibold text-neutral-700 dark:text-neutral-300 mb-1">
                       Project Display Name (Shown to Contributors)
                     </label>
@@ -222,6 +224,35 @@ export default function AdminCompanies() {
                       placeholder="e.g. Acme Speech Project..."
                       value={company.projectName || ''}
                       onChange={(e) => handleFieldChange(company._id, 'projectName', e.target.value)}
+                    />
+                  </div>
+
+                  {/* Phrase Naming Pattern */}
+                  <div className="bg-neutral-100 dark:bg-neutral-800 p-5 rounded-xl border border-neutral-200 dark:border-neutral-700">
+                    <label className="block text-sm font-semibold text-neutral-700 dark:text-neutral-300 mb-1">
+                      Phrase Naming Pattern
+                    </label>
+                    <p className="text-xs text-neutral-500 mb-4 flex flex-wrap items-center gap-1.5">
+                      <span>Placeholders:</span>
+                      <code className="bg-neutral-200 dark:bg-neutral-750 px-1.5 py-0.5 rounded">{`{phraseId}`}</code>
+                      <code className="bg-neutral-200 dark:bg-neutral-750 px-1.5 py-0.5 rounded">{`{language}`}</code>
+                      <code className="bg-neutral-200 dark:bg-neutral-750 px-1.5 py-0.5 rounded">{`{speaker_id}`}</code>
+                      <code className="bg-neutral-200 dark:bg-neutral-750 px-1.5 py-0.5 rounded">{`{gender}`}</code>
+                      {company.availableTags && company.availableTags.length > 0 && (
+                        <>
+                          <span className="text-neutral-400">| Custom:</span>
+                          {company.availableTags.map(tag => (
+                            <code key={tag} className="bg-warning-100 dark:bg-warning-900/30 text-warning-700 dark:text-warning-400 px-1.5 py-0.5 rounded font-mono font-semibold">{`{${tag}}`}</code>
+                          ))}
+                        </>
+                      )}
+                    </p>
+                    <input 
+                      type="text"
+                      className="input w-full"
+                      placeholder="e.g. {language}_{speaker_id}_{phraseId}"
+                      value={company.namingPattern || '{phraseId}'}
+                      onChange={(e) => handleFieldChange(company._id, 'namingPattern', e.target.value)}
                     />
                   </div>
                 </div>

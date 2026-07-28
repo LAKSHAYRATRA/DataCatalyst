@@ -26,6 +26,9 @@ export default function AdminLogin() {
 
             // Store user info (token is in HTTP-only cookie)
             localStorage.setItem("vc_user_info", JSON.stringify(res.user));
+            if (res.token) {
+                localStorage.setItem("vc_token", res.token);
+            }
 
             // Redirect to admin dashboard
             navigate("/admin/dashboard");

@@ -104,13 +104,29 @@ export default function LanguageApply() {
 
     async function startRecording() {
         try {
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
-            streamRef.current = stream;
-            chunksRef.current = [];
-            
-            const audioCtx = new AudioContext({ sampleRate: 48000 });
-            audioCtxRef.current = audioCtx;
-            await audioCtx.audioWorklet.addModule("/pcm-worklet.js");
+             const stream = await navigator.mediaDevices.getUserMedia({
+                 audio: {
+                     echoCancellation: false,
+                     noiseSuppression: false,
+                     autoGainControl: false,
+                     googEchoCancellation: false,
+                     googAutoGainControl: false,
+                     googNoiseSuppression: false,
+                     googHighpassFilter: false,
+                     channelCount: 1,
+                     sampleRate: { min: 48000, ideal: 96000 }
+                 }
+             });
+             streamRef.current = stream;
+             chunksRef.current = [];
+             
+             const track = stream.getAudioTracks()[0];
+             const settings = track ? track.getSettings() : {};
+             const trackSampleRate = settings.sampleRate || 48000;
+
+             const audioCtx = new AudioContext({ sampleRate: trackSampleRate });
+             audioCtxRef.current = audioCtx;
+             await audioCtx.audioWorklet.addModule("/pcm-worklet.js");
             
             const source = audioCtx.createMediaStreamSource(stream);
             const workletNode = new AudioWorkletNode(audioCtx, "pcm-processor");
@@ -305,7 +321,9 @@ export default function LanguageApply() {
                                             >
                                                  <option value="">-- Select Project --</option>
                                                  {companies.map(c => (
-                                                     <option key={c._id} value={c.name}>{c.projectName || c.name}</option>
+                                                     <option key={c._id} value={c.name}>
+                                                         {c.projectName || c.name} - ${Number(c.hourlyPayout || 0).toFixed(2)}/hour
+                                                     </option>
                                                  ))}
                                             </select>
                                             <div className="absolute inset-y-0 right-0 flex items-center pr-3.5 pointer-events-none text-neutral-500 dark:text-neutral-400">
@@ -348,9 +366,9 @@ export default function LanguageApply() {
                                                           const st = getStatus(null, lang.code, 'call');
                                                           const statusSuffix = st === 'pending' ? ' (Already Applied - Pending)' : st === 'approved' ? ' (Already Applied - Approved)' : '';
                                                           return (
-                                                              <option key={lang._id || lang.code} value={lang.code}>
-                                                                  {lang.name}{statusSuffix}
-                                                              </option>
+                                                               <option key={lang._id || lang.code} value={lang.code}>
+                                                                   {lang.name} - ${Number(lang.hourlyPayout || 0).toFixed(2)}/hour{statusSuffix}
+                                                               </option>
                                                           );
                                                       });
                                                  })()}
@@ -425,9 +443,26 @@ export default function LanguageApply() {
 
                         {/* Sample Phrase Box */}
                         {applicationType === 'phrase' && samplePhrase && (
-                            <div className="bg-neutral-50 dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 p-6 rounded-xl mb-6">
-                                <p className="text-xl md:text-2xl font-medium leading-relaxed">"{samplePhrase.text}"</p>
-                            </div>
+                            <>
+                                <div className="bg-neutral-50 dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 p-6 rounded-xl mb-4">
+                                    <p className="text-xl md:text-2xl font-medium leading-relaxed">"{samplePhrase.text}"</p>
+                                </div>
+                                <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6 bg-neutral-100/50 dark:bg-neutral-900/50 p-4 rounded-xl text-neutral-800 dark:text-neutral-200 text-sm border border-neutral-200 dark:border-neutral-800">
+                                    {samplePhrase.emotion && <div><span className="block text-xs uppercase opacity-60 mb-1">Emotion</span><span className="font-medium">{samplePhrase.emotion}</span></div>}
+                                    {samplePhrase.style && <div><span className="block text-xs uppercase opacity-60 mb-1">Style</span><span className="font-medium">{samplePhrase.style}</span></div>}
+                                    {samplePhrase.speed && <div><span className="block text-xs uppercase opacity-60 mb-1">Speed</span><span className="font-medium">{samplePhrase.speed}</span></div>}
+                                    {samplePhrase.intent && <div><span className="block text-xs uppercase opacity-60 mb-1">Intent</span><span className="font-medium">{samplePhrase.intent}</span></div>}
+                                    {samplePhrase.pitch && <div><span className="block text-xs uppercase opacity-60 mb-1">Pitch</span><span className="font-medium">{samplePhrase.pitch}</span></div>}
+                                    {samplePhrase.volume && <div><span className="block text-xs uppercase opacity-60 mb-1">Volume</span><span className="font-medium">{samplePhrase.volume}</span></div>}
+                                    {samplePhrase.tags && Object.entries(samplePhrase.tags).map(([key, val]) => (
+                                        <div key={key}>
+                                            <span className="block text-xs uppercase opacity-60 mb-1">{key.replace(/_/g, ' ')}</span>
+                                            <span className="font-medium">{val}</span>
+                                        </div>
+                                    ))}
+                                    {samplePhrase.instructions && <div className="col-span-2 md:col-span-3 mt-2"><span className="block text-xs uppercase opacity-60 mb-1">Notes</span><p className="text-xs border-l-2 border-primary-300 pl-3">{samplePhrase.instructions}</p></div>}
+                                </div>
+                            </>
                         )}
 
                         {/* Timer Ring */}

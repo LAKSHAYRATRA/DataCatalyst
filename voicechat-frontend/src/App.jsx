@@ -32,8 +32,9 @@ import PhraseRecording from "./pages/PhraseRecording.jsx";
 import AdminMedia from "./pages/AdminMedia.jsx";
 import AdminProjects from "./pages/AdminProjects.jsx";
 import AdminCompanies from "./pages/AdminCompanies.jsx";
+import AdminPhraseDownloads from "./pages/AdminPhraseDownloads.jsx";
 import { getUserInfo, setUserInfo, clearToken } from "./lib/auth.js";
-import { apiGet } from "./lib/api.js";
+import { apiGet, apiPatchJson } from "./lib/api.js";
 import { SystemCheckProvider } from "./context/SystemCheckContext.jsx";
 import Earnings from "./pages/Earnings.jsx";
 import Community from "./pages/Community.jsx";
@@ -155,6 +156,117 @@ function RequireAdminOrQA({ children }) {
   return children;
 }
 
+function ProfileCompletionOverlay({ userInfo, onComplete }) {
+  const [accent, setAccent] = useState("");
+  const [dialect, setDialect] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!accent.trim() || !dialect.trim()) {
+      setError("Both Accent and Dialect are required.");
+      return;
+    }
+    setError("");
+    setLoading(true);
+    try {
+      const res = await apiPatchJson("/api/user/profile-completion", {
+        accent: accent.trim(),
+        dialect: dialect.trim()
+      });
+      const updatedUser = {
+        ...userInfo,
+        accent: res.user.accent,
+        dialect: res.user.dialect
+      };
+      setUserInfo(updatedUser);
+      onComplete(updatedUser);
+    } catch (err) {
+      setError(err.message || "Failed to update profile.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-neutral-900/90 backdrop-blur-md flex items-center justify-center p-4 z-[9999]">
+      <div className="bg-white dark:bg-neutral-800 rounded-2xl p-8 max-w-md w-full shadow-2xl border border-neutral-200 dark:border-neutral-700 animate-slide-up">
+        <div className="text-center mb-6">
+          <div className="inline-flex items-center justify-center w-12 h-12 bg-primary-100 dark:bg-primary-900/30 rounded-xl mb-3 text-primary-600">
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+            </svg>
+          </div>
+          <h2 className="text-2xl font-bold text-neutral-900 dark:text-white">Complete Your Profile</h2>
+          <p className="text-sm text-neutral-500 mt-2">
+            Please fill in your Accent and Dialect details before continuing to record.
+          </p>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-sm font-semibold text-neutral-700 dark:text-neutral-300 mb-2">Accent</label>
+            <input
+              type="text"
+              className="w-full px-4 py-3 rounded-lg border border-neutral-300 dark:border-neutral-600 bg-transparent dark:text-white placeholder-neutral-400 focus:outline-none focus:ring-2 focus:ring-primary-500"
+              placeholder="e.g. Standard, Neutral, Haryanvi, Bihari"
+              value={accent}
+              onChange={(e) => setAccent(e.target.value)}
+              required
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-semibold text-neutral-700 dark:text-neutral-300 mb-2">Dialect</label>
+            <input
+              type="text"
+              className="w-full px-4 py-3 rounded-lg border border-neutral-300 dark:border-neutral-600 bg-transparent dark:text-white placeholder-neutral-400 focus:outline-none focus:ring-2 focus:ring-primary-500"
+              placeholder="e.g. Standard Hindi, Awadhi, Bhojpuri"
+              value={dialect}
+              onChange={(e) => setDialect(e.target.value)}
+              required
+            />
+          </div>
+
+          {error && (
+            <div className="bg-error-50 dark:bg-error-900/20 border border-error-200 dark:border-error-800 text-error-700 dark:text-error-400 px-4 py-3 rounded-lg text-sm">
+              {error}
+            </div>
+          )}
+
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full btn btn-primary flex items-center justify-center gap-2 py-3 mt-4"
+          >
+            {loading ? "Saving..." : "Save & Continue"}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function RequireProfileFields({ children }) {
+  const [user, setUser] = useState(getUserInfo());
+
+  if (!user) return <Navigate to="/login" replace />;
+  if (user.isQA || user.isAdmin) return children;
+
+  // Gate check for accent/dialect profile completion
+  if (!user.accent || !user.dialect) {
+    return (
+      <ProfileCompletionOverlay 
+        userInfo={user} 
+        onComplete={(updated) => setUser(updated)} 
+      />
+    );
+  }
+
+  return children;
+}
+
 export default function App() {
   const [loading, setLoading] = useState(true);
   const { pathname } = useLocation();
@@ -200,10 +312,10 @@ export default function App() {
         <Route path="/contributor-agreement" element={<RequireAgreementAccess><ContributorAgreement /></RequireAgreementAccess>} />
 
         {/* Protected platform routes */}
-        <Route path="/call" element={<RequireAuth><Call /></RequireAuth>} />
-        <Route path="/dashboard" element={<RequireDashboardAccess><Dashboard /></RequireDashboardAccess>} />
-        <Route path="/payouts" element={<RequireAuth><UserPayouts /></RequireAuth>} />
-        <Route path="/kyc/pan" element={<RequireAuth><KycPan /></RequireAuth>} />
+        <Route path="/call" element={<RequireAuth><RequireProfileFields><Call /></RequireProfileFields></RequireAuth>} />
+        <Route path="/dashboard" element={<RequireDashboardAccess><RequireProfileFields><Dashboard /></RequireProfileFields></RequireDashboardAccess>} />
+        <Route path="/payouts" element={<RequireAuth><RequireProfileFields><UserPayouts /></RequireProfileFields></RequireAuth>} />
+        <Route path="/kyc/pan" element={<RequireAuth><RequireProfileFields><KycPan /></RequireProfileFields></RequireAuth>} />
 
         {/* Admin Routes */}
         <Route path="/admin/dashboard" element={<RequireAdmin><AdminDashboard /></RequireAdmin>} />
@@ -219,12 +331,13 @@ export default function App() {
         <Route path="/admin/language-apps" element={<RequireAdminOrQA><AdminLanguageApps /></RequireAdminOrQA>} />
         <Route path="/admin/call-apps" element={<RequireAdminOrQA><AdminCallApps /></RequireAdminOrQA>} />
         <Route path="/admin/phrases" element={<RequireAdmin><AdminPhrases /></RequireAdmin>} />
+        <Route path="/admin/phrases/downloads" element={<RequireAdmin><AdminPhraseDownloads /></RequireAdmin>} />
         <Route path="/admin/projects" element={<RequireAdmin><AdminProjects /></RequireAdmin>} />
         <Route path="/admin/companies" element={<RequireAdmin><AdminCompanies /></RequireAdmin>} />
         <Route path="/admin/qaphrase" element={<RequireAdminOrQA><QaPhrases /></RequireAdminOrQA>} />
         <Route path="/admin/media" element={<RequireAdmin><AdminMedia /></RequireAdmin>} />
-        <Route path="/language-apply" element={<RequireAuth><LanguageApply /></RequireAuth>} />
-        <Route path="/phrases" element={<RequireAuth><PhraseRecording /></RequireAuth>} />
+        <Route path="/language-apply" element={<RequireAuth><RequireProfileFields><LanguageApply /></RequireProfileFields></RequireAuth>} />
+        <Route path="/phrases" element={<RequireAuth><RequireProfileFields><PhraseRecording /></RequireProfileFields></RequireAuth>} />
 
         <Route path="/admin" element={<Navigate to="/admin/dashboard" replace />} />
         <Route path="/admin/login" element={<Navigate to="/login" replace />} />

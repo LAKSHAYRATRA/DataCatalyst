@@ -77,6 +77,10 @@ const callSessionSchema = new mongoose.Schema(
         downloadCount: { type: Number, default: 1, min: 1 },
       },
     ],
+
+    // Persistent QC Analytics
+    recordingAQCResult: { type: mongoose.Schema.Types.Mixed, default: null },
+    recordingBQCResult: { type: mongoose.Schema.Types.Mixed, default: null },
   },
   { timestamps: true }
 );

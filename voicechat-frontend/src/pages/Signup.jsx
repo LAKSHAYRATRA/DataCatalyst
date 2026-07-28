@@ -97,6 +97,8 @@ export default function Signup() {
   // Step 3 — Equipment
   const [micBrand, setMicBrand] = useState("");
   const [micModel, setMicModel] = useState("");
+  const [accent, setAccent] = useState("");
+  const [dialect, setDialect] = useState("");
 
   // Step 4 — OTP
   const [otp, setOtp] = useState("");
@@ -145,6 +147,8 @@ export default function Signup() {
     const errs = {};
     if (!micBrand.trim()) errs.micBrand = "Required";
     if (!micModel.trim()) errs.micModel = "Required";
+    if (!accent.trim()) errs.accent = "Required";
+    if (!dialect.trim()) errs.dialect = "Required";
     return errs;
   }
 
@@ -248,6 +252,8 @@ export default function Signup() {
         address: { street, state, city, pincode },
         microphoneBrand: micBrand,
         microphoneModel: micModel,
+        accent: accent.trim(),
+        dialect: dialect.trim(),
         dob,
         otpCode: otp,
       });
@@ -409,6 +415,18 @@ export default function Signup() {
                 <input id="micModel" type="text" className={inputClass}
                   placeholder="e.g. Cloud II, NT-USB, Yeti, BY-M1"
                   value={micModel} onChange={e => setMicModel(e.target.value)} />
+              </FormField>
+
+              <FormField label="Accent" id="accent" required error={fieldErrors.accent}>
+                <input id="accent" type="text" className={inputClass}
+                  placeholder="e.g. Standard, Neutral, Haryanvi, Bihari"
+                  value={accent} onChange={e => setAccent(e.target.value)} />
+              </FormField>
+
+              <FormField label="Dialect" id="dialect" required error={fieldErrors.dialect}>
+                <input id="dialect" type="text" className={inputClass}
+                  placeholder="e.g. Standard Hindi, Awadhi, Bhojpuri"
+                  value={dialect} onChange={e => setDialect(e.target.value)} />
               </FormField>
 
               <div className="bg-primary-50 border border-primary-100 rounded-lg p-3 mt-2">

@@ -15,6 +15,20 @@ export default function AdminPhrases() {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  const [metadataKeys, setMetadataKeys] = useState([]);
+  const [newKey, setNewKey] = useState('');
+
+  const handleAddKey = () => {
+    const trimmed = newKey.trim();
+    if (trimmed && !metadataKeys.includes(trimmed)) {
+      setMetadataKeys([...metadataKeys, trimmed]);
+    }
+    setNewKey('');
+  };
+
+  const handleRemoveKey = (keyToRemove) => {
+    setMetadataKeys(metadataKeys.filter(k => k !== keyToRemove));
+  };
 
   useEffect(() => {
     fetchPhrases();
@@ -88,12 +102,14 @@ export default function AdminPhrases() {
           companyId: companyId.trim(),
           language: language.trim(),
           phrases: extractPhrasesArray(json),
+          metadataKeys,
         });
         const dupMsg = res.duplicates > 0 ? ` (${res.duplicates} duplicate ID${res.duplicates !== 1 ? 's' : ''} found, not uploaded and ignored)` : '';
         setMessage(`Success! Inserted: ${res.inserted}${dupMsg}`);
         setPastedJson('');
         setCompanyId('');
         setLanguage('');
+        setMetadataKeys([]);
         fetchPhrases();
         fetchCompanies();
         fetchPhraseLanguages();
@@ -113,12 +129,14 @@ export default function AdminPhrases() {
           companyId: companyId.trim(),
           language: language.trim(),
           phrases: extractPhrasesArray(json),
+          metadataKeys,
         });
         const dupMsg = res.duplicates > 0 ? ` (${res.duplicates} duplicate ID${res.duplicates !== 1 ? 's' : ''} found, not uploaded and ignored)` : '';
         setMessage(`Success! Inserted: ${res.inserted}${dupMsg}`);
         setFile(null);
         setCompanyId('');
         setLanguage('');
+        setMetadataKeys([]);
         fetchPhrases();
         fetchCompanies();
         fetchPhraseLanguages();
@@ -209,6 +227,54 @@ export default function AdminPhrases() {
                   No phrase languages created yet. Add a phrase language first under Phrase Languages in the sidebar.
                 </p>
               )}
+            </div>
+
+            <div className="mb-4">
+              <label className="block text-sm font-medium mb-2 opacity-80">
+                Custom JSON Metadata Tags
+              </label>
+              <div className="flex gap-2 mb-2">
+                <input 
+                  type="text" 
+                  className="input flex-1 bg-white dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 text-neutral-900 dark:text-neutral-100"
+                  placeholder="Enter JSON key (e.g. domain)"
+                  value={newKey}
+                  onChange={(e) => setNewKey(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleAddKey();
+                    }
+                  }}
+                />
+                <button 
+                  type="button" 
+                  onClick={handleAddKey}
+                  className="btn btn-secondary px-4 py-2 border border-neutral-300 dark:border-neutral-700 text-sm font-semibold"
+                >
+                  + Add
+                </button>
+              </div>
+              <div className="flex flex-wrap gap-2 mt-2">
+                {metadataKeys.map(k => (
+                  <span 
+                    key={k} 
+                    className="inline-flex items-center gap-1.5 px-3 py-1 bg-neutral-200 dark:bg-neutral-800 text-sm font-semibold rounded-full border border-neutral-300 dark:border-neutral-700"
+                  >
+                    {k}
+                    <button 
+                      type="button" 
+                      onClick={() => handleRemoveKey(k)}
+                      className="text-error-500 hover:text-error-600 font-bold ml-1 focus:outline-none"
+                    >
+                      &times;
+                    </button>
+                  </span>
+                ))}
+              </div>
+              <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1.5">
+                Type the exact keys from your JSON elements (e.g., age, gender, domain). Matching values will be displayed to contributors in the recording studio.
+              </p>
             </div>
           </div>
           <div>

@@ -112,8 +112,8 @@ export default function AudioVisualizer({ url, audioRef }) {
                 <canvas
                     ref={canvasRef}
                     width={800}
-                    height={120}
-                    className="w-full h-16 md:h-24 bg-neutral-950/30 rounded-lg"
+                    height={160}
+                    className="w-full h-24 md:h-36 bg-neutral-950/30 rounded-lg"
                 />
                 {/* Hover effect highlight */}
                 <div className="absolute inset-y-0 w-px bg-white/20 opacity-0 group-hover:opacity-100 pointer-events-none" style={{ left: 'var(--hover-x)' }} />

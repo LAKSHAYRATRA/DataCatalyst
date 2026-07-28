@@ -283,6 +283,10 @@ export async function submitLanguageApplication(req, res) {
       try { fs.unlinkSync(req.file.path); } catch (e) {}
       return res.status(409).json({ error: "already_approved" });
     }
+    if (existing && existing.status === "blacklisted") {
+      try { fs.unlinkSync(req.file.path); } catch (e) {}
+      return res.status(403).json({ error: "blacklisted" });
+    }
     const flacPath = req.file.path.replace(".wav", ".flac");
     await new Promise((resolve, reject) => {
       ffmpeg(req.file.path)
@@ -296,7 +300,15 @@ export async function submitLanguageApplication(req, res) {
 
     const timestamp = Date.now();
     const baseFileName = `${req.user._id}_${languageCode}_${timestamp}.flac`;
-    const s3Key = `language-apps/${baseFileName}`;
+    
+    let s3Key;
+    if (applicationType === "phrase" && companyId) {
+      const companyFolder = companyId.replace(/[^a-zA-Z0-9_\-\ ]/g, "").trim();
+      s3Key = `phrases/${companyFolder}/phrase apps/${baseFileName}`;
+    } else {
+      s3Key = `language-apps/${baseFileName}`;
+    }
+
     let recordingFileRef = s3Key;
     let s3Uploaded = false;
 
@@ -1013,5 +1025,42 @@ export async function downloadContributorAgreement(req, res) {
   } catch (err) {
     console.error("[contributorAgreement] Download failed:", err);
     return res.status(500).json({ error: "download_failed" });
+  }
+}
+
+// PATCH /api/user/profile-completion
+export async function updateProfileCompletion(req, res) {
+  try {
+    const { accent, dialect } = req.body;
+    if (!isNonEmptyString(accent) || !isNonEmptyString(dialect)) {
+      return res.status(400).json({ error: "Accent and Dialect are required." });
+    }
+
+    const user = await User.findByIdAndUpdate(
+      req.user._id,
+      { $set: { accent: accent.trim(), dialect: dialect.trim() } },
+      { new: true }
+    );
+
+    if (!user) return res.status(404).json({ error: "User not found" });
+
+    res.json({
+      message: "Profile updated successfully",
+      user: {
+        id: user._id.toString(),
+        firstname: user.firstname,
+        lastname: user.lastname,
+        username: user.username,
+        email: user.email,
+        isAdmin: user.isAdmin,
+        isQA: user.isQA,
+        accountStatus: user.accountStatus,
+        accent: user.accent,
+        dialect: user.dialect,
+        contributorAgreement: user.contributorAgreement
+      }
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
   }
 }

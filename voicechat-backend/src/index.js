@@ -52,6 +52,7 @@ import { User } from "./models/User.js";
 import { CallSession } from "./models/CallSession.js";
 import { Subtopic } from "./models/Subtopic.js";
 import { Language } from "./models/Language.js";
+import { updateLimitAndBlacklist } from "./services/limitService.js";
 
 // ─── Controllers ──────────────────────────────────────────────────────────────
 import {
@@ -86,6 +87,7 @@ import {
   getKycStatus,
   uploadPanCard,
   updateUpiId,
+  updateProfileCompletion,
 } from "./controllers/userController.js";
 
 import {
@@ -152,6 +154,7 @@ app.use(
       }
     },
     allowedHeaders: ["Content-Type", "Authorization", "Accept"],
+    exposedHeaders: ["Content-Disposition"],
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     credentials: true,
   })
@@ -289,6 +292,7 @@ app.post(
   uploadPanCard
 );
 app.post("/api/user/upi", requireAuth(JWT_SECRET), updateUpiId);
+app.patch("/api/user/profile-completion", requireAuth(JWT_SECRET), updateProfileCompletion);
 
 // Contributor Agreement
 app.get("/api/user/contributor-agreement/status", requireAuth(JWT_SECRET), getContributorAgreementStatus);
@@ -405,7 +409,7 @@ function getPeerId(socket) {
   return socket.data.peerId || null;
 }
 
-async function cleanupRecording(socket) {
+async function cleanupRecording(socket, endedAt) {
   const callId = getCallIdForSocket(socket);
   const streamKey = `${callId}_${socket.data.userId}`;
   const streamObj = activeStreams.get(streamKey);
@@ -434,6 +438,46 @@ async function cleanupRecording(socket) {
       try {
         let finalUploadPath = tempPath;
         if (tempPath.endsWith(".pcm")) {
+          try {
+            const session = await CallSession.findOne({ callId });
+            if (session && session.actualCallStartedAt) {
+              const isUserA = String(session.userA) === String(socket.data.userId);
+              const recordingStartedAt = isUserA ? session.recordingAStartedAt : session.recordingBStartedAt;
+              
+              const callStartTime = new Date(session.actualCallStartedAt).getTime();
+              const callEndTime = new Date(endedAt || session.endedAt || new Date()).getTime();
+              const recStartTime = recordingStartedAt ? new Date(recordingStartedAt).getTime() : callStartTime;
+              
+              const sampleRate = socket.data.recordSampleRate || 48000;
+              const bytesPerSample = 4; // float32 is 4 bytes
+              const bytesPerSec = sampleRate * bytesPerSample;
+              
+              // 1. Pad Start
+              const startOffsetSec = Math.max(0, (recStartTime - callStartTime) / 1000);
+              const startSilenceSize = Math.round(startOffsetSec * bytesPerSec);
+              if (startSilenceSize > 0 && fs.existsSync(tempPath)) {
+                const silenceBuffer = Buffer.alloc(startSilenceSize, 0);
+                const existingData = fs.readFileSync(tempPath);
+                fs.writeFileSync(tempPath, Buffer.concat([silenceBuffer, existingData]));
+              }
+              
+              // 2. Pad End
+              const totalCallDurationSec = Math.max(0, (callEndTime - callStartTime) / 1000);
+              const targetSizeBytes = Math.round(totalCallDurationSec * bytesPerSec);
+              if (fs.existsSync(tempPath)) {
+                const currentStats = fs.statSync(tempPath);
+                const currentSize = currentStats.size;
+                if (currentSize < targetSizeBytes) {
+                  const endSilenceSize = targetSizeBytes - currentSize;
+                  const silenceBuffer = Buffer.alloc(endSilenceSize, 0);
+                  fs.appendFileSync(tempPath, silenceBuffer);
+                }
+              }
+            }
+          } catch (padErr) {
+            console.error("Error padding PCM file for alignment:", padErr);
+          }
+
           const flacPath = tempPath.replace(".pcm", ".flac");
           const recordSampleRate = socket.data.recordSampleRate || 48000;
           await new Promise((res, rej) => {
@@ -488,7 +532,7 @@ async function cleanupCall(socket, reason) {
   const callId = getCallIdForSocket(socket);
   const peerId = getPeerId(socket);
 
-  await cleanupRecording(socket);
+  await cleanupRecording(socket, new Date());
 
   socket.data.callId = null;
   socket.data.peerId = null;
@@ -498,7 +542,7 @@ async function cleanupCall(socket, reason) {
     io.to(peerId).emit("peer_left", { reason: reason || "peer_left" });
     const peer = io.sockets.sockets.get(peerId);
     if (peer) {
-      await cleanupRecording(peer);
+      await cleanupRecording(peer, new Date());
       peer.data.callId = null;
       peer.data.peerId = null;
       peer.data.role = null;
@@ -612,28 +656,138 @@ async function endCall(callId, reason) {
   }
 
   try {
-    await CallSession.updateOne(
-      { callId },
-      {
-        $set: {
-          endedAt: new Date(),
-          endReason: reason || "ended",
-          callStatus: "pending",
-        },
+    const endedAt = new Date();
+    const session = await CallSession.findOne({ callId });
+    if (session) {
+      const started = session.actualCallStartedAt || session.startedAt;
+      const actualCallDuration = Math.max(0, Math.floor((endedAt.getTime() - new Date(started).getTime()) / 1000));
+      
+      let callStatus = "pending";
+      let recordingAStatus = "pending";
+      let recordingBStatus = "pending";
+      let recordingAReviewNote = null;
+      let recordingBReviewNote = null;
+      let reviewNotes = null;
+
+      const getMissedDuration = (streamObj) => {
+        let missed = streamObj ? (streamObj.totalMissedSeconds || 0) : 0;
+        if (streamObj) {
+          const callStartTime = new Date(session.actualCallStartedAt).getTime();
+          const callEndTime = endedAt.getTime();
+          const sampleRate = streamObj.recordSampleRate || 48000;
+          const bytesPerSec = sampleRate * 4;
+          
+          if (fs.existsSync(streamObj.tempLocalPath)) {
+            const size = fs.statSync(streamObj.tempLocalPath).size;
+            const expectedSize = Math.max(0, (callEndTime - callStartTime) / 1000) * bytesPerSec;
+            if (size < expectedSize) {
+              missed += (expectedSize - size) / bytesPerSec;
+            }
+          }
+        } else {
+          const callStartTime = new Date(session.actualCallStartedAt).getTime();
+          const callEndTime = endedAt.getTime();
+          missed += Math.max(0, (callEndTime - callStartTime) / 1000);
+        }
+        return Math.round(missed * 100) / 100;
+      };
+
+      if (session.actualCallStartedAt && actualCallDuration < 540) {
+        callStatus = "rejected";
+        recordingAStatus = "rejected";
+        recordingBStatus = "rejected";
+        recordingAReviewNote = "Duration less than 9 minutes";
+        recordingBReviewNote = "Duration less than 9 minutes";
+        reviewNotes = "Duration less than 9 minutes";
+      } else {
+        const streamKeyA = `${callId}_${call.userAId}`;
+        const streamKeyB = `${callId}_${call.userBId}`;
+        const streamObjA = activeStreams.get(streamKeyA);
+        const streamObjB = activeStreams.get(streamKeyB);
+        
+        const missedA = getMissedDuration(streamObjA);
+        const missedB = getMissedDuration(streamObjB);
+
+        if (missedA >= 5) {
+          recordingAStatus = "rejected";
+          recordingAReviewNote = "Internet Issue detected";
+        }
+        if (missedB >= 5) {
+          recordingBStatus = "rejected";
+          recordingBReviewNote = "Internet Issue detected";
+        }
+
+        if (recordingAStatus === "rejected" || recordingBStatus === "rejected") {
+          callStatus = "rejected";
+        }
+
+        if (recordingAStatus === "rejected" && recordingBStatus === "rejected") {
+          reviewNotes = "Internet Issue detected on both speakers";
+        } else if (recordingAStatus === "rejected") {
+          reviewNotes = "Internet Issue detected on Speaker A";
+        } else if (recordingBStatus === "rejected") {
+          reviewNotes = "Internet Issue detected on Speaker B";
+        }
       }
-    );
-  } catch { /* ignore */ }
+
+      const getDurationMin = (start) => {
+        if (!start) return 0;
+        const diffMs = endedAt.getTime() - new Date(start).getTime();
+        if (!Number.isFinite(diffMs) || diffMs <= 0) return 0;
+        return Math.round((diffMs / 60000) * 100) / 100;
+      };
+
+      const recordingADurationMinutes = getDurationMin(session.recordingAStartedAt || session.actualCallStartedAt || session.startedAt);
+      const recordingBDurationMinutes = getDurationMin(session.recordingBStartedAt || session.actualCallStartedAt || session.startedAt);
+
+      await CallSession.updateOne(
+        { callId },
+        {
+          $set: {
+            endedAt,
+            endReason: reason || "ended",
+            callStatus,
+            recordingAStatus,
+            recordingBStatus,
+            recordingAReviewNote,
+            recordingBReviewNote,
+            reviewNotes,
+            actualCallDuration,
+            recordingADurationMinutes,
+            recordingBDurationMinutes
+          }
+        }
+      );
+
+      if (recordingAStatus === "rejected") {
+        updateLimitAndBlacklist(session.userA.toString(), session.language, false).catch(console.error);
+      }
+      if (recordingBStatus === "rejected") {
+        updateLimitAndBlacklist(session.userB.toString(), session.language, false).catch(console.error);
+      }
+    } else {
+      await CallSession.updateOne(
+        { callId },
+        {
+          $set: {
+            endedAt,
+            endReason: reason || "ended",
+            callStatus: "pending",
+          },
+        }
+      );
+    }
+  } catch (err) {
+    console.error("Error updating CallSession in endCall:", err);
+  }
 
   const a = io.sockets.sockets.get(call.a);
   const b = io.sockets.sockets.get(call.b);
 
-  const offsetA = a ? a.data.recordOffsetMs || 0 : 0;
-  const offsetB = b ? b.data.recordOffsetMs || 0 : 0;
-
   const cleanupPromises = [];
 
   if (a) {
-    cleanupPromises.push(cleanupRecording(a));
+    cleanupPromises.push(cleanupRecording(a, endedAt));
     a.data.callId = null;
     a.data.peerId = null;
     a.data.role = null;
@@ -641,7 +795,7 @@ async function endCall(callId, reason) {
   }
 
   if (b) {
-    cleanupPromises.push(cleanupRecording(b));
+    cleanupPromises.push(cleanupRecording(b, endedAt));
     b.data.callId = null;
     b.data.peerId = null;
     b.data.role = null;
@@ -651,7 +805,7 @@ async function endCall(callId, reason) {
   await Promise.allSettled(cleanupPromises);
 
   if (reason !== "negotiation_timeout") {
-    mergeRecordings(callId, offsetA, offsetB).catch(console.error);
+    mergeRecordings(callId, 0, 0).catch(console.error);
   }
 }
 
@@ -1058,6 +1212,20 @@ io.on("connection", (socket) => {
       const streamKey = `${callId}_${socket.data.userId}`;
       const streamObj = activeStreams.get(streamKey);
       if (!streamObj || !streamObj.stream) return;
+
+      if (seq > streamObj.expectedSeq) {
+        const skipped = seq - streamObj.expectedSeq;
+        const rate = streamObj.recordSampleRate || 48000;
+        const missedSec = skipped * (24000 / rate);
+        streamObj.totalMissedSeconds = (streamObj.totalMissedSeconds || 0) + missedSec;
+
+        if (skipped < 600) { // Max 5 minutes
+          const silenceBytesPerChunk = 24000 * 4; // float32 is 4 bytes
+          const silenceBuffer = Buffer.alloc(skipped * silenceBytesPerChunk, 0);
+          streamObj.stream.write(silenceBuffer);
+        }
+        streamObj.expectedSeq = seq;
+      }
 
       if (seq < streamObj.expectedSeq) {
         if (callback) callback(seq); // Already processed, acknowledge it

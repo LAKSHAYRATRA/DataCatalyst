@@ -88,7 +88,10 @@ export default function LanguageSelection({ onLanguageSelect, callCount, callLim
                                             <div className="absolute top-0 right-0 w-32 h-32 bg-primary-500 rounded-full blur-[60px] opacity-20 pointer-events-none transform translate-x-1/2 -translate-y-1/2"></div>
                                             
                                             <div className="py-6 px-8 relative z-10 flex flex-col items-center justify-center gap-4">
-                                                <h2 className="text-2xl font-extrabold text-white tracking-tight text-center">{lang.name}</h2>
+                                                 <h2 className="text-2xl font-extrabold text-white tracking-tight text-center">{lang.name}</h2>
+                                                 <span className="text-xs font-bold uppercase tracking-widest text-primary-200 bg-white/10 px-3 py-1.5 rounded-full border border-white/10">
+                                                     Hourly Rate: ${Number(lang.hourlyPayout || 0).toFixed(2)}/hour
+                                                 </span>
                                                 <button
                                                     disabled={isBlocked}
                                                     className={`bg-white text-primary-900 font-extrabold text-base px-8 py-3 rounded-xl shadow-[0_0_20px_rgba(255,255,255,0.2)] hover:shadow-[0_0_30px_rgba(255,255,255,0.35)] transition-all ${isBlocked ? 'opacity-50 cursor-not-allowed' : ''}`}

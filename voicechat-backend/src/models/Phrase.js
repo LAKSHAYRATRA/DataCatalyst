@@ -17,6 +17,7 @@ const phraseSchema = new mongoose.Schema(
     volume: { type: String, default: null },
     events: { type: String, default: null },
     instructions: { type: String, default: null },
+    tags: { type: mongoose.Schema.Types.Mixed, default: {} },
 
     // State Tracking
     status: {
@@ -38,6 +39,7 @@ const phraseSchema = new mongoose.Schema(
     qaComment: { type: String, default: null },
     reviewedAt: { type: Date, default: null },
     isTestPhrase: { type: Boolean, default: false },
+    qcResult: { type: mongoose.Schema.Types.Mixed, default: null },
   },
   { timestamps: true }
 );

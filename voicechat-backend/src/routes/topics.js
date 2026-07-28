@@ -30,12 +30,18 @@ router.get("/enabled", async (req, res) => {
 
                 const validSubtopics = [];
                 for (const sub of subtopics) {
-                    const callCount = await CallSession.countDocuments({
+                    const approvedCount = await CallSession.countDocuments({
                         subtopicId: sub._id,
-                        callActuallyStarted: true
+                        callActuallyStarted: true,
+                        callStatus: "approved"
+                    });
+                    const pendingCount = await CallSession.countDocuments({
+                        subtopicId: sub._id,
+                        callActuallyStarted: true,
+                        callStatus: "pending"
                     });
                     const limit = sub.maxCalls !== undefined ? sub.maxCalls : 3;
-                    if (callCount < limit) {
+                    if (approvedCount + pendingCount < limit) {
                         validSubtopics.push(sub);
                     }
                 }

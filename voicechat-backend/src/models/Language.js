@@ -8,6 +8,8 @@ const languageSchema = new mongoose.Schema(
         sampleRate: { type: Number, default: 48000 },
         enabled: { type: Boolean, default: true },
         maxHoursPerContributor: { type: Number, default: -1 }, // -1 means unlimited
+        maxDailyCallLimit: { type: Number, default: 5, min: 1 },
+        noisy: { type: Boolean, default: false },
     },
     { timestamps: true }
 );
