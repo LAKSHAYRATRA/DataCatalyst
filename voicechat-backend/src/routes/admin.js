@@ -2685,11 +2685,23 @@ router.get("/phrases/download-company", async (req, res) => {
                     folderName = computedName;
                 }
 
+                let age = "unknown";
+                if (contributor.dob) {
+                    const dobDate = new Date(contributor.dob);
+                    const today = new Date();
+                    let calculatedAge = today.getFullYear() - dobDate.getFullYear();
+                    const m = today.getMonth() - dobDate.getMonth();
+                    if (m < 0 || (m === 0 && today.getDate() < dobDate.getDate())) {
+                        calculatedAge--;
+                    }
+                    age = calculatedAge;
+                }
+
                 // Generate speaker_metadata.json
                 const speakerInfo = {
                     speaker_id: speakerId,
                     gender: contributor.gender || "unknown",
-                    age_range: "unknown",
+                    age,
                     native_language: contributor.regionalLanguage || "unknown",
                     primary_language: contributor.regionalLanguage || "unknown",
                     languages_spoken: contributor.languageApplications ? contributor.languageApplications.map(app => app.languageCode) : [],
@@ -2898,10 +2910,22 @@ router.post("/s3/download-selected", async (req, res) => {
                 const phraseId = phrase.phraseId;
                 const speakerId = contributor.speaker_id || phrase.speaker_id || `spk_${contributor._id}`;
 
+                let age = "unknown";
+                if (contributor.dob) {
+                    const dobDate = new Date(contributor.dob);
+                    const today = new Date();
+                    let calculatedAge = today.getFullYear() - dobDate.getFullYear();
+                    const m = today.getMonth() - dobDate.getMonth();
+                    if (m < 0 || (m === 0 && today.getDate() < dobDate.getDate())) {
+                        calculatedAge--;
+                    }
+                    age = calculatedAge;
+                }
+
                 const speakerInfo = {
                     speaker_id: speakerId,
                     gender: contributor.gender || "unknown",
-                    age_range: "unknown",
+                    age,
                     native_language: contributor.regionalLanguage || "unknown",
                     primary_language: contributor.regionalLanguage || "unknown",
                     languages_spoken: contributor.languageApplications ? contributor.languageApplications.map(app => app.languageCode) : [],
