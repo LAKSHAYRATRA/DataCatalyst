@@ -6,7 +6,7 @@ import { User } from "../src/models/User.js";
 dotenv.config();
 
 async function run() {
-  const mongoUri = process.env.MONGO_URI || "mongodb://127.0.0.1:27017/voicechat";
+  const mongoUri = process.env.MONGODB_URI || "mongodb://localhost:27017/voicechat";
   console.log("Connecting to MongoDB at:", mongoUri);
   await mongoose.connect(mongoUri);
 
