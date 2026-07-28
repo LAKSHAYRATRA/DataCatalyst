@@ -17,6 +17,7 @@ const phraseSchema = new mongoose.Schema(
     volume: { type: String, default: null },
     events: { type: String, default: null },
     instructions: { type: String, default: null },
+    freq: { type: Number, default: null },
     tags: { type: mongoose.Schema.Types.Mixed, default: {} },
 
     // State Tracking

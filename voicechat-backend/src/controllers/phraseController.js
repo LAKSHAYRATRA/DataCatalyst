@@ -74,6 +74,13 @@ export async function uploadPhrases(req, res) {
       }
     }
 
+    // Find the current highest freq index for this company
+    const highestFreqPhrase = await Phrase.findOne({ companyId: targetCompanyName })
+      .sort({ freq: -1 })
+      .select("freq")
+      .lean();
+    let currentFreq = highestFreqPhrase && Number.isInteger(highestFreqPhrase.freq) ? highestFreqPhrase.freq : 0;
+
     let inserted = 0;
     let duplicates = 0;
     const seenBatchIds = new Set();
@@ -127,6 +134,7 @@ export async function uploadPhrases(req, res) {
         }
       }
 
+      currentFreq++;
       const doc = {
         phraseId: cleanId,
         companyId: targetCompanyName,
@@ -143,6 +151,7 @@ export async function uploadPhrases(req, res) {
         volume: p.volume || null,
         events: p.events ? (Array.isArray(p.events) ? p.events.join(", ") : JSON.stringify(p.events)) : null,
         instructions: p.instructions || p.instruction || p.notes || p.metadata || null,
+        freq: currentFreq,
         tags,
       };
 

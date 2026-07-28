@@ -252,6 +252,8 @@ export default function AdminCompanies() {
                       <code className="bg-neutral-200 dark:bg-neutral-750 px-1.5 py-0.5 rounded">{`{language}`}</code>
                       <code className="bg-neutral-200 dark:bg-neutral-750 px-1.5 py-0.5 rounded">{`{speaker_id}`}</code>
                       <code className="bg-neutral-200 dark:bg-neutral-750 px-1.5 py-0.5 rounded">{`{gender}`}</code>
+                      <code className="bg-neutral-200 dark:bg-neutral-750 px-1.5 py-0.5 rounded">{`{freq}`}</code>
+                      <code className="bg-neutral-200 dark:bg-neutral-750 px-1.5 py-0.5 rounded">{`{spkfreq}`}</code>
                       {company.availableTags && company.availableTags.length > 0 && (
                         <>
                           <span className="text-neutral-400">| Custom:</span>

@@ -2597,7 +2597,12 @@ router.get("/phrases/download-company", async (req, res) => {
                     ContinuationToken
                 }));
                 for (const obj of (listResp.Contents || [])) {
-                    if (obj.Key && obj.Key !== prefix) objectKeys.push(obj.Key);
+                    if (obj.Key && obj.Key !== prefix) {
+                        if (obj.Key.includes("/phrase apps/")) {
+                            continue;
+                        }
+                        objectKeys.push(obj.Key);
+                    }
                 }
                 ContinuationToken = listResp.IsTruncated ? listResp.NextContinuationToken : undefined;
             } while (ContinuationToken);
@@ -2663,12 +2668,30 @@ router.get("/phrases/download-company", async (req, res) => {
                 const phraseId = phrase.phraseId;
                 const speakerId = contributor.speaker_id || phrase.speaker_id || "";
 
+                // Calculate spkfreq dynamically
+                let spkfreq = "1";
+                if (phrase.contributorId) {
+                    const speakerPhrases = await Phrase.find({
+                        companyId: { $in: [companyFolder, `${companyFolder}_downloaded`] },
+                        contributorId: phrase.contributorId,
+                        status: { $in: ["recorded", "approved"] }
+                    })
+                    .sort({ recordedAt: 1 })
+                    .select("_id")
+                    .lean();
+
+                    const idx = speakerPhrases.findIndex(p => p._id.toString() === phrase._id.toString());
+                    spkfreq = idx !== -1 ? String(idx + 1) : "1";
+                }
+
                 // Compute flexible/custom filename from namingPattern
                 let computedName = filenamePattern
                     .replace(/{phraseId}/g, phraseId || "")
                     .replace(/{language}/g, phrase.language || "")
                     .replace(/{speaker_id}/g, speakerId || `spk_${contributor._id || "unknown"}`)
                     .replace(/{gender}/g, contributor.gender || "unknown")
+                    .replace(/{freq}/g, phrase.freq !== undefined && phrase.freq !== null ? String(phrase.freq) : "")
+                    .replace(/{spkfreq}/g, spkfreq)
                     .replace(/{baseName}/g, baseName);
                 
                 // Support dynamic tag replacement e.g. {emotion}, {style}
@@ -2703,8 +2726,6 @@ router.get("/phrases/download-company", async (req, res) => {
                     gender: contributor.gender || "unknown",
                     age,
                     native_language: contributor.regionalLanguage || "unknown",
-                    primary_language: contributor.regionalLanguage || "unknown",
-                    languages_spoken: contributor.languageApplications ? contributor.languageApplications.map(app => app.languageCode) : [],
                     accent: contributor.accent || "unknown",
                     dialect: contributor.dialect || "unknown",
                     region: contributor.locality || "unknown",
@@ -2713,7 +2734,6 @@ router.get("/phrases/download-company", async (req, res) => {
                     consent_platform: "voclara.com",
                     recording_environment: "room",
                     audio_specs: {
-                        format: "FLAC",
                         sample_rate: 48000,
                         bit_depth: 24,
                         channels: 1
@@ -2724,7 +2744,8 @@ router.get("/phrases/download-company", async (req, res) => {
 
                 // Build the utterance entry (only used for the combined file).
                 const utterance = {
-                    id: folderName,
+                    id: phrase.phraseId || folderName,
+                    path: `${folderName}.wav`,
                     language: phrase.language,
                     script_type: phrase.script_type || "orthographic",
                     speaker_id: contributor.speaker_id || phrase.speaker_id || "",
@@ -2927,8 +2948,6 @@ router.post("/s3/download-selected", async (req, res) => {
                     gender: contributor.gender || "unknown",
                     age,
                     native_language: contributor.regionalLanguage || "unknown",
-                    primary_language: contributor.regionalLanguage || "unknown",
-                    languages_spoken: contributor.languageApplications ? contributor.languageApplications.map(app => app.languageCode) : [],
                     accent: contributor.accent || "unknown",
                     dialect: contributor.dialect || "unknown",
                     region: contributor.locality || "unknown",
@@ -2937,7 +2956,6 @@ router.post("/s3/download-selected", async (req, res) => {
                     consent_platform: "voclara.com",
                     recording_environment: "room",
                     audio_specs: {
-                        format: "FLAC",
                         sample_rate: 48000,
                         bit_depth: 24,
                         channels: 1
@@ -2948,6 +2966,7 @@ router.post("/s3/download-selected", async (req, res) => {
 
                 const utterance = {
                     id: phraseId,
+                    path: `${folderName}.wav`,
                     language: phrase.language,
                     script_type: phrase.script_type || "orthographic",
                     speaker_id: contributor.speaker_id || phrase.speaker_id || "",
