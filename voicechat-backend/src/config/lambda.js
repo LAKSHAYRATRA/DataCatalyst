@@ -3,7 +3,7 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
-const region = process.env.AWS_REGION || "us-east-1";
+const region = process.env.AWS_LAMBDA_REGION || "ap-southeast-2";
 const functionName = process.env.AWS_LAMBDA_FUNCTION_NAME || "voclara-audio-qc";
 
 if (!process.env.AWS_ACCESS_KEY_ID || !process.env.AWS_SECRET_ACCESS_KEY) {
