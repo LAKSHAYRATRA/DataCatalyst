@@ -64,7 +64,11 @@ def get_bit_verdict(noise_floor_db, noise_gate_detected=False):
 
 
 def analyze_file(filepath):
-    audio, sr = sf.read(filepath)
+    # Cap reading to first 10 minutes (600 seconds) to avoid OOM on very long files
+    info = sf.info(filepath)
+    sr = info.samplerate
+    max_frames = min(info.frames, 600 * sr)
+    audio, sr = sf.read(filepath, dtype='float32', frames=max_frames)
 
     if len(audio.shape) > 1:
         audio = audio.mean(axis=1)
@@ -163,10 +167,29 @@ def analyze_file(filepath):
     else:
         overall = "PASS ✅"
 
-    # ── Frequency data (Welch) ──
-    freqs, psd = welch(audio, fs=sr, nperseg=8192, scaling='density')
-    db = 10 * np.log10(psd + 1e-12)
-    db = db - db.max()
+    # ── Frequency data (Audacity-like Spectrum) ──
+    nfft = 8192
+    window = np.hanning(nfft)
+    window_sum = np.sum(window)
+    hop = nfft // 2
+    n_blocks = (len(audio) - nfft) // hop + 1
+    if n_blocks <= 0:
+        n_blocks = 1
+        audio_padded = np.pad(audio, (0, max(0, nfft - len(audio))))
+    else:
+        audio_padded = audio
+
+    psd_sum = np.zeros(nfft // 2 + 1)
+    for i in range(n_blocks):
+        start = i * hop
+        block = audio_padded[start : start + nfft]
+        rfft = np.fft.rfft(block * window)
+        psd_sum += np.abs(rfft) ** 2
+
+    avg_power = psd_sum / n_blocks
+    norm_factor = (window_sum / 2.0) ** 2
+    db = 10 * np.log10(avg_power / norm_factor + 1e-20)
+    freqs = np.fft.rfftfreq(nfft, 1.0 / sr)
 
     return {
         "file":               os.path.basename(filepath),
@@ -255,7 +278,11 @@ def print_file_report(r):
 # ─────────────────────────────────────────────
 
 def smooth(db, window=30):
-    return np.convolve(db, np.ones(window) / window, mode='same')
+    half = window // 2
+    # Use edge padding to repeat boundary values, preventing zero-padding spikes at negative decibels
+    padded = np.pad(db, (half, half), mode='edge')
+    smoothed = np.convolve(padded, np.ones(window) / window, mode='valid')
+    return smoothed[:len(db)]
 
 
 SPEECH_ZONES = [
@@ -271,7 +298,7 @@ def plot_freq_curve(r, output_dir, show=False):
     db    = r["db"]
     sr    = r["sr"]
 
-    max_freq = min(sr // 2, 20000)
+    max_freq = sr // 2
     mask     = (freqs >= 20) & (freqs <= max_freq)
     db_s     = smooth(db[mask])
 
@@ -281,12 +308,12 @@ def plot_freq_curve(r, output_dir, show=False):
     for (flo, fhi, color, label) in SPEECH_ZONES:
         ax.axvspan(flo, fhi, alpha=0.07, color=color)
         mid = np.sqrt(flo * fhi)
-        ax.text(mid, -58, label, ha='center', va='bottom',
+        ax.text(mid, -112, label, ha='center', va='bottom',
                 fontsize=7, color=color, alpha=0.85, fontfamily='monospace')
 
     ax.plot(freqs[mask], db_s, color='#38bdf8', linewidth=2, zorder=5,
             label=r['file'])
-    ax.fill_between(freqs[mask], db_s, -70, alpha=0.08, color='#38bdf8')
+    ax.fill_between(freqs[mask], db_s, -116, alpha=0.08, color='#38bdf8')
 
     overall_color = '#22c55e' if 'PASS' in r['overall'] else ('#f59e0b' if 'WARN' in r['overall'] else '#ef4444')
     nf_display = r['noise_diagnosis'][:50] if r['noise_diagnosis'] else "Noise gate detected"
@@ -298,9 +325,10 @@ def plot_freq_curve(r, output_dir, show=False):
              color=overall_color, fontfamily='monospace')
 
     ax.set_xlim(20, max_freq)
-    ax.set_ylim(-70, 5)
+    ax.set_ylim(-116, -42)
+    ax.set_yticks(np.arange(-114, -41, 6))
     ax.set_xlabel('Frequency (Hz)', color='#666680', fontsize=9)
-    ax.set_ylabel('dB (normalized)', color='#666680', fontsize=9)
+    ax.set_ylabel('dBFS (spectrum)', color='#666680', fontsize=9)
     ax.tick_params(colors='#444460', labelsize=8)
     major_ticks = [k * 2000 for k in range(0, 13)]
     ax.set_xticks(major_ticks)
@@ -341,7 +369,7 @@ def plot_comparison(results, output_dir):
         freqs    = r["freqs"]
         db       = r["db"]
         sr       = r["sr"]
-        max_freq = min(sr // 2, 20000)
+        max_freq = sr // 2
         mask     = (freqs >= 20) & (freqs <= max_freq)
         db_s     = smooth(db[mask])
 
@@ -352,10 +380,12 @@ def plot_comparison(results, output_dir):
                 color=colors[i % len(colors)],
                 linewidth=1.8, alpha=0.85, label=label)
 
-    ax.set_xlim(20, 20000)
-    ax.set_ylim(-70, 5)
+    max_xlim = max(r['sr'] // 2 for r in results)
+    ax.set_xlim(20, max_xlim)
+    ax.set_ylim(-116, -42)
+    ax.set_yticks(np.arange(-114, -41, 6))
     ax.set_xlabel('Frequency (Hz)', color='#666680', fontsize=10)
-    ax.set_ylabel('dB (normalized)', color='#666680', fontsize=10)
+    ax.set_ylabel('dBFS (spectrum)', color='#666680', fontsize=10)
     ax.set_title('Frequency Comparison -- All Files', color='#e8e8f0', fontsize=12, pad=12)
     ax.tick_params(colors='#444460', labelsize=8)
     major_ticks = [k * 2000 for k in range(0, 13)]

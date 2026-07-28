@@ -10,7 +10,7 @@ export default function QaPhrases() {
   const [loading, setLoading] = useState(true);
   const [comments, setComments] = useState({});
   const [processing, setProcessing] = useState(null);
-  const [filterCompany, setFilterCompany] = useState('All');
+  const [filterProject, setFilterProject] = useState('All');
 
   // QC States
   const [expandedQc, setExpandedQc] = useState({});
@@ -103,19 +103,19 @@ export default function QaPhrases() {
             <div className="flex justify-end mb-4">
               <select 
                 className="input w-full md:w-64"
-                value={filterCompany}
-                onChange={(e) => setFilterCompany(e.target.value)}
+                value={filterProject}
+                onChange={(e) => setFilterProject(e.target.value)}
               >
-                <option value="All">All Companies</option>
-                {[...new Set(queue.map(q => q.companyId).filter(Boolean))].sort().map(company => (
-                  <option key={company} value={company}>{company}</option>
+                <option value="All">All Projects</option>
+                {[...new Set(queue.map(q => q.projectName || q.companyId).filter(Boolean))].sort().map(project => (
+                  <option key={project} value={project}>{project}</option>
                 ))}
               </select>
             </div>
           )}
 
           <AnimatePresence>
-            {(filterCompany === 'All' ? queue : queue.filter(q => q.companyId === filterCompany)).map((p) => (
+            {(filterProject === 'All' ? queue : queue.filter(q => (q.projectName || q.companyId) === filterProject)).map((p) => (
               <motion.div 
                 key={p._id}
                 layout
@@ -155,11 +155,11 @@ export default function QaPhrases() {
                       <p className="text-sm border-t border-neutral-200 dark:border-neutral-700 pt-3 mt-3">
                         <span className="opacity-70">Contributor: </span>
                         <span className="font-semibold">{p.contributorId?.username}</span>
-                        {p.companyId && (
+                        {(p.projectName || p.companyId) && (
                           <>
                             <span className="mx-2 opacity-30">|</span>
-                            <span className="opacity-70">Company: </span>
-                            <span className="font-semibold">{p.companyId}</span>
+                            <span className="opacity-70">Project: </span>
+                            <span className="font-semibold">{p.projectName || p.companyId}</span>
                           </>
                         )}
                       </p>
@@ -288,7 +288,7 @@ export default function QaPhrases() {
             ))}
           </AnimatePresence>
 
-          {(filterCompany === 'All' ? queue : queue.filter(q => q.companyId === filterCompany)).length === 0 && (
+          {(filterProject === 'All' ? queue : queue.filter(q => (q.projectName || q.companyId) === filterProject)).length === 0 && (
             <motion.div 
               initial={{ opacity: 0 }} 
               animate={{ opacity: 1 }} 

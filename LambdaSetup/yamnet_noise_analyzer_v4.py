@@ -172,21 +172,32 @@ def load_class_names():
 #  Audio Helpers
 # ─────────────────────────────────────────────────────────────────────────────
 
+import math
+from scipy.signal import resample_poly
+
 def load_audio_full(filepath):
     """
-    Load the ENTIRE audio file at 16 kHz mono.
-    librosa.load without duration= reads everything; we pass res_type for speed.
-    For very long files this may use ~few hundred MB RAM — acceptable.
+    Load the ENTIRE audio file (capped to first 10 minutes) and resample it to 16kHz mono using scipy.signal.resample_poly.
+    This is highly memory-efficient and avoids spawning external binaries or using heavy librosa Kaiser windows.
     """
-    print(f"         Loading full audio (this may take a moment for long files)...")
-    audio, _ = librosa.load(
-        filepath,
-        sr=YAMNET_SR,
-        mono=True,
-        res_type="kaiser_fast",   # faster resampling
-        # NO duration= parameter — reads the whole file
-    )
-    audio = audio.astype(np.float32)
+    print(f"         Loading audio via soundfile (capped to 10 mins)...")
+    info = sf.info(filepath)
+    sr = info.samplerate
+    max_frames = min(info.frames, 600 * sr)
+    audio, sr = sf.read(filepath, dtype='float32', frames=max_frames)
+    
+    # If stereo, mix down to mono by taking the mean of channels
+    if len(audio.shape) > 1:
+        audio = audio.mean(axis=1)
+        
+    if sr != YAMNET_SR:
+        print(f"         Resampling audio from {sr}Hz to {YAMNET_SR}Hz...")
+        gcd = math.gcd(sr, YAMNET_SR)
+        up = YAMNET_SR // gcd
+        down = sr // gcd
+        audio = resample_poly(audio, up, down)
+        
+    # Peak normalize
     peak = np.max(np.abs(audio))
     if peak > 0:
         audio = audio / peak
@@ -208,52 +219,64 @@ def format_time(seconds):
 #  Chunked YAMNet Inference
 # ─────────────────────────────────────────────────────────────────────────────
 
-def run_yamnet_chunked(waveform, model, tf):
+def run_yamnet_chunked(filepath, model, tf):
     """
-    Split waveform into CHUNK_SAMPLES-sized pieces, run YAMNet on each.
-
-    Returns:
-        all_scores      : np.ndarray (total_frames, 521)
-        frame_times_sec : np.ndarray (total_frames,)
-            Exact timestamp in seconds for each frame, derived from the
-            sample offset of the chunk — not from accumulated frame count.
-            This prevents drift caused by boundary frames at chunk edges.
+    Stream audio directly from disk in CHUNK_SECONDS-sized blocks, resample, and run YAMNet.
+    Uses virtually zero memory even for 1-hour files.
     """
-    total_samples  = len(waveform)
-    all_scores     = []
+    info = sf.info(filepath)
+    sr = info.samplerate
+    chunk_samples = sr * CHUNK_SECONDS
+    
+    all_scores = []
     all_timestamps = []
-    chunk_count    = int(np.ceil(total_samples / CHUNK_SAMPLES))
-
-    for i in range(chunk_count):
-        start = i * CHUNK_SAMPLES
-        end   = min(start + CHUNK_SAMPLES, total_samples)
-        chunk = waveform[start:end]
-
+    
+    block_idx = 0
+    # Read in chunks using soundfile blocks
+    # Using blocks streams the file directly from disk without loading it fully in RAM
+    for chunk in sf.blocks(filepath, blocksize=chunk_samples, dtype='float32', fill_value=0.0):
+        # Mix down to mono if stereo
+        if len(chunk.shape) > 1:
+            chunk = chunk.mean(axis=1)
+            
+        # Resample to YAMNET_SR (16000) using scipy polyphase resampler
+        if sr != YAMNET_SR:
+            gcd = math.gcd(sr, YAMNET_SR)
+            up = YAMNET_SR // gcd
+            down = sr // gcd
+            chunk = resample_poly(chunk, up, down)
+            
+        # Peak normalize the chunk
+        peak = np.max(np.abs(chunk))
+        if peak > 0:
+            chunk = chunk / peak
+            
+        # Ensure it has enough samples for YAMNet
         min_samples = int(YAMNET_SR * 0.975) + 1
         if len(chunk) < min_samples:
             chunk = np.pad(chunk, (0, min_samples - len(chunk)))
-
+            
         chunk_tensor = tf.constant(chunk, dtype=tf.float32)
         scores, _, _ = model(chunk_tensor)
-        scores_np    = scores.numpy()
-        n_frames     = scores_np.shape[0]
-
-        # Anchor timestamps to exact sample position of this chunk
-        chunk_start_sec = start / YAMNET_SR
-        frame_times     = chunk_start_sec + np.arange(n_frames) * YAMNET_FRAME_DUR
-
+        scores_np = scores.numpy()
+        n_frames = scores_np.shape[0]
+        
+        # Anchor timestamps
+        chunk_start_sec = (block_idx * chunk_samples) / sr
+        frame_times = chunk_start_sec + np.arange(n_frames) * YAMNET_FRAME_DUR
+        
         all_scores.append(scores_np)
         all_timestamps.append(frame_times)
-
-        elapsed_start = format_time(start / YAMNET_SR)
-        elapsed_end   = format_time(end   / YAMNET_SR)
-        # Avoid non-ASCII arrow character to prevent UnicodeEncodeError on Windows console
-        print(f"           Chunk {i+1}/{chunk_count}  [{elapsed_start} -> {elapsed_end}]"
-              f"  frames: {n_frames}")
-
+        
+        elapsed_start = format_time(chunk_start_sec)
+        elapsed_end = format_time(chunk_start_sec + len(chunk)/YAMNET_SR)
+        print(f"           Streaming Chunk {block_idx+1}  [{elapsed_start} -> {elapsed_end}]  frames: {n_frames}")
+        
+        block_idx += 1
+        
     return (
-        np.concatenate(all_scores,     axis=0),  # (N_total_frames, 521)
-        np.concatenate(all_timestamps, axis=0),  # (N_total_frames,)
+        np.concatenate(all_scores, axis=0),
+        np.concatenate(all_timestamps, axis=0)
     )
 
 
@@ -332,15 +355,14 @@ def detect_noise_events(scores, frame_times, class_names, threshold):
 
 def analyze_file(filepath, model, tf, class_names, threshold):
     original_sr  = get_original_sample_rate(filepath)
-    waveform     = load_audio_full(filepath)
-    duration_sec = round(len(waveform) / YAMNET_SR, 2)
+    duration_sec = round(sf.info(filepath).duration, 2)
 
     print(f"         Sample Rate : {original_sr} Hz")
     print(f"         Duration    : {format_time(duration_sec)}  ({duration_sec:.1f}s)")
-    print(f"         Running chunked YAMNet inference ({CHUNK_SECONDS}s chunks)...")
+    print(f"         Running streaming YAMNet inference ({CHUNK_SECONDS}s chunks)...")
 
-    # ← KEY FIX: chunked inference over full audio
-    scores_np, frame_times = run_yamnet_chunked(waveform, model, tf)
+    # ← KEY FIX: stream audio and do chunked inference over full audio
+    scores_np, frame_times = run_yamnet_chunked(filepath, model, tf)
 
     print(f"         Total frames analyzed : {scores_np.shape[0]}")
     print(f"         Scanning events (threshold={threshold})...")
