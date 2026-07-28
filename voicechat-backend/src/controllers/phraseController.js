@@ -485,7 +485,21 @@ export async function getQaQueue(req, res) {
 
     const phrases = await Phrase.find(query)
       .populate("contributorId", "firstname lastname username")
-      .sort({ recordedAt: 1 });
+      .sort({ recordedAt: 1 })
+      .lean();
+
+    // Map companyId to friendly projectName dynamically
+    const companies = await Company.find({}).lean();
+    const companyProjectMap = Object.fromEntries(
+      companies.map(c => [c.name, c.projectName])
+    );
+
+    for (const p of phrases) {
+      if (!p.projectName && p.companyId) {
+        p.projectName = companyProjectMap[p.companyId] || p.companyId;
+      }
+    }
+
     res.json({ phrases });
   } catch (error) {
     console.error("getQaQueue error:", error);
@@ -631,7 +645,21 @@ export async function getAllPhrasesAdmin(req, res) {
     const phrases = await Phrase.find()
       .populate("contributorId", "firstname lastname username")
       .populate("qaId", "firstname lastname username")
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .lean();
+
+    // Map companyId to friendly projectName dynamically
+    const companies = await Company.find({}).lean();
+    const companyProjectMap = Object.fromEntries(
+      companies.map(c => [c.name, c.projectName])
+    );
+
+    for (const p of phrases) {
+      if (!p.projectName && p.companyId) {
+        p.projectName = companyProjectMap[p.companyId] || p.companyId;
+      }
+    }
+
     res.json({ phrases });
   } catch (error) {
     console.error("getAllPhrasesAdmin error:", error);
