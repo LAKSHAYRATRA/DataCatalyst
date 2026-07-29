@@ -64,12 +64,23 @@ export async function fetchAndConvertToWav(url) {
     writeString(view, 36, "data");
     view.setUint32(40, dataSize, true);
 
-    // Interleave float32 samples from all channels
-    let offset = 44;
-    for (let i = 0; i < numFrames; i++) {
+    // Interleave float32 samples from all channels efficiently
+    if (numChannels === 1) {
+        // High-performance direct TypedArray copy for mono audio (< 1ms)
+        const channelData = audioBuffer.getChannelData(0);
+        new Float32Array(buffer, 44).set(channelData);
+    } else {
+        // Fetch channel arrays once outside the inner loop to prevent millions of getChannelData calls
+        const channels = [];
         for (let ch = 0; ch < numChannels; ch++) {
-            view.setFloat32(offset, audioBuffer.getChannelData(ch)[i], true);
-            offset += 4;
+            channels.push(audioBuffer.getChannelData(ch));
+        }
+        let offset = 44;
+        for (let i = 0; i < numFrames; i++) {
+            for (let ch = 0; ch < numChannels; ch++) {
+                view.setFloat32(offset, channels[ch][i], true);
+                offset += 4;
+            }
         }
     }
 

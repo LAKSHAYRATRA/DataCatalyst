@@ -62,7 +62,7 @@ export default function AdminQA() {
     const userInfo = getUserInfo();
     const isQaOnly = Boolean(userInfo?.isQA && !userInfo?.isAdmin);
     const [page, setPage] = useState(1);
-    const [statusFilter, setStatusFilter] = useState("");
+    const [statusFilter, setStatusFilter] = useState(isQaOnly ? "pending" : "");
     const [error, setError] = useState("");
 
     const [calls, setCalls] = useState([]);
@@ -233,16 +233,23 @@ export default function AdminQA() {
                         <h1 className="text-2xl md:text-3xl font-bold text-white mb-1">Q/A Review</h1>
                         <p className="text-neutral-400 text-sm">Review call recordings.</p>
                     </div>
-                    <select
-                        value={statusFilter}
-                        onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
-                        className="bg-neutral-700 border border-neutral-600 text-white text-sm rounded-lg px-3 py-2"
-                    >
-                        <option value="">All Calls</option>
-                        <option value="pending">Pending</option>
-                        <option value="approved">Approved</option>
-                        <option value="rejected">Rejected</option>
-                    </select>
+                    {isQaOnly ? (
+                        <div className="bg-yellow-900/40 border border-yellow-700/50 text-yellow-300 text-sm font-semibold rounded-lg px-3 py-2 flex items-center gap-2">
+                            <span className="w-2 h-2 rounded-full bg-yellow-400 animate-pulse"></span>
+                            Pending Calls Only
+                        </div>
+                    ) : (
+                        <select
+                            value={statusFilter}
+                            onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
+                            className="bg-neutral-700 border border-neutral-600 text-white text-sm rounded-lg px-3 py-2"
+                        >
+                            <option value="">All Calls</option>
+                            <option value="pending">Pending</option>
+                            <option value="approved">Approved</option>
+                            <option value="rejected">Rejected</option>
+                        </select>
+                    )}
                 </div>
 
                 {error && <div className="bg-red-900/50 border border-red-700 text-red-300 px-4 py-3 rounded-lg mb-4">{error}</div>}

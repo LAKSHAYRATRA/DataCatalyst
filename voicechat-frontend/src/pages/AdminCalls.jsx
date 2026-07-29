@@ -148,6 +148,23 @@ export default function AdminCalls() {
         return data.map(([key, value]) => `"${key}","${String(value ?? "").replace(/"/g, '""')}"`).join("\n");
     }
 
+    function calcSpeakerDuration(call, isSpeakerA) {
+        const minVal = isSpeakerA ? call.recordingADurationMinutes : call.recordingBDurationMinutes;
+        if (minVal && Number(minVal) > 0) return Number(minVal).toFixed(2);
+        if (call.actualCallDuration && Number(call.actualCallDuration) > 0) {
+            return (Number(call.actualCallDuration) / 60).toFixed(2);
+        }
+        const start = isSpeakerA ? call.recordingAStartedAt : call.recordingBStartedAt;
+        const startedAt = start || call.actualCallStartedAt || call.startedAt;
+        if (startedAt && call.endedAt) {
+            const diffMs = new Date(call.endedAt).getTime() - new Date(startedAt).getTime();
+            if (Number.isFinite(diffMs) && diffMs > 0) {
+                return (diffMs / 60000).toFixed(2);
+            }
+        }
+        return "0.00";
+    }
+
     async function fetchRecordingBlob(callId, userId, recordingFile) {
         const recordingUrl = `${BACKEND_URL}/api/admin/calls/${callId}/recording/${userId}`;
         const isWav = typeof recordingFile === "string" && recordingFile.toLowerCase().endsWith(".wav");
@@ -220,14 +237,14 @@ export default function AdminCalls() {
                         user: call.userA,
                         file: call.recordingAFile,
                         status: call.recordingAStatus,
-                        duration: Number(call.recordingADurationMinutes || 0).toFixed(2),
+                        duration: calcSpeakerDuration(call, true),
                     },
                     {
                         folder: "speaker2",
                         user: call.userB,
                         file: call.recordingBFile,
                         status: call.recordingBStatus,
-                        duration: Number(call.recordingBDurationMinutes || 0).toFixed(2),
+                        duration: calcSpeakerDuration(call, false),
                     },
                 ].filter((s) => s.file && s.user?._id && s.status === "approved");
 
@@ -317,7 +334,7 @@ export default function AdminCalls() {
                     file: call.recordingAFile,
                     reviewNote: call.recordingAReviewNote,
                     payout: Number(call.recordingAPayoutUsd || 0).toFixed(2),
-                    duration: Number(call.recordingADurationMinutes || 0).toFixed(2),
+                    duration: calcSpeakerDuration(call, true),
                 },
                 {
                     folder: "speaker2",
@@ -325,7 +342,7 @@ export default function AdminCalls() {
                     file: call.recordingBFile,
                     reviewNote: call.recordingBReviewNote,
                     payout: Number(call.recordingBPayoutUsd || 0).toFixed(2),
-                    duration: Number(call.recordingBDurationMinutes || 0).toFixed(2),
+                    duration: calcSpeakerDuration(call, false),
                 },
             ].filter((speaker) => speaker.file && speaker.user?._id);
 

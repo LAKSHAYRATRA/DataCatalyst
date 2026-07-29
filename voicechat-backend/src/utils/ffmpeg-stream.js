@@ -37,43 +37,24 @@ function padWavBuffer(wavBuffer, targetDurationMs, sampleRate = 48000, numChanne
 }
 
 export async function streamS3ToWav(s3ReadableStream, res, filename) {
-  const tempDir = path.join(process.cwd(), "scratch", "temp_audio");
-  if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
-  
-  const tempInPath = path.join(tempDir, `in_${Date.now()}_${Math.random().toString(36).substring(7)}.flac`);
-  const tempOutPath = path.join(tempDir, `out_${Date.now()}_${Math.random().toString(36).substring(7)}.wav`);
+  res.setHeader("Content-Type", "audio/wav");
+  res.setHeader("Content-Disposition", `attachment; filename="${filename}.wav"`);
 
   try {
-    const buffer = await streamToBuffer(s3ReadableStream);
-    fs.writeFileSync(tempInPath, buffer);
-
-    await new Promise((resolve, reject) => {
-      ffmpeg(tempInPath)
-        .format("wav")
-        .outputOptions([
-          "-ar 48000",
-          "-acodec pcm_s24le"
-        ])
-        .on("error", reject)
-        .on("end", resolve)
-        .save(tempOutPath);
-    });
-
-    res.setHeader("Content-Type", "audio/wav");
-    res.setHeader("Content-Disposition", `attachment; filename="${filename}.wav"`);
-    
-    const wavBuffer = fs.readFileSync(tempOutPath);
-    res.send(wavBuffer);
+    ffmpeg(s3ReadableStream)
+      .format("wav")
+      .outputOptions([
+        "-ar 48000",
+        "-acodec pcm_s24le"
+      ])
+      .on("error", (err) => {
+        console.error("FFMPEG Stream Error:", err);
+        if (!res.headersSent) res.status(500).end();
+      })
+      .pipe(res, { end: true });
   } catch (err) {
-    console.error("FFMPEG Stream Error:", err);
+    console.error("FFMPEG Setup Error:", err);
     if (!res.headersSent) res.status(500).end();
-  } finally {
-    try {
-      if (fs.existsSync(tempInPath)) fs.unlinkSync(tempInPath);
-      if (fs.existsSync(tempOutPath)) fs.unlinkSync(tempOutPath);
-    } catch (cleanupErr) {
-      console.error("Failed to clean up temp ffmpeg files:", cleanupErr);
-    }
   }
 }
 

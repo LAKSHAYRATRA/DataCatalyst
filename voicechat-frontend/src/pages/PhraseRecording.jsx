@@ -25,6 +25,7 @@ export default function PhraseRecording() {
   
   const [projects, setProjects] = useState([]);
   const [allLanguages, setAllLanguages] = useState([]);
+  const [allCompanies, setAllCompanies] = useState([]);
   
   const [projectName, setProjectName] = useState('');
   const [language, setLanguage] = useState('');
@@ -67,11 +68,12 @@ export default function PhraseRecording() {
 
   async function fetchInitialData() {
     try {
-      const [statsData, projectsData, languagesData, appsData] = await Promise.all([
+      const [statsData, projectsData, languagesData, appsData, companiesData] = await Promise.all([
         apiGet('/api/phrases/my-stats'),
         apiGet('/api/projects'),
         apiGet('/api/languages'),
-        apiGet('/api/language-applications/my')
+        apiGet('/api/language-applications/my'),
+        apiGet('/api/admin/companies').catch(() => ({ companies: [] }))
       ]);
 
       const myApps = appsData.applications || [];
@@ -99,6 +101,7 @@ export default function PhraseRecording() {
       });
       setProjects(projectsData.projects || []);
       setAllLanguages(languagesData.languages || []);
+      setAllCompanies(companiesData.companies || []);
     } catch (err) {
       console.error('Failed to fetch initial data', err);
     }
@@ -108,20 +111,36 @@ export default function PhraseRecording() {
   const currentPayrate = React.useMemo(() => {
     let rate = 0;
     if (!language) return 0;
+
+    // 1. Base language rate
     const baseLang = allLanguages.find(l => l.code && l.code.toLowerCase() === language.toLowerCase());
     if (baseLang) rate = Number(baseLang.hourlyPayout) || 0;
 
-    if (projectName !== 'Any') {
+    // 2. Specific project language rate
+    if (projectName && projectName !== 'Any') {
       const proj = projects.find(p => p.name === projectName);
       if (proj && proj.languageRates) {
         const specRate = proj.languageRates.find(r => r.languageCode && r.languageCode.toLowerCase() === language.toLowerCase());
-        if (specRate) {
+        if (specRate && Number(specRate.hourlyPayout) > 0) {
           rate = Number(specRate.hourlyPayout);
         }
       }
     }
+
+    // 3. Company phrase config rate overrides all other rates if set (> 0)
+    if (projectName && projectName !== 'Any') {
+      const coreCompanyId = String(projectName).replace("_downloaded", "").trim();
+      const comp = allCompanies.find(c => 
+        (c.name && (c.name.toLowerCase() === projectName.toLowerCase() || c.name.toLowerCase() === coreCompanyId.toLowerCase())) ||
+        c._id === projectName
+      );
+      if (comp && Number(comp.hourlyPayout) > 0) {
+        rate = Number(comp.hourlyPayout);
+      }
+    }
+
     return rate;
-  }, [language, projectName, projects, allLanguages]);
+  }, [language, projectName, projects, allLanguages, allCompanies]);
 
   async function fetchNextPhrase() {
     try {

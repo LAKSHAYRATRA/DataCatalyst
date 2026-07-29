@@ -731,10 +731,14 @@ async function endCall(callId, reason) {
       }
 
       const getDurationMin = (start) => {
-        if (!start) return 0;
-        const diffMs = endedAt.getTime() - new Date(start).getTime();
-        if (!Number.isFinite(diffMs) || diffMs <= 0) return 0;
-        return Math.round((diffMs / 60000) * 100) / 100;
+        if (start) {
+          const diffMs = endedAt.getTime() - new Date(start).getTime();
+          if (Number.isFinite(diffMs) && diffMs > 0) return Math.round((diffMs / 60000) * 100) / 100;
+        }
+        if (actualCallDuration && Number.isFinite(actualCallDuration) && actualCallDuration > 0) {
+          return Math.round((actualCallDuration / 60) * 100) / 100;
+        }
+        return 0;
       };
 
       const recordingADurationMinutes = getDurationMin(session.recordingAStartedAt || session.actualCallStartedAt || session.startedAt);

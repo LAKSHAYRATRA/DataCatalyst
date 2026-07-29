@@ -787,7 +787,10 @@ export async function getSamplePhrase(req, res) {
       return res.status(404).json({ error: "No sample phrase found for this project and language." });
     }
 
-    res.json({ phrase });
+    const companyDoc = await Company.findOne({ name: targetCompany }).select("userCustomizations").lean();
+    const userCustomizations = companyDoc ? companyDoc.userCustomizations : [];
+
+    res.json({ phrase, userCustomizations });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

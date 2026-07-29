@@ -26,9 +26,13 @@ export function encodeWAV(samples, sampleRate = 48000, numChannels = 1) {
   writeString(view, 36, 'data');
   view.setUint32(40, samples.length * bytesPerSample, true);
 
-  let offset = 44;
-  for (let i = 0; i < samples.length; i++, offset += 4) {
-    view.setFloat32(offset, samples[i], true);
+  if (samples instanceof Float32Array) {
+    new Float32Array(buffer, 44).set(samples);
+  } else {
+    let offset = 44;
+    for (let i = 0; i < samples.length; i++, offset += 4) {
+      view.setFloat32(offset, samples[i], true);
+    }
   }
 
   return new Blob([view], { type: 'audio/wav' });

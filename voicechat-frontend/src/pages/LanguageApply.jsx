@@ -20,6 +20,7 @@ export default function LanguageApply() {
         return (t === "phrase" || t === "call") ? t : "call";
     }); // 'call' or 'phrase'
     const [samplePhrase, setSamplePhrase] = useState(null);
+    const [userCustomizations, setUserCustomizations] = useState([]);
     const [phase, setPhase] = useState("select"); // select | record | done
     const [recording, setRecording] = useState(false);
     const [secondsLeft, setSecondsLeft] = useState(MAX_SEC);
@@ -89,6 +90,7 @@ export default function LanguageApply() {
             const data = await apiGet(`/api/phrases/sample?companyId=${encodeURIComponent(companyId)}${langQuery}`);
             if (data.phrase) {
                 setSamplePhrase(data.phrase);
+                setUserCustomizations(data.userCustomizations || []);
                 setPhase("record");
                 setAudioBlob(null);
                 setAudioUrl(null);
@@ -448,18 +450,26 @@ export default function LanguageApply() {
                                     <p className="text-xl md:text-2xl font-medium leading-relaxed">"{samplePhrase.text}"</p>
                                 </div>
                                 <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6 bg-neutral-100/50 dark:bg-neutral-900/50 p-4 rounded-xl text-neutral-800 dark:text-neutral-200 text-sm border border-neutral-200 dark:border-neutral-800">
-                                    {samplePhrase.emotion && <div><span className="block text-xs uppercase opacity-60 mb-1">Emotion</span><span className="font-medium">{samplePhrase.emotion}</span></div>}
-                                    {samplePhrase.style && <div><span className="block text-xs uppercase opacity-60 mb-1">Style</span><span className="font-medium">{samplePhrase.style}</span></div>}
-                                    {samplePhrase.speed && <div><span className="block text-xs uppercase opacity-60 mb-1">Speed</span><span className="font-medium">{samplePhrase.speed}</span></div>}
-                                    {samplePhrase.intent && <div><span className="block text-xs uppercase opacity-60 mb-1">Intent</span><span className="font-medium">{samplePhrase.intent}</span></div>}
-                                    {samplePhrase.pitch && <div><span className="block text-xs uppercase opacity-60 mb-1">Pitch</span><span className="font-medium">{samplePhrase.pitch}</span></div>}
-                                    {samplePhrase.volume && <div><span className="block text-xs uppercase opacity-60 mb-1">Volume</span><span className="font-medium">{samplePhrase.volume}</span></div>}
-                                    {samplePhrase.tags && Object.entries(samplePhrase.tags).map(([key, val]) => (
-                                        <div key={key}>
-                                            <span className="block text-xs uppercase opacity-60 mb-1">{key.replace(/_/g, ' ')}</span>
-                                            <span className="font-medium">{val}</span>
-                                        </div>
-                                    ))}
+                                    {samplePhrase.emotion && (!userCustomizations || userCustomizations.length === 0 || userCustomizations.some(uk => uk.toLowerCase() === 'emotion')) && <div><span className="block text-xs uppercase opacity-60 mb-1">Emotion</span><span className="font-medium">{samplePhrase.emotion}</span></div>}
+                                    {samplePhrase.style && (!userCustomizations || userCustomizations.length === 0 || userCustomizations.some(uk => uk.toLowerCase() === 'style')) && <div><span className="block text-xs uppercase opacity-60 mb-1">Style</span><span className="font-medium">{samplePhrase.style}</span></div>}
+                                    {samplePhrase.speed && (!userCustomizations || userCustomizations.length === 0 || userCustomizations.some(uk => uk.toLowerCase() === 'speed')) && <div><span className="block text-xs uppercase opacity-60 mb-1">Speed</span><span className="font-medium">{samplePhrase.speed}</span></div>}
+                                    {samplePhrase.intent && (!userCustomizations || userCustomizations.length === 0 || userCustomizations.some(uk => uk.toLowerCase() === 'intent')) && <div><span className="block text-xs uppercase opacity-60 mb-1">Intent</span><span className="font-medium">{samplePhrase.intent}</span></div>}
+                                    {samplePhrase.pitch && (!userCustomizations || userCustomizations.length === 0 || userCustomizations.some(uk => uk.toLowerCase() === 'pitch')) && <div><span className="block text-xs uppercase opacity-60 mb-1">Pitch</span><span className="font-medium">{samplePhrase.pitch}</span></div>}
+                                    {samplePhrase.volume && (!userCustomizations || userCustomizations.length === 0 || userCustomizations.some(uk => uk.toLowerCase() === 'volume')) && <div><span className="block text-xs uppercase opacity-60 mb-1">Volume</span><span className="font-medium">{samplePhrase.volume}</span></div>}
+                                    {samplePhrase.tags && Object.entries(samplePhrase.tags)
+                                        .filter(([key]) => {
+                                            if (userCustomizations && userCustomizations.length > 0) {
+                                                return userCustomizations.some(uk => uk.toLowerCase() === key.toLowerCase());
+                                            }
+                                            return true;
+                                        })
+                                        .map(([key, val]) => (
+                                            <div key={key}>
+                                                <span className="block text-xs uppercase opacity-60 mb-1">{key.replace(/_/g, ' ')}</span>
+                                                <span className="font-medium">{val}</span>
+                                            </div>
+                                        ))
+                                    }
                                     {samplePhrase.instructions && <div className="col-span-2 md:col-span-3 mt-2"><span className="block text-xs uppercase opacity-60 mb-1">Notes</span><p className="text-xs border-l-2 border-primary-300 pl-3">{samplePhrase.instructions}</p></div>}
                                 </div>
                             </>

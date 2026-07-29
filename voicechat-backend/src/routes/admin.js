@@ -459,9 +459,11 @@ qaCallRouter.get("/calls", async (req, res) => {
         const skip = (page - 1) * limit;
 
         const filter = { callActuallyStarted: true };
-        if (status) filter.callStatus = status;
         if (req.user.isQA && !req.user.isAdmin) {
+            filter.callStatus = "pending";
             filter.language = { $in: getReviewerLanguageCodes(req.user) };
+        } else if (status) {
+            filter.callStatus = status;
         }
 
         const [calls, total] = await Promise.all([
@@ -519,10 +521,15 @@ function roundCurrency(value) {
 }
 
 function getRecordingDurationMinutes(call, side) {
+    const minKey = side === "A" ? "recordingADurationMinutes" : "recordingBDurationMinutes";
+    if (call && call[minKey] && Number(call[minKey]) > 0) return Number(call[minKey]);
+    if (call && call.actualCallDuration && Number(call.actualCallDuration) > 0) {
+        return roundCurrency(Number(call.actualCallDuration) / 60);
+    }
     const startedAt = side === "A"
-        ? (call.recordingAStartedAt || call.actualCallStartedAt || call.startedAt)
-        : (call.recordingBStartedAt || call.actualCallStartedAt || call.startedAt);
-    const endedAt = call.endedAt;
+        ? (call?.recordingAStartedAt || call?.actualCallStartedAt || call?.startedAt)
+        : (call?.recordingBStartedAt || call?.actualCallStartedAt || call?.startedAt);
+    const endedAt = call?.endedAt;
     if (!startedAt || !endedAt) return 0;
     const diffMs = new Date(endedAt).getTime() - new Date(startedAt).getTime();
     if (!Number.isFinite(diffMs) || diffMs <= 0) return 0;
@@ -2996,14 +3003,14 @@ router.post("/s3/download-selected", async (req, res) => {
                     speakerRole = "Mixed";
                 }
 
-                let durationMinutes = "";
+                let durationMinutes = 0;
                 if (speakerRole === "Speaker A") {
-                    durationMinutes = call.recordingADurationMinutes !== undefined ? call.recordingADurationMinutes : 0;
+                    durationMinutes = getRecordingDurationMinutes(call, "A");
                 } else if (speakerRole === "Speaker B") {
-                    durationMinutes = call.recordingBDurationMinutes !== undefined ? call.recordingBDurationMinutes : 0;
+                    durationMinutes = getRecordingDurationMinutes(call, "B");
                 } else if (speakerRole === "Mixed") {
-                    let actualCallDur = call.actualCallDuration;
-                    if (!actualCallDur && call.endedAt && call.actualCallStartedAt) {
+                    let actualCallDur = call?.actualCallDuration;
+                    if (!actualCallDur && call?.endedAt && call?.actualCallStartedAt) {
                         actualCallDur = (new Date(call.endedAt).getTime() - new Date(call.actualCallStartedAt).getTime()) / 1000;
                     }
                     durationMinutes = actualCallDur ? (actualCallDur / 60) : 0;
