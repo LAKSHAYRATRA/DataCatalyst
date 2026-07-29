@@ -1863,6 +1863,75 @@ router.patch("/users/:userId/limits", async (req, res) => {
     }
 });
 
+// Get raw user document JSON for Admin metadata editor
+router.get("/users/:userId/raw", async (req, res) => {
+    try {
+        const user = await User.findById(req.params.userId).select("-passwordHash").lean();
+        if (!user) return res.status(404).json({ error: "User not found" });
+        res.json({ user });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Update raw user document from Admin JSON editor
+router.patch("/users/:userId/raw", async (req, res) => {
+    try {
+        const { userData } = req.body;
+        if (!userData || typeof userData !== "object") {
+            return res.status(400).json({ error: "Invalid user metadata object provided." });
+        }
+
+        const updateData = { ...userData };
+        delete updateData._id;
+        delete updateData.passwordHash;
+        delete updateData.createdAt;
+        delete updateData.updatedAt;
+        delete updateData.__v;
+
+        const updatedUser = await User.findByIdAndUpdate(
+            req.params.userId,
+            { $set: updateData },
+            { new: true, runValidators: true }
+        ).select("-passwordHash").lean();
+
+        if (!updatedUser) return res.status(404).json({ error: "User not found" });
+        res.json({ message: "User metadata updated successfully", user: updatedUser });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Delete a user from Admin Metadata Editor
+router.delete("/users/:userId", async (req, res) => {
+    try {
+        const user = await User.findById(req.params.userId);
+        if (!user) return res.status(404).json({ error: "User not found" });
+
+        if (user.introRecordingFile) {
+            const key = user.introRecordingFile;
+            try {
+                if (key.startsWith("local:")) {
+                    const localFileName = key.replace("local:", "");
+                    const localFilePath = path.join(process.cwd(), "recordings", "intros", localFileName);
+                    if (fs.existsSync(localFilePath)) {
+                        fs.unlinkSync(localFilePath);
+                    }
+                } else {
+                    await s3Client.send(new DeleteObjectCommand({ Bucket: BUCKET_NAME, Key: key }));
+                }
+            } catch (cleanupErr) {
+                console.error("Failed to cleanup intro recording for deleted user:", cleanupErr.message);
+            }
+        }
+
+        await User.findByIdAndDelete(req.params.userId);
+        res.json({ message: "User deleted successfully", success: true });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // Reject a user with a typed reason
 router.patch("/users/:userId/reject", async (req, res) => {
     try {

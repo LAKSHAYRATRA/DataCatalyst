@@ -81,7 +81,82 @@ export default function AdminUsers() {
     const [qaError, setQaError] = useState("");
     const [languages, setLanguages] = useState([]);
 
+    // JSON Metadata Editing States
+    const [jsonModalUser, setJsonModalUser] = useState(null);
+    const [jsonText, setJsonText] = useState("");
+    const [jsonError, setJsonError] = useState("");
+    const [jsonSaving, setJsonSaving] = useState(false);
+
     const [error, setError] = useState("");
+
+    async function openJsonModal(userId) {
+        try {
+            const res = await apiGet(`/api/admin/users/${userId}/raw`);
+            if (res.user) {
+                setJsonModalUser(res.user);
+                setJsonText(JSON.stringify(res.user, null, 2));
+                setJsonError("");
+            }
+        } catch (e) {
+            Swal.fire("Error", "Failed to fetch user metadata: " + e.message, "error");
+        }
+    }
+
+    async function submitJsonUpdate() {
+        if (!jsonModalUser) return;
+        try {
+            const parsed = JSON.parse(jsonText);
+            setJsonSaving(true);
+            setJsonError("");
+            
+            await apiPatchJson(`/api/admin/users/${jsonModalUser._id}/raw`, { userData: parsed });
+            
+            Swal.fire({ title: "User Updated", text: "User metadata updated successfully!", icon: "success", timer: 2000, showConfirmButton: false });
+            setJsonModalUser(null);
+            
+            if (tab === "pending") await loadPending();
+            if (tab === "all") await loadUsers();
+            if (tab === "approved") await loadApprovedUsers();
+        } catch (err) {
+            if (err instanceof SyntaxError) {
+                setJsonError("Invalid JSON syntax: " + err.message);
+            } else {
+                setJsonError(err.message || "Failed to update user");
+            }
+        } finally {
+            setJsonSaving(false);
+        }
+    }
+
+    async function deleteUserFromJsonModal() {
+        if (!jsonModalUser) return;
+        const confirmResult = await Swal.fire({
+            title: "Delete User?",
+            text: `Are you sure you want to permanently delete user @${jsonModalUser.username}? This action cannot be undone!`,
+            icon: "warning",
+            showCancelButton: true,
+            confirmButtonColor: "#ef4444",
+            cancelButtonColor: "#6b7280",
+            confirmButtonText: "Yes, Delete Permanently"
+        });
+
+        if (!confirmResult.isConfirmed) return;
+
+        try {
+            setJsonSaving(true);
+            await apiPatchJson(`/api/admin/users/${jsonModalUser._id}`, {}, "DELETE");
+            Swal.fire({ title: "User Deleted", text: `User @${jsonModalUser.username} deleted permanently.`, icon: "success", timer: 2000, showConfirmButton: false });
+            setJsonModalUser(null);
+
+            if (tab === "pending") await loadPending();
+            if (tab === "all") await loadUsers();
+            if (tab === "approved") await loadApprovedUsers();
+        } catch (err) {
+            Swal.fire("Error", err.message || "Failed to delete user", "error");
+        } finally {
+            setJsonSaving(false);
+        }
+    }
 
     useEffect(() => {
         if (tab === "pending") loadPending(pendingSearch);
@@ -489,19 +564,26 @@ export default function AdminUsers() {
                                                     </div>
                                                 </td>
                                                 <td className="px-4 py-4 text-xs">
-                                                    <button
-                                                        onClick={() => { 
-                                                            setLimitModalUser(user); 
-                                                            setLimitForm({
-                                                                dailyPhraseLimit: user.dailyPhraseLimit ?? 1000,
-                                                                overallPhraseLimit: user.overallPhraseLimit ?? -1,
-                                                                dailyCallLimit: user.dailyCallLimit ?? 50,
-                                                                overallCallLimit: user.overallCallLimit ?? -1
-                                                            });
-                                                        }}
-                                                        className="text-warning-400 hover:text-warning-300 font-medium bg-warning-400/10 hover:bg-warning-400/20 px-3 py-1.5 rounded transition-colors">
-                                                        Edit Limits
-                                                    </button>
+                                                    <div className="flex flex-wrap gap-2">
+                                                        <button
+                                                            onClick={() => { 
+                                                                setLimitModalUser(user); 
+                                                                setLimitForm({
+                                                                    dailyPhraseLimit: user.dailyPhraseLimit ?? 1000,
+                                                                    overallPhraseLimit: user.overallPhraseLimit ?? -1,
+                                                                    dailyCallLimit: user.dailyCallLimit ?? 50,
+                                                                    overallCallLimit: user.overallCallLimit ?? -1
+                                                                });
+                                                            }}
+                                                            className="text-warning-400 hover:text-warning-300 font-medium bg-warning-400/10 hover:bg-warning-400/20 px-3 py-1.5 rounded transition-colors">
+                                                            Edit Limits
+                                                        </button>
+                                                        <button
+                                                            onClick={() => openJsonModal(user._id)}
+                                                            className="text-primary-400 hover:text-primary-300 font-medium bg-primary-400/10 hover:bg-primary-400/20 px-3 py-1.5 rounded transition-colors">
+                                                            Edit JSON
+                                                        </button>
+                                                    </div>
                                                 </td>
                                             </tr>
                                         ))}
@@ -597,6 +679,12 @@ export default function AdminUsers() {
                                                                 className="px-3 py-1.5 rounded-md bg-warning-500/10 text-warning-400 hover:bg-warning-500/20 text-xs font-medium"
                                                             >
                                                                 Edit Limits
+                                                            </button>
+                                                            <button
+                                                                onClick={() => openJsonModal(u.userId)}
+                                                                className="px-3 py-1.5 rounded-md bg-primary-500/10 text-primary-400 hover:bg-primary-500/20 text-xs font-medium"
+                                                            >
+                                                                Edit JSON
                                                             </button>
                                                             <button
                                                                 onClick={() => downloadAgreement(u.userId)}
@@ -847,6 +935,84 @@ export default function AdminUsers() {
                                 </button>
                             </div>
                         </form>
+                    </div>
+                </div>
+            )}
+            {/* ── JSON Metadata Editor Modal ── */}
+            {jsonModalUser && (
+                <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4">
+                    <div className="bg-neutral-800 border border-neutral-700 rounded-2xl w-full max-w-3xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden animate-scale-up">
+                        <div className="px-6 py-4 border-b border-neutral-700 flex justify-between items-center bg-neutral-900/60">
+                            <div>
+                                <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                                    <span>📝 Edit User Metadata (JSON)</span>
+                                </h3>
+                                <p className="text-xs text-neutral-400 mt-0.5">
+                                    Full metadata structure for <span className="text-warning-400 font-semibold">{jsonModalUser.firstname || ""} {jsonModalUser.lastname || ""} (@{jsonModalUser.username})</span>
+                                </p>
+                            </div>
+                            <button
+                                onClick={() => setJsonModalUser(null)}
+                                className="text-neutral-400 hover:text-white text-xl font-bold p-1 transition-colors"
+                            >
+                                ✕
+                            </button>
+                        </div>
+
+                        <div className="p-6 overflow-y-auto flex-1 space-y-4">
+                            {jsonError && (
+                                <div className="bg-red-900/50 border border-red-700 text-red-300 px-4 py-3 rounded-xl text-xs font-mono">
+                                    ⚠️ {jsonError}
+                                </div>
+                            )}
+                            
+                            <div className="space-y-1">
+                                <label className="block text-xs font-semibold uppercase tracking-wider text-neutral-400">Raw JSON Structure</label>
+                                <textarea
+                                    value={jsonText}
+                                    onChange={(e) => {
+                                        setJsonText(e.target.value);
+                                        try {
+                                            JSON.parse(e.target.value);
+                                            setJsonError("");
+                                        } catch (err) {
+                                            setJsonError("Invalid JSON syntax: " + err.message);
+                                        }
+                                    }}
+                                    rows={16}
+                                    className="w-full bg-neutral-950 border border-neutral-700 text-green-400 font-mono text-xs p-4 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500 leading-relaxed shadow-inner"
+                                    spellCheck={false}
+                                />
+                            </div>
+                        </div>
+
+                        <div className="px-6 py-4 border-t border-neutral-700 bg-neutral-900/60 flex justify-between items-center gap-3">
+                            <button
+                                type="button"
+                                onClick={deleteUserFromJsonModal}
+                                disabled={jsonSaving}
+                                className="px-4 py-2 bg-error-600 hover:bg-error-700 text-white text-sm font-semibold rounded-lg disabled:opacity-50 transition-colors flex items-center gap-1.5"
+                            >
+                                🗑 Delete User
+                            </button>
+                            <div className="flex gap-3">
+                                <button
+                                    type="button"
+                                    onClick={() => setJsonModalUser(null)}
+                                    className="px-4 py-2 bg-neutral-700 hover:bg-neutral-600 text-neutral-200 text-sm font-semibold rounded-lg transition-colors"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={submitJsonUpdate}
+                                    disabled={jsonSaving || !!jsonError}
+                                    className="px-5 py-2 bg-primary-600 hover:bg-primary-500 text-white text-sm font-semibold rounded-lg disabled:opacity-50 transition-colors flex items-center gap-2"
+                                >
+                                    {jsonSaving ? "Saving..." : "Save Metadata"}
+                                </button>
+                            </div>
+                        </div>
                     </div>
                 </div>
             )}
