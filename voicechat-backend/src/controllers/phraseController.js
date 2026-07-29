@@ -201,7 +201,14 @@ export async function getAvailablePhrase(req, res) {
 
     // Fetch all companies to get their limits (defaulting to 195 mins = 11700 secs)
     const companies = await Company.find({}).lean();
-    const companyLimits = Object.fromEntries(companies.map(c => [c.name, (c.maxContributionMinutes || 195) * 60]));
+    const companyLimits = Object.fromEntries(
+      companies.map(c => [
+        c.name,
+        c.maxContributionMinutes !== undefined && c.maxContributionMinutes !== null
+          ? Number(c.maxContributionMinutes) * 60
+          : 195 * 60
+      ])
+    );
 
     // Check Company-specific contribution limit & Test Phrase status (language-wise)
     const companyStats = await Phrase.aggregate([
@@ -215,6 +222,21 @@ export async function getAvailablePhrase(req, res) {
     ]);
 
     const reqLang = (language || user.regionalLanguage || "english").trim().toLowerCase();
+    
+    // Build stats lookup map by companyId and language
+    const statsMap = {};
+    for (const c of companyStats) {
+      if (c._id && c._id.companyId && c._id.language) {
+        const compKey = String(c._id.companyId);
+        const langKey = String(c._id.language).toLowerCase();
+        statsMap[`${compKey}::${langKey}`] = {
+          totalDuration: c.totalDuration || 0,
+          approvedCount: c.approvedCount || 0,
+          recordedCount: c.recordedCount || 0
+        };
+      }
+    }
+
     const maxedOutCompanies = [];
     const waitingTestCompanies = [];
 
@@ -227,17 +249,19 @@ export async function getAvailablePhrase(req, res) {
       );
     };
 
-    for (const c of companyStats) {
-        const compId = c._id.companyId;
-        const lang = c._id.language;
-        if (lang === reqLang) {
-            // Find company limit, default to 11700 (3h 15m) if company not explicitly in DB
-            const limitSecs = companyLimits[compId] || 11700;
-            if (c.totalDuration >= limitSecs) maxedOutCompanies.push(compId);
-            if (c.approvedCount === 0 && c.recordedCount > 0 && !isAppApproved(compId)) {
-                waitingTestCompanies.push(compId);
-            }
-        }
+    // Evaluate limits for ALL registered companies for the requested language
+    for (const comp of companies) {
+      const compId = comp.name;
+      const key = `${compId}::${reqLang}`;
+      const stats = statsMap[key] || { totalDuration: 0, approvedCount: 0, recordedCount: 0 };
+      const limitSecs = companyLimits[compId] !== undefined ? companyLimits[compId] : 195 * 60;
+
+      if (stats.totalDuration >= limitSecs) {
+        maxedOutCompanies.push(compId);
+      }
+      if (stats.approvedCount === 0 && stats.recordedCount > 0 && !isAppApproved(compId)) {
+        waitingTestCompanies.push(compId);
+      }
     }
 
     const blockedCompanies = [...new Set([...maxedOutCompanies, ...waitingTestCompanies])];
@@ -255,7 +279,7 @@ export async function getAvailablePhrase(req, res) {
 
     if (baseQuery.companyId && blockedCompanies.includes(baseQuery.companyId)) {
       if (maxedOutCompanies.includes(baseQuery.companyId)) {
-        return res.json({ phrase: null, message: `You have reached the maximum contribution time limit for company: ${baseQuery.companyId}.` });
+        return res.json({ phrase: null, message: "Project/Language limit reached, try some other project/Language" });
       } else {
         return res.json({ phrase: null, message: `Your test phrase for company ${baseQuery.companyId} is currently under review by QA. Please wait for approval before contributing further.` });
       }
