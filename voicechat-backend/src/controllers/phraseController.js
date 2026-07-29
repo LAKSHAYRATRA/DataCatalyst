@@ -199,15 +199,17 @@ export async function getAvailablePhrase(req, res) {
       }
     }
 
-    // Fetch all companies to get their limits (defaulting to 195 mins = 11700 secs)
+    // Fetch all companies to get their limits (defaulting to 195 mins = 11700 secs, -1 = unlimited)
     const companies = await Company.find({}).lean();
     const companyLimits = Object.fromEntries(
-      companies.map(c => [
-        c.name,
-        c.maxContributionMinutes !== undefined && c.maxContributionMinutes !== null
-          ? Number(c.maxContributionMinutes) * 60
-          : 195 * 60
-      ])
+      companies.map(c => {
+        let secs = 195 * 60;
+        if (c.maxContributionMinutes !== undefined && c.maxContributionMinutes !== null) {
+          const mins = Number(c.maxContributionMinutes);
+          secs = mins === -1 || mins < 0 ? -1 : mins * 60;
+        }
+        return [c.name, secs];
+      })
     );
 
     // Check Company-specific contribution limit & Test Phrase status (language-wise)
@@ -242,7 +244,7 @@ export async function getAvailablePhrase(req, res) {
 
     const isAppApproved = (compId) => {
       return (user.languageApplications || []).some(a => 
-          a.applicationType === "phrase" && 
+          (a.applicationType === "phrase" || !a.applicationType) && 
           a.status === "approved" && 
           String(a.companyId || "").trim().toLowerCase() === String(compId).trim().toLowerCase() &&
           String(a.languageCode || "").trim().toLowerCase() === reqLang
@@ -256,7 +258,7 @@ export async function getAvailablePhrase(req, res) {
       const stats = statsMap[key] || { totalDuration: 0, approvedCount: 0, recordedCount: 0 };
       const limitSecs = companyLimits[compId] !== undefined ? companyLimits[compId] : 195 * 60;
 
-      if (stats.totalDuration >= limitSecs) {
+      if (limitSecs !== -1 && stats.totalDuration >= limitSecs) {
         maxedOutCompanies.push(compId);
       }
       if (stats.approvedCount === 0 && stats.recordedCount > 0 && !isAppApproved(compId)) {
@@ -269,7 +271,7 @@ export async function getAvailablePhrase(req, res) {
     const activeCompanies = await Phrase.aggregate([
       { $match: { status: { $in: ["pending", "locked", "rejected"] } } },
       { $group: { _id: "$companyId", count: { $sum: 1 } } },
-      { $match: { count: { $gt: 1 } } }
+      { $match: { count: { $gte: 1 } } }
     ]);
     const activeNames = activeCompanies.map(c => c._id).filter(Boolean);
 
