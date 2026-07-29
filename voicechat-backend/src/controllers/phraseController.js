@@ -112,7 +112,7 @@ export async function uploadPhrases(req, res) {
         "text", "sentence", "content", "phrase", "transcript",
         "script_type", "scripttype",
         "speaker_id", "speakerid", "speaker",
-        "emotion", "style", "intent", "pitch", "speed", "volume", "events",
+        "emotion", "emotions", "style", "intent", "pitch", "speed", "volume", "events",
         "instructions", "instruction", "notes", "metadata"
       ]);
 
@@ -143,7 +143,7 @@ export async function uploadPhrases(req, res) {
         script_type: p.script_type || p.scriptType || null,
         speaker_id: p.speaker_id || p.speakerId || p.speaker || null,
         text: text,
-        emotion: p.emotion || null,
+        emotion: p.emotion || p.emotions || null,
         style: p.style || null,
         intent: p.intent || null,
         pitch: p.pitch || null,

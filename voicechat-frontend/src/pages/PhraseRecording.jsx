@@ -574,12 +574,12 @@ export default function PhraseRecording() {
                 </div>
 
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-8 bg-neutral-50/50 dark:bg-neutral-900/50 p-4 rounded-lg">
-                  {currentPhrase.emotion && <div><span className="block text-xs uppercase opacity-60 mb-1">Emotion</span><span className="font-medium">{currentPhrase.emotion}</span></div>}
-                  {currentPhrase.style && <div><span className="block text-xs uppercase opacity-60 mb-1">Style</span><span className="font-medium">{currentPhrase.style}</span></div>}
-                  {currentPhrase.speed && <div><span className="block text-xs uppercase opacity-60 mb-1">Speed</span><span className="font-medium">{currentPhrase.speed}</span></div>}
-                  {currentPhrase.intent && <div><span className="block text-xs uppercase opacity-60 mb-1">Intent</span><span className="font-medium">{currentPhrase.intent}</span></div>}
-                  {currentPhrase.pitch && <div><span className="block text-xs uppercase opacity-60 mb-1">Pitch</span><span className="font-medium">{currentPhrase.pitch}</span></div>}
-                  {currentPhrase.volume && <div><span className="block text-xs uppercase opacity-60 mb-1">Volume</span><span className="font-medium">{currentPhrase.volume}</span></div>}
+                  {currentPhrase.emotion && (!userCustomizations || userCustomizations.length === 0 || userCustomizations.some(uk => uk.toLowerCase() === 'emotion')) && <div><span className="block text-xs uppercase opacity-60 mb-1">Emotion</span><span className="font-medium">{currentPhrase.emotion}</span></div>}
+                  {currentPhrase.style && (!userCustomizations || userCustomizations.length === 0 || userCustomizations.some(uk => uk.toLowerCase() === 'style')) && <div><span className="block text-xs uppercase opacity-60 mb-1">Style</span><span className="font-medium">{currentPhrase.style}</span></div>}
+                  {currentPhrase.speed && (!userCustomizations || userCustomizations.length === 0 || userCustomizations.some(uk => uk.toLowerCase() === 'speed')) && <div><span className="block text-xs uppercase opacity-60 mb-1">Speed</span><span className="font-medium">{currentPhrase.speed}</span></div>}
+                  {currentPhrase.intent && (!userCustomizations || userCustomizations.length === 0 || userCustomizations.some(uk => uk.toLowerCase() === 'intent')) && <div><span className="block text-xs uppercase opacity-60 mb-1">Intent</span><span className="font-medium">{currentPhrase.intent}</span></div>}
+                  {currentPhrase.pitch && (!userCustomizations || userCustomizations.length === 0 || userCustomizations.some(uk => uk.toLowerCase() === 'pitch')) && <div><span className="block text-xs uppercase opacity-60 mb-1">Pitch</span><span className="font-medium">{currentPhrase.pitch}</span></div>}
+                  {currentPhrase.volume && (!userCustomizations || userCustomizations.length === 0 || userCustomizations.some(uk => uk.toLowerCase() === 'volume')) && <div><span className="block text-xs uppercase opacity-60 mb-1">Volume</span><span className="font-medium">{currentPhrase.volume}</span></div>}
                   {currentPhrase.tags && Object.entries(currentPhrase.tags)
                     .filter(([key]) => {
                       if (userCustomizations && userCustomizations.length > 0) {

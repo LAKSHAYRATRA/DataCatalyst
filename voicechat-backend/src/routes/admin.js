@@ -72,12 +72,21 @@ router.get("/companies", requireAuth(JWT_SECRET), async (req, res) => {
         if (req.query.forApply !== "true") {
             const companiesWithTags = await Promise.all(
                 allCompanies.map(async (c) => {
-                    const samplePhrases = await Phrase.find({ companyId: c.name }).limit(100).select("tags").lean();
+                    const samplePhrases = await Phrase.find({ companyId: c.name })
+                        .limit(100)
+                        .select("tags emotion style intent pitch speed volume instructions script_type")
+                        .lean();
                     const tagKeys = new Set();
+                    const standardFields = ["emotion", "style", "intent", "pitch", "speed", "volume", "instructions", "script_type"];
                     for (const p of samplePhrases) {
                         if (p.tags) {
                             for (const k of Object.keys(p.tags)) {
                                 tagKeys.add(k);
+                            }
+                        }
+                        for (const f of standardFields) {
+                            if (p[f] !== undefined && p[f] !== null && p[f] !== "") {
+                                tagKeys.add(f);
                             }
                         }
                     }
@@ -133,12 +142,21 @@ router.get("/companies/:id", requireAuth(JWT_SECRET), async (req, res) => {
         if (!company) return res.status(404).json({ error: "Company not found" });
 
         // Compute available tags for this company
-        const samplePhrases = await Phrase.find({ companyId: company.name }).limit(100).select("tags").lean();
+        const samplePhrases = await Phrase.find({ companyId: company.name })
+            .limit(100)
+            .select("tags emotion style intent pitch speed volume instructions script_type")
+            .lean();
         const tagKeys = new Set();
+        const standardFields = ["emotion", "style", "intent", "pitch", "speed", "volume", "instructions", "script_type"];
         for (const p of samplePhrases) {
             if (p.tags) {
                 for (const k of Object.keys(p.tags)) {
                     tagKeys.add(k);
+                }
+            }
+            for (const f of standardFields) {
+                if (p[f] !== undefined && p[f] !== null && p[f] !== "") {
+                    tagKeys.add(f);
                 }
             }
         }
@@ -2768,9 +2786,16 @@ router.get("/phrases/download-company", async (req, res) => {
                     .replace(/{gender}/g, contributor.gender || "unknown")
                     .replace(/{freq}/g, phrase.freq !== undefined && phrase.freq !== null ? String(phrase.freq) : "")
                     .replace(/{spkfreq}/g, spkfreq)
-                    .replace(/{baseName}/g, baseName);
+                    .replace(/{baseName}/g, baseName)
+                    .replace(/{emotion}/g, phrase.emotion || "")
+                    .replace(/{style}/g, phrase.style || "")
+                    .replace(/{intent}/g, phrase.intent || "")
+                    .replace(/{pitch}/g, phrase.pitch || "")
+                    .replace(/{speed}/g, phrase.speed || "")
+                    .replace(/{volume}/g, phrase.volume || "")
+                    .replace(/{instructions}/g, phrase.instructions || "");
                 
-                // Support dynamic tag replacement e.g. {emotion}, {style}
+                // Support dynamic tag replacement e.g. {domain}, {emotion_subtype}
                 if (phrase.tags) {
                     for (const [tagKey, tagVal] of Object.entries(phrase.tags)) {
                         const regex = new RegExp(`{${tagKey}}`, 'g');
@@ -2819,30 +2844,34 @@ router.get("/phrases/download-company", async (req, res) => {
                 if (!combinedSpeakers[speakerId]) combinedSpeakers[speakerId] = speakerInfo;
 
                 // Build the utterance entry (only used for the combined file).
+                const downloadCustomizations = companyDoc?.downloadCustomizations || [];
+                const isCustomized = downloadCustomizations && downloadCustomizations.length > 0;
+                const isAllowedKey = (key) => {
+                    if (!isCustomized) return true;
+                    return downloadCustomizations.some(dk => dk.toLowerCase() === key.toLowerCase());
+                };
+
                 const utterance = {
                     id: phrase.phraseId || folderName,
                     path: `${folderName}.wav`,
                     language: phrase.language,
                     script_type: phrase.script_type || "orthographic",
                     speaker_id: contributor.speaker_id || phrase.speaker_id || "",
-                    text: phrase.text,
-                    emotion: phrase.emotion || "neutral",
-                    style: phrase.style || "conversational",
-                    intent: phrase.intent || "statement",
-                    pitch: phrase.pitch || "medium",
-                    speed: phrase.speed || "normal",
-                    volume: phrase.volume || "normal",
-                    events: phrase.events ? phrase.events.split(",").map(e => e.trim()) : [],
-                    instruction: phrase.instructions || ""
+                    text: phrase.text
                 };
+
+                if (isAllowedKey("emotion")) utterance.emotion = phrase.emotion || "neutral";
+                if (isAllowedKey("style")) utterance.style = phrase.style || "conversational";
+                if (isAllowedKey("intent")) utterance.intent = phrase.intent || "statement";
+                if (isAllowedKey("pitch")) utterance.pitch = phrase.pitch || "medium";
+                if (isAllowedKey("speed")) utterance.speed = phrase.speed || "normal";
+                if (isAllowedKey("volume")) utterance.volume = phrase.volume || "normal";
+                if (isAllowedKey("events") && phrase.events) utterance.events = phrase.events.split(",").map(e => e.trim());
+                if ((isAllowedKey("instruction") || isAllowedKey("instructions")) && phrase.instructions) utterance.instruction = phrase.instructions;
+
                 if (phrase.tags) {
-                    const downloadCustomizations = companyDoc?.downloadCustomizations || [];
                     for (const [tagKey, tagVal] of Object.entries(phrase.tags)) {
-                        if (downloadCustomizations && downloadCustomizations.length > 0) {
-                            if (downloadCustomizations.some(dk => dk.toLowerCase() === tagKey.toLowerCase())) {
-                                utterance[tagKey] = tagVal;
-                            }
-                        } else {
+                        if (isAllowedKey(tagKey)) {
                             utterance[tagKey] = tagVal;
                         }
                     }
@@ -2944,6 +2973,10 @@ router.post("/s3/download-selected", async (req, res) => {
             .populate("contributorId").lean();
         const phraseByKey = new Map(phraseDocs.map((p) => [p.audioFile, p]));
 
+        const companyNames = Array.from(new Set(phraseDocs.map(p => p.companyId).filter(Boolean)));
+        const companyDocs = companyNames.length > 0 ? await Company.find({ name: { $in: companyNames } }).select("name downloadCustomizations").lean() : [];
+        const companyMap = new Map(companyDocs.map(c => [c.name, c]));
+
         // Attach metadata when a call session record exists for a given file.
         const callDocs = await CallSession.find({
             $or: [
@@ -3040,22 +3073,39 @@ router.post("/s3/download-selected", async (req, res) => {
                 // Collect once per speaker for the combined file (no repetition).
                 if (!combinedSpeakers[speakerId]) combinedSpeakers[speakerId] = speakerInfo;
 
+                const companyDoc = companyMap.get(phrase.companyId);
+                const downloadCustomizations = companyDoc?.downloadCustomizations || [];
+                const isCustomized = downloadCustomizations && downloadCustomizations.length > 0;
+                const isAllowedKey = (key) => {
+                    if (!isCustomized) return true;
+                    return downloadCustomizations.some(dk => dk.toLowerCase() === key.toLowerCase());
+                };
+
                 const utterance = {
                     id: phraseId,
                     path: `${folderName}.wav`,
                     language: phrase.language,
                     script_type: phrase.script_type || "orthographic",
                     speaker_id: contributor.speaker_id || phrase.speaker_id || "",
-                    text: phrase.text,
-                    emotion: phrase.emotion || "neutral",
-                    style: phrase.style || "conversational",
-                    intent: phrase.intent || "statement",
-                    pitch: phrase.pitch || "medium",
-                    speed: phrase.speed || "normal",
-                    volume: phrase.volume || "normal",
-                    events: phrase.events ? phrase.events.split(",").map(e => e.trim()) : [],
-                    instruction: phrase.instructions || ""
+                    text: phrase.text
                 };
+
+                if (isAllowedKey("emotion")) utterance.emotion = phrase.emotion || "neutral";
+                if (isAllowedKey("style")) utterance.style = phrase.style || "conversational";
+                if (isAllowedKey("intent")) utterance.intent = phrase.intent || "statement";
+                if (isAllowedKey("pitch")) utterance.pitch = phrase.pitch || "medium";
+                if (isAllowedKey("speed")) utterance.speed = phrase.speed || "normal";
+                if (isAllowedKey("volume")) utterance.volume = phrase.volume || "normal";
+                if (isAllowedKey("events") && phrase.events) utterance.events = phrase.events.split(",").map(e => e.trim());
+                if ((isAllowedKey("instruction") || isAllowedKey("instructions")) && phrase.instructions) utterance.instruction = phrase.instructions;
+
+                if (phrase.tags) {
+                    for (const [tagKey, tagVal] of Object.entries(phrase.tags)) {
+                        if (isAllowedKey(tagKey)) {
+                            utterance[tagKey] = tagVal;
+                        }
+                    }
+                }
                 combinedUtterances.push(utterance);
             } else if (call) {
                 folderName = call.callId ? `${call.callId}_${baseName}` : baseName;
