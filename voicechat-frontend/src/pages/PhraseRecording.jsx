@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Mic, Square, Play, UploadCloud, CheckCircle2, Clock, DollarSign, FolderGit2 } from 'lucide-react';
+import { Mic, Square, Play, UploadCloud, CheckCircle2, Clock, DollarSign, FolderGit2, RotateCcw } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { apiGet } from '../lib/api';
 import { encodeWAV } from '../utils/wavBuilder.js';
@@ -634,26 +634,30 @@ export default function PhraseRecording() {
                         <span className="bg-success-100 dark:bg-success-900/40 text-success-700 dark:text-success-400 px-3 py-1 rounded-full text-sm font-semibold flex items-center gap-2">
                           <CheckCircle2 className="w-4 h-4" /> Recorded ({formatTime(duration)})
                         </span>
-                        <button 
-                          onClick={resetRecording}
-                          className="text-sm font-medium opacity-60 hover:opacity-100 underline transition-opacity"
-                        >
-                          Rerecord
-                        </button>
                       </div>
                       
                       <div className="bg-neutral-100 dark:bg-neutral-800 rounded-xl p-2 mb-4">
                         <audio src={audioUrl} controls controlsList="nodownload noplaybackrate" onContextMenu={(e) => e.preventDefault()} className="w-full h-12" />
                       </div>
 
-                      <button 
-                        onClick={submitRecording}
-                        disabled={loading}
-                        className="w-full btn btn-primary flex items-center justify-center gap-2 py-4 text-lg"
-                      >
-                        {loading ? <div className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <UploadCloud className="w-6 h-6" />}
-                        {loading ? 'Submitting...' : 'Submit to QA'}
-                      </button>
+                      <div className="flex gap-4">
+                        <button 
+                          onClick={resetRecording}
+                          disabled={loading}
+                          className="flex-1 py-3.5 px-4 border border-neutral-300 dark:border-neutral-700 text-neutral-700 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-xl font-semibold text-base transition-colors flex items-center justify-center gap-2"
+                        >
+                          <RotateCcw className="w-5 h-5" />
+                          Re-record
+                        </button>
+                        <button 
+                          onClick={submitRecording}
+                          disabled={loading}
+                          className="flex-1 btn btn-primary flex items-center justify-center gap-2 py-3.5 px-4 text-base font-semibold"
+                        >
+                          {loading ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <UploadCloud className="w-5 h-5" />}
+                          {loading ? 'Submitting...' : 'Submit'}
+                        </button>
+                      </div>
                     </div>
                   )}
                 </div>
