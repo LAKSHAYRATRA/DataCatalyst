@@ -40,6 +40,7 @@ const phraseSchema = new mongoose.Schema(
     qaComment: { type: String, default: null },
     reviewedAt: { type: Date, default: null },
     isTestPhrase: { type: Boolean, default: false },
+    isSample: { type: Boolean, default: false },
     qcResult: { type: mongoose.Schema.Types.Mixed, default: null },
   },
   { timestamps: true }

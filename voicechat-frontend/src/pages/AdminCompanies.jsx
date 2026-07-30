@@ -193,24 +193,34 @@ export default function AdminCompanies() {
                 animate={{ scale: 1, opacity: 1 }}
                 className="card"
               >
-                <div className="flex items-center justify-between mb-6 border-b border-neutral-100 dark:border-neutral-800 pb-4">
-                  <h2 className="text-xl font-bold">{company.name}</h2>
-                  <div className="flex flex-wrap gap-2">
-                    <button 
-                      onClick={() => navigate(`/admin/companies/${company._id}/user-customizations`)}
-                      className="btn btn-sm bg-neutral-200 hover:bg-neutral-300 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-neutral-800 dark:text-neutral-200 font-semibold"
-                    >
-                      Users Customizations
-                    </button>
-                    <button 
-                      onClick={() => navigate(`/admin/companies/${company._id}/download-customizations`)}
-                      className="btn btn-sm bg-neutral-200 hover:bg-neutral-300 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-neutral-800 dark:text-neutral-200 font-semibold"
-                    >
-                      Downloads Customizations
-                    </button>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 border-b border-neutral-100 dark:border-neutral-800 pb-4">
+                  <div>
+                    <h2 className="text-xl font-bold">{company.name}</h2>
+                    <div className="flex flex-wrap gap-2 mt-2">
+                      <button 
+                        onClick={() => navigate(`/admin/companies/${company._id}/user-customizations`)}
+                        className="btn btn-primary btn-xs font-semibold px-3 py-1.5"
+                      >
+                        Users Customizations
+                      </button>
+                      <button 
+                        onClick={() => navigate(`/admin/companies/${company._id}/download-customizations`)}
+                        className="btn btn-primary btn-xs font-semibold px-3 py-1.5"
+                      >
+                        Downloads Customizations
+                      </button>
+                      <button 
+                        onClick={() => navigate(`/admin/companies/${company._id}/phrase-workloads`)}
+                        className="btn btn-primary btn-xs font-semibold px-3 py-1.5 flex items-center gap-1"
+                      >
+                        Phrase Workloads
+                      </button>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 self-end sm:self-center">
                     <button 
                       onClick={() => deleteCompany(company._id, company.name)}
-                      className="btn btn-sm bg-error-50 text-error-600 hover:bg-error-100 dark:bg-error-900/20 dark:hover:bg-error-900/40"
+                      className="btn btn-sm bg-error-50 text-error-600 hover:bg-error-100 dark:bg-error-900/20 dark:hover:bg-error-900/40 p-2.5"
                       title="Delete Company"
                     >
                       <Trash2 className="w-4 h-4" />
@@ -218,7 +228,7 @@ export default function AdminCompanies() {
                     <button 
                       onClick={() => saveCompany(company._id)}
                       disabled={savingId === company._id}
-                      className="btn btn-primary btn-sm flex items-center gap-2 px-4"
+                      className="btn btn-primary btn-sm flex items-center gap-2 px-4 shadow-sm"
                     >
                       {savingId === company._id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
                       Save Changes

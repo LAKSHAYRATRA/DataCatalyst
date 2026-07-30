@@ -807,7 +807,10 @@ export async function getSamplePhrase(req, res) {
       query.language = language.trim().toLowerCase();
     }
 
-    const phrase = await Phrase.findOne(query).sort({ _id: 1 }).select("phraseId text language emotion style speed intent pitch volume instructions tags").lean();
+    let phrase = await Phrase.findOne({ ...query, isSample: true }).select("phraseId text language emotion style speed intent pitch volume instructions tags").lean();
+    if (!phrase) {
+      phrase = await Phrase.findOne(query).sort({ _id: 1 }).select("phraseId text language emotion style speed intent pitch volume instructions tags").lean();
+    }
 
     if (!phrase) {
       return res.status(404).json({ error: "No sample phrase found for this project and language." });

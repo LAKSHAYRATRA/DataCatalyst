@@ -3384,6 +3384,119 @@ router.delete("/companies/:id", async (req, res) => {
     }
 });
 
+// ===== COMPANY PHRASE WORKLOADS & SAMPLE SELECTION =====
+
+router.get("/companies/:id/phrase-workloads", async (req, res) => {
+    try {
+        const company = await Company.findById(req.params.id);
+        if (!company) return res.status(404).json({ error: "Company not found" });
+
+        const companyFolder = company.name.replace(/[^a-zA-Z0-9_\-\ ]/g, "").trim();
+        const companyRegex = new RegExp(`^${companyFolder}(_downloaded)?$`, "i");
+
+        const langStats = await Phrase.aggregate([
+            { $match: { companyId: { $regex: companyRegex } } },
+            { $group: { _id: { $toLower: "$language" }, count: { $sum: 1 } } },
+            { $sort: { _id: 1 } }
+        ]);
+
+        const languages = langStats.map(s => ({
+            code: s._id,
+            name: s._id.charAt(0).toUpperCase() + s._id.slice(1),
+            count: s.count
+        }));
+
+        res.json({
+            company,
+            languages
+        });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+router.get("/companies/:id/phrase-workloads/:language", async (req, res) => {
+    try {
+        const company = await Company.findById(req.params.id);
+        if (!company) return res.status(404).json({ error: "Company not found" });
+
+        const companyFolder = company.name.replace(/[^a-zA-Z0-9_\-\ ]/g, "").trim();
+        const companyRegex = new RegExp(`^${companyFolder}(_downloaded)?$`, "i");
+        const language = String(req.params.language).trim().toLowerCase();
+        const filter = { 
+            companyId: { $regex: companyRegex },
+            language: { $regex: new RegExp(`^${language}$`, "i") }
+        };
+
+        if (req.query.search) {
+            const regex = new RegExp(req.query.search.trim(), "i");
+            filter.$or = [
+                { phraseId: regex },
+                { text: regex },
+                { emotion: regex },
+                { style: regex },
+                { intent: regex }
+            ];
+        }
+
+        const page = Math.max(1, parseInt(req.query.page) || 1);
+        const limit = Math.max(1, parseInt(req.query.limit) || 50);
+        const skip = (page - 1) * limit;
+
+        const totalPhrases = await Phrase.countDocuments(filter);
+        const phrases = await Phrase.find(filter)
+            .sort({ isSample: -1, createdAt: -1 })
+            .skip(skip)
+            .limit(limit)
+            .lean();
+
+        res.json({
+            company,
+            language,
+            phrases,
+            totalPhrases,
+            page,
+            totalPages: Math.ceil(totalPhrases / limit)
+        });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+router.post("/phrases/:phraseId/set-sample", async (req, res) => {
+    try {
+        const targetPhrase = await Phrase.findById(req.params.phraseId);
+        if (!targetPhrase) return res.status(404).json({ error: "Phrase not found" });
+
+        if (targetPhrase.companyId && targetPhrase.language) {
+            await Phrase.updateMany(
+                { 
+                    companyId: targetPhrase.companyId, 
+                    language: { $regex: new RegExp(`^${targetPhrase.language}$`, "i") } 
+                },
+                { $set: { isSample: false } }
+            );
+        }
+
+        targetPhrase.isSample = true;
+        await targetPhrase.save();
+
+        res.json({ message: "Sample phrase set successfully", phrase: targetPhrase });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+router.delete("/phrases/:phraseId", async (req, res) => {
+    try {
+        const phrase = await Phrase.findByIdAndDelete(req.params.phraseId);
+        if (!phrase) return res.status(404).json({ error: "Phrase not found" });
+        res.json({ message: "Phrase deleted successfully" });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 // ===== CONTRIBUTOR AGREEMENTS =====
 
 // List agreements pending admin review
