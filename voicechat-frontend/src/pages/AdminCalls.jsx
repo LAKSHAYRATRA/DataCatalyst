@@ -592,13 +592,12 @@ export default function AdminCalls() {
         setLoadingAudio(prev => ({ ...prev, [key]: true }));
         try {
             const url = `${BACKEND_URL}/api/admin/qa/calls/${callId}/recording/${userId}`;
-            const wavBlob = await fetchAndConvertToWav(url);
-            setAudioUrls((prev) => ({ ...prev, [key]: URL.createObjectURL(wavBlob) }));
+            setAudioUrls((prev) => ({ ...prev, [key]: url }));
         } catch (e) {
             Swal.fire({
                 icon: 'error',
-                title: 'Audio Conversion Failed',
-                text: "The audio format could not be converted to WAV in your browser. " + e.message,
+                title: 'Audio Load Failed',
+                text: e.message,
                 confirmButtonColor: '#ea580c'
             });
         } finally {

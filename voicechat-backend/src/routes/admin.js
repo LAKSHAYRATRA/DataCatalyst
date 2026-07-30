@@ -897,17 +897,26 @@ qaCallRouter.get("/calls/:callId/recording/:userId", async (req, res) => {
         }
 
         try {
-            const command = new GetObjectCommand({
+            const s3Params = {
                 Bucket: BUCKET_NAME,
                 Key: recordingFile
-            });
+            };
+            if (req.headers.range) {
+                s3Params.Range = req.headers.range;
+            }
+
+            const command = new GetObjectCommand(s3Params);
             const response = await s3Client.send(command);
             
+            if (response.ContentRange) {
+                res.setHeader("Content-Range", response.ContentRange);
+                res.status(206);
+            }
             if (response.ContentLength) {
                 res.setHeader("Content-Length", response.ContentLength);
             }
             res.setHeader("Content-Type", response.ContentType || "audio/webm");
-            res.setHeader("Content-Disposition", `attachment; filename="${path.basename(recordingFile)}"`);
+            res.setHeader("Content-Disposition", `inline; filename="${path.basename(recordingFile)}"`);
             res.setHeader("Accept-Ranges", "bytes");
             
             response.Body.on('error', (err) => {
@@ -1389,17 +1398,26 @@ router.get("/calls/:callId/recording/:userId", async (req, res) => {
         }
 
         try {
-            const command = new GetObjectCommand({
+            const s3Params = {
                 Bucket: BUCKET_NAME,
                 Key: recordingFile
-            });
+            };
+            if (req.headers.range) {
+                s3Params.Range = req.headers.range;
+            }
+
+            const command = new GetObjectCommand(s3Params);
             const response = await s3Client.send(command);
             
+            if (response.ContentRange) {
+                res.setHeader("Content-Range", response.ContentRange);
+                res.status(206);
+            }
             if (response.ContentLength) {
                 res.setHeader("Content-Length", response.ContentLength);
             }
             res.setHeader("Content-Type", response.ContentType || "audio/webm");
-            res.setHeader("Content-Disposition", `attachment; filename="${path.basename(recordingFile)}"`);
+            res.setHeader("Content-Disposition", `inline; filename="${path.basename(recordingFile)}"`);
             res.setHeader("Accept-Ranges", "bytes");
             
             response.Body.on('error', (err) => {
@@ -2645,15 +2663,20 @@ router.get("/phrases/download-company", async (req, res) => {
 
             for (const record of appRecords) {
                 const app = record.app;
-                const origExt = app.recordingFile.split(".").pop() || "flac";
                 const baseFileName = app.recordingFile.split("/").pop().replace("local:", "");
-                const destFileName = `${record.speakerId}__${companyFolder}__${record.language}.${origExt}`;
+                const destFileName = `${record.speakerId}__${companyFolder}__${record.language}.wav`;
                 const zipPath = `${record.language}/${destFileName}`;
 
                 if (app.recordingFile.startsWith("local:")) {
                     const localPath = path.join(process.cwd(), "recordings", "language-apps", baseFileName);
                     if (fs.existsSync(localPath)) {
-                        archive.file(localPath, { name: zipPath });
+                        try {
+                            const fileStream = fs.createReadStream(localPath);
+                            const wavBuffer = await getWavBuffer(fileStream);
+                            archive.append(wavBuffer, { name: zipPath });
+                        } catch (err) {
+                            console.error(`Failed to convert local file ${localPath} to WAV:`, err.message);
+                        }
                     }
                 } else {
                     try {
@@ -2661,7 +2684,8 @@ router.get("/phrases/download-company", async (req, res) => {
                             Bucket: BUCKET_NAME,
                             Key: app.recordingFile
                         }));
-                        archive.append(s3Doc.Body, { name: zipPath });
+                        const wavBuffer = await getWavBuffer(s3Doc.Body);
+                        archive.append(wavBuffer, { name: zipPath });
                     } catch (s3Err) {
                         console.error(`Failed to stream S3 file ${app.recordingFile}:`, s3Err.message);
                     }
