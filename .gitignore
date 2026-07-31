@@ -25,3 +25,7 @@ turn.zip
 # Reference/scratch code dumps (not imported by the app)
 friend_suggestion/
 joinqueue*/
+scratch/
+*.zip
+voicechat-backend/s3_data/
+

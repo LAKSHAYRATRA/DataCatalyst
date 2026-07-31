@@ -68,9 +68,16 @@ const MAX_DOB_DATE = (() => {
   return d.toISOString().slice(0, 10);
 })();
 
+const MIN_DOB_DATE = (() => {
+  const d = new Date();
+  d.setFullYear(d.getFullYear() - 65);
+  return d.toISOString().slice(0, 10);
+})();
+
 export default function Signup() {
   const navigate = useNavigate();
   const maxDobDate = MAX_DOB_DATE;
+  const minDobDate = MIN_DOB_DATE;
 
   // Step tracker
   const [step, setStep] = useState(1);
@@ -129,6 +136,7 @@ export default function Signup() {
         const m = today.getMonth() - birth.getMonth();
         if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) age--;
         if (age < 18) errs.dob = "You must be at least 18 years old";
+        else if (age > 65) errs.dob = "Maximum age limit is 65 years";
       }
     }
     return errs;
@@ -264,6 +272,7 @@ export default function Signup() {
       if (msg === "otp_invalid_or_expired") setGlobalError("OTP is incorrect or expired. Request a new one.");
       else if (msg === "user_exists") setGlobalError("An account with this email already exists.");
       else if (msg === "underage") setGlobalError("You must be at least 18 years old to sign up.");
+      else if (msg === "overage") setGlobalError("Maximum age allowed to register is 65 years.");
       else if (msg === "invalid_dob") setGlobalError("Please enter a valid date of birth.");
       else setGlobalError(msg || "Signup failed. Please try again.");
     } finally {
@@ -353,6 +362,7 @@ export default function Signup() {
 
               <FormField label="Date of Birth" id="dob" required error={fieldErrors.dob}>
                 <input id="dob" type="date" className={inputClass}
+                  min={minDobDate}
                   max={maxDobDate}
                   value={dob} onChange={e => setDob(e.target.value)} />
               </FormField>

@@ -102,6 +102,29 @@ export default function AdminUsers() {
         }
     }
 
+    async function resendAgreement(userId, username) {
+        const confirm = await Swal.fire({
+            title: "Resend Agreement?",
+            text: `Reset contributor agreement for ${username || 'this user'}? They will be required to re-sign their agreement on next login, which will regenerate the document with their updated profile details (DOB, address, etc.).`,
+            icon: "warning",
+            showCancelButton: true,
+            confirmButtonColor: "#ea580c",
+            confirmButtonText: "Yes, Reset & Resend"
+        });
+
+        if (!confirm.isConfirmed) return;
+
+        try {
+            await apiPatchJson(`/api/admin/users/${userId}/resend-agreement`, {}, "POST");
+            Swal.fire("Success", "Agreement reset successfully. User will be required to re-sign with updated details.", "success");
+            if (tab === "all") loadUsers();
+            else if (tab === "approved") loadApprovedUsers();
+            else loadPending();
+        } catch (err) {
+            Swal.fire("Error", "Failed to reset agreement: " + err.message, "error");
+        }
+    }
+
     async function submitJsonUpdate() {
         if (!jsonModalUser) return;
         try {
@@ -479,7 +502,7 @@ export default function AdminUsers() {
                                             )}
 
                                             {/* Actions */}
-                                            <div className="flex gap-2 mt-3">
+                                            <div className="flex flex-wrap gap-2 mt-3">
                                                 <button
                                                     onClick={() => approveUser(user._id)}
                                                     disabled={actionUserId === user._id}
@@ -493,6 +516,13 @@ export default function AdminUsers() {
                                                     className="flex-1 py-2 bg-error-600 hover:bg-error-700 text-white text-sm font-semibold rounded-lg disabled:opacity-50 transition-colors"
                                                 >
                                                     ✗ Reject
+                                                </button>
+                                                <button
+                                                    onClick={() => resendAgreement(user._id, user.username)}
+                                                    className="w-full py-1.5 bg-amber-600/20 hover:bg-amber-600/30 text-amber-300 text-xs font-semibold rounded-lg transition-colors flex items-center justify-center gap-1"
+                                                    title="Force user to re-sign agreement with fresh profile details"
+                                                >
+                                                    📄 Resend Agreement
                                                 </button>
                                             </div>
                                         </div>
@@ -582,6 +612,13 @@ export default function AdminUsers() {
                                                             onClick={() => openJsonModal(user._id)}
                                                             className="text-primary-400 hover:text-primary-300 font-medium bg-primary-400/10 hover:bg-primary-400/20 px-3 py-1.5 rounded transition-colors">
                                                             Edit JSON
+                                                        </button>
+                                                        <button
+                                                            onClick={() => resendAgreement(user._id, user.username)}
+                                                            className="text-amber-400 hover:text-amber-300 font-medium bg-amber-400/10 hover:bg-amber-400/20 px-3 py-1.5 rounded transition-colors flex items-center gap-1"
+                                                            title="Force user to re-sign agreement with fresh profile details"
+                                                        >
+                                                            📄 Resend Agreement
                                                         </button>
                                                     </div>
                                                 </td>
@@ -692,6 +729,13 @@ export default function AdminUsers() {
                                                                 className="px-3 py-1.5 rounded-md bg-primary-500/10 text-primary-400 hover:bg-primary-500/20 text-xs font-medium disabled:opacity-40 disabled:cursor-not-allowed"
                                                             >
                                                                 Download Agreement
+                                                            </button>
+                                                            <button
+                                                                onClick={() => resendAgreement(u.userId, u.username)}
+                                                                className="px-3 py-1.5 rounded-md bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 text-xs font-medium flex items-center gap-1"
+                                                                title="Force user to re-sign agreement with fresh profile details"
+                                                            >
+                                                                📄 Resend Agreement
                                                             </button>
                                                         </div>
                                                     </td>

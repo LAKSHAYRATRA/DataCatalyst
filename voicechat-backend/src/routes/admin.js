@@ -1399,6 +1399,14 @@ router.get("/calls/:callId/recording/:userId", async (req, res) => {
             return res.status(404).json({ error: "Recording not available" });
         }
 
+        if (recordingFile.startsWith("local:")) {
+            const localFileName = recordingFile.replace("local:", "");
+            const localFilePath = path.join(process.cwd(), "recordings", "calls", localFileName);
+            if (fs.existsSync(localFilePath)) {
+                return res.sendFile(localFilePath);
+            }
+        }
+
         try {
             const s3Params = {
                 Bucket: BUCKET_NAME,
@@ -2053,6 +2061,46 @@ router.patch("/users/:userId/limit", async (req, res) => {
         }
 
         res.json({ message: "User limit updated successfully", user });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Reset contributor agreement so user must re-sign with fresh profile details (DOB, address, etc.)
+router.post("/users/:userId/resend-agreement", async (req, res) => {
+    try {
+        const user = await User.findById(req.params.userId);
+        if (!user) return res.status(404).json({ error: "User not found" });
+
+        if (user.contributorAgreement?.s3Key) {
+            try {
+                if (!user.contributorAgreement.s3Key.startsWith("local:")) {
+                    await s3Client.send(new DeleteObjectCommand({
+                        Bucket: BUCKET_NAME,
+                        Key: user.contributorAgreement.s3Key
+                    }));
+                }
+            } catch (s3Err) {
+                console.error("Failed to delete existing agreement PDF from S3:", s3Err.message);
+            }
+        }
+
+        user.contributorAgreement = {
+            signed: false,
+            signedAt: null,
+            s3Key: null,
+            signerName: null,
+            signerIp: null,
+            agreementVersion: null,
+            pdfHash: null,
+            adminReviewStatus: null,
+            adminReviewedAt: null,
+            adminReviewedBy: null,
+            adminReviewReason: null
+        };
+
+        await user.save();
+        res.json({ message: "Agreement reset successfully. User will be required to re-sign on next login.", success: true });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }

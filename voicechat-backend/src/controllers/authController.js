@@ -170,6 +170,8 @@ export async function signup(req, res) {
   if (m < 0 || (m === 0 && today.getDate() < dobDate.getDate())) age--;
   if (age < 18)
     return res.status(400).json({ error: "underage" });
+  if (age > 65)
+    return res.status(400).json({ error: "overage" });
 
   const otp = await OtpCode.findOne({ email, type: "signup", used: false })
     .sort({ createdAt: -1 })
