@@ -217,7 +217,7 @@ export default function AdminCompanies() {
                       </button>
                       <button 
                         onClick={() => navigate(`/admin/companies/${company._id}/contributors-summary`)}
-                        className="btn btn-primary btn-xs font-semibold px-3 py-1.5 flex items-center gap-1"
+                        className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-lg transition-colors flex items-center gap-1 shadow-md"
                       >
                         📊 Contributors Summary
                       </button>
