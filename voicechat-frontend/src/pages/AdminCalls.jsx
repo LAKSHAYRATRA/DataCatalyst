@@ -592,7 +592,8 @@ export default function AdminCalls() {
         setLoadingAudio(prev => ({ ...prev, [key]: true }));
         try {
             const url = `${BACKEND_URL}/api/admin/qa/calls/${callId}/recording/${userId}`;
-            setAudioUrls((prev) => ({ ...prev, [key]: url }));
+            const wavBlob = await fetchAndConvertToWav(url);
+            setAudioUrls((prev) => ({ ...prev, [key]: URL.createObjectURL(wavBlob) }));
         } catch (e) {
             Swal.fire({
                 icon: 'error',

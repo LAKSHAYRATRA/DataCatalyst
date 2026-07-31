@@ -915,7 +915,9 @@ qaCallRouter.get("/calls/:callId/recording/:userId", async (req, res) => {
             if (response.ContentLength) {
                 res.setHeader("Content-Length", response.ContentLength);
             }
-            res.setHeader("Content-Type", response.ContentType || "audio/webm");
+            const ext = path.extname(recordingFile).toLowerCase();
+            const mimeType = ext === ".flac" ? "audio/flac" : ext === ".wav" ? "audio/wav" : ext === ".ogg" ? "audio/ogg" : "audio/webm";
+            res.setHeader("Content-Type", (response.ContentType && response.ContentType !== "binary/octet-stream" && response.ContentType !== "application/octet-stream") ? response.ContentType : mimeType);
             res.setHeader("Content-Disposition", `inline; filename="${path.basename(recordingFile)}"`);
             res.setHeader("Accept-Ranges", "bytes");
             
@@ -2697,48 +2699,30 @@ router.get("/phrases/download-company", async (req, res) => {
         }
         const isAlreadyDownloadedFolder = company.endsWith("_downloaded") || companyFolder.endsWith("_downloaded");
 
-        // Enumerate EVERY object actually present in this company's S3 folder and downloaded folder.
-        const folderPrefixes = [];
-        if (type === "fresh_phrases") {
-            folderPrefixes.push(`phrases/${companyFolder}/`);
-        } else {
-            folderPrefixes.push(`phrases/${companyFolder}/`);
-            folderPrefixes.push(`phrases/${companyFolder}_downloaded/`);
-        }
-        const objectKeys = [];
-        for (const prefix of folderPrefixes) {
-            let ContinuationToken;
-            do {
-                const listResp = await s3Client.send(new ListObjectsV2Command({
-                    Bucket: BUCKET_NAME,
-                    Prefix: prefix,
-                    ContinuationToken
-                }));
-                for (const obj of (listResp.Contents || [])) {
-                    if (obj.Key && obj.Key !== prefix) {
-                        if (obj.Key.includes("/phrase apps/")) {
-                            continue;
-                        }
-                        objectKeys.push(obj.Key);
-                    }
-                }
-                ContinuationToken = listResp.IsTruncated ? listResp.NextContinuationToken : undefined;
-            } while (ContinuationToken);
-        }
-
-        if (objectKeys.length === 0) {
-            return res.status(404).json({ error: "No files found in this company's folders." });
-        }
-
-        // Pull any matching phrase records so we can attach metadata when it exists.
-        const phraseDocs = await Phrase.find({ audioFile: { $in: objectKeys } })
-            .populate("contributorId").lean();
-        const phraseByKey = new Map(phraseDocs.map((p) => [p.audioFile, p]));
-
         // Fetch the company config to read custom namingPattern
         const baseCompanyName = companyFolder.replace(/_downloaded$/, "");
         const companyDoc = await Company.findOne({ name: { $regex: new RegExp(`^${baseCompanyName}$`, "i") } }).lean();
         const filenamePattern = companyDoc?.namingPattern || "{phraseId}";
+
+        // Filter ONLY QA-approved phrases
+        const targetCompanyIds = (type === "fresh_phrases")
+            ? [companyFolder, companyFolder.toLowerCase()]
+            : [
+                companyFolder,
+                `${companyFolder}_downloaded`,
+                companyFolder.toLowerCase(),
+                `${companyFolder.toLowerCase()}_downloaded`
+              ];
+
+        const approvedPhrases = await Phrase.find({
+            companyId: { $in: targetCompanyIds },
+            status: "approved",
+            audioFile: { $ne: null }
+        }).populate("contributorId").lean();
+
+        if (approvedPhrases.length === 0) {
+            return res.status(404).json({ error: `No approved phrases found for "${companyFolder}".` });
+        }
 
         res.setHeader("Content-Type", "application/zip");
         res.setHeader("Content-Disposition", `attachment; filename="${companyFolder}_phrases.zip"`);
@@ -2768,169 +2752,179 @@ router.get("/phrases/download-company", async (req, res) => {
         archive.pipe(res);
 
         const successfullyProcessed = [];
-        const combinedUtterances = []; // collected to write one combined file at the end
-        const combinedSpeakers = {}; // keyed by speaker_id so each speaker appears only once
+        const combinedUtterances = [];
+        const combinedSpeakers = {};
+        const languageUtterances = {};
+        const languageSpeakers = {};
 
-        // Process EVERY file in the folder, one at a time.
-        for (const key of objectKeys) {
-            const phrase = phraseByKey.get(key) || null;
-            const contributor = phrase?.contributorId || {};
+        // Process ONLY approved phrase records, organized by language
+        for (const phrase of approvedPhrases) {
+            const key = phrase.audioFile;
+            if (!key) continue;
 
-            // Folder name inside the zip: the phraseId when we have a DB record,
-            // otherwise the file's base name so the file is still included.
+            const contributor = phrase.contributorId || {};
             const baseName = key.substring(key.lastIndexOf("/") + 1).replace(/\.[^.]+$/, "");
-            let folderName = phrase?.phraseId || baseName;
+            let folderName = phrase.phraseId || baseName;
+            const phraseId = phrase.phraseId;
+            const speakerId = contributor.speaker_id || phrase.speaker_id || "";
+            const language = String(phrase.language || "other").toLowerCase().trim();
+            const langFolder = language.replace(/[^a-zA-Z0-9_\-\ ]/g, "") || "other";
 
-            // Attach metadata JSON only when a phrase record exists for this file.
-            if (phrase) {
-                const phraseId = phrase.phraseId;
-                const speakerId = contributor.speaker_id || phrase.speaker_id || "";
+            // Calculate spkfreq dynamically
+            let spkfreq = "1";
+            if (phrase.contributorId) {
+                const speakerPhrases = await Phrase.find({
+                    companyId: { $in: targetCompanyIds },
+                    contributorId: phrase.contributorId,
+                    status: "approved"
+                })
+                .sort({ recordedAt: 1 })
+                .select("_id")
+                .lean();
 
-                // Calculate spkfreq dynamically
-                let spkfreq = "1";
-                if (phrase.contributorId) {
-                    const speakerPhrases = await Phrase.find({
-                        companyId: { $in: [companyFolder, `${companyFolder}_downloaded`] },
-                        contributorId: phrase.contributorId,
-                        status: { $in: ["recorded", "approved"] }
-                    })
-                    .sort({ recordedAt: 1 })
-                    .select("_id")
-                    .lean();
-
-                    const idx = speakerPhrases.findIndex(p => p._id.toString() === phrase._id.toString());
-                    spkfreq = idx !== -1 ? String(idx + 1) : "1";
-                }
-
-                // Compute flexible/custom filename from namingPattern
-                let computedName = filenamePattern
-                    .replace(/{phraseId}/g, phraseId || "")
-                    .replace(/{language}/g, phrase.language || "")
-                    .replace(/{speaker_id}/g, speakerId || `spk_${contributor._id || "unknown"}`)
-                    .replace(/{gender}/g, contributor.gender || "unknown")
-                    .replace(/{freq}/g, phrase.freq !== undefined && phrase.freq !== null ? String(phrase.freq) : "")
-                    .replace(/{spkfreq}/g, spkfreq)
-                    .replace(/{baseName}/g, baseName)
-                    .replace(/{emotion}/g, phrase.emotion || "")
-                    .replace(/{style}/g, phrase.style || "")
-                    .replace(/{intent}/g, phrase.intent || "")
-                    .replace(/{pitch}/g, phrase.pitch || "")
-                    .replace(/{speed}/g, phrase.speed || "")
-                    .replace(/{volume}/g, phrase.volume || "")
-                    .replace(/{instructions}/g, phrase.instructions || "");
-                
-                // Support dynamic tag replacement e.g. {domain}, {emotion_subtype}
-                if (phrase.tags) {
-                    for (const [tagKey, tagVal] of Object.entries(phrase.tags)) {
-                        const regex = new RegExp(`{${tagKey}}`, 'g');
-                        computedName = computedName.replace(regex, tagVal || "");
-                    }
-                }
-
-                // Sanitize filename of any illegal characters
-                computedName = computedName.replace(/[^a-zA-Z0-9_\-\ ]/g, "").trim();
-                if (computedName) {
-                    folderName = computedName;
-                }
-
-                let age = "unknown";
-                if (contributor.dob) {
-                    const dobDate = new Date(contributor.dob);
-                    const today = new Date();
-                    let calculatedAge = today.getFullYear() - dobDate.getFullYear();
-                    const m = today.getMonth() - dobDate.getMonth();
-                    if (m < 0 || (m === 0 && today.getDate() < dobDate.getDate())) {
-                        calculatedAge--;
-                    }
-                    age = calculatedAge;
-                }
-
-                // Generate speaker_metadata.json
-                const speakerInfo = {
-                    speaker_id: speakerId,
-                    gender: contributor.gender || "unknown",
-                    age,
-                    native_language: contributor.regionalLanguage || "unknown",
-                    accent: contributor.accent || "unknown",
-                    dialect: contributor.dialect || "unknown",
-                    region: contributor.locality || "unknown",
-                    state: contributor.address?.state || "unknown",
-                    consent_provided: true,
-                    consent_platform: "voclara.com",
-                    recording_environment: "room",
-                    audio_specs: {
-                        sample_rate: 48000,
-                        bit_depth: 24,
-                        channels: 1
-                    }
-                };
-                // Collect once per speaker for the combined file (no repetition).
-                if (!combinedSpeakers[speakerId]) combinedSpeakers[speakerId] = speakerInfo;
-
-                // Build the utterance entry (only used for the combined file).
-                const downloadCustomizations = companyDoc?.downloadCustomizations || [];
-                const isCustomized = downloadCustomizations && downloadCustomizations.length > 0;
-                const isAllowedKey = (key) => {
-                    if (!isCustomized) return true;
-                    return downloadCustomizations.some(dk => dk.toLowerCase() === key.toLowerCase());
-                };
-
-                const utterance = {
-                    id: phrase.phraseId || folderName,
-                    path: `${folderName}.wav`,
-                    language: phrase.language,
-                    script_type: phrase.script_type || "orthographic",
-                    speaker_id: contributor.speaker_id || phrase.speaker_id || "",
-                    text: phrase.text
-                };
-
-                if (isAllowedKey("emotion")) utterance.emotion = phrase.emotion || "neutral";
-                if (isAllowedKey("style")) utterance.style = phrase.style || "conversational";
-                if (isAllowedKey("intent")) utterance.intent = phrase.intent || "statement";
-                if (isAllowedKey("pitch")) utterance.pitch = phrase.pitch || "medium";
-                if (isAllowedKey("speed")) utterance.speed = phrase.speed || "normal";
-                if (isAllowedKey("volume")) utterance.volume = phrase.volume || "normal";
-                if (isAllowedKey("events") && phrase.events) utterance.events = phrase.events.split(",").map(e => e.trim());
-                if ((isAllowedKey("instruction") || isAllowedKey("instructions")) && phrase.instructions) utterance.instruction = phrase.instructions;
-
-                if (phrase.tags) {
-                    for (const [tagKey, tagVal] of Object.entries(phrase.tags)) {
-                        if (isAllowedKey(tagKey)) {
-                            utterance[tagKey] = tagVal;
-                        }
-                    }
-                }
-                combinedUtterances.push(utterance);
+                const idx = speakerPhrases.findIndex(p => p._id.toString() === phrase._id.toString());
+                spkfreq = idx !== -1 ? String(idx + 1) : "1";
             }
 
-            // Fetch + convert the S3 audio ONE AT A TIME and fully buffer it
-            // before appending. This avoids opening every S3 stream / spawning
-            // every ffmpeg process up front (which caused sockets to time out
-            // and files to be silently skipped from the zip on large folders).
+            // Compute flexible/custom filename from namingPattern
+            let computedName = filenamePattern
+                .replace(/{phraseId}/g, phraseId || "")
+                .replace(/{language}/g, phrase.language || "")
+                .replace(/{speaker_id}/g, speakerId || `spk_${contributor._id || "unknown"}`)
+                .replace(/{gender}/g, contributor.gender || "unknown")
+                .replace(/{freq}/g, phrase.freq !== undefined && phrase.freq !== null ? String(phrase.freq) : "")
+                .replace(/{spkfreq}/g, spkfreq)
+                .replace(/{baseName}/g, baseName)
+                .replace(/{emotion}/g, phrase.emotion || "")
+                .replace(/{style}/g, phrase.style || "")
+                .replace(/{intent}/g, phrase.intent || "")
+                .replace(/{pitch}/g, phrase.pitch || "")
+                .replace(/{speed}/g, phrase.speed || "")
+                .replace(/{volume}/g, phrase.volume || "")
+                .replace(/{instructions}/g, phrase.instructions || "");
+            
+            if (phrase.tags) {
+                for (const [tagKey, tagVal] of Object.entries(phrase.tags)) {
+                    const regex = new RegExp(`{${tagKey}}`, 'g');
+                    computedName = computedName.replace(regex, tagVal || "");
+                }
+            }
+
+            computedName = computedName.replace(/[^a-zA-Z0-9_\-\ ]/g, "").trim();
+            if (computedName) {
+                folderName = computedName;
+            }
+
+            let age = "unknown";
+            if (contributor.dob) {
+                const dobDate = new Date(contributor.dob);
+                const today = new Date();
+                let calculatedAge = today.getFullYear() - dobDate.getFullYear();
+                const m = today.getMonth() - dobDate.getMonth();
+                if (m < 0 || (m === 0 && today.getDate() < dobDate.getDate())) {
+                    calculatedAge--;
+                }
+                age = calculatedAge;
+            }
+
+            const speakerInfo = {
+                speaker_id: speakerId,
+                gender: contributor.gender || "unknown",
+                age,
+                native_language: contributor.regionalLanguage || "unknown",
+                accent: contributor.accent || "unknown",
+                dialect: contributor.dialect || "unknown",
+                region: contributor.locality || "unknown",
+                state: contributor.address?.state || "unknown",
+                consent_provided: true,
+                consent_platform: "voclara.com",
+                recording_environment: "room",
+                audio_specs: {
+                    sample_rate: 48000,
+                    bit_depth: 24,
+                    channels: 1
+                }
+            };
+
+            if (!languageSpeakers[langFolder]) languageSpeakers[langFolder] = {};
+            if (!languageSpeakers[langFolder][speakerId]) languageSpeakers[langFolder][speakerId] = speakerInfo;
+            if (!combinedSpeakers[speakerId]) combinedSpeakers[speakerId] = speakerInfo;
+
+            const downloadCustomizations = companyDoc?.downloadCustomizations || [];
+            const isCustomized = downloadCustomizations && downloadCustomizations.length > 0;
+            const isAllowedKey = (keyName) => {
+                if (!isCustomized) return true;
+                return downloadCustomizations.some(dk => dk.toLowerCase() === keyName.toLowerCase());
+            };
+
+            const utterance = {
+                id: phrase.phraseId || folderName,
+                path: `${folderName}.wav`,
+                language: phrase.language,
+                script_type: phrase.script_type || "orthographic",
+                speaker_id: contributor.speaker_id || phrase.speaker_id || "",
+                text: phrase.text
+            };
+
+            if (isAllowedKey("emotion")) utterance.emotion = phrase.emotion || "neutral";
+            if (isAllowedKey("style")) utterance.style = phrase.style || "conversational";
+            if (isAllowedKey("intent")) utterance.intent = phrase.intent || "statement";
+            if (isAllowedKey("pitch")) utterance.pitch = phrase.pitch || "medium";
+            if (isAllowedKey("speed")) utterance.speed = phrase.speed || "normal";
+            if (isAllowedKey("volume")) utterance.volume = phrase.volume || "normal";
+            if (isAllowedKey("events") && phrase.events) utterance.events = phrase.events.split(",").map(e => e.trim());
+            if ((isAllowedKey("instruction") || isAllowedKey("instructions")) && phrase.instructions) utterance.instruction = phrase.instructions;
+
+            if (phrase.tags) {
+                for (const [tagKey, tagVal] of Object.entries(phrase.tags)) {
+                    if (isAllowedKey(tagKey)) {
+                        utterance[tagKey] = tagVal;
+                    }
+                }
+            }
+
+            if (!languageUtterances[langFolder]) languageUtterances[langFolder] = [];
+            languageUtterances[langFolder].push(utterance);
+            combinedUtterances.push(utterance);
+
+            // Fetch + convert audio to WAV
             try {
-                const audioCommand = new GetObjectCommand({
-                    Bucket: BUCKET_NAME,
-                    Key: key
-                });
-                const s3Doc = await s3Client.send(audioCommand);
-                const wavBuffer = await getWavBuffer(s3Doc.Body);
-                
-                const isPhraseApp = key.includes("/phrase apps/");
-                const entryName = isPhraseApp ? `phrase apps/${folderName}.wav` : `${folderName}.wav`;
-                
-                archive.append(wavBuffer, { name: entryName });
-                successfullyProcessed.push({ key, phrase });
+                let wavBuffer;
+                if (key.startsWith("local:")) {
+                    const localPath = path.join(process.cwd(), "recordings", "temp", key.replace("local:", ""));
+                    if (fs.existsSync(localPath)) {
+                        const fileStream = fs.createReadStream(localPath);
+                        wavBuffer = await getWavBuffer(fileStream);
+                    }
+                } else {
+                    const audioCommand = new GetObjectCommand({
+                        Bucket: BUCKET_NAME,
+                        Key: key
+                    });
+                    const s3Doc = await s3Client.send(audioCommand);
+                    wavBuffer = await getWavBuffer(s3Doc.Body);
+                }
+
+                if (wavBuffer) {
+                    const isPhraseApp = key.includes("/phrase apps/");
+                    const entryName = isPhraseApp ? `${langFolder}/phrase apps/${folderName}.wav` : `${langFolder}/${folderName}.wav`;
+                    archive.append(wavBuffer, { name: entryName });
+                    successfullyProcessed.push({ key, phrase });
+                }
             } catch (err) {
-                console.error(`Failed to fetch S3 audio for ${key}:`, err);
+                console.error(`Failed to fetch audio for ${key}:`, err);
             }
         }
 
-        // One combined utterances file at the root of the zip, covering every
-        // downloaded file that has a phrase record.
-        archive.append(JSON.stringify(combinedUtterances, null, 2), { name: `combined_utterances.json` });
+        // Per-language metadata JSON files
+        for (const [lang, utterances] of Object.entries(languageUtterances)) {
+            archive.append(JSON.stringify(utterances, null, 2), { name: `${lang}/utterances.json` });
+            archive.append(JSON.stringify(Object.values(languageSpeakers[lang] || {}), null, 2), { name: `${lang}/speaker_metadata.json` });
+        }
 
-        // One combined speaker-metadata file at the root, each speaker only once.
-        archive.append(JSON.stringify(combinedSpeakers, null, 2), { name: `combined_speaker_metadata.json` });
+        // Combined metadata JSON files at root
+        archive.append(JSON.stringify(combinedUtterances, null, 2), { name: `combined_utterances.json` });
+        archive.append(JSON.stringify(Object.values(combinedSpeakers), null, 2), { name: `combined_speaker_metadata.json` });
 
         // Wait for archive to finalize
         await archive.finalize();
@@ -2947,7 +2941,6 @@ router.get("/phrases/download-company", async (req, res) => {
                     }
 
                     const newKey = oldKey.replace(`phrases/${companyFolder}/`, `phrases/${companyFolder}_downloaded/`);
-
                     if (oldKey === newKey) continue;
 
                     await s3Client.send(new CopyObjectCommand({
@@ -2961,7 +2954,6 @@ router.get("/phrases/download-company", async (req, res) => {
                         Key: oldKey
                     }));
 
-                    // Only update DB if this file has a phrase record.
                     if (phrase) {
                         await Phrase.updateOne(
                             { _id: phrase._id },
