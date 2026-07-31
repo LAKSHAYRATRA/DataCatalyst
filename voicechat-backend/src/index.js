@@ -166,6 +166,7 @@ const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes span
   max: 20000, // Increased to prevent false-positives
   message: { error: "Global Speed Limit exceeded. Please try again later." },
+  validate: { ip: false },
   keyGenerator: (req) => {
     const forwarded = req.headers['x-forwarded-for'];
     return forwarded ? forwarded.split(',')[0] : req.ip;
@@ -175,6 +176,7 @@ const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, 
   max: 10, // 10 Requests MAX per 15 mins for OTP/Login per user
   message: { error: "Security Lockout: Wait 15 minutes before sending another OTP for this email." },
+  validate: { ip: false },
   keyGenerator: (req) => {
     // Isolate limit strictly to the specific email being requested bypassing NGINX proxy masking
     return req.body?.email || req.ip; 
