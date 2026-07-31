@@ -215,6 +215,12 @@ export default function AdminCompanies() {
                       >
                         Phrase Workloads
                       </button>
+                      <button 
+                        onClick={() => navigate(`/admin/companies/${company._id}/contributors-summary`)}
+                        className="btn btn-primary btn-xs font-semibold px-3 py-1.5 flex items-center gap-1"
+                      >
+                        📊 Contributors Summary
+                      </button>
                     </div>
                   </div>
                   <div className="flex items-center gap-2 self-end sm:self-center">

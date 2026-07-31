@@ -2303,6 +2303,266 @@ router.delete("/languages/:id", async (req, res) => {
     }
 });
 
+// Helper to compute contributor demographics & user lists
+function calculateDemographics(items) {
+    let totalContributors = items.length;
+    let male = 0;
+    let female = 0;
+    let otherGender = 0;
+    let age_18_30 = 0;
+    let age_30_45 = 0;
+    let age_45_60 = 0;
+    let age_60_plus = 0;
+
+    const approvedUsers = [];
+    const pendingUsers = [];
+    const rejectedUsers = [];
+
+    for (const item of items) {
+        const u = item.user;
+        const g = String(u.gender || "").toLowerCase().trim();
+        if (g === "male") male++;
+        else if (g === "female") female++;
+        else otherGender++;
+
+        let age = null;
+        if (u.dob) {
+            const dobDate = new Date(u.dob);
+            if (!isNaN(dobDate.getTime())) {
+                const today = new Date();
+                age = today.getFullYear() - dobDate.getFullYear();
+                const m = today.getMonth() - dobDate.getMonth();
+                if (m < 0 || (m === 0 && today.getDate() < dobDate.getDate())) {
+                    age--;
+                }
+            }
+        }
+
+        if (age !== null && Number.isFinite(age)) {
+            if (age >= 18 && age <= 30) age_18_30++;
+            else if (age > 30 && age <= 45) age_30_45++;
+            else if (age > 45 && age <= 60) age_45_60++;
+            else if (age > 60) age_60_plus++;
+        }
+
+        const userObj = {
+            _id: u._id,
+            firstname: u.firstname || "",
+            lastname: u.lastname || "",
+            username: u.username || "",
+            email: u.email || "",
+            gender: u.gender || "unknown",
+            dob: u.dob || null,
+            age: age !== null ? age : "N/A",
+            speaker_id: u.speaker_id || `spk_${u._id}`,
+            locality: u.locality || "N/A",
+            state: u.address?.state || "N/A",
+            status: item.appStatus || "pending",
+            appliedAt: item.appliedAt || null
+        };
+
+        if (item.appStatus === "approved") {
+            approvedUsers.push(userObj);
+        } else if (item.appStatus === "pending") {
+            pendingUsers.push(userObj);
+        } else if (item.appStatus === "rejected") {
+            rejectedUsers.push(userObj);
+        }
+    }
+
+    return {
+        totalContributors,
+        male,
+        female,
+        otherGender,
+        age_18_30,
+        age_30_45,
+        age_45_60,
+        age_60_plus,
+        approvedUsers,
+        pendingUsers,
+        rejectedUsers
+    };
+}
+
+// GET /api/admin/languages/:id/contributors-summary
+router.get("/languages/:id/contributors-summary", async (req, res) => {
+    try {
+        const langParam = req.params.id;
+        let language = await Language.findById(langParam).lean();
+        if (!language) {
+            language = await Language.findOne({ code: String(langParam).toLowerCase().trim() }).lean();
+        }
+        if (!language) {
+            language = await Language.findOne({ name: { $regex: new RegExp(`^${langParam}$`, "i") } }).lean();
+        }
+        if (!language) {
+            return res.status(404).json({ error: "Language not found" });
+        }
+
+        const langCode = String(language.code || "").toLowerCase().trim();
+        const langName = String(language.name || "").toLowerCase().trim();
+
+        // 1. Fetch users with call applications for this language
+        const users = await User.find({ "languageApplications.0": { $exists: true } })
+            .select("firstname lastname email username gender dob speaker_id locality address languageApplications")
+            .lean();
+
+        // 2. Fetch call sessions for this language
+        const callSessions = await CallSession.find({
+            language: { $regex: new RegExp(`^(${langCode}|${langName})$`, "i") }
+        }).select("userA userB callStatus recordingAStatus recordingBStatus").lean();
+
+        const userCallStatusMap = new Map();
+        for (const session of callSessions) {
+            if (session.userA) userCallStatusMap.set(String(session.userA), "approved");
+            if (session.userB) userCallStatusMap.set(String(session.userB), "approved");
+        }
+
+        const userItemMap = new Map();
+
+        for (const u of users) {
+            const apps = (u.languageApplications || []).filter(a => {
+                const appType = a.applicationType || "phrase";
+                if (appType !== "call") return false;
+                const c = String(a.languageCode || "").toLowerCase().trim();
+                return c === langCode || c === langName;
+            });
+
+            if (apps.length > 0) {
+                const latestApp = apps.sort((a, b) => new Date(b.appliedAt) - new Date(a.appliedAt))[0];
+                let appStatus = latestApp.status || "pending";
+                if (userCallStatusMap.has(String(u._id))) {
+                    appStatus = "approved";
+                }
+                userItemMap.set(String(u._id), {
+                    user: u,
+                    appStatus,
+                    appliedAt: latestApp.appliedAt
+                });
+            } else if (userCallStatusMap.has(String(u._id))) {
+                userItemMap.set(String(u._id), {
+                    user: u,
+                    appStatus: "approved",
+                    appliedAt: u.createdAt
+                });
+            }
+        }
+
+        const items = Array.from(userItemMap.values());
+        const summary = calculateDemographics(items);
+
+        res.json({
+            language: {
+                _id: language._id,
+                name: language.name,
+                code: language.code
+            },
+            summary
+        });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// GET /api/admin/companies/:id/contributors-summary
+router.get("/companies/:id/contributors-summary", async (req, res) => {
+    try {
+        const compParam = req.params.id;
+        let company = await Company.findById(compParam).lean();
+        if (!company) {
+            company = await Company.findOne({ name: { $regex: new RegExp(`^${compParam}$`, "i") } }).lean();
+        }
+        if (!company) {
+            return res.status(404).json({ error: "Company not found" });
+        }
+
+        const companyName = company.name;
+        const baseName = companyName.replace(/_downloaded$/, "");
+
+        // Find all phrase records for this company to identify languages and contributors
+        const phrases = await Phrase.find({
+            companyId: { $in: [baseName, `${baseName}_downloaded`, new RegExp(`^${baseName}$`, "i")] }
+        }).select("language contributorId status recordedAt").lean();
+
+        // Also find users with phrase language applications for this company
+        const users = await User.find({
+            "languageApplications.companyId": { $regex: new RegExp(`^${baseName}$`, "i") },
+            "languageApplications.applicationType": "phrase"
+        }).select("firstname lastname email username gender dob speaker_id locality address languageApplications").lean();
+
+        const languageMap = new Map(); // langCode -> { name, phrases: [], usersMap: new Map() }
+
+        for (const p of phrases) {
+            const l = String(p.language || "other").toLowerCase().trim();
+            if (!languageMap.has(l)) {
+                languageMap.set(l, { code: l, name: p.language || l, phrases: [], usersMap: new Map() });
+            }
+            languageMap.get(l).phrases.push(p);
+        }
+
+        for (const u of users) {
+            for (const app of (u.languageApplications || [])) {
+                if (app.applicationType !== "phrase") continue;
+                const appComp = String(app.companyId || "").replace(/_downloaded$/, "").trim();
+                if (appComp.toLowerCase() !== baseName.toLowerCase()) continue;
+
+                const l = String(app.languageCode || "other").toLowerCase().trim();
+                if (!languageMap.has(l)) {
+                    languageMap.set(l, { code: l, name: app.languageCode || l, phrases: [], usersMap: new Map() });
+                }
+                languageMap.get(l).usersMap.set(String(u._id), { user: u, appStatus: app.status || "pending", appliedAt: app.appliedAt });
+            }
+        }
+
+        // Populate users for phrases if contributorId exists
+        const contributorIds = phrases.map(p => p.contributorId).filter(Boolean);
+        const contributorUsers = await User.find({ _id: { $in: contributorIds } })
+            .select("firstname lastname email username gender dob speaker_id locality address createdAt").lean();
+        const contributorUserMap = new Map(contributorUsers.map(u => [String(u._id), u]));
+
+        for (const p of phrases) {
+            const l = String(p.language || "other").toLowerCase().trim();
+            const langObj = languageMap.get(l);
+            if (p.contributorId && contributorUserMap.has(String(p.contributorId))) {
+                const u = contributorUserMap.get(String(p.contributorId));
+                const existing = langObj.usersMap.get(String(u._id));
+                const currentStatus = p.status === "approved" ? "approved" : (existing?.appStatus || "pending");
+                langObj.usersMap.set(String(u._id), {
+                    user: u,
+                    appStatus: currentStatus,
+                    appliedAt: existing?.appliedAt || p.recordedAt || u.createdAt
+                });
+            }
+        }
+
+        const languagesList = [];
+        for (const [langCode, langData] of languageMap.entries()) {
+            const items = Array.from(langData.usersMap.values());
+            const summary = calculateDemographics(items);
+            languagesList.push({
+                code: langCode,
+                name: langData.name.charAt(0).toUpperCase() + langData.name.slice(1),
+                phraseCount: langData.phrases.length,
+                summary
+            });
+        }
+
+        languagesList.sort((a, b) => b.phraseCount - a.phraseCount);
+
+        res.json({
+            company: {
+                _id: company._id,
+                name: company.name,
+                projectName: company.projectName
+            },
+            languages: languagesList
+        });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 // ===== LANGUAGE APPLICATION REVIEW (admin) =====
 
 // List all language applications (paginated, filterable by status)

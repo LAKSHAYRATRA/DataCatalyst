@@ -38,6 +38,36 @@ export default function AdminLanguages() {
     const [modalSaving, setModalSaving] = useState(false);
     const [modalError, setModalError] = useState("");
 
+    // Summary & Users Modals State
+    const [summaryModalLang, setSummaryModalLang] = useState(null);
+    const [summaryLoading, setSummaryLoading] = useState(false);
+    const [summaryData, setSummaryData] = useState(null);
+    const [activeModalType, setActiveModalType] = useState(null); // "summary" | "users"
+    const [usersTab, setUsersTab] = useState("approved"); // "approved" | "pending"
+    const [usersSearch, setUsersSearch] = useState("");
+
+    async function fetchSummary(lang, modalType = "summary") {
+        setSummaryModalLang(lang);
+        setActiveModalType(modalType);
+        setUsersTab("approved");
+        setUsersSearch("");
+        setSummaryLoading(true);
+        try {
+            const data = await get(`/api/admin/languages/${lang._id}/contributors-summary`);
+            setSummaryData(data.summary);
+        } catch (e) {
+            setError("Failed to load contributor summary: " + e.message);
+        } finally {
+            setSummaryLoading(false);
+        }
+    }
+
+    function closeSummaryModal() {
+        setSummaryModalLang(null);
+        setActiveModalType(null);
+        setSummaryData(null);
+    }
+
     useEffect(() => { load(); }, []);
 
     async function load() {
@@ -217,25 +247,39 @@ export default function AdminLanguages() {
                                                 }
                                             </td>
                                             <td className="px-4 py-3">
-                                                <div className="flex gap-2">
+                                                <div className="flex flex-wrap gap-2">
+                                                    <button
+                                                        onClick={() => fetchSummary(lang, "summary")}
+                                                        className="px-2.5 py-1.5 text-xs font-semibold rounded-lg bg-warning-600 hover:bg-warning-700 text-white transition-colors flex items-center gap-1"
+                                                        title="View Contributor Summary & Demographics"
+                                                    >
+                                                        📊 Summary
+                                                    </button>
+                                                    <button
+                                                        onClick={() => fetchSummary(lang, "users")}
+                                                        className="px-2.5 py-1.5 text-xs font-semibold rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white transition-colors flex items-center gap-1"
+                                                        title="View Approved and Pending Users"
+                                                    >
+                                                        👥 Users
+                                                    </button>
                                                     <button
                                                         onClick={() => openEditModal(lang)}
                                                         disabled={!!saving}
-                                                        className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition-colors disabled:opacity-50"
+                                                        className="px-2.5 py-1.5 text-xs font-semibold rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition-colors disabled:opacity-50"
                                                     >
                                                         Edit
                                                     </button>
                                                     <button
                                                         onClick={() => toggle(lang)}
                                                         disabled={!!saving}
-                                                        className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors disabled:opacity-50 ${lang.enabled ? "bg-neutral-600 hover:bg-neutral-500 text-neutral-200" : "bg-warning-600 hover:bg-warning-700 text-white"}`}
+                                                        className={`px-2.5 py-1.5 text-xs font-semibold rounded-lg transition-colors disabled:opacity-50 ${lang.enabled ? "bg-neutral-600 hover:bg-neutral-500 text-neutral-200" : "bg-warning-600 hover:bg-warning-700 text-white"}`}
                                                     >
                                                         {saving === lang._id ? "…" : lang.enabled ? "Disable" : "Enable"}
                                                     </button>
                                                     <button
                                                         onClick={() => remove(lang)}
                                                         disabled={!!saving}
-                                                        className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-red-900/60 hover:bg-red-800 text-red-300 transition-colors disabled:opacity-50"
+                                                        className="px-2.5 py-1.5 text-xs font-semibold rounded-lg bg-red-900/60 hover:bg-red-800 text-red-300 transition-colors disabled:opacity-50"
                                                     >
                                                         {saving === lang._id + "_del" ? "…" : "Delete"}
                                                     </button>
@@ -372,6 +416,246 @@ export default function AdminLanguages() {
                                 </button>
                             </div>
                         </form>
+                    </div>
+                </div>
+            )}
+
+            {/* Contributor Summary / Users Modal */}
+            {summaryModalLang && activeModalType && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+                    <div className="absolute inset-0 bg-black/75 backdrop-blur-sm" onClick={closeSummaryModal} />
+
+                    <div className="relative bg-neutral-800 border border-neutral-700 rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden animate-fade-in text-white">
+                        {/* Header */}
+                        <div className="flex items-center justify-between px-6 py-4 border-b border-neutral-700 bg-neutral-850">
+                            <div>
+                                <h2 className="text-xl font-bold flex items-center gap-2">
+                                    {activeModalType === "summary" ? "📊 Contributor Demographics" : "👥 Contributors List"}
+                                    <span className="text-warning-400 font-semibold">— {summaryModalLang.name}</span>
+                                </h2>
+                                <p className="text-xs text-neutral-400 mt-0.5">Call Language: {summaryModalLang.name} ({summaryModalLang.code})</p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <button
+                                    onClick={() => setActiveModalType(activeModalType === "summary" ? "users" : "summary")}
+                                    className="px-3 py-1.5 bg-neutral-700 hover:bg-neutral-600 text-xs font-semibold rounded-lg text-neutral-200 transition-colors"
+                                >
+                                    Switch to {activeModalType === "summary" ? "👥 Users List" : "📊 Demographics"}
+                                </button>
+                                <button onClick={closeSummaryModal} className="text-neutral-400 hover:text-white transition-colors text-xl leading-none px-2">✕</button>
+                            </div>
+                        </div>
+
+                        {/* Body */}
+                        <div className="p-6 overflow-y-auto flex-1">
+                            {summaryLoading ? (
+                                <div className="flex justify-center py-16">
+                                    <div className="w-10 h-10 border-4 border-warning-200 border-t-warning-500 rounded-full animate-spin" />
+                                </div>
+                            ) : !summaryData ? (
+                                <div className="text-center py-12 text-neutral-400">Failed to load contributor data.</div>
+                            ) : activeModalType === "summary" ? (
+                                <div className="space-y-6">
+                                    {/* Stats Overview */}
+                                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                                        <div className="bg-neutral-750 border border-neutral-700 p-4 rounded-xl">
+                                            <span className="text-xs text-neutral-400 font-medium">Total Contributors</span>
+                                            <div className="text-2xl font-bold text-white mt-1">{summaryData.totalContributors}</div>
+                                        </div>
+                                        <div className="bg-neutral-750 border border-neutral-700 p-4 rounded-xl">
+                                            <span className="text-xs text-blue-400 font-medium">Male</span>
+                                            <div className="text-2xl font-bold text-blue-400 mt-1">{summaryData.male}</div>
+                                        </div>
+                                        <div className="bg-neutral-750 border border-neutral-700 p-4 rounded-xl">
+                                            <span className="text-xs text-pink-400 font-medium">Female</span>
+                                            <div className="text-2xl font-bold text-pink-400 mt-1">{summaryData.female}</div>
+                                        </div>
+                                        <div className="bg-neutral-750 border border-neutral-700 p-4 rounded-xl">
+                                            <span className="text-xs text-emerald-400 font-medium">Approved / Pending</span>
+                                            <div className="text-2xl font-bold text-emerald-400 mt-1">
+                                                {summaryData.approvedUsers.length} <span className="text-neutral-500 text-sm font-normal">/ {summaryData.pendingUsers.length}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Demographics Details Grid */}
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                        {/* Gender Breakdown */}
+                                        <div className="bg-neutral-750 border border-neutral-700 p-5 rounded-xl">
+                                            <h3 className="text-sm font-bold text-neutral-200 uppercase tracking-wider mb-4">Gender Breakdown</h3>
+                                            <div className="space-y-3">
+                                                <div>
+                                                    <div className="flex justify-between text-xs mb-1">
+                                                        <span className="text-neutral-300 font-medium">Male</span>
+                                                        <span className="text-blue-400 font-semibold">{summaryData.male} ({summaryData.totalContributors > 0 ? Math.round((summaryData.male / summaryData.totalContributors) * 100) : 0}%)</span>
+                                                    </div>
+                                                    <div className="w-full bg-neutral-700 h-2 rounded-full overflow-hidden">
+                                                        <div className="bg-blue-500 h-full rounded-full" style={{ width: `${summaryData.totalContributors > 0 ? (summaryData.male / summaryData.totalContributors) * 100 : 0}%` }} />
+                                                    </div>
+                                                </div>
+                                                <div>
+                                                    <div className="flex justify-between text-xs mb-1">
+                                                        <span className="text-neutral-300 font-medium">Female</span>
+                                                        <span className="text-pink-400 font-semibold">{summaryData.female} ({summaryData.totalContributors > 0 ? Math.round((summaryData.female / summaryData.totalContributors) * 100) : 0}%)</span>
+                                                    </div>
+                                                    <div className="w-full bg-neutral-700 h-2 rounded-full overflow-hidden">
+                                                        <div className="bg-pink-500 h-full rounded-full" style={{ width: `${summaryData.totalContributors > 0 ? (summaryData.female / summaryData.totalContributors) * 100 : 0}%` }} />
+                                                    </div>
+                                                </div>
+                                                <div>
+                                                    <div className="flex justify-between text-xs mb-1">
+                                                        <span className="text-neutral-300 font-medium">Other / Unspecified</span>
+                                                        <span className="text-neutral-400 font-semibold">{summaryData.otherGender}</span>
+                                                    </div>
+                                                    <div className="w-full bg-neutral-700 h-2 rounded-full overflow-hidden">
+                                                        <div className="bg-neutral-500 h-full rounded-full" style={{ width: `${summaryData.totalContributors > 0 ? (summaryData.otherGender / summaryData.totalContributors) * 100 : 0}%` }} />
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* Age Distribution */}
+                                        <div className="bg-neutral-750 border border-neutral-700 p-5 rounded-xl">
+                                            <h3 className="text-sm font-bold text-neutral-200 uppercase tracking-wider mb-4">Age Distribution</h3>
+                                            <div className="space-y-3">
+                                                <div>
+                                                    <div className="flex justify-between text-xs mb-1">
+                                                        <span className="text-neutral-300 font-medium">18 – 30 Years</span>
+                                                        <span className="text-warning-400 font-semibold">{summaryData.age_18_30} contributors</span>
+                                                    </div>
+                                                    <div className="w-full bg-neutral-700 h-2 rounded-full overflow-hidden">
+                                                        <div className="bg-warning-500 h-full rounded-full" style={{ width: `${summaryData.totalContributors > 0 ? (summaryData.age_18_30 / summaryData.totalContributors) * 100 : 0}%` }} />
+                                                    </div>
+                                                </div>
+                                                <div>
+                                                    <div className="flex justify-between text-xs mb-1">
+                                                        <span className="text-neutral-300 font-medium">30 – 45 Years</span>
+                                                        <span className="text-warning-400 font-semibold">{summaryData.age_30_45} contributors</span>
+                                                    </div>
+                                                    <div className="w-full bg-neutral-700 h-2 rounded-full overflow-hidden">
+                                                        <div className="bg-amber-500 h-full rounded-full" style={{ width: `${summaryData.totalContributors > 0 ? (summaryData.age_30_45 / summaryData.totalContributors) * 100 : 0}%` }} />
+                                                    </div>
+                                                </div>
+                                                <div>
+                                                    <div className="flex justify-between text-xs mb-1">
+                                                        <span className="text-neutral-300 font-medium">45 – 60 Years</span>
+                                                        <span className="text-warning-400 font-semibold">{summaryData.age_45_60} contributors</span>
+                                                    </div>
+                                                    <div className="w-full bg-neutral-700 h-2 rounded-full overflow-hidden">
+                                                        <div className="bg-orange-500 h-full rounded-full" style={{ width: `${summaryData.totalContributors > 0 ? (summaryData.age_45_60 / summaryData.totalContributors) * 100 : 0}%` }} />
+                                                    </div>
+                                                </div>
+                                                <div>
+                                                    <div className="flex justify-between text-xs mb-1">
+                                                        <span className="text-neutral-300 font-medium">60+ Years</span>
+                                                        <span className="text-warning-400 font-semibold">{summaryData.age_60_plus} contributors</span>
+                                                    </div>
+                                                    <div className="w-full bg-neutral-700 h-2 rounded-full overflow-hidden">
+                                                        <div className="bg-red-500 h-full rounded-full" style={{ width: `${summaryData.totalContributors > 0 ? (summaryData.age_60_plus / summaryData.totalContributors) * 100 : 0}%` }} />
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            ) : (
+                                /* Users Tab View */
+                                <div>
+                                    {/* Tabs */}
+                                    <div className="flex items-center justify-between border-b border-neutral-700 pb-3 mb-4 gap-4 flex-wrap">
+                                        <div className="flex gap-2">
+                                            <button
+                                                onClick={() => setUsersTab("approved")}
+                                                className={`px-4 py-2 text-xs font-bold rounded-lg transition-colors ${usersTab === "approved" ? "bg-emerald-600 text-white" : "bg-neutral-700 text-neutral-300 hover:bg-neutral-600"}`}
+                                            >
+                                                Approved Contributors ({summaryData.approvedUsers.length})
+                                            </button>
+                                            <button
+                                                onClick={() => setUsersTab("pending")}
+                                                className={`px-4 py-2 text-xs font-bold rounded-lg transition-colors ${usersTab === "pending" ? "bg-amber-600 text-white" : "bg-neutral-700 text-neutral-300 hover:bg-neutral-600"}`}
+                                            >
+                                                Pending Contributors ({summaryData.pendingUsers.length})
+                                            </button>
+                                        </div>
+                                        <input
+                                            type="text"
+                                            placeholder="Search by name, email, speaker_id..."
+                                            value={usersSearch}
+                                            onChange={e => setUsersSearch(e.target.value)}
+                                            className="bg-neutral-700 border border-neutral-600 text-white placeholder-neutral-400 text-xs rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-warning-500 min-w-[200px]"
+                                        />
+                                    </div>
+
+                                    {/* Users Table */}
+                                    {(() => {
+                                        const list = usersTab === "approved" ? summaryData.approvedUsers : summaryData.pendingUsers;
+                                        const filtered = list.filter(u => {
+                                            if (!usersSearch.trim()) return true;
+                                            const q = usersSearch.toLowerCase();
+                                            return (
+                                                (u.firstname + " " + u.lastname).toLowerCase().includes(q) ||
+                                                (u.username || "").toLowerCase().includes(q) ||
+                                                (u.email || "").toLowerCase().includes(q) ||
+                                                (u.speaker_id || "").toLowerCase().includes(q) ||
+                                                (u.state || "").toLowerCase().includes(q)
+                                            );
+                                        });
+
+                                        if (filtered.length === 0) {
+                                            return (
+                                                <div className="text-center py-12 text-neutral-400 text-sm">
+                                                    No {usersTab} contributors found.
+                                                </div>
+                                            );
+                                        }
+
+                                        return (
+                                            <div className="border border-neutral-700 rounded-xl overflow-hidden bg-neutral-850">
+                                                <div className="overflow-x-auto">
+                                                    <table className="w-full text-xs">
+                                                        <thead className="bg-neutral-700 text-neutral-300 uppercase tracking-wider font-semibold">
+                                                            <tr>
+                                                                <th className="px-4 py-2.5 text-left">Speaker ID</th>
+                                                                <th className="px-4 py-2.5 text-left">Contributor</th>
+                                                                <th className="px-4 py-2.5 text-left">Email</th>
+                                                                <th className="px-4 py-2.5 text-left">Gender / Age</th>
+                                                                <th className="px-4 py-2.5 text-left">State / Locality</th>
+                                                                <th className="px-4 py-2.5 text-left">Status</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody className="divide-y divide-neutral-700/80">
+                                                            {filtered.map(u => (
+                                                                <tr key={u._id} className="hover:bg-neutral-700/40">
+                                                                    <td className="px-4 py-2.5 font-mono text-warning-400 font-semibold">{u.speaker_id}</td>
+                                                                    <td className="px-4 py-2.5 font-medium text-white">
+                                                                        {u.firstname} {u.lastname}
+                                                                        <div className="text-[10px] text-neutral-400 font-normal">@{u.username}</div>
+                                                                    </td>
+                                                                    <td className="px-4 py-2.5 text-neutral-300">{u.email}</td>
+                                                                    <td className="px-4 py-2.5 capitalize text-neutral-300">
+                                                                        {u.gender} <span className="text-neutral-400">({u.age} yrs)</span>
+                                                                    </td>
+                                                                    <td className="px-4 py-2.5 text-neutral-300">
+                                                                        {u.state} <span className="text-neutral-400">({u.locality})</span>
+                                                                    </td>
+                                                                    <td className="px-4 py-2.5">
+                                                                        {u.status === "approved" ? (
+                                                                            <span className="px-2 py-0.5 bg-emerald-900/60 text-emerald-300 text-[10px] font-bold rounded-full">Approved</span>
+                                                                        ) : (
+                                                                            <span className="px-2 py-0.5 bg-amber-900/60 text-amber-300 text-[10px] font-bold rounded-full">Pending</span>
+                                                                        )}
+                                                                    </td>
+                                                                </tr>
+                                                            ))}
+                                                        </tbody>
+                                                    </table>
+                                                </div>
+                                            </div>
+                                        );
+                                    })()}
+                                </div>
+                            )}
+                        </div>
                     </div>
                 </div>
             )}
