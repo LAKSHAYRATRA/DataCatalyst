@@ -138,9 +138,18 @@ export default function LanguageApply() {
              const settings = track ? track.getSettings() : {};
              const trackSampleRate = settings.sampleRate || 48000;
 
-             const audioCtx = new AudioContext({ sampleRate: trackSampleRate });
+             const AudioCtxClass = window.AudioContext || window.webkitAudioContext;
+             const audioCtx = new AudioCtxClass({ sampleRate: trackSampleRate });
              audioCtxRef.current = audioCtx;
-             await audioCtx.audioWorklet.addModule("/pcm-worklet.js");
+             if (audioCtx.state === "suspended") {
+                 await audioCtx.resume();
+             }
+
+             try {
+                 await audioCtx.audioWorklet.addModule("/pcm-worklet.js");
+             } catch (wErr) {
+                 console.warn("Worklet module load note:", wErr);
+             }
             
             const source = audioCtx.createMediaStreamSource(stream);
             const workletNode = new AudioWorkletNode(audioCtx, "pcm-processor");
