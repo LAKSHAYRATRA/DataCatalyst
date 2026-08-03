@@ -163,24 +163,16 @@ app.use(
 // Application Security Routing Shields
 app.use(helmet()); 
 const globalLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes span
-  max: 20000, // Increased to prevent false-positives
+  windowMs: 15 * 60 * 1000,
+  max: 20000,
   message: { error: "Global Speed Limit exceeded. Please try again later." },
-  validate: { ip: false },
-  keyGenerator: (req) => {
-    const forwarded = req.headers['x-forwarded-for'];
-    return forwarded ? forwarded.split(',')[0] : req.ip;
-  }
+  keyGenerator: (req) => req.ip
 });
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, 
-  max: 10, // 10 Requests MAX per 15 mins for OTP/Login per user
-  message: { error: "Security Lockout: Wait 15 minutes before sending another OTP for this email." },
-  validate: { ip: false },
-  keyGenerator: (req) => {
-    // Isolate limit strictly to the specific email being requested bypassing NGINX proxy masking
-    return req.body?.email || req.ip; 
-  }
+  max: 50,
+  message: { error: "Security Lockout: Wait 15 minutes before sending another OTP." },
+  keyGenerator: (req) => req.body?.email || req.ip
 });
 app.use("/api/", globalLimiter); // Protect generic /api hooks
 
