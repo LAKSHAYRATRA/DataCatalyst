@@ -2653,6 +2653,52 @@ router.post("/languages/:id/remove-contributor", async (req, res) => {
     }
 });
 
+// POST /api/admin/languages/:id/reset-contributor
+router.post("/languages/:id/reset-contributor", async (req, res) => {
+    try {
+        const langParam = req.params.id;
+        const { userId } = req.body;
+
+        if (!userId) {
+            return res.status(400).json({ error: "userId is required" });
+        }
+
+        let language = await Language.findById(langParam).lean();
+        if (!language) {
+            language = await Language.findOne({ code: String(langParam).toLowerCase().trim() }).lean();
+        }
+        if (!language) {
+            language = await Language.findOne({ name: { $regex: new RegExp(`^${langParam}$`, "i") } }).lean();
+        }
+        if (!language) {
+            return res.status(404).json({ error: "Language not found" });
+        }
+
+        const langCode = String(language.code || "").toLowerCase().trim();
+        const langName = String(language.name || "").toLowerCase().trim();
+
+        const user = await User.findById(userId);
+        if (!user) {
+            return res.status(404).json({ error: "User not found" });
+        }
+
+        if (user.languageApplications) {
+            user.languageApplications = user.languageApplications.filter(app => {
+                if (app.applicationType !== "call") return true;
+                const appLang = String(app.languageCode || "").toLowerCase().trim();
+                return appLang !== langCode && appLang !== langName;
+            });
+        }
+
+        user.markModified("languageApplications");
+        await user.save();
+
+        res.json({ message: `Call application for ${user.firstname || user.username} has been reset for ${language.name}. They can now apply again.` });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 // GET /api/admin/companies/:id/contributors-summary
 router.get("/companies/:id/contributors-summary", async (req, res) => {
     try {
@@ -2860,6 +2906,66 @@ router.post("/companies/:id/remove-contributor", async (req, res) => {
         await user.save();
 
         res.json({ message: `Contributor ${user.firstname || user.username} has been removed from ${company.projectName || company.name}.` });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// POST /api/admin/companies/:id/reset-contributor
+router.post("/companies/:id/reset-contributor", async (req, res) => {
+    try {
+        const compParam = req.params.id;
+        const { userId, languageCode } = req.body;
+
+        if (!userId) {
+            return res.status(400).json({ error: "userId is required" });
+        }
+
+        let company = await Company.findById(compParam).lean();
+        if (!company) {
+            company = await Company.findOne({ name: { $regex: new RegExp(`^${compParam}$`, "i") } }).lean();
+        }
+        if (!company) {
+            return res.status(404).json({ error: "Company not found" });
+        }
+
+        const companyName = company.name;
+        const projectName = company.projectName || company.name;
+        const baseName = companyName.replace(/_downloaded$/, "").trim();
+        const compIdStr = String(company._id);
+
+        const companyIdentifiers = [
+            companyName,
+            projectName,
+            baseName,
+            compIdStr
+        ].filter(Boolean);
+
+        const user = await User.findById(userId);
+        if (!user) {
+            return res.status(404).json({ error: "User not found" });
+        }
+
+        if (user.languageApplications) {
+            user.languageApplications = user.languageApplications.filter(app => {
+                if (app.applicationType && app.applicationType !== "phrase") return true;
+                const appComp = String(app.companyId || "").replace(/_downloaded$/, "").trim().toLowerCase();
+                const compMatches = companyIdentifiers.some(id => id.replace(/_downloaded$/, "").trim().toLowerCase() === appComp);
+                if (!compMatches) return true;
+
+                const reqLang = String(languageCode || "").toLowerCase().trim();
+                const appLang = String(app.languageCode || "").toLowerCase().trim();
+                if (!reqLang || appLang === reqLang) {
+                    return false; // Remove matching phrase application
+                }
+                return true;
+            });
+        }
+
+        user.markModified("languageApplications");
+        await user.save();
+
+        res.json({ message: `Phrase application for ${user.firstname || user.username} has been reset for ${company.projectName || company.name}. They can now apply again.` });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }

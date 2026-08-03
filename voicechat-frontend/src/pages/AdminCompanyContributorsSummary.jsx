@@ -11,7 +11,9 @@ import {
   BarChart3,
   Search,
   CheckCircle,
-  Clock
+  Clock,
+  XCircle,
+  RotateCcw
 } from "lucide-react";
 import Swal from "sweetalert2";
 import { apiGet, apiPostJson } from "../lib/api.js";
@@ -24,7 +26,7 @@ export default function AdminCompanyContributorsSummary() {
   const [languages, setLanguages] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedLangCode, setSelectedLangCode] = useState(null);
-  const [userTab, setUserTab] = useState("approved"); // "approved" | "pending"
+  const [userTab, setUserTab] = useState("approved"); // "approved" | "pending" | "rejected"
   const [userSearch, setUserSearch] = useState("");
 
   useEffect(() => {
@@ -93,6 +95,46 @@ export default function AdminCompanyContributorsSummary() {
     }
   }
 
+  async function handleResetContributor(userObj) {
+    const compName = company ? (company.projectName || company.name) : "this company";
+    const result = await Swal.fire({
+      title: "Reset Application?",
+      text: `Are you sure you want to reset the application for ${userObj.firstname || userObj.username} for ${compName}? This will remove them from the rejected list and allow them to apply again.`,
+      icon: "question",
+      showCancelButton: true,
+      confirmButtonColor: "#2563eb",
+      cancelButtonColor: "#475569",
+      confirmButtonText: "Yes, Reset Application",
+      background: "#1f2937",
+      color: "#fff"
+    });
+
+    if (result.isConfirmed) {
+      try {
+        await apiPostJson(`/api/admin/companies/${id}/reset-contributor`, {
+          userId: userObj._id,
+          languageCode: selectedLangCode
+        });
+        Swal.fire({
+          title: "Reset!",
+          text: `Application for ${userObj.firstname || userObj.username} has been reset. They can now apply again.`,
+          icon: "success",
+          background: "#1f2937",
+          color: "#fff"
+        });
+        fetchData();
+      } catch (e) {
+        Swal.fire({
+          title: "Error",
+          text: e.message,
+          icon: "error",
+          background: "#1f2937",
+          color: "#fff"
+        });
+      }
+    }
+  }
+
   const selectedLangData = languages.find(l => l.code === selectedLangCode) || languages[0];
 
   return (
@@ -114,7 +156,7 @@ export default function AdminCompanyContributorsSummary() {
                 {company ? (company.projectName || company.name) : "Company"} Contributors Summary
               </h1>
               <p className="text-sm text-neutral-400 mt-1">
-                Select a language below to view contributor demographics (male, female, 18-30, 30-45, 45-60) and approved/pending user lists.
+                Select a language below to view contributor demographics (male, female, 18-30, 30-45, 45-60) and approved/pending/rejected user lists.
               </p>
             </div>
           </div>
@@ -219,7 +261,7 @@ export default function AdminCompanyContributorsSummary() {
                 {/* Demographics Overview Cards */}
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                   <div className="bg-neutral-750 border border-neutral-700 p-4 rounded-xl">
-                    <span className="text-xs text-neutral-400 font-medium">Total Contributors</span>
+                    <span className="text-xs text-neutral-400 font-medium">Total Active Contributors</span>
                     <div className="text-2xl font-bold text-white mt-1">{selectedLangData.summary.totalContributors}</div>
                   </div>
                   <div className="bg-neutral-750 border border-neutral-700 p-4 rounded-xl">
@@ -231,9 +273,9 @@ export default function AdminCompanyContributorsSummary() {
                     <div className="text-2xl font-bold text-pink-400 mt-1">{selectedLangData.summary.female}</div>
                   </div>
                   <div className="bg-neutral-750 border border-neutral-700 p-4 rounded-xl">
-                    <span className="text-xs text-emerald-400 font-medium">Approved / Pending Users</span>
+                    <span className="text-xs text-emerald-400 font-medium">Approved / Pending / Rejected</span>
                     <div className="text-2xl font-bold text-emerald-400 mt-1">
-                      {selectedLangData.summary.approvedUsers.length} <span className="text-neutral-500 text-sm font-normal">/ {selectedLangData.summary.pendingUsers.length}</span>
+                      {selectedLangData.summary.approvedUsers.length} <span className="text-neutral-500 text-sm font-normal">/ {selectedLangData.summary.pendingUsers.length} / <span className="text-red-400">{selectedLangData.summary.rejectedUsers?.length || 0}</span></span>
                     </div>
                   </div>
                 </div>
@@ -344,6 +386,15 @@ export default function AdminCompanyContributorsSummary() {
                         <Clock className="w-3.5 h-3.5" />
                         Pending Contributors ({selectedLangData.summary.pendingUsers.length})
                       </button>
+                      <button
+                        onClick={() => setUserTab("rejected")}
+                        className={`px-4 py-2 text-xs font-bold rounded-lg transition-colors flex items-center gap-1.5 ${
+                          userTab === "rejected" ? "bg-red-600 text-white" : "bg-neutral-700 text-neutral-300 hover:bg-neutral-600"
+                        }`}
+                      >
+                        <XCircle className="w-3.5 h-3.5" />
+                        Rejected Contributors ({selectedLangData.summary.rejectedUsers?.length || 0})
+                      </button>
                     </div>
 
                     <div className="relative min-w-[240px]">
@@ -360,7 +411,11 @@ export default function AdminCompanyContributorsSummary() {
 
                   {/* Table */}
                   {(() => {
-                    const list = userTab === "approved" ? selectedLangData.summary.approvedUsers : selectedLangData.summary.pendingUsers;
+                    const list = userTab === "approved" 
+                      ? selectedLangData.summary.approvedUsers 
+                      : userTab === "pending" 
+                      ? selectedLangData.summary.pendingUsers 
+                      : (selectedLangData.summary.rejectedUsers || []);
                     const filtered = list.filter(u => {
                       if (!userSearch.trim()) return true;
                       const q = userSearch.toLowerCase();
@@ -414,6 +469,8 @@ export default function AdminCompanyContributorsSummary() {
                                   <td className="px-4 py-2.5">
                                     {u.status === "approved" ? (
                                       <span className="px-2 py-0.5 bg-emerald-900/60 text-emerald-300 text-[10px] font-bold rounded-full">Approved</span>
+                                    ) : u.status === "rejected" ? (
+                                      <span className="px-2 py-0.5 bg-red-900/60 text-red-300 text-[10px] font-bold rounded-full">Rejected</span>
                                     ) : (
                                       <span className="px-2 py-0.5 bg-amber-900/60 text-amber-300 text-[10px] font-bold rounded-full">Pending</span>
                                     )}
@@ -425,6 +482,14 @@ export default function AdminCompanyContributorsSummary() {
                                         className="px-2.5 py-1 bg-red-600/90 hover:bg-red-600 text-white text-[11px] font-bold rounded-lg transition-colors shadow-sm whitespace-nowrap"
                                       >
                                         Remove Contributor
+                                      </button>
+                                    )}
+                                    {userTab === "rejected" && (
+                                      <button
+                                        onClick={() => handleResetContributor(u)}
+                                        className="px-2.5 py-1 bg-blue-600/90 hover:bg-blue-600 text-white text-[11px] font-bold rounded-lg transition-colors shadow-sm whitespace-nowrap inline-flex items-center gap-1"
+                                      >
+                                        <RotateCcw className="w-3 h-3" /> Reset Application
                                       </button>
                                     )}
                                   </td>

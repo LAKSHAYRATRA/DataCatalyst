@@ -74,7 +74,7 @@ export default function AdminLanguages() {
         const langName = summaryModalLang.name || "this language";
         const result = await Swal.fire({
             title: "Remove Contributor?",
-            text: `Are you sure you want to remove ${userObj.firstname || userObj.username} from Call Language ${langName}? Doing so will prevent them from making calls in this language and block re-applications.`,
+            text: `Are you sure you want to remove ${userObj.firstname || userObj.username} from Call Language ${langName}? Doing so will prevent them from making calls in this language and block re-applications until reset.`,
             icon: "warning",
             showCancelButton: true,
             confirmButtonColor: "#dc2626",
@@ -92,6 +92,46 @@ export default function AdminLanguages() {
                 Swal.fire({
                     title: "Removed!",
                     text: `${userObj.firstname || userObj.username} has been removed from Call Language ${langName}.`,
+                    icon: "success",
+                    background: "#1f2937",
+                    color: "#fff"
+                });
+                fetchSummary(summaryModalLang, activeModalType);
+            } catch (e) {
+                Swal.fire({
+                    title: "Error",
+                    text: e.message,
+                    icon: "error",
+                    background: "#1f2937",
+                    color: "#fff"
+                });
+            }
+        }
+    }
+
+    async function handleResetCallContributor(userObj) {
+        if (!summaryModalLang) return;
+        const langName = summaryModalLang.name || "this language";
+        const result = await Swal.fire({
+            title: "Reset Application?",
+            text: `Are you sure you want to reset the call application for ${userObj.firstname || userObj.username} in Call Language ${langName}? This will remove them from the rejected list and allow them to apply again.`,
+            icon: "question",
+            showCancelButton: true,
+            confirmButtonColor: "#2563eb",
+            cancelButtonColor: "#475569",
+            confirmButtonText: "Yes, Reset Application",
+            background: "#1f2937",
+            color: "#fff"
+        });
+
+        if (result.isConfirmed) {
+            try {
+                await postJson(`/api/admin/languages/${summaryModalLang._id}/reset-contributor`, {
+                    userId: userObj._id
+                });
+                Swal.fire({
+                    title: "Reset!",
+                    text: `Application for ${userObj.firstname || userObj.username} has been reset. They can now apply again.`,
                     icon: "success",
                     background: "#1f2937",
                     color: "#fff"
@@ -617,6 +657,12 @@ export default function AdminLanguages() {
                                             >
                                                 Pending Contributors ({summaryData.pendingUsers.length})
                                             </button>
+                                            <button
+                                                onClick={() => setUsersTab("rejected")}
+                                                className={`px-4 py-2 text-xs font-bold rounded-lg transition-colors ${usersTab === "rejected" ? "bg-red-600 text-white" : "bg-neutral-700 text-neutral-300 hover:bg-neutral-600"}`}
+                                            >
+                                                Rejected Contributors ({summaryData.rejectedUsers?.length || 0})
+                                            </button>
                                         </div>
                                         <input
                                             type="text"
@@ -629,7 +675,11 @@ export default function AdminLanguages() {
 
                                     {/* Users Table */}
                                     {(() => {
-                                        const list = usersTab === "approved" ? summaryData.approvedUsers : summaryData.pendingUsers;
+                                        const list = usersTab === "approved" 
+                                            ? summaryData.approvedUsers 
+                                            : usersTab === "pending" 
+                                            ? summaryData.pendingUsers 
+                                            : (summaryData.rejectedUsers || []);
                                         const filtered = list.filter(u => {
                                             if (!usersSearch.trim()) return true;
                                             const q = usersSearch.toLowerCase();
@@ -683,6 +733,8 @@ export default function AdminLanguages() {
                                                                     <td className="px-4 py-2.5">
                                                                         {u.status === "approved" ? (
                                                                             <span className="px-2 py-0.5 bg-emerald-900/60 text-emerald-300 text-[10px] font-bold rounded-full">Approved</span>
+                                                                        ) : u.status === "rejected" ? (
+                                                                            <span className="px-2 py-0.5 bg-red-900/60 text-red-300 text-[10px] font-bold rounded-full">Rejected</span>
                                                                         ) : (
                                                                             <span className="px-2 py-0.5 bg-amber-900/60 text-amber-300 text-[10px] font-bold rounded-full">Pending</span>
                                                                         )}
@@ -694,6 +746,14 @@ export default function AdminLanguages() {
                                                                                 className="px-2.5 py-1 bg-red-600/90 hover:bg-red-600 text-white text-[11px] font-bold rounded-lg transition-colors shadow-sm whitespace-nowrap"
                                                                             >
                                                                                 Remove Contributor
+                                                                            </button>
+                                                                        )}
+                                                                        {usersTab === "rejected" && (
+                                                                            <button
+                                                                                onClick={() => handleResetCallContributor(u)}
+                                                                                className="px-2.5 py-1 bg-blue-600/90 hover:bg-blue-600 text-white text-[11px] font-bold rounded-lg transition-colors shadow-sm whitespace-nowrap"
+                                                                            >
+                                                                                Reset Application
                                                                             </button>
                                                                         )}
                                                                     </td>
