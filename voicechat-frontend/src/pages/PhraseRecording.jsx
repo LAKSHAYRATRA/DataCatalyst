@@ -227,11 +227,6 @@ export default function PhraseRecording() {
       const settings = track ? track.getSettings() : {};
       const trackSampleRate = settings.sampleRate || 48000;
 
-      if (trackSampleRate < 44100) {
-        stream.getTracks().forEach(t => t.stop());
-        throw new Error(`High quality microphone (44.1kHz or higher) required. Your microphone is running at ${trackSampleRate}Hz.`);
-      }
-
       const audioCtx = new AudioContext({ sampleRate: trackSampleRate });
       await audioCtx.audioWorklet.addModule("/pcm-worklet.js");
       const source = audioCtx.createMediaStreamSource(stream);
@@ -271,8 +266,8 @@ export default function PhraseRecording() {
       }, 1000);
 
     } catch (err) {
-      alert('Microphone access denied or not available.');
       console.error(err);
+      alert(err.message || 'Microphone access denied or not available.');
     }
   }
 

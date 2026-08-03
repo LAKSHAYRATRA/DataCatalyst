@@ -138,11 +138,6 @@ export default function LanguageApply() {
              const settings = track ? track.getSettings() : {};
              const trackSampleRate = settings.sampleRate || 48000;
 
-             if (trackSampleRate < 44100) {
-                 stream.getTracks().forEach(t => t.stop());
-                 throw new Error(`High quality microphone (44.1kHz or higher) required. Your microphone is running at ${trackSampleRate}Hz.`);
-             }
-
              const audioCtx = new AudioContext({ sampleRate: trackSampleRate });
              audioCtxRef.current = audioCtx;
              await audioCtx.audioWorklet.addModule("/pcm-worklet.js");
@@ -173,8 +168,9 @@ export default function LanguageApply() {
                 setSecondsLeft(secs);
                 if (secs <= 0) stopRecording();
             }, 1000);
-        } catch {
-            setError("Microphone access denied. Please allow microphone and try again.");
+        } catch (e) {
+            console.error("Recording start error:", e);
+            setError(e.message || "Failed to start recording. Please try again.");
         }
     }
 
