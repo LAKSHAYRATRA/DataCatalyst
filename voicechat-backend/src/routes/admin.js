@@ -2414,7 +2414,6 @@ router.delete("/languages/:id", async (req, res) => {
 
 // Helper to compute contributor demographics & user lists
 function calculateDemographics(items) {
-    let totalContributors = items.length;
     let male = 0;
     let female = 0;
     let otherGender = 0;
@@ -2429,10 +2428,6 @@ function calculateDemographics(items) {
 
     for (const item of items) {
         const u = item.user;
-        const g = String(u.gender || "").toLowerCase().trim();
-        if (g === "male") male++;
-        else if (g === "female") female++;
-        else otherGender++;
 
         let age = null;
         if (u.dob) {
@@ -2447,13 +2442,6 @@ function calculateDemographics(items) {
             }
         }
 
-        if (age !== null && Number.isFinite(age)) {
-            if (age >= 18 && age <= 30) age_18_30++;
-            else if (age > 30 && age <= 45) age_30_45++;
-            else if (age > 45 && age <= 60) age_45_60++;
-            else if (age > 60) age_60_plus++;
-        }
-
         const userObj = {
             _id: u._id,
             firstname: u.firstname || "",
@@ -2462,7 +2450,7 @@ function calculateDemographics(items) {
             email: u.email || "",
             gender: u.gender || "unknown",
             dob: u.dob || null,
-            age: age !== null ? age : "N/A",
+            age: age !== null && Number.isFinite(age) ? age : "N/A",
             speaker_id: u.speaker_id || `spk_${u._id}`,
             locality: u.locality || "N/A",
             state: u.address?.state || "N/A",
@@ -2477,7 +2465,24 @@ function calculateDemographics(items) {
         } else if (item.appStatus === "rejected") {
             rejectedUsers.push(userObj);
         }
+
+        // Only compute gender/age demographics for non-rejected (active) contributors
+        if (item.appStatus !== "rejected") {
+            const g = String(u.gender || "").toLowerCase().trim();
+            if (g === "male") male++;
+            else if (g === "female") female++;
+            else otherGender++;
+
+            if (age !== null && Number.isFinite(age)) {
+                if (age >= 18 && age <= 30) age_18_30++;
+                else if (age > 30 && age <= 45) age_30_45++;
+                else if (age > 45 && age <= 60) age_45_60++;
+                else if (age > 60) age_60_plus++;
+            }
+        }
     }
+
+    const totalContributors = approvedUsers.length + pendingUsers.length;
 
     return {
         totalContributors,
@@ -2512,12 +2517,7 @@ router.get("/languages/:id/contributors-summary", async (req, res) => {
         const langCode = String(language.code || "").toLowerCase().trim();
         const langName = String(language.name || "").toLowerCase().trim();
 
-        // 1. Fetch users with call applications for this language
-        const users = await User.find({ "languageApplications.0": { $exists: true } })
-            .select("firstname lastname email username gender dob speaker_id locality address languageApplications")
-            .lean();
-
-        // 2. Fetch call sessions for this language
+        // 1. Fetch call sessions for this language
         const callSessions = await CallSession.find({
             language: { $regex: new RegExp(`^(${langCode}|${langName})$`, "i") }
         }).select("userA userB callStatus recordingAStatus recordingBStatus").lean();
@@ -2527,6 +2527,18 @@ router.get("/languages/:id/contributors-summary", async (req, res) => {
             if (session.userA) userCallStatusMap.set(String(session.userA), "approved");
             if (session.userB) userCallStatusMap.set(String(session.userB), "approved");
         }
+
+        const callUserIds = Array.from(userCallStatusMap.keys());
+
+        // 2. Fetch users with call applications OR call sessions for this language
+        const users = await User.find({
+            $or: [
+                { "languageApplications.0": { $exists: true } },
+                { _id: { $in: callUserIds } }
+            ]
+        })
+        .select("firstname lastname email username gender dob speaker_id locality address languageApplications createdAt")
+        .lean();
 
         const userItemMap = new Map();
 
@@ -2539,15 +2551,16 @@ router.get("/languages/:id/contributors-summary", async (req, res) => {
             });
 
             if (apps.length > 0) {
-                const latestApp = apps.sort((a, b) => new Date(b.appliedAt) - new Date(a.appliedAt))[0];
+                const latestApp = apps.sort((a, b) => new Date(b.appliedAt || 0) - new Date(a.appliedAt || 0))[0];
                 let appStatus = latestApp.status || "pending";
+                // If the latest application is explicitly rejected, respect that status!
                 if (userCallStatusMap.has(String(u._id)) && latestApp.status !== "rejected") {
                     appStatus = "approved";
                 }
                 userItemMap.set(String(u._id), {
                     user: u,
                     appStatus,
-                    appliedAt: latestApp.appliedAt
+                    appliedAt: latestApp.appliedAt || u.createdAt
                 });
             } else if (userCallStatusMap.has(String(u._id))) {
                 userItemMap.set(String(u._id), {
@@ -2596,6 +2609,8 @@ router.post("/languages/:id/remove-contributor", async (req, res) => {
         }
 
         const langCode = String(language.code || "").toLowerCase().trim();
+        const langName = String(language.name || "").toLowerCase().trim();
+
         const user = await User.findById(userId);
         if (!user) {
             return res.status(404).json({ error: "User not found" });
@@ -2607,11 +2622,14 @@ router.post("/languages/:id/remove-contributor", async (req, res) => {
 
         let updated = false;
         user.languageApplications.forEach(app => {
-            if (app.applicationType === "call" && String(app.languageCode).toLowerCase().trim() === langCode) {
-                app.status = "rejected";
-                app.reviewedAt = new Date();
-                app.reviewedBy = req.user._id;
-                updated = true;
+            if (app.applicationType === "call") {
+                const appLang = String(app.languageCode || "").toLowerCase().trim();
+                if (appLang === langCode || appLang === langName) {
+                    app.status = "rejected";
+                    app.reviewedAt = new Date();
+                    app.reviewedBy = req.user._id;
+                    updated = true;
+                }
             }
         });
 
@@ -2648,16 +2666,28 @@ router.get("/companies/:id/contributors-summary", async (req, res) => {
         }
 
         const companyName = company.name;
-        const baseName = companyName.replace(/_downloaded$/, "");
+        const projectName = company.projectName || company.name;
+        const baseName = companyName.replace(/_downloaded$/, "").trim();
+        const compIdStr = String(company._id);
+
+        const companyIdentifiers = [
+            companyName,
+            projectName,
+            baseName,
+            `${baseName}_downloaded`,
+            compIdStr
+        ].filter(Boolean);
+
+        const companyRegexes = companyIdentifiers.map(s => new RegExp(`^${s.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')}$`, "i"));
 
         // Find all phrase records for this company to identify languages and contributors
         const phrases = await Phrase.find({
-            companyId: { $in: [baseName, `${baseName}_downloaded`, new RegExp(`^${baseName}$`, "i")] }
+            companyId: { $in: companyRegexes }
         }).select("language contributorId status recordedAt").lean();
 
         // Also find users with phrase language applications for this company
         const users = await User.find({
-            "languageApplications.companyId": { $regex: new RegExp(`^${baseName}$`, "i") },
+            "languageApplications.companyId": { $in: companyRegexes },
             "languageApplications.applicationType": "phrase"
         }).select("firstname lastname email username gender dob speaker_id locality address languageApplications").lean();
 
@@ -2674,8 +2704,9 @@ router.get("/companies/:id/contributors-summary", async (req, res) => {
         for (const u of users) {
             for (const app of (u.languageApplications || [])) {
                 if (app.applicationType !== "phrase") continue;
-                const appComp = String(app.companyId || "").replace(/_downloaded$/, "").trim();
-                if (appComp.toLowerCase() !== baseName.toLowerCase()) continue;
+                const appComp = String(app.companyId || "").replace(/_downloaded$/, "").trim().toLowerCase();
+                const matchesComp = companyIdentifiers.some(id => id.replace(/_downloaded$/, "").trim().toLowerCase() === appComp);
+                if (!matchesComp) continue;
 
                 const l = String(app.languageCode || "other").toLowerCase().trim();
                 if (!languageMap.has(l)) {
@@ -2688,7 +2719,7 @@ router.get("/companies/:id/contributors-summary", async (req, res) => {
         // Populate users for phrases if contributorId exists
         const contributorIds = phrases.map(p => p.contributorId).filter(Boolean);
         const contributorUsers = await User.find({ _id: { $in: contributorIds } })
-            .select("firstname lastname email username gender dob speaker_id locality address createdAt").lean();
+            .select("firstname lastname email username gender dob speaker_id locality address createdAt languageApplications").lean();
         const contributorUserMap = new Map(contributorUsers.map(u => [String(u._id), u]));
 
         for (const p of phrases) {
@@ -2697,11 +2728,32 @@ router.get("/companies/:id/contributors-summary", async (req, res) => {
             if (p.contributorId && contributorUserMap.has(String(p.contributorId))) {
                 const u = contributorUserMap.get(String(p.contributorId));
                 const existing = langObj.usersMap.get(String(u._id));
-                const currentStatus = p.status === "approved" ? "approved" : (existing?.appStatus || "pending");
+                
+                const matchingApp = (u.languageApplications || []).find(app => {
+                    if (app.applicationType && app.applicationType !== "phrase") return false;
+                    const appComp = String(app.companyId || "").replace(/_downloaded$/, "").trim().toLowerCase();
+                    const compMatches = companyIdentifiers.some(id => id.replace(/_downloaded$/, "").trim().toLowerCase() === appComp);
+                    const matchesLang = String(app.languageCode || "").toLowerCase().trim() === l;
+                    return compMatches && matchesLang;
+                });
+
+                let currentStatus;
+                if (matchingApp && matchingApp.status === "rejected") {
+                    currentStatus = "rejected";
+                } else if (existing?.appStatus === "rejected") {
+                    currentStatus = "rejected";
+                } else if (matchingApp?.status === "approved" || existing?.appStatus === "approved") {
+                    currentStatus = "approved";
+                } else if (p.status === "approved") {
+                    currentStatus = "approved";
+                } else {
+                    currentStatus = existing?.appStatus || matchingApp?.status || "pending";
+                }
+
                 langObj.usersMap.set(String(u._id), {
                     user: u,
                     appStatus: currentStatus,
-                    appliedAt: existing?.appliedAt || p.recordedAt || u.createdAt
+                    appliedAt: existing?.appliedAt || matchingApp?.appliedAt || p.recordedAt || u.createdAt
                 });
             }
         }
@@ -2751,7 +2803,18 @@ router.post("/companies/:id/remove-contributor", async (req, res) => {
             return res.status(404).json({ error: "Company not found" });
         }
 
-        const baseName = company.name.replace(/_downloaded$/, "").trim();
+        const companyName = company.name;
+        const projectName = company.projectName || company.name;
+        const baseName = companyName.replace(/_downloaded$/, "").trim();
+        const compIdStr = String(company._id);
+
+        const companyIdentifiers = [
+            companyName,
+            projectName,
+            baseName,
+            compIdStr
+        ].filter(Boolean);
+
         const user = await User.findById(userId);
         if (!user) {
             return res.status(404).json({ error: "User not found" });
@@ -2764,10 +2827,13 @@ router.post("/companies/:id/remove-contributor", async (req, res) => {
         let updated = false;
         // Mark matching phrase applications for this company as rejected
         user.languageApplications.forEach(app => {
-            if ((app.applicationType === "phrase" || !app.applicationType) && app.companyId) {
-                const appComp = String(app.companyId).replace(/_downloaded$/, "").trim();
-                if (appComp.toLowerCase() === baseName.toLowerCase()) {
-                    if (!languageCode || String(app.languageCode).toLowerCase() === String(languageCode).toLowerCase()) {
+            if (app.applicationType === "phrase" || !app.applicationType) {
+                const appComp = String(app.companyId || "").replace(/_downloaded$/, "").trim().toLowerCase();
+                const compMatches = companyIdentifiers.some(id => id.replace(/_downloaded$/, "").trim().toLowerCase() === appComp);
+                if (compMatches) {
+                    const reqLang = String(languageCode || "").toLowerCase().trim();
+                    const appLang = String(app.languageCode || "").toLowerCase().trim();
+                    if (!reqLang || appLang === reqLang) {
                         app.status = "rejected";
                         app.reviewedAt = new Date();
                         app.reviewedBy = req.user._id;
@@ -2782,7 +2848,7 @@ router.post("/companies/:id/remove-contributor", async (req, res) => {
             user.languageApplications.push({
                 applicationType: "phrase",
                 companyId: company.name,
-                languageCode: (languageCode || "english").toLowerCase(),
+                languageCode: (languageCode || "english").toLowerCase().trim(),
                 status: "rejected",
                 appliedAt: new Date(),
                 reviewedAt: new Date(),
