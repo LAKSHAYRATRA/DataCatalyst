@@ -22,11 +22,13 @@ export default function ActiveCall({
 
     // Timer Logic
     useEffect(() => {
-        if (!callEndTime) return;
+        const targetEnd = (callEndTime && !isNaN(new Date(callEndTime).getTime()) && new Date(callEndTime).getTime() > Date.now())
+            ? new Date(callEndTime).getTime()
+            : Date.now() + 20 * 60 * 1000;
 
         const updateTimer = () => {
             const now = Date.now();
-            const remaining = Math.max(0, Math.ceil((callEndTime - now) / 1000));
+            const remaining = Math.max(0, Math.ceil((targetEnd - now) / 1000));
             setTimeRemaining(remaining);
         };
 
