@@ -85,7 +85,12 @@ export default function IntroRecording() {
 
     async function loadMics(autoSelect = false) {
         try {
-            const tmp = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, sampleRate: 48000, channelCount: 1 } });
+            let tmp;
+            try {
+                tmp = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: { ideal: 1 }, sampleRate: { ideal: 48000 } } });
+            } catch (e) {
+                tmp = await navigator.mediaDevices.getUserMedia({ audio: true });
+            }
             tmp.getTracks().forEach((t) => t.stop());
 
             const devices = await navigator.mediaDevices.enumerateDevices();

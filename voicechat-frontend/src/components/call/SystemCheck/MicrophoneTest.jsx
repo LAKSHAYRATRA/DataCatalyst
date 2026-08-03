@@ -86,16 +86,21 @@ export default function MicrophoneTest({ onSuccess }) {
   };
 
   const startStream = async () => {
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        echoCancellation: false,
-        noiseSuppression: false,
-        autoGainControl: false,
-        sampleRate: 48000,
-        channelCount: 1,
-        ...(selectedMicId ? { deviceId: { exact: selectedMicId } } : {}),
-      }
-    });
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: false,
+          noiseSuppression: false,
+          autoGainControl: false,
+          sampleRate: { ideal: 48000 },
+          channelCount: { ideal: 1 },
+          ...(selectedMicId ? { deviceId: { ideal: selectedMicId } } : {}),
+        }
+      });
+    } catch (e) {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    }
     streamRef.current = stream;
 
     const audioCtx = new AudioContext({ sampleRate: 48000 });
