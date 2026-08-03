@@ -207,24 +207,30 @@ export default function PhraseRecording() {
       }
 
       // Browser fallback path
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: false,
-          noiseSuppression: false,
-          autoGainControl: false,
-          googEchoCancellation: false,
-          googAutoGainControl: false,
-          googNoiseSuppression: false,
-          googHighpassFilter: false,
-          channelCount: 1,
-          sampleRate: 48000
-        }
-      });
+      let stream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: false,
+            noiseSuppression: false,
+            autoGainControl: false,
+            channelCount: { ideal: 1 },
+            sampleRate: { ideal: 48000 }
+          }
+        });
+      } catch (err) {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      }
       resetRecording();
 
       const track = stream.getAudioTracks()[0];
       const settings = track ? track.getSettings() : {};
       const trackSampleRate = settings.sampleRate || 48000;
+
+      if (trackSampleRate < 44100) {
+        stream.getTracks().forEach(t => t.stop());
+        throw new Error(`High quality microphone (44.1kHz or higher) required. Your microphone is running at ${trackSampleRate}Hz.`);
+      }
 
       const audioCtx = new AudioContext({ sampleRate: trackSampleRate });
       await audioCtx.audioWorklet.addModule("/pcm-worklet.js");
