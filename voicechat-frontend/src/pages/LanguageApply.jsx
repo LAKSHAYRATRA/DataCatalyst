@@ -4,7 +4,7 @@ import Nav from "../components/Nav.jsx";
 import { apiGet } from "../lib/api.js";
 import { encodeWAV } from "../utils/wavBuilder.js";
 
-const BACKEND = import.meta.env.VITE_BACKEND_URL || "http://localhost:3001";
+const BACKEND = import.meta.env.VITE_BACKEND_URL || (typeof window !== "undefined" && window.location.hostname !== "localhost" && window.location.hostname !== "127.0.0.1" ? "https://api.voclara.com" : "http://localhost:3001");
 const MAX_SEC = 120; // 2 minutes
 
 export default function LanguageApply() {

@@ -1,6 +1,6 @@
 import { clearToken } from "./auth.js";
 
-const BASE = import.meta.env.VITE_BACKEND_URL || "http://localhost:3001";
+const BASE = import.meta.env.VITE_BACKEND_URL || (typeof window !== "undefined" && window.location.hostname !== "localhost" && window.location.hostname !== "127.0.0.1" ? "https://api.voclara.com" : "http://localhost:3001");
 
 export async function apiFetch(path, options = {}) {
   const headers = new Headers(options.headers || {});

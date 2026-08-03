@@ -3,7 +3,7 @@ import AdminNav from "../components/AdminNav.jsx";
 import Swal from "sweetalert2";
 import { Sliders } from "lucide-react";
 
-const BASE = import.meta.env.VITE_BACKEND_URL || "http://localhost:3001";
+const BASE = import.meta.env.VITE_BACKEND_URL || (typeof window !== "undefined" && window.location.hostname !== "localhost" && window.location.hostname !== "127.0.0.1" ? "https://api.voclara.com" : "http://localhost:3001");
 
 async function apiFetch(path, opts = {}) {
     const res = await fetch(`${BASE}${path}`, { credentials: "include", ...opts });
