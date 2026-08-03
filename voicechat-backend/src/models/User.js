@@ -109,8 +109,10 @@ const userSchema = new mongoose.Schema(
         reviewedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
         reviewedAt: { type: Date, default: null },
         qcResult: { type: mongoose.Schema.Types.Mixed, default: null },
+        noiseGateDb: { type: Number, default: 0 }, // 0 = Disabled (RAW), -6, -10, -12, -15 dB
       },
     ],
+    noiseGateDb: { type: Number, default: 0 }, // Default noise gate setting for contributor
     
     // Speaker ID (e.g. spk_1, spk_2, ...)
     speaker_id: { type: String, unique: true, sparse: true, default: null },

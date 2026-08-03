@@ -217,7 +217,7 @@ export default function PhraseRecording() {
           googNoiseSuppression: false,
           googHighpassFilter: false,
           channelCount: 1,
-          sampleRate: { min: 48000, ideal: 96000 }
+          sampleRate: 48000
         }
       });
       resetRecording();
@@ -230,6 +230,15 @@ export default function PhraseRecording() {
       await audioCtx.audioWorklet.addModule("/pcm-worklet.js");
       const source = audioCtx.createMediaStreamSource(stream);
       const workletNode = new AudioWorkletNode(audioCtx, "pcm-processor");
+
+      // Pass assigned noise gate setting to worklet processor
+      const activeApp = approvedApps.find(a => {
+        const compMatch = !selectedCompanyId || String(a.companyId || "").toLowerCase().trim() === String(selectedCompanyId || "").toLowerCase().trim();
+        const langMatch = !selectedLang || String(a.languageCode || "").toLowerCase().trim() === String(selectedLang || "").toLowerCase().trim();
+        return compMatch && langMatch;
+      });
+      const assignedNoiseGateDb = activeApp?.noiseGateDb !== undefined ? activeApp.noiseGateDb : 0;
+      workletNode.port.postMessage({ type: "setNoiseGate", noiseGateDb: assignedNoiseGateDb });
 
       const gain = audioCtx.createGain();
       gain.gain.value = 0;

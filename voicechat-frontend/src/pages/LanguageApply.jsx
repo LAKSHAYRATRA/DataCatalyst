@@ -127,7 +127,7 @@ export default function LanguageApply() {
                      googNoiseSuppression: false,
                      googHighpassFilter: false,
                      channelCount: 1,
-                     sampleRate: { min: 48000, ideal: 96000 }
+                     sampleRate: 48000
                  }
              });
              streamRef.current = stream;
@@ -144,6 +144,9 @@ export default function LanguageApply() {
             const source = audioCtx.createMediaStreamSource(stream);
             const workletNode = new AudioWorkletNode(audioCtx, "pcm-processor");
             workletNodeRef.current = workletNode;
+
+            const assignedNoiseGateDb = user?.noiseGateDb !== undefined ? user.noiseGateDb : 0;
+            workletNode.port.postMessage({ type: "setNoiseGate", noiseGateDb: assignedNoiseGateDb });
             
             workletNode.port.onmessage = (e) => {
                 chunksRef.current.push(new Float32Array(e.data));

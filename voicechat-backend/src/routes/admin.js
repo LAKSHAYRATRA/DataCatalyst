@@ -2455,7 +2455,8 @@ function calculateDemographics(items) {
             locality: u.locality || "N/A",
             state: u.address?.state || "N/A",
             status: item.appStatus || "pending",
-            appliedAt: item.appliedAt || null
+            appliedAt: item.appliedAt || null,
+            noiseGateDb: item.noiseGateDb !== undefined ? item.noiseGateDb : (u.noiseGateDb || 0)
         };
 
         if (item.appStatus === "approved") {
@@ -2560,13 +2561,15 @@ router.get("/languages/:id/contributors-summary", async (req, res) => {
                 userItemMap.set(String(u._id), {
                     user: u,
                     appStatus,
-                    appliedAt: latestApp.appliedAt || u.createdAt
+                    appliedAt: latestApp.appliedAt || u.createdAt,
+                    noiseGateDb: latestApp.noiseGateDb !== undefined ? latestApp.noiseGateDb : (u.noiseGateDb || 0)
                 });
             } else if (userCallStatusMap.has(String(u._id))) {
                 userItemMap.set(String(u._id), {
                     user: u,
                     appStatus: "approved",
-                    appliedAt: u.createdAt
+                    appliedAt: u.createdAt,
+                    noiseGateDb: u.noiseGateDb || 0
                 });
             }
         }
@@ -2581,6 +2584,73 @@ router.get("/languages/:id/contributors-summary", async (req, res) => {
                 code: language.code
             },
             summary
+        });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// POST /api/admin/contributors/update-noise-gate
+router.post("/contributors/update-noise-gate", async (req, res) => {
+    try {
+        const { userId, applicationType, companyId, languageCode, noiseGateDb } = req.body;
+        if (!userId) {
+            return res.status(400).json({ error: "userId is required" });
+        }
+
+        const user = await User.findById(userId);
+        if (!user) {
+            return res.status(404).json({ error: "User not found" });
+        }
+
+        const rawVal = parseInt(noiseGateDb);
+        const gateValue = isNaN(rawVal) ? 0 : Math.min(0, Math.max(-60, rawVal));
+
+        // Update user top-level default
+        user.noiseGateDb = gateValue;
+
+        if (!user.languageApplications) {
+            user.languageApplications = [];
+        }
+
+        const type = applicationType || "phrase";
+        const reqLang = String(languageCode || "").toLowerCase().trim();
+
+        let updatedApp = false;
+        user.languageApplications.forEach(app => {
+            const appType = app.applicationType || "phrase";
+            if (appType !== type) return;
+
+            const appLang = String(app.languageCode || "").toLowerCase().trim();
+            if (reqLang && appLang && appLang !== reqLang) return;
+
+            if (type === "phrase" && companyId) {
+                const appComp = String(app.companyId || "").replace(/_downloaded$/, "").trim().toLowerCase();
+                const reqComp = String(companyId || "").replace(/_downloaded$/, "").trim().toLowerCase();
+                if (appComp && reqComp && appComp !== reqComp) return;
+            }
+
+            app.noiseGateDb = gateValue;
+            updatedApp = true;
+        });
+
+        if (!updatedApp && reqLang) {
+            user.languageApplications.push({
+                applicationType: type,
+                companyId: companyId || null,
+                languageCode: reqLang,
+                status: "approved",
+                noiseGateDb: gateValue,
+                appliedAt: new Date()
+            });
+        }
+
+        user.markModified("languageApplications");
+        await user.save();
+
+        res.json({
+            message: `Noise gate set to ${gateValue === 0 ? "RAW (0 dB)" : gateValue + " dB"} for ${user.firstname || user.username}.`,
+            noiseGateDb: gateValue
         });
     } catch (e) {
         res.status(500).json({ error: e.message });
@@ -2758,7 +2828,12 @@ router.get("/companies/:id/contributors-summary", async (req, res) => {
                 if (!languageMap.has(l)) {
                     languageMap.set(l, { code: l, name: app.languageCode || l, phrases: [], usersMap: new Map() });
                 }
-                languageMap.get(l).usersMap.set(String(u._id), { user: u, appStatus: app.status || "pending", appliedAt: app.appliedAt });
+                languageMap.get(l).usersMap.set(String(u._id), {
+                    user: u,
+                    appStatus: app.status || "pending",
+                    appliedAt: app.appliedAt,
+                    noiseGateDb: app.noiseGateDb !== undefined ? app.noiseGateDb : (u.noiseGateDb || 0)
+                });
             }
         }
 
@@ -2796,10 +2871,13 @@ router.get("/companies/:id/contributors-summary", async (req, res) => {
                     currentStatus = existing?.appStatus || matchingApp?.status || "pending";
                 }
 
+                const noiseVal = matchingApp?.noiseGateDb !== undefined ? matchingApp.noiseGateDb : (existing?.noiseGateDb !== undefined ? existing.noiseGateDb : (u.noiseGateDb || 0));
+
                 langObj.usersMap.set(String(u._id), {
                     user: u,
                     appStatus: currentStatus,
-                    appliedAt: existing?.appliedAt || matchingApp?.appliedAt || p.recordedAt || u.createdAt
+                    appliedAt: existing?.appliedAt || matchingApp?.appliedAt || p.recordedAt || u.createdAt,
+                    noiseGateDb: noiseVal
                 });
             }
         }

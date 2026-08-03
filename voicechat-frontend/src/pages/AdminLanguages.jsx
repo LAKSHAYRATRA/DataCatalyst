@@ -149,6 +149,40 @@ export default function AdminLanguages() {
         }
     }
 
+    async function handleUpdateCallNoiseGate(userObj, noiseGateDb) {
+        if (!summaryModalLang) return;
+        try {
+            await postJson("/api/admin/contributors/update-noise-gate", {
+                userId: userObj._id,
+                applicationType: "call",
+                languageCode: summaryModalLang.code || summaryModalLang.name,
+                noiseGateDb: parseInt(noiseGateDb) || 0
+            });
+            const Toast = Swal.mixin({
+                toast: true,
+                position: "top-end",
+                showConfirmButton: false,
+                timer: 2000,
+                timerProgressBar: true,
+                background: "#1f2937",
+                color: "#fff"
+            });
+            Toast.fire({
+                icon: "success",
+                title: `Noise gate updated to ${noiseGateDb === "0" || !noiseGateDb ? "RAW (0 dB)" : noiseGateDb + " dB"}`
+            });
+            fetchSummary(summaryModalLang, activeModalType);
+        } catch (e) {
+            Swal.fire({
+                title: "Error",
+                text: e.message,
+                icon: "error",
+                background: "#1f2937",
+                color: "#fff"
+            });
+        }
+    }
+
     useEffect(() => { load(); }, []);
 
     async function load() {
@@ -712,6 +746,7 @@ export default function AdminLanguages() {
                                                                 <th className="px-4 py-2.5 text-left">Gender / Age</th>
                                                                 <th className="px-4 py-2.5 text-left">State / Locality</th>
                                                                 <th className="px-4 py-2.5 text-left">Status</th>
+                                                                <th className="px-4 py-2.5 text-left">Noise Gate (dB)</th>
                                                                 <th className="px-4 py-2.5 text-right">Actions</th>
                                                             </tr>
                                                         </thead>
@@ -738,6 +773,20 @@ export default function AdminLanguages() {
                                                                         ) : (
                                                                             <span className="px-2 py-0.5 bg-amber-900/60 text-amber-300 text-[10px] font-bold rounded-full">Pending</span>
                                                                         )}
+                                                                    </td>
+                                                                    <td className="px-4 py-2.5">
+                                                                        <select
+                                                                            value={u.noiseGateDb !== undefined ? String(u.noiseGateDb) : "0"}
+                                                                            onChange={(e) => handleUpdateCallNoiseGate(u, e.target.value)}
+                                                                            className="bg-neutral-800 border border-neutral-600 text-warning-400 font-semibold text-[11px] rounded-lg px-2 py-1 focus:outline-none focus:ring-1 focus:ring-warning-500 cursor-pointer"
+                                                                        >
+                                                                            <option value="0">0 dB (RAW)</option>
+                                                                            <option value="-6">-6 dB</option>
+                                                                            <option value="-10">-10 dB</option>
+                                                                            <option value="-12">-12 dB</option>
+                                                                            <option value="-15">-15 dB</option>
+                                                                            <option value="-18">-18 dB</option>
+                                                                        </select>
                                                                     </td>
                                                                     <td className="px-4 py-2.5 text-right">
                                                                         {usersTab === "approved" && (
