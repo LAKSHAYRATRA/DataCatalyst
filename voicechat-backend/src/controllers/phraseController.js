@@ -551,7 +551,8 @@ export async function submitPhraseRecording(req, res) {
  */
 export async function getQaQueue(req, res) {
   try {
-    const query = { status: "recorded" };
+    const requestedStatus = req.query.status || "recorded";
+    const query = { status: requestedStatus };
     if (req.user && req.user.isQA && !req.user.isAdmin) {
       const allowedLangs = Array.isArray(req.user.qaLanguageCodes) && req.user.qaLanguageCodes.length > 0 
           ? req.user.qaLanguageCodes 
@@ -560,8 +561,8 @@ export async function getQaQueue(req, res) {
     }
 
     const phrases = await Phrase.find(query)
-      .populate("contributorId", "firstname lastname username")
-      .sort({ recordedAt: 1 })
+      .populate("contributorId", "firstname lastname username email speaker_id")
+      .sort({ recordedAt: -1, createdAt: -1 })
       .lean();
 
     // Map companyId to friendly projectName dynamically
@@ -1149,5 +1150,60 @@ export async function downloadSinglePhraseZip(req, res) {
   } catch (error) {
     console.error("downloadSinglePhraseZip error:", error);
     if (!res.headersSent) res.status(500).json({ error: error.message });
+  }
+}
+
+/**
+ * POST /api/phrases/admin/delete/:phraseId
+ * Admin option to delete phrase or recording:
+ * - mode: 'delete-whole' -> Permanently deletes phrase document and audio. Phrase is removed from workloads.
+ * - mode: 'delete-recording' -> Deletes audio and resets phrase to status: 'pending', returning it to workloads.
+ */
+export async function deletePhraseAdmin(req, res) {
+  try {
+    const { phraseId } = req.params;
+    const { mode } = req.body; // 'delete-whole' | 'delete-recording'
+
+    const phrase = await Phrase.findById(phraseId);
+    if (!phrase) {
+      return res.status(404).json({ error: "Phrase not found" });
+    }
+
+    // 1. Delete S3 audio file if present
+    if (phrase.audioFile) {
+      try {
+        await s3Client.send(new DeleteObjectCommand({
+          Bucket: BUCKET_NAME,
+          Key: phrase.audioFile
+        }));
+      } catch (s3err) {
+        console.error("Failed to delete S3 audio file during phrase deletion:", s3err);
+      }
+    }
+
+    if (mode === "delete-whole") {
+      await Phrase.findByIdAndDelete(phraseId);
+      return res.json({ success: true, mode: "delete-whole", message: "Phrase deleted permanently from workloads." });
+    } else {
+      // Default: delete-recording -> Reset phrase back to pending
+      phrase.status = "pending";
+      phrase.contributorId = null;
+      phrase.speaker_id = null;
+      phrase.audioFile = null;
+      phrase.duration = 0;
+      phrase.recordedAt = null;
+      phrase.reviewedAt = null;
+      phrase.qaId = null;
+      phrase.qaComment = null;
+      phrase.qcResult = null;
+      phrase.lockedAt = null;
+      phrase.lockedBy = null;
+
+      await phrase.save();
+      return res.json({ success: true, mode: "delete-recording", message: "Recording removed. Phrase returned to workloads." });
+    }
+  } catch (error) {
+    console.error("deletePhraseAdmin error:", error);
+    res.status(500).json({ error: error.message });
   }
 }

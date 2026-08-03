@@ -20,6 +20,7 @@ import {
   approveRejectedPhrase,
   analyzePhrase,
   downloadSinglePhraseZip,
+  deletePhraseAdmin,
 } from "../controllers/phraseController.js";
 
 const JWT_SECRET = process.env.JWT_SECRET;
@@ -70,6 +71,7 @@ router.post("/admin/upload", requireAuth(JWT_SECRET), requireAdmin, uploadPhrase
 router.post("/admin/approve-rejected", requireAuth(JWT_SECRET), requireAdmin, approveRejectedPhrase);
 router.get("/admin/all", requireAuth(JWT_SECRET), requireAdmin, getAllPhrasesAdmin);
 router.get("/admin/download-zip/:phraseId", requireAuth(JWT_SECRET), requireAdmin, downloadSinglePhraseZip);
+router.post("/admin/delete/:phraseId", requireAuth(JWT_SECRET), requireAdmin, deletePhraseAdmin);
 
 /* -------------------------------------------------------------------------- */
 /*                                   QA Routes                                */
