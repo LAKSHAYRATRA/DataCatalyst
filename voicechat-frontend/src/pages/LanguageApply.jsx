@@ -30,6 +30,7 @@ export default function LanguageApply() {
     const [pageLoading, setPageLoading] = useState(true);
     const [error, setError] = useState("");
     const [success, setSuccess] = useState("");
+    const [userInfo, setUserInfo] = useState(null);
 
     const audioCtxRef = useRef(null);
     const workletNodeRef = useRef(null);
@@ -43,10 +44,12 @@ export default function LanguageApply() {
         setPageLoading(true);
         setError("");
         try {
+            const meRes = await apiGet("/api/auth/me").catch(() => null);
             const companiesRes = await apiGet("/api/admin/companies?forApply=true").catch(() => ({ companies: [] }));
             const appsRes = await apiGet("/api/language-applications/my").catch(() => ({ applications: [] }));
             const langsRes = await apiGet("/api/languages?type=call").catch(() => ({ languages: [] }));
             
+            if (meRes?.user) setUserInfo(meRes.user);
             setCompanies(companiesRes?.companies || []);
             setMyApps(appsRes?.applications || []);
             setGlobalLanguages(langsRes?.languages || []);
@@ -155,7 +158,7 @@ export default function LanguageApply() {
             const workletNode = new AudioWorkletNode(audioCtx, "pcm-processor");
             workletNodeRef.current = workletNode;
 
-            const assignedNoiseGateDb = user?.noiseGateDb !== undefined ? user.noiseGateDb : 0;
+            const assignedNoiseGateDb = userInfo?.noiseGateDb !== undefined ? userInfo.noiseGateDb : 0;
             workletNode.port.postMessage({ type: "setNoiseGate", noiseGateDb: assignedNoiseGateDb });
             
             workletNode.port.onmessage = (e) => {
