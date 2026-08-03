@@ -2606,15 +2606,29 @@ router.post("/contributors/update-noise-gate", async (req, res) => {
         const rawVal = parseInt(noiseGateDb);
         const gateValue = isNaN(rawVal) ? 0 : Math.min(0, Math.max(-60, rawVal));
 
-        // Update user top-level default
-        user.noiseGateDb = gateValue;
-
         if (!user.languageApplications) {
             user.languageApplications = [];
         }
 
         const type = applicationType || "phrase";
         const reqLang = String(languageCode || "").toLowerCase().trim();
+
+        // Resolve company identifiers if companyId is provided
+        let companyIdentifiers = [];
+        if (companyId) {
+            let company = await Company.findById(companyId).lean();
+            if (!company) {
+                company = await Company.findOne({ name: { $regex: new RegExp(`^${companyId}$`, "i") } }).lean();
+            }
+            if (company) {
+                const cName = company.name;
+                const pName = company.projectName || company.name;
+                const bName = cName.replace(/_downloaded$/, "").trim();
+                companyIdentifiers = [cName, pName, bName, `${bName}_downloaded`, String(company._id)];
+            } else {
+                companyIdentifiers = [companyId, String(companyId).replace(/_downloaded$/, "").trim()];
+            }
+        }
 
         let updatedApp = false;
         user.languageApplications.forEach(app => {
@@ -2624,10 +2638,10 @@ router.post("/contributors/update-noise-gate", async (req, res) => {
             const appLang = String(app.languageCode || "").toLowerCase().trim();
             if (reqLang && appLang && appLang !== reqLang) return;
 
-            if (type === "phrase" && companyId) {
+            if (type === "phrase" && companyIdentifiers.length > 0) {
                 const appComp = String(app.companyId || "").replace(/_downloaded$/, "").trim().toLowerCase();
-                const reqComp = String(companyId || "").replace(/_downloaded$/, "").trim().toLowerCase();
-                if (appComp && reqComp && appComp !== reqComp) return;
+                const matchesComp = companyIdentifiers.some(id => id.replace(/_downloaded$/, "").trim().toLowerCase() === appComp);
+                if (!matchesComp) return;
             }
 
             app.noiseGateDb = gateValue;

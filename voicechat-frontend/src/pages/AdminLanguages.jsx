@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import AdminNav from "../components/AdminNav.jsx";
 import Swal from "sweetalert2";
+import { Sliders } from "lucide-react";
 
 const BASE = import.meta.env.VITE_BACKEND_URL || "http://localhost:3001";
 
@@ -167,9 +168,10 @@ export default function AdminLanguages() {
                 background: "#1f2937",
                 color: "#fff"
             });
+            const valNum = parseInt(noiseGateDb) || 0;
             Toast.fire({
                 icon: "success",
-                title: `Noise gate updated to ${noiseGateDb === "0" || !noiseGateDb ? "RAW (0 dB)" : noiseGateDb + " dB"}`
+                title: `Noise gate updated to ${valNum === 0 ? "RAW (0 dB)" : valNum + " dB"}`
             });
             fetchSummary(summaryModalLang, activeModalType);
         } catch (e) {
@@ -180,6 +182,52 @@ export default function AdminLanguages() {
                 background: "#1f2937",
                 color: "#fff"
             });
+        }
+    }
+
+    async function openSetCallNoiseGateModal(userObj) {
+        if (!summaryModalLang) return;
+        const currentVal = userObj.noiseGateDb !== undefined ? userObj.noiseGateDb : 0;
+        const langName = summaryModalLang.name || summaryModalLang.code || "Call Language";
+
+        const { value: inputDb } = await Swal.fire({
+            title: "Set Custom Noise Gate",
+            html: `
+                <div class="text-left text-xs text-neutral-300 mb-3 space-y-1.5 bg-neutral-800 p-3 rounded-lg border border-neutral-700">
+                    <div><strong class="text-white">Contributor:</strong> ${userObj.firstname} ${userObj.lastname} (@${userObj.username})</div>
+                    <div><strong class="text-warning-400">Call Language:</strong> ${langName}</div>
+                    <div class="text-neutral-400 text-[11px] pt-1.5 border-t border-neutral-700/60 mt-2">
+                        Enter custom noise gate attenuation in dB (e.g. <code>-12</code>, <code>-10</code>, <code>-6</code>, or <code>0</code> for RAW unedited audio). This setting applies <strong>ONLY</strong> to this contributor for <strong>Call Language (${langName})</strong>.
+                    </div>
+                </div>
+            `,
+            input: "text",
+            inputValue: String(currentVal),
+            inputPlaceholder: "Enter dB e.g. -12 or 0",
+            showCancelButton: true,
+            confirmButtonText: "Apply Noise Gate",
+            cancelButtonText: "Cancel",
+            confirmButtonColor: "#ea580c",
+            cancelButtonColor: "#475569",
+            background: "#1f2937",
+            color: "#fff",
+            inputValidator: (value) => {
+                if (value === null || value === undefined || String(value).trim() === "") {
+                    return "Please enter a dB number (e.g. -12 or 0)";
+                }
+                const num = parseInt(value);
+                if (isNaN(num)) {
+                    return "Please enter a valid integer (e.g. -12, -10, -6, 0)";
+                }
+                if (num > 0 || num < -60) {
+                    return "dB value must be between 0 (RAW) and -60 dB";
+                }
+                return null;
+            }
+        });
+
+        if (inputDb !== undefined && inputDb !== null) {
+            handleUpdateCallNoiseGate(userObj, inputDb);
         }
     }
 
@@ -775,18 +823,22 @@ export default function AdminLanguages() {
                                                                         )}
                                                                     </td>
                                                                     <td className="px-4 py-2.5">
-                                                                        <select
-                                                                            value={u.noiseGateDb !== undefined ? String(u.noiseGateDb) : "0"}
-                                                                            onChange={(e) => handleUpdateCallNoiseGate(u, e.target.value)}
-                                                                            className="bg-neutral-800 border border-neutral-600 text-warning-400 font-semibold text-[11px] rounded-lg px-2 py-1 focus:outline-none focus:ring-1 focus:ring-warning-500 cursor-pointer"
-                                                                        >
-                                                                            <option value="0">0 dB (RAW)</option>
-                                                                            <option value="-6">-6 dB</option>
-                                                                            <option value="-10">-10 dB</option>
-                                                                            <option value="-12">-12 dB</option>
-                                                                            <option value="-15">-15 dB</option>
-                                                                            <option value="-18">-18 dB</option>
-                                                                        </select>
+                                                                        <div className="flex items-center gap-2">
+                                                                            <span className={`px-2 py-0.5 text-[11px] font-mono font-bold rounded-md border ${
+                                                                                (u.noiseGateDb || 0) === 0 
+                                                                                    ? "bg-neutral-800 text-neutral-300 border-neutral-700" 
+                                                                                    : "bg-warning-950/80 text-warning-400 border-warning-700/60"
+                                                                            }`}>
+                                                                                {(u.noiseGateDb || 0) === 0 ? "0 dB (RAW)" : `${u.noiseGateDb} dB`}
+                                                                            </span>
+                                                                            <button
+                                                                                onClick={() => openSetCallNoiseGateModal(u)}
+                                                                                className="px-2 py-1 bg-neutral-700 hover:bg-neutral-600 text-warning-400 hover:text-warning-300 text-[11px] font-semibold rounded-lg transition-colors border border-neutral-600 flex items-center gap-1 shadow-sm"
+                                                                            >
+                                                                                <Sliders className="w-3 h-3" />
+                                                                                Set Noise Gate
+                                                                            </button>
+                                                                        </div>
                                                                     </td>
                                                                     <td className="px-4 py-2.5 text-right">
                                                                         {usersTab === "approved" && (
