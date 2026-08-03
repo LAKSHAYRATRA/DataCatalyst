@@ -10,10 +10,11 @@ import { signToken } from "../auth.js";
 const JWT_SECRET = process.env.JWT_SECRET || "";
 
 function cookieOptions() {
+  const isLocalhost = process.env.NODE_ENV === "development";
   return {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+    secure: !isLocalhost,
+    sameSite: isLocalhost ? "lax" : "none",
     maxAge: 7 * 24 * 60 * 60 * 1000,
     path: "/",
   };
@@ -246,7 +247,7 @@ export async function loginInitiate(req, res) {
   const user = await User.findOne({ email });
   if (!user) return res.status(401).json({ error: "invalid_credentials" });
 
-  const ok = await bcrypt.compare(password, user.passwordHash);
+  const ok = await bcrypt.compare(password, user.passwordHash || "");
   if (!ok) return res.status(401).json({ error: "invalid_credentials" });
 
   const recent = await OtpCode.findOne({
@@ -290,7 +291,7 @@ export function makeLogin(io) {
     const user = await User.findOne({ email });
     if (!user) return res.status(401).json({ error: "invalid_credentials" });
 
-    const ok = await bcrypt.compare(password, user.passwordHash);
+    const ok = await bcrypt.compare(password, user.passwordHash || "");
     if (!ok) return res.status(401).json({ error: "invalid_credentials" });
 
     const otp = await OtpCode.findOne({ email, type: "login", used: false })
