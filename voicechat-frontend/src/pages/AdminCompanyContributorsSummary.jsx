@@ -14,7 +14,7 @@ import {
   Clock
 } from "lucide-react";
 import Swal from "sweetalert2";
-import { apiGet } from "../lib/api.js";
+import { apiGet, apiPostJson } from "../lib/api.js";
 
 export default function AdminCompanyContributorsSummary() {
   const { id } = useParams();
@@ -50,6 +50,46 @@ export default function AdminCompanyContributorsSummary() {
       });
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleRemoveContributor(userObj) {
+    const compName = company ? (company.projectName || company.name) : "this company";
+    const result = await Swal.fire({
+      title: "Remove Contributor?",
+      text: `Are you sure you want to remove ${userObj.firstname || userObj.username} from doing phrases for ${compName}? Doing so will hide all projects for this company from this contributor and prevent phrase access.`,
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonColor: "#dc2626",
+      cancelButtonColor: "#475569",
+      confirmButtonText: "Yes, Remove Contributor",
+      background: "#1f2937",
+      color: "#fff"
+    });
+
+    if (result.isConfirmed) {
+      try {
+        await apiPostJson(`/api/admin/companies/${id}/remove-contributor`, {
+          userId: userObj._id,
+          languageCode: selectedLangCode
+        });
+        Swal.fire({
+          title: "Removed!",
+          text: `${userObj.firstname || userObj.username} has been removed from ${compName}.`,
+          icon: "success",
+          background: "#1f2937",
+          color: "#fff"
+        });
+        fetchData();
+      } catch (e) {
+        Swal.fire({
+          title: "Error",
+          text: e.message,
+          icon: "error",
+          background: "#1f2937",
+          color: "#fff"
+        });
+      }
     }
   }
 
@@ -353,6 +393,7 @@ export default function AdminCompanyContributorsSummary() {
                                 <th className="px-4 py-2.5 text-left">Gender / Age</th>
                                 <th className="px-4 py-2.5 text-left">State / Locality</th>
                                 <th className="px-4 py-2.5 text-left">Status</th>
+                                <th className="px-4 py-2.5 text-right">Actions</th>
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-neutral-700/80">
@@ -375,6 +416,16 @@ export default function AdminCompanyContributorsSummary() {
                                       <span className="px-2 py-0.5 bg-emerald-900/60 text-emerald-300 text-[10px] font-bold rounded-full">Approved</span>
                                     ) : (
                                       <span className="px-2 py-0.5 bg-amber-900/60 text-amber-300 text-[10px] font-bold rounded-full">Pending</span>
+                                    )}
+                                  </td>
+                                  <td className="px-4 py-2.5 text-right">
+                                    {userTab === "approved" && (
+                                      <button
+                                        onClick={() => handleRemoveContributor(u)}
+                                        className="px-2.5 py-1 bg-red-600/90 hover:bg-red-600 text-white text-[11px] font-bold rounded-lg transition-colors shadow-sm whitespace-nowrap"
+                                      >
+                                        Remove Contributor
+                                      </button>
                                     )}
                                   </td>
                                 </tr>

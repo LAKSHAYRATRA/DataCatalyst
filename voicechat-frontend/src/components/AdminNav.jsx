@@ -50,7 +50,7 @@ export default function AdminNav() {
         const path = location.pathname;
         setOpenMenus({
             calls: ['/admin/calls', '/admin/topics', '/admin/qa', '/admin/languages', '/admin/call-apps'].includes(path),
-            users: ['/admin/users', '/admin/payouts', '/admin/pan-verification', '/admin/agreements'].some(p => path.startsWith(p)),
+            users: ['/admin/users', '/admin/payouts', '/admin/finances', '/admin/pan-verification', '/admin/agreements'].some(p => path.startsWith(p)),
             phrases: ['/admin/qaphrase', '/admin/phrases', '/admin/language-apps', '/admin/projects', '/admin/companies', '/admin/phrases/downloads'].includes(path)
         });
     }, [location.pathname]);
@@ -204,8 +204,12 @@ export default function AdminNav() {
                                                 <span>Users</span>
                                             </Link>
                                             <Link to="/admin/payouts" onClick={() => setIsMobileMenuOpen(false)}
-                                                className={`flex items-center px-3 py-2 rounded-lg text-xs font-semibold transition-all ${isActive('/admin/payouts') || location.pathname.startsWith('/admin/payouts/') ? 'bg-neutral-700 text-warning-400' : 'text-neutral-400 hover:text-white'}`}>
+                                                className={`flex items-center px-3 py-2 rounded-lg text-xs font-semibold transition-all ${isActive('/admin/payouts') && !location.pathname.startsWith('/admin/payouts/finances') ? 'bg-neutral-700 text-warning-400' : 'text-neutral-400 hover:text-white'}`}>
                                                 <span>Payouts</span>
+                                            </Link>
+                                            <Link to="/admin/finances" onClick={() => setIsMobileMenuOpen(false)}
+                                                className={`flex items-center px-3 py-2 rounded-lg text-xs font-semibold transition-all ${isActive('/admin/finances') ? 'bg-neutral-700 text-warning-400' : 'text-neutral-400 hover:text-white'}`}>
+                                                <span>Finances</span>
                                             </Link>
                                             <Link to="/admin/pan-verification" onClick={() => setIsMobileMenuOpen(false)}
                                                 className={`flex items-center px-3 py-2 rounded-lg text-xs font-semibold transition-all ${isActive('/admin/pan-verification') ? 'bg-neutral-700 text-warning-400' : 'text-neutral-400 hover:text-white'}`}>

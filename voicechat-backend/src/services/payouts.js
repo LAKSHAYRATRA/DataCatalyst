@@ -115,7 +115,7 @@ async function loadUsers(userIds) {
   const filter = { isAdmin: false, isQA: false };
   if (userIds?.length) filter._id = { $in: userIds };
   return User.find(filter)
-    .select("firstname lastname username email upiId isAdmin isQA")
+    .select("firstname lastname username email upiId speaker_id isAdmin isQA")
     .sort({ firstname: 1, lastname: 1, email: 1 })
     .lean();
 }
@@ -152,10 +152,11 @@ export async function getPayoutOverview(userIds = null) {
   const users = await loadUsers(userIds);
   const validUsers = users.filter(isRegularUser);
   if (validUsers.length === 0) {
-    return { summaries: [], callsByUserId: {}, phrasesByUserId: {}, paymentsByUserId: {} };
+    return { summaries: [], callsByUserId: {}, phrasesByUserId: {}, paymentsByUserId: {}, userMap: {} };
   }
 
   const ids = validUsers.map((user) => String(user._id));
+  const userMap = Object.fromEntries(validUsers.map(u => [String(u._id), u]));
   const [calls, payments, phrases, langs, projects, companies] = await Promise.all([
     loadCallsForUsers(ids),
     loadPaymentsForUsers(ids),
@@ -211,6 +212,8 @@ export async function getPayoutOverview(userIds = null) {
         text: phrase.text,
         language: phrase.language,
         status: phrase.status,
+        companyId: phrase.companyId || null,
+        projectName: phrase.projectName || null,
         duration: phrase.duration || 0,
         recordedAt: phrase.recordedAt,
         payoutUsd: roundCurrency(phrasePayout)
@@ -244,7 +247,7 @@ export async function getPayoutOverview(userIds = null) {
     phrasesByUserId[String(user._id)] || [], 
     paymentsByUserId[String(user._id)] || []
   ));
-  return { summaries, callsByUserId, phrasesByUserId, paymentsByUserId };
+  return { summaries, callsByUserId, phrasesByUserId, paymentsByUserId, userMap };
 }
 
 export async function getSingleUserPayout(userId) {
@@ -259,3 +262,164 @@ export async function getSingleUserPayout(userId) {
     payments: paymentsByUserId[normalizedUserId] || [],
   };
 }
+
+export async function getFinancesOverview() {
+  const { summaries, callsByUserId, phrasesByUserId, userMap } = await getPayoutOverview();
+  const companies = await Company.find({}).lean();
+  const projects = await Project.find({}).lean();
+
+  const companyMap = new Map();
+  for (const c of companies) {
+    companyMap.set(c.name, c);
+    companyMap.set(c.name.replace("_downloaded", ""), c);
+  }
+
+  const overall = {
+    totalPendingPayoutUsd: 0,
+    totalEarnedUsd: 0,
+    totalPaidOutUsd: 0,
+    totalContributorsCount: summaries.length,
+    pendingContributorsCount: 0
+  };
+
+  for (const s of summaries) {
+    overall.totalPendingPayoutUsd += s.totalRemainingPayoutUsd;
+    overall.totalEarnedUsd += s.totalMoneyMadeUsd;
+    overall.totalPaidOutUsd += s.totalPaidOutUsd;
+    if (s.totalRemainingPayoutUsd > 0) {
+      overall.pendingContributorsCount += 1;
+    }
+  }
+
+  overall.totalPendingPayoutUsd = roundCurrency(overall.totalPendingPayoutUsd);
+  overall.totalEarnedUsd = roundCurrency(overall.totalEarnedUsd);
+  overall.totalPaidOutUsd = roundCurrency(overall.totalPaidOutUsd);
+
+  // Group by project / company
+  const projectMap = new Map(); // key -> project object
+
+  const getOrCreateProject = (key, defaultTitle, defaultHourly = 0, type = "phrase") => {
+    if (!projectMap.has(key)) {
+      projectMap.set(key, {
+        id: key,
+        displayName: defaultTitle,
+        type,
+        hourlyPayout: defaultHourly,
+        approvedCount: 0,
+        totalEarnedUsd: 0,
+        totalPendingUsd: 0,
+        contributorsMap: new Map() // userId -> contribObj
+      });
+    }
+    return projectMap.get(key);
+  };
+
+  // 1. Process Phrases per user
+  for (const [userId, userPhrases] of Object.entries(phrasesByUserId)) {
+    const summary = summaries.find(s => String(s.user.id) === String(userId));
+    const userDoc = userMap[userId] || summary?.user;
+
+    for (const p of userPhrases) {
+      if (p.status !== "approved") continue;
+
+      const compKey = p.companyId ? String(p.companyId).replace("_downloaded", "").trim() : (p.projectName || "General Phrases");
+      const compDoc = companyMap.get(compKey);
+      const displayName = compDoc?.projectName || compDoc?.name || p.projectName || compKey;
+      const hourlyPayout = compDoc?.hourlyPayout || 0;
+
+      const proj = getOrCreateProject(compKey, displayName, hourlyPayout, "phrase");
+      proj.approvedCount += 1;
+      proj.totalEarnedUsd += p.payoutUsd;
+
+      if (!proj.contributorsMap.has(userId)) {
+        proj.contributorsMap.set(userId, {
+          id: userId,
+          name: `${userDoc?.firstname || summary?.user?.firstname || ""} ${userDoc?.lastname || summary?.user?.lastname || ""}`.trim() || userDoc?.username || summary?.user?.username,
+          username: userDoc?.username || summary?.user?.username,
+          email: userDoc?.email || summary?.user?.email,
+          speaker_id: userDoc?.speaker_id || null,
+          upiId: userDoc?.upiId || null,
+          approvedPhrases: 0,
+          approvedCalls: 0,
+          earnedUsd: 0,
+          userTotalPendingUsd: summary?.totalRemainingPayoutUsd || 0
+        });
+      }
+      const cObj = proj.contributorsMap.get(userId);
+      cObj.approvedPhrases += 1;
+      cObj.earnedUsd += p.payoutUsd;
+    }
+  }
+
+  // 2. Process Calls per user
+  for (const [userId, userCalls] of Object.entries(callsByUserId)) {
+    const summary = summaries.find(s => String(s.user.id) === String(userId));
+    const userDoc = userMap[userId] || summary?.user;
+
+    for (const c of userCalls) {
+      if (c.status !== "approved") continue;
+
+      const projKey = "Calls & Audio Conversations";
+      const proj = getOrCreateProject(projKey, "Call Conversations", 0, "call");
+      proj.approvedCount += 1;
+      proj.totalEarnedUsd += c.payoutUsd;
+
+      if (!proj.contributorsMap.has(userId)) {
+        proj.contributorsMap.set(userId, {
+          id: userId,
+          name: `${userDoc?.firstname || summary?.user?.firstname || ""} ${userDoc?.lastname || summary?.user?.lastname || ""}`.trim() || userDoc?.username || summary?.user?.username,
+          username: userDoc?.username || summary?.user?.username,
+          email: userDoc?.email || summary?.user?.email,
+          speaker_id: userDoc?.speaker_id || null,
+          upiId: userDoc?.upiId || null,
+          approvedPhrases: 0,
+          approvedCalls: 0,
+          earnedUsd: 0,
+          userTotalPendingUsd: summary?.totalRemainingPayoutUsd || 0
+        });
+      }
+      const cObj = proj.contributorsMap.get(userId);
+      cObj.approvedCalls += 1;
+      cObj.earnedUsd += c.payoutUsd;
+    }
+  }
+
+  // Finalize project stats
+  const projectList = [];
+  for (const proj of projectMap.values()) {
+    proj.totalEarnedUsd = roundCurrency(proj.totalEarnedUsd);
+    
+    const contribList = Array.from(proj.contributorsMap.values()).map(c => {
+      c.earnedUsd = roundCurrency(c.earnedUsd);
+      return c;
+    });
+
+    // Project pending calculation: proportional ratio or user remaining payout
+    proj.totalPendingUsd = proj.totalEarnedUsd;
+    proj.contributorsCount = contribList.length;
+    proj.contributors = contribList.sort((a, b) => b.earnedUsd - a.earnedUsd);
+    projectList.push(proj);
+  }
+
+  projectList.sort((a, b) => b.totalEarnedUsd - a.totalEarnedUsd);
+
+  // Format contributors list with upiId and speaker_id
+  const contributorsList = summaries.map(s => {
+    const u = userMap[s.user.id];
+    return {
+      ...s,
+      user: {
+        ...s.user,
+        speaker_id: u?.speaker_id || null,
+        upiId: u?.upiId || null
+      }
+    };
+  }).sort((a, b) => b.totalRemainingPayoutUsd - a.totalRemainingPayoutUsd);
+
+  return {
+    overall,
+    projects: projectList,
+    contributors: contributorsList
+  };
+}
+

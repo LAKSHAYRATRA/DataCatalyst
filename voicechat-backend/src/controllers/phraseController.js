@@ -246,10 +246,23 @@ export async function getAvailablePhrase(req, res) {
       return (user.languageApplications || []).some(a => 
           (a.applicationType === "phrase" || !a.applicationType) && 
           a.status === "approved" && 
-          String(a.companyId || "").trim().toLowerCase() === String(compId).trim().toLowerCase() &&
+          String(a.companyId || "").replace(/_downloaded$/, "").trim().toLowerCase() === String(compId).replace(/_downloaded$/, "").trim().toLowerCase() &&
           String(a.languageCode || "").trim().toLowerCase() === reqLang
       );
     };
+
+    const isAppRejected = (compId) => {
+      return (user.languageApplications || []).some(a => 
+          (a.applicationType === "phrase" || !a.applicationType) && 
+          (a.status === "rejected" || a.status === "blocked") && 
+          String(a.companyId || "").replace(/_downloaded$/, "").trim().toLowerCase() === String(compId).replace(/_downloaded$/, "").trim().toLowerCase()
+      );
+    };
+
+    const rejectedCompanyIds = (user.languageApplications || [])
+      .filter(a => (a.applicationType === "phrase" || !a.applicationType) && (a.status === "rejected" || a.status === "blocked"))
+      .map(a => String(a.companyId || "").replace(/_downloaded$/, "").trim().toLowerCase())
+      .filter(Boolean);
 
     // Evaluate limits for ALL registered companies for the requested language
     for (const comp of companies) {
@@ -266,7 +279,7 @@ export async function getAvailablePhrase(req, res) {
       }
     }
 
-    const blockedCompanies = [...new Set([...maxedOutCompanies, ...waitingTestCompanies])];
+    const blockedCompanies = [...new Set([...maxedOutCompanies, ...waitingTestCompanies, ...rejectedCompanyIds])];
 
     const activeCompanies = await Phrase.aggregate([
       { $match: { status: { $in: ["pending", "locked", "rejected"] } } },
@@ -279,16 +292,22 @@ export async function getAvailablePhrase(req, res) {
       return res.json({ phrase: null, message: "No phrases available (project is currently inactive)." });
     }
 
+    if (baseQuery.companyId && isAppRejected(baseQuery.companyId)) {
+      return res.json({ phrase: null, message: "You are not approved for this company's phrases." });
+    }
+
     if (baseQuery.companyId && blockedCompanies.includes(baseQuery.companyId)) {
       if (maxedOutCompanies.includes(baseQuery.companyId)) {
         return res.json({ phrase: null, message: "Project/Language limit reached, try some other project/Language" });
+      } else if (rejectedCompanyIds.includes(String(baseQuery.companyId).toLowerCase())) {
+        return res.json({ phrase: null, message: "You are not approved for this company's phrases." });
       } else {
         return res.json({ phrase: null, message: `Your test phrase for company ${baseQuery.companyId} is currently under review by QA. Please wait for approval before contributing further.` });
       }
     } else {
       if (baseQuery.companyId) {
         if (Array.isArray(baseQuery.companyId.$nin)) {
-          baseQuery.companyId = { $in: activeNames, $nin: baseQuery.companyId.$nin };
+          baseQuery.companyId = { $in: activeNames, $nin: [...baseQuery.companyId.$nin, ...rejectedCompanyIds] };
         } else {
           baseQuery.companyId = { $in: activeNames };
         }

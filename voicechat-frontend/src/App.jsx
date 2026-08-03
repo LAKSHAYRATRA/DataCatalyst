@@ -10,6 +10,7 @@ import AdminTopics from "./pages/AdminTopics.jsx";
 import AdminUsers from "./pages/AdminUsers.jsx";
 import AdminQA from "./pages/AdminQA.jsx";
 import AdminPayouts from "./pages/AdminPayouts.jsx";
+import AdminFinances from "./pages/AdminFinances.jsx";
 import AdminAgreements from "./pages/AdminAgreements.jsx";
 import AdminPayoutUser from "./pages/AdminPayoutUser.jsx";
 import IntroRecording from "./pages/IntroRecording.jsx";
@@ -329,6 +330,7 @@ export default function App() {
         <Route path="/admin/users" element={<RequireAdmin><AdminUsers /></RequireAdmin>} />
         <Route path="/admin/payouts" element={<RequireAdmin><AdminPayouts /></RequireAdmin>} />
         <Route path="/admin/payouts/:userId" element={<RequireAdmin><AdminPayoutUser /></RequireAdmin>} />
+        <Route path="/admin/finances" element={<RequireAdmin><AdminFinances /></RequireAdmin>} />
         <Route path="/admin/agreements" element={<RequireAdmin><AdminAgreements /></RequireAdmin>} />
         <Route path="/admin/pan-verification" element={<RequireAdmin><AdminPanVerification /></RequireAdmin>} />
         <Route path="/admin/qa" element={<RequireAdminOrQA><AdminQA /></RequireAdminOrQA>} />

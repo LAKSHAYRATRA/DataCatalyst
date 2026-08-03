@@ -77,9 +77,20 @@ export default function LanguageApply() {
         })?.status || null;
     }
 
+    function isCompanyRemovedOrRejected(companyName) {
+        if (!companyName) return false;
+        const targetComp = String(companyName).trim().toLowerCase();
+        return myApps.some(a => {
+            const appComp = String(a.companyId || "").trim().toLowerCase();
+            const appProj = String(a.projectName || "").trim().toLowerCase();
+            const isMatch = appComp === targetComp || appProj === targetComp;
+            return isMatch && (a.status === "rejected" || a.status === "blocked");
+        });
+    }
+
     function canApply(companyId, code, type) {
         const st = getStatus(companyId, code, type);
-        return st === null || st === "rejected";
+        return st === null;
     }
 
     async function fetchSamplePhrase(companyId, languageCode) {
@@ -322,7 +333,7 @@ export default function LanguageApply() {
                                                 }}
                                             >
                                                  <option value="">-- Select Project --</option>
-                                                 {companies.map(c => (
+                                                 {companies.filter(c => !isCompanyRemovedOrRejected(c.name)).map(c => (
                                                      <option key={c._id} value={c.name}>
                                                          {c.projectName || c.name} - ${Number(c.hourlyPayout || 0).toFixed(2)}/hour
                                                      </option>
@@ -364,7 +375,10 @@ export default function LanguageApply() {
                                                               );
                                                           });
                                                      }
-                                                     return globalLanguages.map(lang => {
+                                                     return globalLanguages.filter(lang => {
+                                                          const st = getStatus(null, lang.code, 'call');
+                                                          return st !== 'rejected' && st !== 'blocked';
+                                                     }).map(lang => {
                                                           const st = getStatus(null, lang.code, 'call');
                                                           const statusSuffix = st === 'pending' ? ' (Already Applied - Pending)' : st === 'approved' ? ' (Already Applied - Approved)' : '';
                                                           return (

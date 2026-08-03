@@ -36,14 +36,38 @@ export default function AdminPayouts() {
   };
 
   async function handlePayNow(entry) {
+    const upiId = entry.user.upiId || "Not Provided";
     const result = await Swal.fire({
       title: "Confirm Payout",
-      text: `Are you sure you want to pay ${entry.user.firstname || entry.user.username} their remaining balance of ${money(entry.totalRemainingPayoutUsd)}?`,
+      html: `
+        <div style="text-align: left; background: #111827; padding: 16px; border-radius: 12px; margin-top: 12px; border: 1px solid #374151;">
+          <div style="margin-bottom: 12px;">
+            <div style="color: #9ca3af; font-size: 12px; text-transform: uppercase; font-weight: 600; letter-spacing: 0.05em;">Contributor</div>
+            <div style="color: #ffffff; font-weight: 600; font-size: 15px; margin-top: 2px;">${entry.user.firstname || entry.user.username} ${entry.user.lastname || ''}</div>
+            <div style="color: #6b7280; font-size: 12px;">${entry.user.email}</div>
+          </div>
+
+          <div style="margin-bottom: 12px;">
+            <div style="color: #9ca3af; font-size: 12px; text-transform: uppercase; font-weight: 600; letter-spacing: 0.05em;">UPI ID for Payment</div>
+            <div style="display: flex; align-items: center; justify-content: space-between; background: #1f2937; padding: 8px 12px; border-radius: 8px; border: 1px solid #4b5563; margin-top: 4px;">
+              <span style="font-family: monospace; color: #f59e0b; font-weight: 700; font-size: 14px;">${upiId}</span>
+              ${entry.user.upiId ? `<button type="button" onclick="navigator.clipboard.writeText('${entry.user.upiId}'); this.innerText='Copied!';" style="background: #374151; color: #e5e7eb; border: none; padding: 4px 8px; border-radius: 6px; font-size: 11px; cursor: pointer; font-weight: 600;">Copy UPI</button>` : ''}
+            </div>
+          </div>
+
+          <div>
+            <div style="color: #9ca3af; font-size: 12px; text-transform: uppercase; font-weight: 600; letter-spacing: 0.05em;">Remaining Balance</div>
+            <div style="color: #10b981; font-weight: 700; font-size: 22px; margin-top: 2px;">${money(entry.totalRemainingPayoutUsd)}</div>
+          </div>
+        </div>
+        <p style="margin-top: 14px; font-size: 13px; color: #d1d5db;">Are you sure you want to mark this payout as paid?</p>
+      `,
       icon: "warning",
       showCancelButton: true,
-      confirmButtonColor: "#d97706",
+      confirmButtonColor: "#10b981",
       cancelButtonColor: "#475569",
-      confirmButtonText: "Yes, pay now",
+      confirmButtonText: "Yes, Pay Now",
+      cancelButtonText: "Cancel",
       background: "#1f2937",
       color: "#fff"
     });
@@ -54,7 +78,7 @@ export default function AdminPayouts() {
           amountUsd: entry.totalRemainingPayoutUsd,
           note: "Direct payout from list"
         });
-        Swal.fire({ title: "Paid!", text: "The payout has been recorded.", icon: "success", background: "#1f2937", color: "#fff" });
+        Swal.fire({ title: "Paid!", text: "The payout has been successfully recorded.", icon: "success", background: "#1f2937", color: "#fff" });
         load();
       } catch (e) {
         Swal.fire({ title: "Error", text: e.message, icon: "error", background: "#1f2937", color: "#fff" });
@@ -89,6 +113,55 @@ export default function AdminPayouts() {
     }
   }
 
+  async function handleSendUpiEmail(entry) {
+    try {
+      await apiPostJson(`/api/admin/payouts/users/${entry.user.id}/send-upi-request-email`);
+      Swal.fire({
+        title: "Email Sent!",
+        text: `UPI ID request email successfully sent to ${entry.user.email}.`,
+        icon: "success",
+        background: "#1f2937",
+        color: "#fff"
+      });
+    } catch (e) {
+      Swal.fire({ title: "Error", text: e.message, icon: "error", background: "#1f2937", color: "#fff" });
+    }
+  }
+
+  async function handleSendBulkUpiEmails() {
+    const eligibleCount = users.filter(u => (!u.user.upiId || !u.user.upiId.trim()) && u.totalRemainingPayoutUsd > 0.5).length;
+    if (eligibleCount === 0) {
+      return Swal.fire({
+        title: "No Eligible Users",
+        text: "There are no users with missing UPI IDs and remaining balance > $0.50.",
+        icon: "info",
+        background: "#1f2937",
+        color: "#fff"
+      });
+    }
+
+    const result = await Swal.fire({
+      title: "Send Bulk UPI Emails?",
+      text: `Send UPI request emails to ${eligibleCount} contributor(s) missing UPI IDs with balance > $0.50?`,
+      icon: "question",
+      showCancelButton: true,
+      confirmButtonColor: "#6366f1",
+      cancelButtonColor: "#475569",
+      confirmButtonText: "Yes, Send All",
+      background: "#1f2937",
+      color: "#fff"
+    });
+
+    if (result.isConfirmed) {
+      try {
+        const res = await apiPostJson("/api/admin/payouts/send-bulk-upi-requests");
+        Swal.fire({ title: "Sent!", text: res.message, icon: "success", background: "#1f2937", color: "#fff" });
+      } catch (e) {
+        Swal.fire({ title: "Error", text: e.message, icon: "error", background: "#1f2937", color: "#fff" });
+      }
+    }
+  }
+
   return (
     <div className="min-h-screen bg-neutral-900 pt-16 md:pt-0 md:pl-64">
       <AdminNav />
@@ -98,12 +171,20 @@ export default function AdminPayouts() {
             <h1 className="text-2xl md:text-3xl font-bold text-white mb-2">Payouts</h1>
             <p className="text-neutral-400 text-sm md:text-base">Track approved earnings, paid amounts, and remaining balances.</p>
           </div>
-          <button
-            onClick={handlePayAll}
-            className="px-4 py-2 bg-warning-600 hover:bg-warning-700 text-white font-bold rounded-xl transition-all shadow-lg hover:shadow-warning-500/20 active:scale-95 whitespace-nowrap"
-          >
-            Pay All Remaining
-          </button>
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              onClick={handleSendBulkUpiEmails}
+              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl transition-all shadow-lg hover:shadow-indigo-500/20 active:scale-95 whitespace-nowrap text-sm"
+            >
+              Mail Missing UPIs (&gt; $0.5)
+            </button>
+            <button
+              onClick={handlePayAll}
+              className="px-4 py-2 bg-warning-600 hover:bg-warning-700 text-white font-bold rounded-xl transition-all shadow-lg hover:shadow-warning-500/20 active:scale-95 whitespace-nowrap text-sm"
+            >
+              Pay All Remaining
+            </button>
+          </div>
         </div>
 
         {loading ? (
@@ -152,6 +233,14 @@ export default function AdminPayouts() {
                             <Link to={`/admin/payouts/${entry.user.id}`} className="inline-flex px-3 py-1.5 rounded-lg bg-neutral-700 hover:bg-neutral-600 text-white text-xs font-semibold whitespace-nowrap transition-colors">
                               View
                             </Link>
+                            {(!entry.user.upiId || !entry.user.upiId.trim()) && entry.totalRemainingPayoutUsd > 0.5 && (
+                              <button
+                                onClick={() => handleSendUpiEmail(entry)}
+                                className="inline-flex px-3 py-1.5 rounded-lg bg-indigo-600/90 hover:bg-indigo-600 text-white text-xs font-semibold whitespace-nowrap transition-colors shadow-sm"
+                              >
+                                Mail for UPI ID
+                              </button>
+                            )}
                             {entry.totalRemainingPayoutUsd > 0 && (
                               <button
                                 onClick={() => handlePayNow(entry)}

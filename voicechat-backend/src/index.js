@@ -698,9 +698,9 @@ async function endCall(callId, reason) {
         callStatus = "rejected";
         recordingAStatus = "rejected";
         recordingBStatus = "rejected";
-        recordingAReviewNote = "Duration less than 9 minutes";
-        recordingBReviewNote = "Duration less than 9 minutes";
-        reviewNotes = "Duration less than 9 minutes";
+        recordingAReviewNote = "Duration below 9 min limit";
+        recordingBReviewNote = "Duration below 9 min limit";
+        reviewNotes = "Duration below 9 min limit";
       } else {
         const streamKeyA = `${callId}_${call.userAId}`;
         const streamKeyB = `${callId}_${call.userBId}`;
@@ -710,13 +710,23 @@ async function endCall(callId, reason) {
         const missedA = getMissedDuration(streamObjA);
         const missedB = getMissedDuration(streamObjB);
 
+        const isUnder15Min = actualCallDuration < 900;
+
         if (missedA >= 5) {
-          recordingAStatus = "rejected";
-          recordingAReviewNote = "Internet Issue detected";
+          if (isUnder15Min) {
+            recordingAStatus = "rejected";
+            recordingAReviewNote = "Internet Issue detected";
+          } else {
+            recordingAReviewNote = "Internet gap detected after 15 min";
+          }
         }
         if (missedB >= 5) {
-          recordingBStatus = "rejected";
-          recordingBReviewNote = "Internet Issue detected";
+          if (isUnder15Min) {
+            recordingBStatus = "rejected";
+            recordingBReviewNote = "Internet Issue detected";
+          } else {
+            recordingBReviewNote = "Internet gap detected after 15 min";
+          }
         }
 
         if (recordingAStatus === "rejected" || recordingBStatus === "rejected") {
@@ -765,11 +775,13 @@ async function endCall(callId, reason) {
         }
       );
 
-      if (recordingAStatus === "rejected") {
-        updateLimitAndBlacklist(session.userA.toString(), session.language, false).catch(console.error);
-      }
-      if (recordingBStatus === "rejected") {
-        updateLimitAndBlacklist(session.userB.toString(), session.language, false).catch(console.error);
+      if (actualCallDuration < 900) {
+        if (recordingAStatus === "rejected") {
+          updateLimitAndBlacklist(session.userA.toString(), session.language, false).catch(console.error);
+        }
+        if (recordingBStatus === "rejected") {
+          updateLimitAndBlacklist(session.userB.toString(), session.language, false).catch(console.error);
+        }
       }
     } else {
       await CallSession.updateOne(

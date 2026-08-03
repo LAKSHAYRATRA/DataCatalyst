@@ -15,11 +15,11 @@ import path from "path";
 import { Phrase } from "../models/Phrase.js";
 import { Company } from "../models/Company.js";
 import { Counter } from "../models/Counter.js";
-import { getPayoutOverview, getSingleUserPayout } from "../services/payouts.js";
+import { getPayoutOverview, getSingleUserPayout, getFinancesOverview } from "../services/payouts.js";
 import { ListObjectsV2Command, DeleteObjectCommand, GetObjectCommand, CopyObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
 import { s3Client, BUCKET_NAME } from "../config/s3.js";
 import { streamS3ToWav, getWavStream, getWavBuffer } from "../utils/ffmpeg-stream.js";
-import { sendAgreementRejectionEmail, sendIntroApprovalEmail, sendIntroRejectionEmail, sendIntroFinalDeletionEmail, sendAgreementApprovedEmail, sendProjectApplicationApprovedEmail, sendProjectApplicationRejectedEmail } from "../util/emailService.js";
+import { sendAgreementRejectionEmail, sendIntroApprovalEmail, sendIntroRejectionEmail, sendIntroFinalDeletionEmail, sendAgreementApprovedEmail, sendProjectApplicationApprovedEmail, sendProjectApplicationRejectedEmail, sendUpiRequestEmail } from "../util/emailService.js";
 import { updateLimitAndBlacklist } from "../services/limitService.js";
 import { spawn } from "child_process";
 import os from "os";
@@ -1163,6 +1163,15 @@ router.get("/metadata/export", async (req, res) => {
 });
 
 // ===== PAYOUTS =====
+router.get("/payouts/finances", async (req, res) => {
+    try {
+        const finances = await getFinancesOverview();
+        res.json(finances);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 router.get("/payouts/users", async (req, res) => {
     try {
         const { summaries } = await getPayoutOverview();
@@ -1250,6 +1259,58 @@ router.post("/payouts/users/clear-all", async (req, res) => {
 
         await PayoutPayment.insertMany(payments);
         res.json({ message: `Successfully cleared payments for ${usersToPay.length} users`, success: true });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+router.post("/payouts/users/:userId/send-upi-request-email", async (req, res) => {
+    try {
+        const payout = await getSingleUserPayout(req.params.userId);
+        if (!payout) return res.status(404).json({ error: "User not found" });
+
+        const user = payout.summary.user;
+        const upiId = (user.upiId || "").trim();
+        const remaining = Number(payout.summary.totalRemainingPayoutUsd) || 0;
+
+        if (upiId) {
+            return res.status(400).json({ error: "User already has a UPI ID entered." });
+        }
+        if (remaining <= 0.5) {
+            return res.status(400).json({ error: "User remaining balance must be greater than $0.50 to send UPI request email." });
+        }
+
+        await sendUpiRequestEmail(user.email, user.firstname || user.username);
+        res.json({ message: `UPI request email successfully sent to ${user.email}.`, success: true });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+router.post("/payouts/send-bulk-upi-requests", async (req, res) => {
+    try {
+        const { summaries } = await getPayoutOverview();
+        const eligibleUsers = summaries.filter(s => {
+            const upiId = (s.user.upiId || "").trim();
+            const remaining = Number(s.totalRemainingPayoutUsd) || 0;
+            return !upiId && remaining > 0.5;
+        });
+
+        if (eligibleUsers.length === 0) {
+            return res.json({ message: "No eligible contributors found without UPI ID and balance > $0.50.", sentCount: 0 });
+        }
+
+        let sentCount = 0;
+        for (const s of eligibleUsers) {
+            try {
+                await sendUpiRequestEmail(s.user.email, s.user.firstname || s.user.username);
+                sentCount++;
+            } catch (err) {
+                console.error(`Failed to send UPI request email to ${s.user.email}:`, err);
+            }
+        }
+
+        res.json({ message: `Successfully sent UPI request emails to ${sentCount} contributor(s).`, sentCount, success: true });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
@@ -2480,7 +2541,7 @@ router.get("/languages/:id/contributors-summary", async (req, res) => {
             if (apps.length > 0) {
                 const latestApp = apps.sort((a, b) => new Date(b.appliedAt) - new Date(a.appliedAt))[0];
                 let appStatus = latestApp.status || "pending";
-                if (userCallStatusMap.has(String(u._id))) {
+                if (userCallStatusMap.has(String(u._id)) && latestApp.status !== "rejected") {
                     appStatus = "approved";
                 }
                 userItemMap.set(String(u._id), {
@@ -2508,6 +2569,67 @@ router.get("/languages/:id/contributors-summary", async (req, res) => {
             },
             summary
         });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// POST /api/admin/languages/:id/remove-contributor
+router.post("/languages/:id/remove-contributor", async (req, res) => {
+    try {
+        const langParam = req.params.id;
+        const { userId } = req.body;
+
+        if (!userId) {
+            return res.status(400).json({ error: "userId is required" });
+        }
+
+        let language = await Language.findById(langParam).lean();
+        if (!language) {
+            language = await Language.findOne({ code: String(langParam).toLowerCase().trim() }).lean();
+        }
+        if (!language) {
+            language = await Language.findOne({ name: { $regex: new RegExp(`^${langParam}$`, "i") } }).lean();
+        }
+        if (!language) {
+            return res.status(404).json({ error: "Language not found" });
+        }
+
+        const langCode = String(language.code || "").toLowerCase().trim();
+        const user = await User.findById(userId);
+        if (!user) {
+            return res.status(404).json({ error: "User not found" });
+        }
+
+        if (!user.languageApplications) {
+            user.languageApplications = [];
+        }
+
+        let updated = false;
+        user.languageApplications.forEach(app => {
+            if (app.applicationType === "call" && String(app.languageCode).toLowerCase().trim() === langCode) {
+                app.status = "rejected";
+                app.reviewedAt = new Date();
+                app.reviewedBy = req.user._id;
+                updated = true;
+            }
+        });
+
+        if (!updated) {
+            user.languageApplications.push({
+                applicationType: "call",
+                languageCode: langCode,
+                status: "rejected",
+                appliedAt: new Date(),
+                reviewedAt: new Date(),
+                reviewedBy: req.user._id
+            });
+        }
+
+        user.markModified("languageApplications");
+        await user.save();
+
+        res.json({ message: `Contributor ${user.firstname || user.username} has been removed from Call Language ${language.name}.` });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
@@ -2606,6 +2728,72 @@ router.get("/companies/:id/contributors-summary", async (req, res) => {
             },
             languages: languagesList
         });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// POST /api/admin/companies/:id/remove-contributor
+router.post("/companies/:id/remove-contributor", async (req, res) => {
+    try {
+        const compParam = req.params.id;
+        const { userId, languageCode } = req.body;
+
+        if (!userId) {
+            return res.status(400).json({ error: "userId is required" });
+        }
+
+        let company = await Company.findById(compParam).lean();
+        if (!company) {
+            company = await Company.findOne({ name: { $regex: new RegExp(`^${compParam}$`, "i") } }).lean();
+        }
+        if (!company) {
+            return res.status(404).json({ error: "Company not found" });
+        }
+
+        const baseName = company.name.replace(/_downloaded$/, "").trim();
+        const user = await User.findById(userId);
+        if (!user) {
+            return res.status(404).json({ error: "User not found" });
+        }
+
+        if (!user.languageApplications) {
+            user.languageApplications = [];
+        }
+
+        let updated = false;
+        // Mark matching phrase applications for this company as rejected
+        user.languageApplications.forEach(app => {
+            if ((app.applicationType === "phrase" || !app.applicationType) && app.companyId) {
+                const appComp = String(app.companyId).replace(/_downloaded$/, "").trim();
+                if (appComp.toLowerCase() === baseName.toLowerCase()) {
+                    if (!languageCode || String(app.languageCode).toLowerCase() === String(languageCode).toLowerCase()) {
+                        app.status = "rejected";
+                        app.reviewedAt = new Date();
+                        app.reviewedBy = req.user._id;
+                        updated = true;
+                    }
+                }
+            }
+        });
+
+        // If no matching application was found, push a rejected application entry
+        if (!updated) {
+            user.languageApplications.push({
+                applicationType: "phrase",
+                companyId: company.name,
+                languageCode: (languageCode || "english").toLowerCase(),
+                status: "rejected",
+                appliedAt: new Date(),
+                reviewedAt: new Date(),
+                reviewedBy: req.user._id
+            });
+        }
+
+        user.markModified("languageApplications");
+        await user.save();
+
+        res.json({ message: `Contributor ${user.firstname || user.username} has been removed from ${company.projectName || company.name}.` });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }

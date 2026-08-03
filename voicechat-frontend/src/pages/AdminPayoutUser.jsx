@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import AdminNav from "../components/AdminNav.jsx";
 import { apiGet, apiPostJson } from "../lib/api.js";
+import Swal from "sweetalert2";
 
 function money(value) {
   return `$${(Number(value) || 0).toFixed(2)}`;
@@ -37,6 +38,21 @@ export default function AdminPayoutUser() {
   useEffect(() => {
     load();
   }, [userId]);
+
+  async function handleSendUpiEmail() {
+    try {
+      await apiPostJson(`/api/admin/payouts/users/${userId}/send-upi-request-email`);
+      Swal.fire({
+        title: "Email Sent!",
+        text: `UPI ID request email successfully sent to ${summary.user.email}.`,
+        icon: "success",
+        background: "#1f2937",
+        color: "#fff"
+      });
+    } catch (e) {
+      Swal.fire({ title: "Error", text: e.message, icon: "error", background: "#1f2937", color: "#fff" });
+    }
+  }
 
   async function submitPayment() {
     const amount = Number(amountUsd);
@@ -74,12 +90,22 @@ export default function AdminPayoutUser() {
             {summary && <p className="text-neutral-400">{summary.user.email}</p>}
           </div>
           {summary && (
-            <button
-              onClick={() => setShowPayModal(true)}
-              className="px-4 py-2.5 rounded-lg bg-warning-600 hover:bg-warning-700 text-white font-semibold"
-            >
-              Pay Now
-            </button>
+            <div className="flex items-center gap-3">
+              {(!summary.user.upiId || !summary.user.upiId.trim()) && summary.totalRemainingPayoutUsd > 0.5 && (
+                <button
+                  onClick={handleSendUpiEmail}
+                  className="px-4 py-2.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-semibold shadow-md transition-colors"
+                >
+                  Mail for UPI ID
+                </button>
+              )}
+              <button
+                onClick={() => setShowPayModal(true)}
+                className="px-4 py-2.5 rounded-lg bg-warning-600 hover:bg-warning-700 text-white font-semibold"
+              >
+                Pay Now
+              </button>
+            </div>
           )}
         </div>
 
@@ -208,8 +234,29 @@ export default function AdminPayoutUser() {
           <div className="w-full max-w-md bg-neutral-800 border border-neutral-700 rounded-2xl p-6 space-y-4">
             <div>
               <h2 className="text-xl font-bold text-white">Confirm Payout</h2>
-              <p className="text-sm text-neutral-400 mt-1">Remaining balance: {money(summary.totalRemainingPayoutUsd)}</p>
+              <p className="text-sm text-neutral-400 mt-1">Remaining balance: <span className="text-emerald-400 font-bold">{money(summary.totalRemainingPayoutUsd)}</span></p>
             </div>
+
+            <div className="bg-neutral-900 border border-neutral-700 rounded-xl p-3.5 space-y-1">
+              <div className="text-xs font-semibold text-neutral-400 uppercase tracking-wider">UPI ID for Payment</div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-mono text-warning-400 font-bold text-sm select-all">{summary.user.upiId || "Not Provided"}</span>
+                {summary.user.upiId && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      navigator.clipboard.writeText(summary.user.upiId);
+                      e.target.innerText = "Copied!";
+                      setTimeout(() => { if (e.target) e.target.innerText = "Copy"; }, 2000);
+                    }}
+                    className="px-2.5 py-1 bg-neutral-700 hover:bg-neutral-600 text-xs font-semibold text-neutral-200 rounded-md transition-colors"
+                  >
+                    Copy
+                  </button>
+                )}
+              </div>
+            </div>
+
             <div>
               <label className="block text-sm text-neutral-300 mb-1.5">Amount (USD)</label>
               <input
