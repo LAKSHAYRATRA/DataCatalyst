@@ -14,6 +14,7 @@ import { s3Client, BUCKET_NAME } from "../config/s3.js";
 import ffmpeg from "fluent-ffmpeg";
 import ffmpegInstaller from "@ffmpeg-installer/ffmpeg";
 import { invokeAudioQC } from "../config/lambda.js";
+import { getWavBuffer } from "../utils/ffmpeg-stream.js";
 
 ffmpeg.setFfmpegPath(ffmpegInstaller.path);
 
@@ -1033,5 +1034,120 @@ export async function analyzePhrase(req, res) {
   } finally {
     if (tempInputPath && fs.existsSync(tempInputPath)) try { fs.unlinkSync(tempInputPath); } catch {}
     if (plotPath && fs.existsSync(plotPath)) try { fs.unlinkSync(plotPath); } catch {}
+  }
+}
+
+/**
+ * GET /api/phrases/admin/download-zip/:phraseId
+ * Downloads a ZIP bundle for a single phrase containing:
+ * 1. audio.wav (or <phraseId>.wav)
+ * 2. speaker_metadata.json
+ * 3. utterance.json
+ */
+export async function downloadSinglePhraseZip(req, res) {
+  try {
+    const { phraseId } = req.params;
+    const phrase = await Phrase.findById(phraseId).populate("contributorId").lean();
+    if (!phrase) {
+      return res.status(404).json({ error: "Phrase not found" });
+    }
+
+    if (!phrase.audioFile) {
+      return res.status(400).json({ error: "No audio file recorded for this phrase." });
+    }
+
+    const contributor = phrase.contributorId || {};
+    const speakerId = contributor.speaker_id || phrase.speaker_id || (contributor._id ? `spk_${contributor._id}` : "unknown");
+
+    let age = "unknown";
+    if (contributor.dob) {
+      const dobDate = new Date(contributor.dob);
+      const today = new Date();
+      let calculatedAge = today.getFullYear() - dobDate.getFullYear();
+      const m = today.getMonth() - dobDate.getMonth();
+      if (m < 0 || (m === 0 && today.getDate() < dobDate.getDate())) calculatedAge--;
+      if (calculatedAge > 0) age = calculatedAge;
+    }
+
+    const speakerMetadata = {
+      speaker_id: speakerId,
+      firstname: contributor.firstname || "",
+      lastname: contributor.lastname || "",
+      username: contributor.username || "",
+      email: contributor.email || "",
+      gender: contributor.gender || "unknown",
+      age: age,
+      dob: contributor.dob || null,
+      locality: contributor.locality || "",
+      state: contributor.state || "",
+      address: contributor.address || "",
+      regionalLanguage: contributor.regionalLanguage || ""
+    };
+
+    const utteranceMetadata = {
+      phrase_id: phrase.phraseId || phrase.id || String(phrase._id),
+      text: phrase.text || "",
+      language: phrase.language || "",
+      project_name: phrase.projectName || phrase.companyId || "",
+      company_id: phrase.companyId || "",
+      speaker_id: speakerId,
+      emotion: phrase.emotion || null,
+      style: phrase.style || null,
+      speed: phrase.speed || null,
+      intent: phrase.intent || null,
+      pitch: phrase.pitch || null,
+      volume: phrase.volume || null,
+      instructions: phrase.instructions || null,
+      is_test_phrase: phrase.isTestPhrase || false,
+      status: phrase.status || "pending",
+      recorded_at: phrase.recordedAt || null,
+      reviewed_at: phrase.reviewedAt || null,
+      review_note: phrase.reviewNote || null,
+      qc_result: phrase.qcResult || null
+    };
+
+    const command = new GetObjectCommand({
+      Bucket: BUCKET_NAME,
+      Key: phrase.audioFile,
+    });
+    const s3Response = await s3Client.send(command);
+    const wavBuffer = await getWavBuffer(s3Response.Body);
+
+    const safePhraseId = (phrase.phraseId || String(phrase._id)).replace(/[^a-zA-Z0-9_\-]/g, "_");
+    const filename = `${safePhraseId}_bundle.zip`;
+
+    res.setHeader("Content-Type", "application/zip");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+
+    let ZipArchive;
+    try {
+      const archiverModule = await import("archiver");
+      ZipArchive = archiverModule.ZipArchive || archiverModule.default?.ZipArchive;
+      if (!ZipArchive) {
+        const { createRequire } = await import("module");
+        const require = createRequire(import.meta.url);
+        ZipArchive = require("archiver").ZipArchive;
+      }
+    } catch (err) {
+      console.error("Archiver package error:", err);
+      return res.status(500).json({ error: "Server missing archiver dependency." });
+    }
+
+    const archive = new ZipArchive({ zlib: { level: 0 } });
+    archive.on("error", (err) => {
+      console.error("Archiver Error:", err);
+      if (!res.headersSent) res.status(500).json({ error: err.message });
+    });
+
+    archive.pipe(res);
+
+    archive.append(wavBuffer, { name: `${safePhraseId}.wav` });
+    archive.append(Buffer.from(JSON.stringify(speakerMetadata, null, 2)), { name: "speaker_metadata.json" });
+    archive.append(Buffer.from(JSON.stringify(utteranceMetadata, null, 2)), { name: "utterance.json" });
+
+    await archive.finalize();
+  } catch (error) {
+    console.error("downloadSinglePhraseZip error:", error);
+    if (!res.headersSent) res.status(500).json({ error: error.message });
   }
 }

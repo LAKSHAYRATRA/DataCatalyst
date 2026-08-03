@@ -19,6 +19,7 @@ import {
   getSamplePhrase,
   approveRejectedPhrase,
   analyzePhrase,
+  downloadSinglePhraseZip,
 } from "../controllers/phraseController.js";
 
 const JWT_SECRET = process.env.JWT_SECRET;
@@ -68,6 +69,7 @@ const phraseUpload = multer({
 router.post("/admin/upload", requireAuth(JWT_SECRET), requireAdmin, uploadPhrases);
 router.post("/admin/approve-rejected", requireAuth(JWT_SECRET), requireAdmin, approveRejectedPhrase);
 router.get("/admin/all", requireAuth(JWT_SECRET), requireAdmin, getAllPhrasesAdmin);
+router.get("/admin/download-zip/:phraseId", requireAuth(JWT_SECRET), requireAdmin, downloadSinglePhraseZip);
 
 /* -------------------------------------------------------------------------- */
 /*                                   QA Routes                                */

@@ -1,11 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Check, X, AlertCircle } from 'lucide-react';
+import { Check, X, AlertCircle, Download } from 'lucide-react';
 import { apiGet, apiPostJson } from '../lib/api';
+import { getUserInfo } from '../lib/auth';
 import SecureAudioPlayer from '../components/SecureAudioPlayer';
 import AdminNav from '../components/AdminNav.jsx';
 
 export default function QaPhrases() {
+  const userInfo = getUserInfo();
+  const isAdmin = Boolean(userInfo?.isAdmin);
   const [queue, setQueue] = useState([]);
   const [loading, setLoading] = useState(true);
   const [comments, setComments] = useState({});
@@ -182,6 +185,19 @@ export default function QaPhrases() {
                         </h4>
                         <SecureAudioPlayer url={`/api/phrases/${p._id}/audio`} />
                       </div>
+
+                      {isAdmin && p.audioFile && (
+                        <div className="mb-3">
+                          <button
+                            type="button"
+                            onClick={() => window.open(`${import.meta.env.VITE_BACKEND_URL || "http://localhost:3001"}/api/phrases/admin/download-zip/${p._id}`, '_blank')}
+                            className="w-full py-2 px-3 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg transition-colors flex items-center justify-center gap-2 shadow-sm"
+                            title="Download ZIP bundle containing audio.wav, speaker_metadata.json, and utterance.json"
+                          >
+                            <Download className="w-4 h-4" /> Download Phrase ZIP
+                          </button>
+                        </div>
+                      )}
 
                       <div>
                         <input 
