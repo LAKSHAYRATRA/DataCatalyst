@@ -243,8 +243,8 @@ export default function PhraseRecording() {
 
       // Pass assigned noise gate setting to worklet processor
       const activeApp = approvedApps.find(a => {
-        const compMatch = !selectedCompanyId || String(a.companyId || "").toLowerCase().trim() === String(selectedCompanyId || "").toLowerCase().trim();
-        const langMatch = !selectedLang || String(a.languageCode || "").toLowerCase().trim() === String(selectedLang || "").toLowerCase().trim();
+        const compMatch = !projectName || String(a.companyId || "").toLowerCase().trim() === String(projectName || "").toLowerCase().trim();
+        const langMatch = !language || String(a.languageCode || "").toLowerCase().trim() === String(language || "").toLowerCase().trim();
         return compMatch && langMatch;
       });
       const assignedNoiseGateDb = activeApp?.noiseGateDb !== undefined ? activeApp.noiseGateDb : 0;

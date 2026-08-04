@@ -394,6 +394,9 @@ export default function Call() {
       const workletNode = new AudioWorkletNode(audioCtx, "pcm-processor");
       workletNodeRef.current = workletNode;
 
+      const assignedNoiseGateDb = userInfo?.noiseGateDb !== undefined ? userInfo.noiseGateDb : 0;
+      workletNode.port.postMessage({ type: "setNoiseGate", noiseGateDb: assignedNoiseGateDb });
+
       const source = audioCtx.createMediaStreamSource(stream);
 
       const startTime = Date.now();
