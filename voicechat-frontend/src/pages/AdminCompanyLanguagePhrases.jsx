@@ -140,6 +140,37 @@ export default function AdminCompanyLanguagePhrases() {
     }
   };
 
+  const handleDeduplicate = async () => {
+    const confirm = await Swal.fire({
+      title: "Remove Duplicate Phrases?",
+      text: `Clean up duplicate phrases for ${company ? company.name : "this company"}, keeping 1 copy per unique sentence?`,
+      icon: "question",
+      showCancelButton: true,
+      confirmButtonText: "Yes, Remove Duplicates",
+      confirmButtonColor: "#ea580c"
+    });
+
+    if (!confirm.isConfirmed) return;
+
+    try {
+      const res = await apiPostJson("/api/phrases/admin/deduplicate", { companyId: company ? company.name : "" });
+      Swal.fire({
+        icon: "success",
+        title: "Deduplication Complete!",
+        text: res.message || `Removed ${res.deletedCount} duplicate phrases.`,
+        timer: 3000
+      });
+      fetchPhrases(1, search);
+    } catch (err) {
+      Swal.fire({
+        icon: "error",
+        title: "Deduplication Failed",
+        text: err.message,
+        confirmButtonColor: "#ea580c"
+      });
+    }
+  };
+
   const renderTags = (tags) => {
     if (!tags) return null;
     let tagList = [];
@@ -202,8 +233,17 @@ export default function AdminCompanyLanguagePhrases() {
             <Search className="w-4 h-4 text-neutral-400 absolute left-3 top-3" />
           </form>
 
-          <div className="text-sm font-medium text-neutral-400">
-            Total Phrases for <span className="font-bold text-white">{language.toUpperCase()}</span>: {totalPhrases}
+          <div className="flex items-center gap-4">
+            <button
+              onClick={handleDeduplicate}
+              className="px-3.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-medium text-xs rounded-lg transition-colors flex items-center gap-1.5 shadow-md"
+              title="Remove duplicate phrases for this company"
+            >
+              🧹 Remove Duplicates
+            </button>
+            <div className="text-sm font-medium text-neutral-400">
+              Total Phrases for <span className="font-bold text-white">{language.toUpperCase()}</span>: {totalPhrases}
+            </div>
           </div>
         </div>
 
