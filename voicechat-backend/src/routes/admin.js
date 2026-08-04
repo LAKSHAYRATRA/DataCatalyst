@@ -4070,7 +4070,7 @@ router.get("/phrases/download-stats", requireAuth(JWT_SECRET), async (req, res) 
 
 router.post("/companies", requireAuth(JWT_SECRET), async (req, res) => {
     try {
-        const { name, maxContributionMinutes, hourlyPayout, projectName, namingPattern } = req.body;
+        const { name, maxContributionMinutes, hourlyPayout, projectName, namingPattern, singlePhraseFrequency } = req.body;
         if (!name || !name.trim()) return res.status(400).json({ error: "Company name is required" });
 
         const cleanName = name.trim();
@@ -4083,6 +4083,7 @@ router.post("/companies", requireAuth(JWT_SECRET), async (req, res) => {
             name: cleanName, 
             maxContributionMinutes: Number.isFinite(Number(maxContributionMinutes)) ? Number(maxContributionMinutes) : 195, 
             hourlyPayout: Number.isFinite(Number(hourlyPayout)) ? Number(hourlyPayout) : 0, 
+            singlePhraseFrequency: Number.isInteger(Number(singlePhraseFrequency)) && Number(singlePhraseFrequency) >= 1 ? Number(singlePhraseFrequency) : 1,
             projectName: projectName && projectName.trim() ? projectName.trim() : cleanName,
             namingPattern: namingPattern && namingPattern.trim() ? namingPattern.trim() : "{phraseId}"
         });
@@ -4095,10 +4096,11 @@ router.post("/companies", requireAuth(JWT_SECRET), async (req, res) => {
 
 router.patch("/companies/:id", async (req, res) => {
     try {
-        const { maxContributionMinutes, hourlyPayout, projectName, namingPattern, userCustomizations, downloadCustomizations } = req.body;
+        const { maxContributionMinutes, hourlyPayout, singlePhraseFrequency, projectName, namingPattern, userCustomizations, downloadCustomizations } = req.body;
         const updateData = {};
         if (maxContributionMinutes !== undefined) updateData.maxContributionMinutes = Number(maxContributionMinutes);
         if (hourlyPayout !== undefined) updateData.hourlyPayout = Number(hourlyPayout);
+        if (singlePhraseFrequency !== undefined) updateData.singlePhraseFrequency = Math.max(1, Number(singlePhraseFrequency) || 1);
         if (projectName !== undefined) updateData.projectName = String(projectName).trim();
         if (namingPattern !== undefined) updateData.namingPattern = String(namingPattern).trim();
         if (userCustomizations !== undefined) updateData.userCustomizations = userCustomizations;
@@ -4106,11 +4108,66 @@ router.patch("/companies/:id", async (req, res) => {
         
         const company = await Company.findByIdAndUpdate(req.params.id, { $set: updateData }, { new: true });
         if (!company) return res.status(404).json({ error: "Company not found" });
+
+        if (singlePhraseFrequency !== undefined) {
+            // Automatically ensure existing phrase workload has target phrase frequency copies
+            await syncCompanyPhraseFrequency(company.name, company.singlePhraseFrequency);
+        }
+
         res.json({ message: "Company updated", company });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
 });
+
+async function syncCompanyPhraseFrequency(companyName, targetFreq) {
+    if (!companyName || !targetFreq || targetFreq < 1) return;
+    try {
+        const phrases = await Phrase.find({ companyId: companyName }).lean();
+        const textGroups = {};
+        for (const p of phrases) {
+            const textKey = (p.text || "").trim();
+            if (!textKey) continue;
+            if (!textGroups[textKey]) textGroups[textKey] = [];
+            textGroups[textKey].push(p);
+        }
+        const docsToInsert = [];
+        for (const [textKey, group] of Object.entries(textGroups)) {
+            if (group.length < targetFreq) {
+                const needed = targetFreq - group.length;
+                const sample = group[0];
+                const baseId = (sample.phraseId || "").replace(/_c\d+$/, "");
+                for (let i = 1; i <= needed; i++) {
+                    const newCopyIndex = group.length + i;
+                    docsToInsert.push({
+                        phraseId: `${baseId}_c${newCopyIndex}`,
+                        companyId: sample.companyId,
+                        projectName: sample.projectName,
+                        language: sample.language,
+                        script_type: sample.script_type,
+                        speaker_id: sample.speaker_id,
+                        text: sample.text,
+                        emotion: sample.emotion,
+                        style: sample.style,
+                        intent: sample.intent,
+                        pitch: sample.pitch,
+                        speed: sample.speed,
+                        volume: sample.volume,
+                        events: sample.events,
+                        instructions: sample.instructions,
+                        freq: sample.freq,
+                        tags: sample.tags
+                    });
+                }
+            }
+        }
+        if (docsToInsert.length > 0) {
+            await Phrase.insertMany(docsToInsert);
+        }
+    } catch (err) {
+        console.error("syncCompanyPhraseFrequency error:", err);
+    }
+}
 
 router.delete("/companies/:id", async (req, res) => {
     try {

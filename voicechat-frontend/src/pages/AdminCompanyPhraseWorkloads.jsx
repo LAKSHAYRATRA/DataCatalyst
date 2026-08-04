@@ -60,6 +60,11 @@ export default function AdminCompanyPhraseWorkloads() {
               <h1 className="text-2xl md:text-3xl font-bold flex items-center gap-3 text-white">
                 <Building2 className="w-7 h-7 text-primary-500" />
                 {company ? company.name : "Company"} Phrase Workloads
+                {company && (
+                  <span className="text-xs bg-primary-900/40 text-primary-300 border border-primary-700/50 px-3 py-1 rounded-full font-semibold">
+                    Target Frequency: {company.singlePhraseFrequency || 1} unique {company.singlePhraseFrequency === 1 ? 'contributor' : 'contributors'} / phrase
+                  </span>
+                )}
               </h1>
               <p className="text-sm text-neutral-400 mt-1">
                 Select a language below to inspect its phrase database, assign application test samples, and manage phrase inventory.

@@ -21,6 +21,8 @@ import {
   analyzePhrase,
   downloadSinglePhraseZip,
   deletePhraseAdmin,
+  clearCompanyPhrases,
+  deduplicateCompanyPhrases,
 } from "../controllers/phraseController.js";
 
 const JWT_SECRET = process.env.JWT_SECRET;
@@ -72,6 +74,8 @@ router.post("/admin/approve-rejected", requireAuth(JWT_SECRET), requireAdmin, ap
 router.get("/admin/all", requireAuth(JWT_SECRET), requireAdmin, getAllPhrasesAdmin);
 router.get("/admin/download-zip/:phraseId", requireAuth(JWT_SECRET), requireAdmin, downloadSinglePhraseZip);
 router.post("/admin/delete/:phraseId", requireAuth(JWT_SECRET), requireAdmin, deletePhraseAdmin);
+router.post("/admin/clear", requireAuth(JWT_SECRET), requireAdmin, clearCompanyPhrases);
+router.post("/admin/deduplicate", requireAuth(JWT_SECRET), requireAdmin, deduplicateCompanyPhrases);
 
 /* -------------------------------------------------------------------------- */
 /*                                   QA Routes                                */

@@ -82,13 +82,33 @@ export async function uploadPhrases(req, res) {
       .lean();
     let currentFreq = highestFreqPhrase && Number.isInteger(highestFreqPhrase.freq) ? highestFreqPhrase.freq : 0;
 
+    // Fetch singlePhraseFrequency setting from Company config (default: 1)
+    const companyConfig = await Company.findOne({ name: targetCompanyName }).select("singlePhraseFrequency").lean();
+    const targetFreq = companyConfig && Number.isInteger(companyConfig.singlePhraseFrequency) && companyConfig.singlePhraseFrequency >= 1 ? companyConfig.singlePhraseFrequency : 1;
+
+    // Single query to fetch existing phrase IDs and texts for this company
+    const existingDocs = await Phrase.find({ companyId: targetCompanyName }).select("phraseId text").lean();
+    const existingIds = new Set(existingDocs.map(d => d.phraseId));
+    const existingTexts = new Set(existingDocs.map(d => d.text));
+
     let inserted = 0;
     let duplicates = 0;
     const seenBatchIds = new Set();
+    const docsToInsert = [];
+
+    const standardKeys = new Set([
+      "id", "phraseid", "_id", "phrase_id", "sentence_id", "sentenceid",
+      "text", "sentence", "content", "phrase", "transcript",
+      "script_type", "scripttype",
+      "speaker_id", "speakerid", "speaker",
+      "emotion", "emotions", "style", "intent", "pitch", "speed", "volume", "events",
+      "instructions", "instruction", "notes", "metadata"
+    ]);
 
     for (const p of validPhrases) {
-      const givenId = p.id || p.phraseId || p._id || p.phrase_id || `auto_${Date.now()}_${Math.random().toString(36).substring(2,7)}`;
+      const givenId = p.id || p.phraseId || p._id || p.phrase_id || p.sentence_id || p.sentenceId || `auto_${Date.now()}_${Math.random().toString(36).substring(2,7)}`;
       const cleanId = String(givenId).trim();
+      const text = p.text || p.sentence || p.content || p.phrase || p.transcript;
 
       // Check intra-batch duplicate
       if (seenBatchIds.has(cleanId)) {
@@ -97,27 +117,13 @@ export async function uploadPhrases(req, res) {
       }
       seenBatchIds.add(cleanId);
 
-      // Check database duplicate for this specific company
-      const existing = await Phrase.findOne({ companyId: targetCompanyName, phraseId: cleanId });
-      if (existing) {
+      // Check DB duplicates by ID or identical text
+      if (existingIds.has(cleanId) || (text && existingTexts.has(text))) {
         duplicates++;
         continue;
       }
 
-      // Flexibly map the text content
-      const text = p.text || p.sentence || p.content || p.phrase || p.transcript;
-
       const tags = {};
-      const standardKeys = new Set([
-        "id", "phraseid", "_id", "phrase_id",
-        "text", "sentence", "content", "phrase", "transcript",
-        "script_type", "scripttype",
-        "speaker_id", "speakerid", "speaker",
-        "emotion", "emotions", "style", "intent", "pitch", "speed", "volume", "events",
-        "instructions", "instruction", "notes", "metadata"
-      ]);
-
-      // Auto-extract all custom keys from the JSON object
       for (const [k, val] of Object.entries(p)) {
         const lowerK = k.toLowerCase();
         if (!standardKeys.has(lowerK) && val !== undefined && val !== null) {
@@ -125,7 +131,6 @@ export async function uploadPhrases(req, res) {
         }
       }
 
-      // Apply explicitly declared metadataKeys fallback/override
       if (Array.isArray(metadataKeys)) {
         for (const key of metadataKeys) {
           const jsonKey = Object.keys(p).find(k => k.toLowerCase() === key.toLowerCase());
@@ -135,29 +140,36 @@ export async function uploadPhrases(req, res) {
         }
       }
 
-      currentFreq++;
-      const doc = {
-        phraseId: cleanId,
-        companyId: targetCompanyName,
-        projectName: projectName ? projectName.trim() : null,
-        language: cleanLanguage,
-        script_type: p.script_type || p.scriptType || null,
-        speaker_id: p.speaker_id || p.speakerId || p.speaker || null,
-        text: text,
-        emotion: p.emotion || p.emotions || null,
-        style: p.style || null,
-        intent: p.intent || null,
-        pitch: p.pitch || null,
-        speed: p.speed || null,
-        volume: p.volume || null,
-        events: p.events ? (Array.isArray(p.events) ? p.events.join(", ") : JSON.stringify(p.events)) : null,
-        instructions: p.instructions || p.instruction || p.notes || p.metadata || null,
-        freq: currentFreq,
-        tags,
-      };
+      // Generate targetFreq phrase copies (1 copy if freq=1, N copies if freq=N)
+      for (let cIdx = 1; cIdx <= targetFreq; cIdx++) {
+        currentFreq++;
+        const copyPhraseId = cIdx === 1 ? cleanId : `${cleanId}_c${cIdx}`;
 
-      await Phrase.create(doc);
-      inserted++;
+        docsToInsert.push({
+          phraseId: copyPhraseId,
+          companyId: targetCompanyName,
+          projectName: projectName ? projectName.trim() : null,
+          language: cleanLanguage,
+          script_type: p.script_type || p.scriptType || null,
+          speaker_id: p.speaker_id || p.speakerId || p.speaker || null,
+          text: text,
+          emotion: p.emotion || p.emotions || null,
+          style: p.style || null,
+          intent: p.intent || null,
+          pitch: p.pitch || null,
+          speed: p.speed || null,
+          volume: p.volume || null,
+          events: p.events ? (Array.isArray(p.events) ? p.events.join(", ") : JSON.stringify(p.events)) : null,
+          instructions: p.instructions || p.instruction || p.notes || p.metadata || null,
+          freq: currentFreq,
+          tags,
+        });
+      }
+    }
+
+    if (docsToInsert.length > 0) {
+      await Phrase.insertMany(docsToInsert);
+      inserted = docsToInsert.length;
     }
 
     res.json({ success: true, inserted, duplicates, updated: 0 });
@@ -318,6 +330,18 @@ export async function getAvailablePhrase(req, res) {
           baseQuery.companyId.$nin = blockedCompanies;
         }
       }
+    }
+
+    // Ensure the contributor is never assigned a phrase text they have already recorded or locked
+    const userDoneDocs = await Phrase.find({
+      $or: [
+        { contributorId: user._id, status: { $in: ["recorded", "approved", "rejected"] } },
+        { lockedBy: user._id, status: "locked", lockedAt: { $gte: expiryTime } }
+      ]
+    }).select("text").lean();
+    const userDoneTexts = new Set(userDoneDocs.map(d => (d.text || "").trim()).filter(Boolean));
+    if (userDoneTexts.size > 0) {
+      baseQuery.text = { $nin: Array.from(userDoneTexts) };
     }
 
     // 1. First see if the user already has a locked phrase they haven't finished
@@ -1204,6 +1228,57 @@ export async function deletePhraseAdmin(req, res) {
     }
   } catch (error) {
     console.error("deletePhraseAdmin error:", error);
+    res.status(500).json({ error: error.message });
+  }
+}
+
+/**
+ * Admin: Clear all phrases for a company or all phrases
+ */
+export async function clearCompanyPhrases(req, res) {
+  try {
+    const { companyId } = req.body;
+    const filter = companyId ? { companyId } : {};
+    const result = await Phrase.deleteMany(filter);
+    res.json({ success: true, deletedCount: result.deletedCount, message: `Deleted ${result.deletedCount} phrase documents.` });
+  } catch (error) {
+    console.error("clearCompanyPhrases error:", error);
+    res.status(500).json({ error: error.message });
+  }
+}
+
+/**
+ * Admin: Remove duplicate phrases (keeps the first phrase per unique text/sentence)
+ */
+export async function deduplicateCompanyPhrases(req, res) {
+  try {
+    const { companyId } = req.body;
+    const filter = companyId ? { companyId } : {};
+    
+    const allPhrases = await Phrase.find(filter).sort({ createdAt: 1, freq: 1 }).lean();
+    const seenTexts = new Set();
+    const seenIds = new Set();
+    const idsToDelete = [];
+
+    for (const p of allPhrases) {
+      const textKey = (p.text || "").trim();
+      const idKey = (p.phraseId || "").trim();
+
+      if ((textKey && seenTexts.has(textKey)) || (idKey && seenIds.has(idKey))) {
+        idsToDelete.push(p._id);
+      } else {
+        if (textKey) seenTexts.add(textKey);
+        if (idKey) seenIds.add(idKey);
+      }
+    }
+
+    if (idsToDelete.length > 0) {
+      await Phrase.deleteMany({ _id: { $in: idsToDelete } });
+    }
+
+    res.json({ success: true, deletedCount: idsToDelete.length, message: `Removed ${idsToDelete.length} duplicate phrases.` });
+  } catch (error) {
+    console.error("deduplicateCompanyPhrases error:", error);
     res.status(500).json({ error: error.message });
   }
 }

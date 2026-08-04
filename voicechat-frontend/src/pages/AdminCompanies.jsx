@@ -47,6 +47,7 @@ export default function AdminCompanies() {
       await apiPatchJson(`/api/admin/companies/${companyId}`, {
         maxContributionMinutes: Number(company.maxContributionMinutes),
         hourlyPayout: Number(company.hourlyPayout),
+        singlePhraseFrequency: Math.max(1, Number(company.singlePhraseFrequency) || 1),
         projectName: company.projectName || '',
         namingPattern: company.namingPattern || '{phraseId}'
       });
@@ -289,7 +290,7 @@ export default function AdminCompanies() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                   {/* Contribution Limit */}
                   <div className="bg-neutral-100 dark:bg-neutral-800 p-5 rounded-xl border border-neutral-200 dark:border-neutral-700">
                     <label className="block text-sm font-semibold text-neutral-700 dark:text-neutral-300 mb-1">
@@ -327,6 +328,26 @@ export default function AdminCompanies() {
                         onChange={(e) => handleFieldChange(company._id, 'hourlyPayout', e.target.value)}
                       />
                       <span className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-400 text-sm font-medium">USD / hr</span>
+                    </div>
+                  </div>
+
+                  {/* Single Phrase Frequency */}
+                  <div className="bg-neutral-100 dark:bg-neutral-800 p-5 rounded-xl border border-neutral-200 dark:border-neutral-700">
+                    <label className="block text-sm font-semibold text-neutral-700 dark:text-neutral-300 mb-1">
+                      Single Phrase Frequency
+                    </label>
+                    <p className="text-xs text-neutral-500 mb-4">Unique contributors per phrase before retiring (1 = 1 contributor, 2 = 2 unique contributors)</p>
+                    
+                    <div className="relative">
+                      <input 
+                        type="number"
+                        min="1"
+                        step="1"
+                        className="input w-full pr-28"
+                        value={company.singlePhraseFrequency !== undefined ? company.singlePhraseFrequency : 1}
+                        onChange={(e) => handleFieldChange(company._id, 'singlePhraseFrequency', e.target.value)}
+                      />
+                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-400 text-sm font-medium">Contributor(s)</span>
                     </div>
                   </div>
                 </div>

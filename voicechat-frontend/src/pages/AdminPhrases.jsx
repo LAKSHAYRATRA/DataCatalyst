@@ -149,6 +149,39 @@ export default function AdminPhrases() {
     reader.readAsText(file);
   };
 
+  const handleDeduplicate = async () => {
+    if (!window.confirm('Remove duplicate phrases, keeping only 1 copy per sentence?')) return;
+    setLoading(true);
+    setError('');
+    setMessage('');
+    try {
+      const res = await apiPostJson('/api/phrases/admin/deduplicate', { companyId: companyId.trim() });
+      setMessage(res.message || `Cleaned duplicates successfully! Removed: ${res.deletedCount}`);
+      fetchPhrases();
+    } catch (err) {
+      setError('Deduplication failed: ' + err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleClearBatch = async () => {
+    const targetName = companyId.trim() ? `for project "${companyId.trim()}"` : 'ALL phrases';
+    if (!window.confirm(`Are you sure you want to delete ${targetName}? This cannot be undone.`)) return;
+    setLoading(true);
+    setError('');
+    setMessage('');
+    try {
+      const res = await apiPostJson('/api/phrases/admin/clear', { companyId: companyId.trim() });
+      setMessage(res.message || `Cleared batch successfully!`);
+      fetchPhrases();
+    } catch (err) {
+      setError('Clear failed: ' + err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-neutral-50 dark:bg-neutral-900 flex transition-colors duration-300">
       <AdminNav />
@@ -314,7 +347,27 @@ export default function AdminPhrases() {
           </div>
         </div>
         
-        <div className="mt-6 flex justify-end">
+        <div className="mt-6 flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
+              onClick={handleDeduplicate}
+              disabled={loading}
+              title="Remove duplicate phrases keeping only 1 copy per unique sentence"
+            >
+              🧹 Remove Duplicates
+            </button>
+            <button
+              type="button"
+              className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
+              onClick={handleClearBatch}
+              disabled={loading}
+              title="Delete all phrases for selected project to restart upload cleanly"
+            >
+              🗑️ Clear Project Phrases
+            </button>
+          </div>
           <button 
             className="btn btn-primary flex items-center gap-2"
             onClick={handleUpload}
@@ -332,7 +385,9 @@ export default function AdminPhrases() {
         transition={{ delay: 0.1 }}
         className="card overflow-hidden"
       >
-        <h2 className="text-xl font-semibold mb-4">Database Overview</h2>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-xl font-semibold">Database Overview ({phrasesList.length} Total Phrases)</h2>
+        </div>
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse whitespace-nowrap">
             <thead>
