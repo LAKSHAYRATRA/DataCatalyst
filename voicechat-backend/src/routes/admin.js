@@ -2555,12 +2555,30 @@ router.get("/languages/:id/contributors-summary", async (req, res) => {
         // 1. Fetch call sessions for this language
         const callSessions = await CallSession.find({
             language: { $regex: new RegExp(`^(${langCode}|${langName})$`, "i") }
-        }).select("userA userB callStatus recordingAStatus recordingBStatus").lean();
+        }).select("userA userB callStatus actualCallDuration duration callActuallyStarted").lean();
+
+        let totalCallSeconds = 0;
+        let completedCallsCount = 0;
+        const userCallStatsMap = new Map(); // userId -> { callSecs, callCount }
 
         const userCallStatusMap = new Map();
         for (const session of callSessions) {
-            if (session.userA) userCallStatusMap.set(String(session.userA), "approved");
-            if (session.userB) userCallStatusMap.set(String(session.userB), "approved");
+            const dur = Number(session.actualCallDuration || session.duration) || 0;
+            totalCallSeconds += dur;
+            completedCallsCount++;
+
+            [session.userA, session.userB].forEach(uid => {
+                if (uid) {
+                    const uKey = String(uid);
+                    userCallStatusMap.set(uKey, "approved");
+                    if (!userCallStatsMap.has(uKey)) {
+                        userCallStatsMap.set(uKey, { callSecs: 0, callCount: 0 });
+                    }
+                    const st = userCallStatsMap.get(uKey);
+                    st.callSecs += dur;
+                    st.callCount++;
+                }
+            });
         }
 
         const callUserIds = Array.from(userCallStatusMap.keys());
@@ -2585,10 +2603,11 @@ router.get("/languages/:id/contributors-summary", async (req, res) => {
                 return c === langCode || c === langName;
             });
 
+            const uStats = userCallStatsMap.get(String(u._id)) || { callSecs: 0, callCount: 0 };
+
             if (apps.length > 0) {
                 const latestApp = apps.sort((a, b) => new Date(b.appliedAt || 0) - new Date(a.appliedAt || 0))[0];
                 let appStatus = latestApp.status || "pending";
-                // If the latest application is explicitly rejected, respect that status!
                 if (userCallStatusMap.has(String(u._id)) && latestApp.status !== "rejected") {
                     appStatus = "approved";
                 }
@@ -2596,20 +2615,44 @@ router.get("/languages/:id/contributors-summary", async (req, res) => {
                     user: u,
                     appStatus,
                     appliedAt: latestApp.appliedAt || u.createdAt,
-                    noiseGateDb: latestApp.noiseGateDb !== undefined ? latestApp.noiseGateDb : (u.noiseGateDb || 0)
+                    noiseGateDb: latestApp.noiseGateDb !== undefined ? latestApp.noiseGateDb : (u.noiseGateDb || 0),
+                    callSeconds: uStats.callSecs,
+                    callCount: uStats.callCount
                 });
             } else if (userCallStatusMap.has(String(u._id))) {
                 userItemMap.set(String(u._id), {
                     user: u,
                     appStatus: "approved",
                     appliedAt: u.createdAt,
-                    noiseGateDb: u.noiseGateDb || 0
+                    noiseGateDb: u.noiseGateDb || 0,
+                    callSeconds: uStats.callSecs,
+                    callCount: uStats.callCount
                 });
             }
         }
 
         const items = Array.from(userItemMap.values());
         const summary = calculateDemographics(items);
+
+        let approvedAppCount = 0;
+        let rejectedAppCount = 0;
+        let pendingAppCount = 0;
+        for (const item of items) {
+            if (item.appStatus === "approved") approvedAppCount++;
+            else if (item.appStatus === "rejected") rejectedAppCount++;
+            else pendingAppCount++;
+        }
+        const totalEvaluatedApps = approvedAppCount + rejectedAppCount;
+        const approvalRate = totalEvaluatedApps > 0 ? Number(((approvedAppCount / totalEvaluatedApps) * 100).toFixed(1)) : 0;
+        const rejectionRate = totalEvaluatedApps > 0 ? Number(((rejectedAppCount / totalEvaluatedApps) * 100).toFixed(1)) : 0;
+
+        summary.totalCallSeconds = totalCallSeconds;
+        summary.completedCallsCount = completedCallsCount;
+        summary.approvedAppCount = approvedAppCount;
+        summary.rejectedAppCount = rejectedAppCount;
+        summary.pendingAppCount = pendingAppCount;
+        summary.approvalRate = approvalRate;
+        summary.rejectionRate = rejectionRate;
 
         res.json({
             language: {
@@ -2867,7 +2910,36 @@ router.get("/companies/:id/contributors-summary", async (req, res) => {
         // Find all phrase records for this company to identify languages and contributors
         const phrases = await Phrase.find({
             companyId: { $in: companyRegexes }
-        }).select("language contributorId status recordedAt").lean();
+        }).select("language contributorId status recordedAt duration").lean();
+
+        // Calculate Whole Company Statistics across all languages
+        let companyTotalSeconds = 0;
+        let companyApprovedSeconds = 0;
+        let companyRejectedSeconds = 0;
+        let companyPendingSeconds = 0;
+
+        let companyApprovedCount = 0;
+        let companyRejectedCount = 0;
+        let companyPendingCount = 0;
+
+        for (const p of phrases) {
+            const dur = Number(p.duration) || 0;
+            companyTotalSeconds += dur;
+            if (p.status === "approved") {
+                companyApprovedSeconds += dur;
+                companyApprovedCount++;
+            } else if (p.status === "rejected") {
+                companyRejectedSeconds += dur;
+                companyRejectedCount++;
+            } else {
+                companyPendingSeconds += dur;
+                companyPendingCount++;
+            }
+        }
+
+        const companyTotalEvaluated = companyApprovedCount + companyRejectedCount;
+        const companyApprovalRate = companyTotalEvaluated > 0 ? Number(((companyApprovedCount / companyTotalEvaluated) * 100).toFixed(1)) : 0;
+        const companyRejectionRate = companyTotalEvaluated > 0 ? Number(((companyRejectedCount / companyTotalEvaluated) * 100).toFixed(1)) : 0;
 
         // Also find users with phrase language applications for this company
         const users = await User.find({
@@ -2954,10 +3026,104 @@ router.get("/companies/:id/contributors-summary", async (req, res) => {
         for (const [langCode, langData] of languageMap.entries()) {
             const items = Array.from(langData.usersMap.values());
             const summary = calculateDemographics(items);
+
+            // Compute per-language & per-contributor durations and rates
+            let langTotalSeconds = 0;
+            let langApprovedSeconds = 0;
+            let langRejectedSeconds = 0;
+            let langPendingSeconds = 0;
+
+            let langApprovedCount = 0;
+            let langRejectedCount = 0;
+            let langPendingCount = 0;
+
+            const userDurations = new Map();
+
+            for (const p of langData.phrases) {
+                const dur = Number(p.duration) || 0;
+                const uid = p.contributorId ? String(p.contributorId) : null;
+                if (uid && !userDurations.has(uid)) {
+                    userDurations.set(uid, {
+                        totalSecs: 0,
+                        approvedSecs: 0,
+                        rejectedSecs: 0,
+                        pendingSecs: 0,
+                        approvedCnt: 0,
+                        rejectedCnt: 0,
+                        pendingCnt: 0
+                    });
+                }
+                const uStats = uid ? userDurations.get(uid) : null;
+
+                langTotalSeconds += dur;
+                if (uStats) uStats.totalSecs += dur;
+
+                if (p.status === "approved") {
+                    langApprovedSeconds += dur;
+                    langApprovedCount++;
+                    if (uStats) { uStats.approvedSecs += dur; uStats.approvedCnt++; }
+                } else if (p.status === "rejected") {
+                    langRejectedSeconds += dur;
+                    langRejectedCount++;
+                    if (uStats) { uStats.rejectedSecs += dur; uStats.rejectedCnt++; }
+                } else {
+                    langPendingSeconds += dur;
+                    langPendingCount++;
+                    if (uStats) { uStats.pendingSecs += dur; uStats.pendingCnt++; }
+                }
+            }
+
+            const langTotalEvaluated = langApprovedCount + langRejectedCount;
+            const langApprovalRate = langTotalEvaluated > 0 ? Number(((langApprovedCount / langTotalEvaluated) * 100).toFixed(1)) : 0;
+            const langRejectionRate = langTotalEvaluated > 0 ? Number(((langRejectedCount / langTotalEvaluated) * 100).toFixed(1)) : 0;
+
+            // Attach per-contributor metrics to user list items
+            for (const item of items) {
+                const uStats = userDurations.get(String(item.user._id)) || {
+                    totalSecs: 0,
+                    approvedSecs: 0,
+                    rejectedSecs: 0,
+                    pendingSecs: 0,
+                    approvedCnt: 0,
+                    rejectedCnt: 0,
+                    pendingCnt: 0
+                };
+                item.totalSeconds = uStats.totalSecs;
+                item.approvedSeconds = uStats.approvedSecs;
+                item.rejectedSeconds = uStats.rejectedSecs;
+                item.pendingSeconds = uStats.pendingSecs;
+
+                item.approvedCount = uStats.approvedCnt;
+                item.rejectedCount = uStats.rejectedCnt;
+                item.pendingCount = uStats.pendingCnt;
+
+                const uEval = uStats.approvedCnt + uStats.rejectedCnt;
+                item.approvalRate = uEval > 0 ? Number(((uStats.approvedCnt / uEval) * 100).toFixed(1)) : 0;
+                item.rejectionRate = uEval > 0 ? Number(((uStats.rejectedCnt / uEval) * 100).toFixed(1)) : 0;
+            }
+
+            summary.totalSeconds = langTotalSeconds;
+            summary.approvedSeconds = langApprovedSeconds;
+            summary.rejectedSeconds = langRejectedSeconds;
+            summary.pendingSeconds = langPendingSeconds;
+
+            summary.approvedCount = langApprovedCount;
+            summary.rejectedCount = langRejectedCount;
+            summary.pendingCount = langPendingCount;
+
+            summary.approvalRate = langApprovalRate;
+            summary.rejectionRate = langRejectionRate;
+
             languagesList.push({
                 code: langCode,
                 name: langData.name.charAt(0).toUpperCase() + langData.name.slice(1),
                 phraseCount: langData.phrases.length,
+                totalSeconds: langTotalSeconds,
+                approvedSeconds: langApprovedSeconds,
+                rejectedSeconds: langRejectedSeconds,
+                pendingSeconds: langPendingSeconds,
+                approvalRate: langApprovalRate,
+                rejectionRate: langRejectionRate,
                 summary
             });
         }
@@ -2968,7 +3134,16 @@ router.get("/companies/:id/contributors-summary", async (req, res) => {
             company: {
                 _id: company._id,
                 name: company.name,
-                projectName: company.projectName
+                projectName: company.projectName,
+                totalSeconds: companyTotalSeconds,
+                totalApprovedSeconds: companyApprovedSeconds,
+                totalRejectedSeconds: companyRejectedSeconds,
+                totalPendingSeconds: companyPendingSeconds,
+                approvedCount: companyApprovedCount,
+                rejectedCount: companyRejectedCount,
+                pendingCount: companyPendingCount,
+                approvalRate: companyApprovalRate,
+                rejectionRate: companyRejectionRate
             },
             languages: languagesList
         });

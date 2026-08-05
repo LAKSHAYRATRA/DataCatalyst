@@ -19,6 +19,15 @@ import {
 import Swal from "sweetalert2";
 import { apiGet, apiPostJson } from "../lib/api.js";
 
+function formatSecs(secs) {
+  if (!secs || secs <= 0) return "0m 0s";
+  const h = Math.floor(secs / 3600);
+  const m = Math.floor((secs % 3600) / 60);
+  const s = Math.floor(secs % 60);
+  if (h > 0) return `${h}h ${m}m ${s}s`;
+  return `${m}m ${s}s`;
+}
+
 export default function AdminCompanyContributorsSummary() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -245,6 +254,48 @@ export default function AdminCompanyContributorsSummary() {
           </div>
         </div>
 
+        {/* Whole Company Collection Overview Banner (Across All Languages) */}
+        {company && (
+          <div className="bg-neutral-800/90 border border-neutral-700 rounded-2xl p-6 shadow-xl mb-8">
+            <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+              <Building2 className="w-5 h-5 text-warning-400" />
+              Whole Company Collection Overview (All Languages)
+            </h2>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
+              <div className="bg-neutral-750 border border-neutral-700 p-3.5 rounded-xl">
+                <span className="text-[11px] text-neutral-400 font-medium block">Total Collection Duration</span>
+                <span className="text-lg font-bold text-white mt-1 block">{formatSecs(company.totalSeconds)}</span>
+                <span className="text-[11px] text-neutral-400 font-normal mt-0.5 block">{(company.approvedCount || 0) + (company.rejectedCount || 0) + (company.pendingCount || 0)} total phrases</span>
+              </div>
+              <div className="bg-neutral-750 border border-neutral-700 p-3.5 rounded-xl">
+                <span className="text-[11px] text-emerald-400 font-medium block">Approved Duration</span>
+                <span className="text-lg font-bold text-emerald-400 mt-1 block">{formatSecs(company.totalApprovedSeconds)}</span>
+                <span className="text-[11px] text-emerald-500/80 font-normal mt-0.5 block">{company.approvedCount || 0} phrases</span>
+              </div>
+              <div className="bg-neutral-750 border border-neutral-700 p-3.5 rounded-xl">
+                <span className="text-[11px] text-red-400 font-medium block">Rejected Duration</span>
+                <span className="text-lg font-bold text-red-400 mt-1 block">{formatSecs(company.totalRejectedSeconds)}</span>
+                <span className="text-[11px] text-red-500/80 font-normal mt-0.5 block">{company.rejectedCount || 0} phrases</span>
+              </div>
+              <div className="bg-neutral-750 border border-neutral-700 p-3.5 rounded-xl">
+                <span className="text-[11px] text-amber-400 font-medium block">Pending Duration</span>
+                <span className="text-lg font-bold text-amber-400 mt-1 block">{formatSecs(company.totalPendingSeconds)}</span>
+                <span className="text-[11px] text-amber-500/80 font-semibold mt-0.5 block">{company.pendingCount || 0} pending phrases</span>
+              </div>
+              <div className="bg-neutral-750 border border-neutral-700 p-3.5 rounded-xl">
+                <span className="text-[11px] text-emerald-300 font-medium block">Approval Rate</span>
+                <span className="text-lg font-bold text-emerald-300 mt-1 block">{company.approvalRate ?? 0}%</span>
+                <span className="text-[11px] text-neutral-400 font-normal mt-0.5 block">Evaluated phrases</span>
+              </div>
+              <div className="bg-neutral-750 border border-neutral-700 p-3.5 rounded-xl">
+                <span className="text-[11px] text-red-300 font-medium block">Rejection Rate</span>
+                <span className="text-lg font-bold text-red-300 mt-1 block">{company.rejectionRate ?? 0}%</span>
+                <span className="text-[11px] text-neutral-400 font-normal mt-0.5 block">Evaluated phrases</span>
+              </div>
+            </div>
+          </div>
+        )}
+
         {loading ? (
           <div className="bg-neutral-800 border border-neutral-700 rounded-2xl text-center py-20 shadow-xl">
             <Loader2 className="w-8 h-8 animate-spin text-warning-500 mx-auto mb-3" />
@@ -299,18 +350,21 @@ export default function AdminCompanyContributorsSummary() {
                           {lang.name}
                         </h3>
                         <p className="text-xs text-neutral-400 mt-0.5">
-                          {lang.phraseCount} Recorded Phrases
+                          {lang.phraseCount} Recorded Phrases • <span className="text-emerald-400 font-medium">{formatSecs(lang.approvedSeconds)} Appr.</span>
                         </p>
 
                         <div className="flex flex-wrap gap-1.5 mt-3 text-[11px]">
+                          <span className="px-2 py-0.5 rounded bg-emerald-950/80 text-emerald-300 border border-emerald-900/50 font-medium">
+                            ✓ {lang.approvalRate}% Appr.
+                          </span>
+                          <span className="px-2 py-0.5 rounded bg-red-950/80 text-red-300 border border-red-900/50 font-medium">
+                            ✕ {lang.rejectionRate}% Rej.
+                          </span>
                           <span className="px-2 py-0.5 rounded bg-blue-950/80 text-blue-300 border border-blue-900/50">
                             ♂ {lang.summary.male}
                           </span>
                           <span className="px-2 py-0.5 rounded bg-pink-950/80 text-pink-300 border border-pink-900/50">
                             ♀ {lang.summary.female}
-                          </span>
-                          <span className="px-2 py-0.5 rounded bg-warning-950/80 text-warning-300 border border-warning-900/50">
-                            18-30: {lang.summary.age_18_30}
                           </span>
                         </div>
                       </div>
@@ -341,25 +395,37 @@ export default function AdminCompanyContributorsSummary() {
                   </div>
                 </div>
 
-                {/* Demographics Overview Cards */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                  <div className="bg-neutral-750 border border-neutral-700 p-4 rounded-xl">
-                    <span className="text-xs text-neutral-400 font-medium">Total Active Contributors</span>
-                    <div className="text-2xl font-bold text-white mt-1">{selectedLangData.summary.totalContributors}</div>
+                {/* Demographics & Duration Overview Cards */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+                  <div className="bg-neutral-750 border border-neutral-700 p-3.5 rounded-xl">
+                    <span className="text-[11px] text-neutral-400 font-medium block">Total Language Collection</span>
+                    <div className="text-base font-bold text-white mt-1">{formatSecs(selectedLangData.summary?.totalSeconds || selectedLangData.totalSeconds)}</div>
+                    <span className="text-[10px] text-neutral-400 font-normal block mt-0.5">{selectedLangData.phraseCount || 0} phrases</span>
                   </div>
-                  <div className="bg-neutral-750 border border-neutral-700 p-4 rounded-xl">
-                    <span className="text-xs text-blue-400 font-medium">Male Contributors</span>
-                    <div className="text-2xl font-bold text-blue-400 mt-1">{selectedLangData.summary.male}</div>
+                  <div className="bg-neutral-750 border border-neutral-700 p-3.5 rounded-xl">
+                    <span className="text-[11px] text-emerald-400 font-medium block">Approved Duration</span>
+                    <div className="text-base font-bold text-emerald-400 mt-1">{formatSecs(selectedLangData.summary?.approvedSeconds || selectedLangData.approvedSeconds)}</div>
+                    <span className="text-[10px] text-emerald-500/80 font-normal block mt-0.5">{selectedLangData.summary?.approvedCount ?? selectedLangData.approvedCount ?? 0} phrases</span>
                   </div>
-                  <div className="bg-neutral-750 border border-neutral-700 p-4 rounded-xl">
-                    <span className="text-xs text-pink-400 font-medium">Female Contributors</span>
-                    <div className="text-2xl font-bold text-pink-400 mt-1">{selectedLangData.summary.female}</div>
+                  <div className="bg-neutral-750 border border-neutral-700 p-3.5 rounded-xl">
+                    <span className="text-[11px] text-red-400 font-medium block">Rejected Duration</span>
+                    <div className="text-base font-bold text-red-400 mt-1">{formatSecs(selectedLangData.summary?.rejectedSeconds || selectedLangData.rejectedSeconds)}</div>
+                    <span className="text-[10px] text-red-500/80 font-normal block mt-0.5">{selectedLangData.summary?.rejectedCount ?? selectedLangData.rejectedCount ?? 0} phrases</span>
                   </div>
-                  <div className="bg-neutral-750 border border-neutral-700 p-4 rounded-xl">
-                    <span className="text-xs text-emerald-400 font-medium">Approved / Pending / Rejected</span>
-                    <div className="text-2xl font-bold text-emerald-400 mt-1">
-                      {selectedLangData.summary.approvedUsers.length} <span className="text-neutral-500 text-sm font-normal">/ {selectedLangData.summary.pendingUsers.length} / <span className="text-red-400">{selectedLangData.summary.rejectedUsers?.length || 0}</span></span>
-                    </div>
+                  <div className="bg-neutral-750 border border-neutral-700 p-3.5 rounded-xl">
+                    <span className="text-[11px] text-amber-400 font-medium block">Pending Duration</span>
+                    <div className="text-base font-bold text-amber-400 mt-1">{formatSecs(selectedLangData.summary?.pendingSeconds || selectedLangData.pendingSeconds)}</div>
+                    <span className="text-[10px] text-amber-500/80 font-semibold block mt-0.5">{selectedLangData.summary?.pendingCount ?? selectedLangData.pendingCount ?? 0} pending phrases</span>
+                  </div>
+                  <div className="bg-neutral-750 border border-neutral-700 p-3.5 rounded-xl">
+                    <span className="text-[11px] text-emerald-300 font-medium block">Approval Rate</span>
+                    <div className="text-base font-bold text-emerald-300 mt-1">{selectedLangData.approvalRate ?? selectedLangData.summary?.approvalRate ?? 0}%</div>
+                    <span className="text-[10px] text-neutral-400 font-normal block mt-0.5">Evaluated</span>
+                  </div>
+                  <div className="bg-neutral-750 border border-neutral-700 p-3.5 rounded-xl">
+                    <span className="text-[11px] text-red-300 font-medium block">Rejection Rate</span>
+                    <div className="text-base font-bold text-red-300 mt-1">{selectedLangData.rejectionRate ?? selectedLangData.summary?.rejectionRate ?? 0}%</div>
+                    <span className="text-[10px] text-neutral-400 font-normal block mt-0.5">Evaluated</span>
                   </div>
                 </div>
 
@@ -527,9 +593,11 @@ export default function AdminCompanyContributorsSummary() {
                               <tr>
                                 <th className="px-4 py-2.5 text-left">Speaker ID</th>
                                 <th className="px-4 py-2.5 text-left">Contributor</th>
-                                <th className="px-4 py-2.5 text-left">Email</th>
-                                <th className="px-4 py-2.5 text-left">Gender / Age</th>
-                                <th className="px-4 py-2.5 text-left">State / Locality</th>
+                                <th className="px-4 py-2.5 text-left">Approved Dur.</th>
+                                <th className="px-4 py-2.5 text-left">Total Dur.</th>
+                                <th className="px-4 py-2.5 text-left">Rejected Dur.</th>
+                                <th className="px-4 py-2.5 text-left">Pending Dur.</th>
+                                <th className="px-4 py-2.5 text-left">Appr. / Rej. %</th>
                                 <th className="px-4 py-2.5 text-left">Status</th>
                                 <th className="px-4 py-2.5 text-left">Noise Gate (dB)</th>
                                 <th className="px-4 py-2.5 text-right">Actions</th>
@@ -543,12 +611,12 @@ export default function AdminCompanyContributorsSummary() {
                                     {u.firstname} {u.lastname}
                                     <div className="text-[10px] text-neutral-400 font-normal">@{u.username}</div>
                                   </td>
-                                  <td className="px-4 py-2.5 text-neutral-300">{u.email}</td>
-                                  <td className="px-4 py-2.5 capitalize text-neutral-300">
-                                    {u.gender} <span className="text-neutral-400">({u.age} yrs)</span>
-                                  </td>
-                                  <td className="px-4 py-2.5 text-neutral-300">
-                                    {u.state} <span className="text-neutral-400">({u.locality})</span>
+                                  <td className="px-4 py-2.5 text-emerald-400 font-semibold">{formatSecs(u.approvedSeconds)} <span className="text-[10px] text-emerald-500/80 font-normal">({u.approvedCount || 0})</span></td>
+                                  <td className="px-4 py-2.5 text-white font-medium">{formatSecs(u.totalSeconds)}</td>
+                                  <td className="px-4 py-2.5 text-red-400 font-medium">{formatSecs(u.rejectedSeconds)} <span className="text-[10px] text-red-500/80 font-normal">({u.rejectedCount || 0})</span></td>
+                                  <td className="px-4 py-2.5 text-amber-400 font-medium">{formatSecs(u.pendingSeconds)} <span className="text-[10px] font-semibold text-amber-300">({u.pendingCount || 0} pending)</span></td>
+                                  <td className="px-4 py-2.5 font-medium">
+                                    <span className="text-emerald-400">{u.approvalRate}%</span> / <span className="text-red-400">{u.rejectionRate}%</span>
                                   </td>
                                   <td className="px-4 py-2.5">
                                     {u.status === "approved" ? (

@@ -21,6 +21,15 @@ function toSlug(name) {
     return name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 }
 
+function formatSecs(secs) {
+  if (!secs || secs <= 0) return "0m 0s";
+  const h = Math.floor(secs / 3600);
+  const m = Math.floor((secs % 3600) / 60);
+  const s = Math.floor(secs % 60);
+  if (h > 0) return `${h}h ${m}m ${s}s`;
+  return `${m}m ${s}s`;
+}
+
 export default function AdminLanguages() {
     const [languages, setLanguages] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -622,22 +631,20 @@ export default function AdminLanguages() {
                                     {/* Stats Overview */}
                                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                                         <div className="bg-neutral-750 border border-neutral-700 p-4 rounded-xl">
-                                            <span className="text-xs text-neutral-400 font-medium">Total Contributors</span>
-                                            <div className="text-2xl font-bold text-white mt-1">{summaryData.totalContributors}</div>
+                                            <span className="text-xs text-neutral-400 font-medium">Total Call Collection</span>
+                                            <div className="text-xl font-bold text-white mt-1">{formatSecs(summaryData.totalCallSeconds)}</div>
                                         </div>
                                         <div className="bg-neutral-750 border border-neutral-700 p-4 rounded-xl">
-                                            <span className="text-xs text-blue-400 font-medium">Male</span>
-                                            <div className="text-2xl font-bold text-blue-400 mt-1">{summaryData.male}</div>
+                                            <span className="text-xs text-blue-400 font-medium">Completed Calls</span>
+                                            <div className="text-xl font-bold text-blue-400 mt-1">{summaryData.completedCallsCount || 0}</div>
                                         </div>
                                         <div className="bg-neutral-750 border border-neutral-700 p-4 rounded-xl">
-                                            <span className="text-xs text-pink-400 font-medium">Female</span>
-                                            <div className="text-2xl font-bold text-pink-400 mt-1">{summaryData.female}</div>
+                                            <span className="text-xs text-emerald-400 font-medium">Appr. Rate (Apps)</span>
+                                            <div className="text-xl font-bold text-emerald-400 mt-1">{summaryData.approvalRate ?? 0}%</div>
                                         </div>
                                         <div className="bg-neutral-750 border border-neutral-700 p-4 rounded-xl">
-                                            <span className="text-xs text-emerald-400 font-medium">Approved / Pending</span>
-                                            <div className="text-2xl font-bold text-emerald-400 mt-1">
-                                                {summaryData.approvedUsers.length} <span className="text-neutral-500 text-sm font-normal">/ {summaryData.pendingUsers.length}</span>
-                                            </div>
+                                            <span className="text-xs text-red-400 font-medium">Rej. Rate (Apps)</span>
+                                            <div className="text-xl font-bold text-red-400 mt-1">{summaryData.rejectionRate ?? 0}%</div>
                                         </div>
                                     </div>
 
