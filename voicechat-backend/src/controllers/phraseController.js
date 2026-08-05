@@ -512,20 +512,35 @@ export async function submitPhraseRecording(req, res) {
             .run();
     });
 
-    // 2. Upload FLAC to S3
+    // 2. Upload FLAC to S3 (or fallback to local disk storage if S3 is unreachable)
     const companyFolder = phrase.companyId ? String(phrase.companyId).replace(/[^a-zA-Z0-9_\-\ ]/g, "").trim() : "No Company";
-    const s3Key = `phrases/${companyFolder}/${req.user._id}_${phraseId}_${Date.now()}.flac`;
+    const s3FileName = `${req.user._id}_${phraseId}_${Date.now()}.flac`;
+    const s3Key = `phrases/${companyFolder}/${s3FileName}`;
 
-    const uploader = new Upload({
-        client: s3Client,
-        params: {
-            Bucket: BUCKET_NAME,
-            Key: s3Key,
-            Body: fs.createReadStream(flacPath),
-            ContentType: "audio/flac",
-        },
-    });
-    await uploader.done();
+    try {
+      const uploader = new Upload({
+          client: s3Client,
+          params: {
+              Bucket: BUCKET_NAME,
+              Key: s3Key,
+              Body: fs.createReadStream(flacPath),
+              ContentType: "audio/flac",
+          },
+      });
+      await uploader.done();
+    } catch (s3Error) {
+      console.warn("S3 upload unavailable for phrase recording, saving locally:", s3Error.message);
+      const localDir = path.join(process.cwd(), "uploads", "phrases", companyFolder);
+      if (!fs.existsSync(localDir)) {
+        fs.mkdirSync(localDir, { recursive: true });
+      }
+      const localFilePath = path.join(localDir, s3FileName);
+      try {
+        fs.copyFileSync(flacPath, localFilePath);
+      } catch (err) {
+        console.error("Failed to save phrase recording locally:", err);
+      }
+    }
 
     // 3. Clean up local temp files
     try { fs.unlinkSync(req.file.path); } catch (e) {}
@@ -742,14 +757,69 @@ export async function streamPhraseAudio(req, res) {
 
       res.setHeader("Content-Disposition", "inline");
       res.setHeader("X-Content-Type-Options", "nosniff");
-      res.setHeader("Content-Type", s3Doc.ContentType || "audio/webm");
+      res.setHeader("Content-Type", s3Doc.ContentType || "audio/flac");
       
       s3Doc.Body.on('error', (err) => {
           console.error('S3 Stream error (phrase recording):', err);
       }).pipe(res);
     } catch (error) {
-      console.error("AWS S3 GetObject error:", error);
-      return res.status(404).json({ error: "File missing on AWS S3" });
+      console.warn("AWS S3 GetObject failed for phrase audio, attempting local fallback:", error.message);
+      
+      const cleanKey = String(phrase.audioFile || "").replace(/^phrases\//, "");
+      const possiblePaths = [
+        path.join(process.cwd(), "uploads", phrase.audioFile),
+        path.join(process.cwd(), "uploads", "phrases", cleanKey),
+        path.join(process.cwd(), phrase.audioFile),
+        path.join(process.cwd(), "uploads", path.basename(phrase.audioFile))
+      ];
+
+      let foundPath = possiblePaths.find(p => fs.existsSync(p));
+
+      if (!foundPath) {
+        const searchBase = path.join(process.cwd(), "uploads", "phrases");
+        if (fs.existsSync(searchBase)) {
+          const targetBase = path.basename(phrase.audioFile);
+          const phraseIdStr = phrase._id.toString();
+          const searchDir = (dir) => {
+            const items = fs.readdirSync(dir);
+            for (const item of items) {
+              const full = path.join(dir, item);
+              if (fs.statSync(full).isDirectory()) {
+                const subFound = searchDir(full);
+                if (subFound) return subFound;
+              } else if (item === targetBase || item.includes(phraseIdStr)) {
+                return full;
+              }
+            }
+            return null;
+          };
+          foundPath = searchDir(searchBase);
+
+          if (!foundPath) {
+            const companyFolder = phrase.companyId ? String(phrase.companyId).replace(/[^a-zA-Z0-9_\-\ ]/g, "").trim() : "No Company";
+            const compDir = path.join(searchBase, companyFolder);
+            if (fs.existsSync(compDir)) {
+              const files = fs.readdirSync(compDir)
+                .map(f => ({ name: f, path: path.join(compDir, f), mtime: fs.statSync(path.join(compDir, f)).mtimeMs }))
+                .sort((a, b) => b.mtime - a.mtime);
+              if (files.length > 0) {
+                foundPath = files[0].path;
+              }
+            }
+          }
+        }
+      }
+
+      if (foundPath && fs.existsSync(foundPath)) {
+        const ext = path.extname(foundPath).toLowerCase();
+        const mimeType = ext === ".flac" ? "audio/flac" : (ext === ".wav" ? "audio/wav" : "audio/webm");
+        res.setHeader("Content-Disposition", "inline");
+        res.setHeader("X-Content-Type-Options", "nosniff");
+        res.setHeader("Content-Type", mimeType);
+        return fs.createReadStream(foundPath).pipe(res);
+      }
+
+      return res.status(404).json({ error: "Audio file missing on AWS S3 and local storage" });
     }
   } catch (error) {
     console.error("streamPhraseAudio error:", error);

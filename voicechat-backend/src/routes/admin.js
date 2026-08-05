@@ -1,4 +1,5 @@
 import express from "express";
+import mongoose from "mongoose";
 import { Topic } from "../models/Topic.js";
 import { Subtopic } from "../models/Subtopic.js";
 import { CallSession } from "../models/CallSession.js";
@@ -2649,9 +2650,18 @@ router.post("/contributors/update-noise-gate", async (req, res) => {
         // Resolve company identifiers if companyId is provided
         let companyIdentifiers = [];
         if (companyId) {
-            let company = await Company.findById(companyId).lean();
+            let company = null;
+            if (mongoose.Types.ObjectId.isValid(companyId)) {
+                company = await Company.findById(companyId).lean();
+            }
             if (!company) {
-                company = await Company.findOne({ name: { $regex: new RegExp(`^${companyId}$`, "i") } }).lean();
+                const escaped = String(companyId).replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&');
+                company = await Company.findOne({
+                    $or: [
+                        { name: { $regex: new RegExp(`^${escaped}$`, "i") } },
+                        { projectName: { $regex: new RegExp(`^${escaped}$`, "i") } }
+                    ]
+                }).lean();
             }
             if (company) {
                 const cName = company.name;
@@ -2691,6 +2701,8 @@ router.post("/contributors/update-noise-gate", async (req, res) => {
                 appliedAt: new Date()
             });
         }
+
+        user.noiseGateDb = gateValue;
 
         user.markModified("languageApplications");
         await user.save();
@@ -2820,9 +2832,18 @@ router.post("/languages/:id/reset-contributor", async (req, res) => {
 router.get("/companies/:id/contributors-summary", async (req, res) => {
     try {
         const compParam = req.params.id;
-        let company = await Company.findById(compParam).lean();
+        let company = null;
+        if (mongoose.Types.ObjectId.isValid(compParam)) {
+            company = await Company.findById(compParam).lean();
+        }
         if (!company) {
-            company = await Company.findOne({ name: { $regex: new RegExp(`^${compParam}$`, "i") } }).lean();
+            const escaped = String(compParam).replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&');
+            company = await Company.findOne({
+                $or: [
+                    { name: { $regex: new RegExp(`^${escaped}$`, "i") } },
+                    { projectName: { $regex: new RegExp(`^${escaped}$`, "i") } }
+                ]
+            }).lean();
         }
         if (!company) {
             return res.status(404).json({ error: "Company not found" });

@@ -6,7 +6,9 @@
   "main": "src/index.js",
   "scripts": {
     "dev": "node src/index.js",
-    "start": "node src/index.js"
+    "start": "node src/index.js",
+    "make-user": "node scripts/make_user.js",
+    "make-admin": "node scripts/make_admin.js"
   },
   "dependencies": {
     "@aws-sdk/client-lambda": "^3.1096.0",

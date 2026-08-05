@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Mic, Square, Play, UploadCloud, CheckCircle2, Clock, DollarSign, FolderGit2, RotateCcw } from 'lucide-react';
+import { Mic, Square, Play, UploadCloud, CheckCircle2, Clock, DollarSign, FolderGit2, RotateCcw, Sliders } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { apiGet } from '../lib/api';
+import { apiGet, apiPostJson } from '../lib/api';
 import { encodeWAV } from '../utils/wavBuilder.js';
 import { getUserInfo } from '../lib/auth.js';
 import { useNavigate, Link } from 'react-router-dom';
 import Nav from "../components/Nav.jsx";
+import Swal from 'sweetalert2';
 
 export default function PhraseRecording() {
   const navigate = useNavigate();
@@ -42,6 +43,78 @@ export default function PhraseRecording() {
       setLanguage(newLangs[0] || '');
     }
   }, [projectName, approvedApps]);
+
+  const activeApp = React.useMemo(() => {
+    return approvedApps.find(a => {
+      const compMatch = !projectName || String(a.companyId || "").toLowerCase().trim() === String(projectName || "").toLowerCase().trim();
+      const langMatch = !language || String(a.languageCode || "").toLowerCase().trim() === String(language || "").toLowerCase().trim();
+      return compMatch && langMatch;
+    });
+  }, [approvedApps, projectName, language]);
+
+  const activeNoiseGateDb = activeApp?.noiseGateDb !== undefined ? activeApp.noiseGateDb : (userInfo?.noiseGateDb || 0);
+
+  async function handleNoiseGateChange(newDbVal) {
+    const valNum = parseInt(newDbVal) || 0;
+    try {
+      await apiPostJson('/api/language-applications/noise-gate', {
+        applicationType: 'phrase',
+        companyId: projectName,
+        languageCode: language,
+        noiseGateDb: valNum
+      });
+
+      setApprovedApps(prevApps => {
+        let updated = false;
+        const newApps = prevApps.map(app => {
+          const compMatch = !projectName || String(app.companyId || "").toLowerCase().trim() === String(projectName || "").toLowerCase().trim();
+          const langMatch = !language || String(app.languageCode || "").toLowerCase().trim() === String(language || "").toLowerCase().trim();
+          if (compMatch && langMatch && (app.applicationType || 'phrase') === 'phrase') {
+            updated = true;
+            return { ...app, noiseGateDb: valNum };
+          }
+          return app;
+        });
+        if (!updated) {
+          newApps.push({
+            applicationType: 'phrase',
+            companyId: projectName,
+            languageCode: language,
+            noiseGateDb: valNum,
+            status: 'approved'
+          });
+        }
+        return newApps;
+      });
+
+      if (workletNodeRef.current) {
+        workletNodeRef.current.port.postMessage({ type: "setNoiseGate", noiseGateDb: valNum });
+      }
+
+      const Toast = Swal.mixin({
+        toast: true,
+        position: "top-end",
+        showConfirmButton: false,
+        timer: 2000,
+        timerProgressBar: true,
+        background: "#1f2937",
+        color: "#fff"
+      });
+      Toast.fire({
+        icon: "success",
+        title: `Noise gate set to ${valNum === 0 ? "RAW (0 dB)" : valNum + " dB"}`
+      });
+    } catch (err) {
+      console.error("Failed to update noise gate:", err);
+      Swal.fire({
+        title: "Error",
+        text: err.message || "Failed to update noise gate",
+        icon: "error",
+        background: "#1f2937",
+        color: "#fff"
+      });
+    }
+  }
 
   const [currentPhrase, setCurrentPhrase] = useState(null);
   const [userCustomizations, setUserCustomizations] = useState([]);
@@ -537,6 +610,26 @@ export default function PhraseRecording() {
                   {availableLanguages.map(lang => (
                     <option key={lang} value={lang}>{lang}</option>
                   ))}
+                </select>
+              </div>
+
+              <div className="flex-1">
+                <label className="block text-xs font-bold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider mb-2 flex items-center gap-2">
+                  <Sliders className="w-4 h-4 text-warning-500" /> Noise Gate
+                </label>
+                <select 
+                  className="input w-full font-semibold border-warning-500/40 text-warning-700 dark:text-warning-300" 
+                  value={activeNoiseGateDb} 
+                  onChange={(e) => handleNoiseGateChange(e.target.value)}
+                  disabled={loading || isRecording}
+                  title="Attenuates background room noise during recording. Saved directly to database."
+                >
+                  <option value={0}>0 dB (RAW / Off)</option>
+                  <option value={-6}>-6 dB (Light)</option>
+                  <option value={-10}>-10 dB (Medium)</option>
+                  <option value={-12}>-12 dB (Strong)</option>
+                  <option value={-15}>-15 dB (Heavy)</option>
+                  <option value={-18}>-18 dB (Maximum)</option>
                 </select>
               </div>
             </div>

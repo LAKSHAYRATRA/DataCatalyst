@@ -88,6 +88,7 @@ import {
   uploadPanCard,
   updateUpiId,
   updateProfileCompletion,
+  updateUserNoiseGate,
 } from "./controllers/userController.js";
 
 import {
@@ -312,6 +313,11 @@ app.get(
   "/api/language-applications/:userId/:appId/recording",
   requireAuth(JWT_SECRET),
   streamLanguageRecording
+);
+app.post(
+  "/api/language-applications/noise-gate",
+  requireAuth(JWT_SECRET),
+  updateUserNoiseGate
 );
 
 // Calls / history / payouts / feedback

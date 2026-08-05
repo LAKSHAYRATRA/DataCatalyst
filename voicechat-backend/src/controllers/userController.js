@@ -1,5 +1,6 @@
 import path from "path";
 import fs from "fs";
+import mongoose from "mongoose";
 import { User } from "../models/User.js";
 import { CallSession } from "../models/CallSession.js";
 import { Feedback } from "../models/Feedback.js";
@@ -1077,3 +1078,93 @@ export async function updateProfileCompletion(req, res) {
     res.status(500).json({ error: e.message });
   }
 }
+
+// ─── POST /api/language-applications/noise-gate ──────────────────────────────
+export async function updateUserNoiseGate(req, res) {
+  try {
+    const { applicationType, companyId, languageCode, noiseGateDb } = req.body;
+    const user = await User.findById(req.user._id);
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    const rawVal = parseInt(noiseGateDb);
+    const gateValue = isNaN(rawVal) ? 0 : Math.min(0, Math.max(-60, rawVal));
+
+    user.noiseGateDb = gateValue;
+
+    if (!user.languageApplications) {
+      user.languageApplications = [];
+    }
+
+    const type = applicationType || "phrase";
+    const reqLang = String(languageCode || "").toLowerCase().trim();
+
+    // Resolve company identifiers if companyId is provided
+    let companyIdentifiers = [];
+    if (companyId) {
+      let company = null;
+      if (mongoose.Types.ObjectId.isValid(companyId)) {
+        company = await Company.findById(companyId).lean();
+      }
+      if (!company) {
+        const escaped = String(companyId).replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&');
+        company = await Company.findOne({
+          $or: [
+            { name: { $regex: new RegExp(`^${escaped}$`, "i") } },
+            { projectName: { $regex: new RegExp(`^${escaped}$`, "i") } }
+          ]
+        }).lean();
+      }
+      if (company) {
+        const cName = company.name;
+        const pName = company.projectName || company.name;
+        const bName = cName.replace(/_downloaded$/, "").trim();
+        companyIdentifiers = [cName, pName, bName, `${bName}_downloaded`, String(company._id)];
+      } else {
+        companyIdentifiers = [companyId, String(companyId).replace(/_downloaded$/, "").trim()];
+      }
+    }
+
+    let updatedApp = false;
+    user.languageApplications.forEach(app => {
+      const appType = app.applicationType || "phrase";
+      if (appType !== type) return;
+
+      const appLang = String(app.languageCode || "").toLowerCase().trim();
+      if (reqLang && appLang && appLang !== reqLang) return;
+
+      if (type === "phrase" && companyIdentifiers.length > 0) {
+        const appComp = String(app.companyId || "").replace(/_downloaded$/, "").trim().toLowerCase();
+        const matchesComp = companyIdentifiers.some(id => id.replace(/_downloaded$/, "").trim().toLowerCase() === appComp);
+        if (!matchesComp) return;
+      }
+
+      app.noiseGateDb = gateValue;
+      updatedApp = true;
+    });
+
+    if (!updatedApp && reqLang) {
+      user.languageApplications.push({
+        applicationType: type,
+        companyId: companyId || null,
+        languageCode: reqLang,
+        status: "approved",
+        noiseGateDb: gateValue,
+        appliedAt: new Date()
+      });
+    }
+
+    user.markModified("languageApplications");
+    await user.save();
+
+    res.json({
+      success: true,
+      message: `Noise gate updated to ${gateValue === 0 ? "RAW (0 dB)" : gateValue + " dB"}.`,
+      noiseGateDb: gateValue
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+}
+
