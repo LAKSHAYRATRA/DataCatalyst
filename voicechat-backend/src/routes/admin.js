@@ -14,6 +14,7 @@ import bcrypt from "bcryptjs";
 import fs from "fs";
 import path from "path";
 import { Phrase } from "../models/Phrase.js";
+import { PhraseRejection } from "../models/PhraseRejection.js";
 import { Company } from "../models/Company.js";
 import { Counter } from "../models/Counter.js";
 import { getPayoutOverview, getSingleUserPayout, getFinancesOverview } from "../services/payouts.js";
@@ -2912,31 +2913,40 @@ router.get("/companies/:id/contributors-summary", async (req, res) => {
             companyId: { $in: companyRegexes }
         }).select("language contributorId status recordedAt duration").lean();
 
+        // Find all phrase rejections for this company
+        const rejections = await PhraseRejection.find({
+            companyId: { $in: companyRegexes }
+        }).lean();
+
         // Calculate Whole Company Statistics across all languages
-        let companyTotalSeconds = 0;
         let companyApprovedSeconds = 0;
-        let companyRejectedSeconds = 0;
         let companyPendingSeconds = 0;
+        let companyRejectedSeconds = 0;
 
         let companyApprovedCount = 0;
-        let companyRejectedCount = 0;
         let companyPendingCount = 0;
+        let companyRejectedCount = 0;
 
         for (const p of phrases) {
             const dur = Number(p.duration) || 0;
-            companyTotalSeconds += dur;
             if (p.status === "approved") {
                 companyApprovedSeconds += dur;
                 companyApprovedCount++;
+            } else if (p.status === "recorded") {
+                companyPendingSeconds += dur;
+                companyPendingCount++;
             } else if (p.status === "rejected") {
                 companyRejectedSeconds += dur;
                 companyRejectedCount++;
-            } else {
-                companyPendingSeconds += dur;
-                companyPendingCount++;
             }
         }
 
+        for (const r of rejections) {
+            companyRejectedSeconds += Number(r.duration) || 0;
+            companyRejectedCount++;
+        }
+
+        const companyTotalSeconds = companyApprovedSeconds + companyPendingSeconds + companyRejectedSeconds;
         const companyTotalEvaluated = companyApprovedCount + companyRejectedCount;
         const companyApprovalRate = companyTotalEvaluated > 0 ? Number(((companyApprovedCount / companyTotalEvaluated) * 100).toFixed(1)) : 0;
         const companyRejectionRate = companyTotalEvaluated > 0 ? Number(((companyRejectedCount / companyTotalEvaluated) * 100).toFixed(1)) : 0;
@@ -3028,14 +3038,13 @@ router.get("/companies/:id/contributors-summary", async (req, res) => {
             const summary = calculateDemographics(items);
 
             // Compute per-language & per-contributor durations and rates
-            let langTotalSeconds = 0;
             let langApprovedSeconds = 0;
-            let langRejectedSeconds = 0;
             let langPendingSeconds = 0;
+            let langRejectedSeconds = 0;
 
             let langApprovedCount = 0;
-            let langRejectedCount = 0;
             let langPendingCount = 0;
+            let langRejectedCount = 0;
 
             const userDurations = new Map();
 
@@ -3055,23 +3064,50 @@ router.get("/companies/:id/contributors-summary", async (req, res) => {
                 }
                 const uStats = uid ? userDurations.get(uid) : null;
 
-                langTotalSeconds += dur;
-                if (uStats) uStats.totalSecs += dur;
-
                 if (p.status === "approved") {
                     langApprovedSeconds += dur;
                     langApprovedCount++;
                     if (uStats) { uStats.approvedSecs += dur; uStats.approvedCnt++; }
+                } else if (p.status === "recorded") {
+                    langPendingSeconds += dur;
+                    langPendingCount++;
+                    if (uStats) { uStats.pendingSecs += dur; uStats.pendingCnt++; }
                 } else if (p.status === "rejected") {
                     langRejectedSeconds += dur;
                     langRejectedCount++;
                     if (uStats) { uStats.rejectedSecs += dur; uStats.rejectedCnt++; }
-                } else {
-                    langPendingSeconds += dur;
-                    langPendingCount++;
-                    if (uStats) { uStats.pendingSecs += dur; uStats.pendingCnt++; }
                 }
             }
+
+            // Include rejections from PhraseRejection audit table for this language
+            for (const r of rejections) {
+                const rLang = String(r.language || "other").toLowerCase().trim();
+                if (rLang === langCode) {
+                    const dur = Number(r.duration) || 0;
+                    const uid = r.contributorId ? String(r.contributorId) : null;
+                    if (uid && !userDurations.has(uid)) {
+                        userDurations.set(uid, {
+                            totalSecs: 0,
+                            approvedSecs: 0,
+                            rejectedSecs: 0,
+                            pendingSecs: 0,
+                            approvedCnt: 0,
+                            rejectedCnt: 0,
+                            pendingCnt: 0
+                        });
+                    }
+                    const uStats = uid ? userDurations.get(uid) : null;
+
+                    langRejectedSeconds += dur;
+                    langRejectedCount++;
+                    if (uStats) {
+                        uStats.rejectedSecs += dur;
+                        uStats.rejectedCnt++;
+                    }
+                }
+            }
+
+            const langTotalSeconds = langApprovedSeconds + langPendingSeconds + langRejectedSeconds;
 
             const langTotalEvaluated = langApprovedCount + langRejectedCount;
             const langApprovalRate = langTotalEvaluated > 0 ? Number(((langApprovedCount / langTotalEvaluated) * 100).toFixed(1)) : 0;
@@ -3088,10 +3124,10 @@ router.get("/companies/:id/contributors-summary", async (req, res) => {
                     rejectedCnt: 0,
                     pendingCnt: 0
                 };
-                item.totalSeconds = uStats.totalSecs;
                 item.approvedSeconds = uStats.approvedSecs;
                 item.rejectedSeconds = uStats.rejectedSecs;
                 item.pendingSeconds = uStats.pendingSecs;
+                item.totalSeconds = uStats.approvedSecs + uStats.pendingSecs + uStats.rejectedSecs;
 
                 item.approvedCount = uStats.approvedCnt;
                 item.rejectedCount = uStats.rejectedCnt;

@@ -3,6 +3,7 @@ import path from "path";
 import { spawn } from "child_process";
 import os from "os";
 import { Phrase } from "../models/Phrase.js";
+import { PhraseRejection } from "../models/PhraseRejection.js";
 import { User } from "../models/User.js";
 import { Counter } from "../models/Counter.js";
 import { Company } from "../models/Company.js";
@@ -332,16 +333,48 @@ export async function getAvailablePhrase(req, res) {
       }
     }
 
-    // Ensure the contributor is never assigned a phrase text they have already recorded or locked
-    const userDoneDocs = await Phrase.find({
-      $or: [
-        { contributorId: user._id, status: { $in: ["recorded", "approved", "rejected"] } },
-        { lockedBy: user._id, status: "locked", lockedAt: { $gte: expiryTime } }
-      ]
-    }).select("text").lean();
-    const userDoneTexts = new Set(userDoneDocs.map(d => (d.text || "").trim()).filter(Boolean));
+    // Ensure the contributor is never assigned a phrase text or phrase copy they have already recorded, locked, or been rejected for
+    const [userPhraseDocs, userRejectionDocs] = await Promise.all([
+      Phrase.find({
+        $or: [
+          { contributorId: user._id },
+          { lockedBy: user._id }
+        ]
+      }).select("text phraseId").lean(),
+      PhraseRejection.find({
+        contributorId: user._id
+      }).select("phraseId").lean()
+    ]);
+
+    const userDoneTexts = new Set();
+    const userDoneBaseIds = new Set();
+
+    for (const d of userPhraseDocs) {
+      if (d.text) userDoneTexts.add(d.text.trim());
+      if (d.phraseId) {
+        const baseId = String(d.phraseId).replace(/_c\d+$/, "").trim();
+        if (baseId) userDoneBaseIds.add(baseId);
+        userDoneBaseIds.add(String(d.phraseId).trim());
+      }
+    }
+
+    for (const r of userRejectionDocs) {
+      if (r.phraseId) {
+        const baseId = String(r.phraseId).replace(/_c\d+$/, "").trim();
+        if (baseId) userDoneBaseIds.add(baseId);
+        userDoneBaseIds.add(String(r.phraseId).trim());
+      }
+    }
+
     if (userDoneTexts.size > 0) {
       baseQuery.text = { $nin: Array.from(userDoneTexts) };
+    }
+
+    if (userDoneBaseIds.size > 0) {
+      const baseIdPatterns = Array.from(userDoneBaseIds).map(id =>
+        new RegExp(`^${id.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')}(_c\\d+)?$`, "i")
+      );
+      baseQuery.phraseId = { $nin: baseIdPatterns };
     }
 
     // 1. First see if the user already has a locked phrase they haven't finished
@@ -670,7 +703,25 @@ export async function reviewPhrase(req, res) {
 
       await phrase.save();
     } else if (action === "reject") {
-      // 1. Delete original audio file from S3 completely
+      // 1. Record rejection audit log before resetting phrase
+      if (phrase.contributorId) {
+        try {
+          await PhraseRejection.create({
+            phraseId: phrase.phraseId,
+            companyId: phrase.companyId,
+            language: phrase.language,
+            contributorId: phrase.contributorId,
+            qaId: req.user ? req.user._id : null,
+            duration: phrase.duration || 0,
+            comment: comment || null,
+            rejectedAt: new Date()
+          });
+        } catch (rejErr) {
+          console.error("Failed to log phrase rejection:", rejErr.message);
+        }
+      }
+
+      // 2. Delete original audio file from S3 completely
       if (phrase.audioFile) {
         try {
           await s3Client.send(new DeleteObjectCommand({
@@ -682,7 +733,7 @@ export async function reviewPhrase(req, res) {
         }
       }
 
-      // 2. Reset the phrase document directly so it goes back to the recording pipeline
+      // 3. Reset the phrase document directly so it goes back to the recording pipeline
       phrase.status = "pending";
       phrase.contributorId = null;
       phrase.speaker_id = null;
