@@ -9,6 +9,7 @@ export default function AdminTopics() {
     const [systemLanguages, setSystemLanguages] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
+    const [activeTab, setActiveTab] = useState("active"); // "active" | "disabled"
     const [showTopicModal, setShowTopicModal] = useState(false);
     const [showSubtopicModal, setShowSubtopicModal] = useState(false);
     const [editingTopic, setEditingTopic] = useState(null);
@@ -39,7 +40,12 @@ export default function AdminTopics() {
         try {
             setLoading(true);
             const data = await apiGet("/api/admin/topics");
-            setTopics(data.topics);
+            const loadedTopics = data.topics || [];
+            setTopics(loadedTopics);
+
+            // Auto-expand all topics so subtopics are immediately visible
+            const topicIds = new Set(loadedTopics.map(t => t._id));
+            setExpandedTopics(topicIds);
         } catch (e) {
             setError(e.message);
             if (e.message.includes("Forbidden") || e.message.includes("Unauthorized")) {
@@ -47,6 +53,71 @@ export default function AdminTopics() {
             }
         } finally {
             setLoading(false);
+        }
+    }
+
+    // Helper functions to categorize active vs disabled subtopics
+    function isSubtopicActive(sub) {
+        const limit = sub.maxCalls !== undefined ? Number(sub.maxCalls) : 3;
+        const approved = Number(sub.approvedCount || 0);
+        return Boolean(sub.isEnabled) && approved < limit;
+    }
+
+    function isSubtopicDisabled(sub) {
+        return !isSubtopicActive(sub);
+    }
+
+    // Inline Limit Editing with instant reactivation / completion shift
+    async function updateSubtopicLimit(subtopic, newLimitVal) {
+        const parsedVal = parseInt(newLimitVal, 10);
+        const newLimit = isNaN(parsedVal) ? 0 : Math.max(0, parsedVal);
+        const approved = Number(subtopic.approvedCount || 0);
+        
+        // Auto-enable if admin sets limit higher than approved count on a disabled subtopic
+        const shouldEnable = newLimit > approved ? true : subtopic.isEnabled;
+
+        try {
+            const res = await apiPutJson(`/api/admin/subtopics/${subtopic._id}`, {
+                maxCalls: newLimit,
+                isEnabled: shouldEnable
+            });
+
+            const updatedSub = res.subtopic || { ...subtopic, maxCalls: newLimit, isEnabled: shouldEnable };
+
+            setTopics(prevTopics => prevTopics.map(t => ({
+                ...t,
+                subtopics: (t.subtopics || []).map(s => s._id === subtopic._id ? { ...s, ...updatedSub } : s)
+            })));
+        } catch (e) {
+            alert("Error updating limit: " + e.message);
+        }
+    }
+
+    // Quick toggle for Pause vs Activate
+    async function toggleSubtopicEnabled(subtopic) {
+        try {
+            let newEnabled = !subtopic.isEnabled;
+            let newMaxCalls = subtopic.maxCalls !== undefined ? Number(subtopic.maxCalls) : 3;
+            const approved = Number(subtopic.approvedCount || 0);
+
+            // If reactivating a topic whose limit is already reached/exceeded, auto-bump limit to approved + 1
+            if (newEnabled && approved >= newMaxCalls) {
+                newMaxCalls = approved + 1;
+            }
+
+            const res = await apiPutJson(`/api/admin/subtopics/${subtopic._id}`, {
+                isEnabled: newEnabled,
+                maxCalls: newMaxCalls
+            });
+
+            const updatedSub = res.subtopic || { ...subtopic, isEnabled: newEnabled, maxCalls: newMaxCalls };
+
+            setTopics(prevTopics => prevTopics.map(t => ({
+                ...t,
+                subtopics: (t.subtopics || []).map(s => s._id === subtopic._id ? { ...s, ...updatedSub } : s)
+            })));
+        } catch (e) {
+            alert("Error: " + e.message);
         }
     }
 
@@ -138,15 +209,6 @@ export default function AdminTopics() {
         }
     }
 
-    async function toggleSubtopicEnabled(subtopic) {
-        try {
-            await apiPutJson(`/api/admin/subtopics/${subtopic._id}`, { ...subtopic, isEnabled: !subtopic.isEnabled });
-            loadTopics();
-        } catch (e) {
-            alert("Error: " + e.message);
-        }
-    }
-
     function toggleTopicExpanded(topicId) {
         setExpandedTopics(prev => {
             const newSet = new Set(prev);
@@ -171,26 +233,96 @@ export default function AdminTopics() {
         });
     }
 
+    // Compute tab statistics and filter displayed items
+    let totalActiveSubtopics = 0;
+    let totalDisabledSubtopics = 0;
+
+    topics.forEach(t => {
+        (t.subtopics || []).forEach(s => {
+            if (isSubtopicActive(s)) totalActiveSubtopics++;
+            else totalDisabledSubtopics++;
+        });
+    });
+
+    const processedTopics = topics.map(t => {
+        const allSubs = t.subtopics || [];
+        const activeSubs = allSubs.filter(isSubtopicActive);
+        const disabledSubs = allSubs.filter(isSubtopicDisabled);
+
+        return {
+            ...t,
+            displaySubtopics: activeTab === "active" ? activeSubs : disabledSubs,
+            activeCount: activeSubs.length,
+            disabledCount: disabledSubs.length,
+            totalSubCount: allSubs.length
+        };
+    }).filter(t => {
+        if (activeTab === "active") {
+            // Show topic if it's enabled AND has active subtopics (or is a newly created empty topic)
+            return t.isEnabled && (t.displaySubtopics.length > 0 || t.totalSubCount === 0);
+        } else {
+            // Show topic if it's disabled OR has disabled/completed subtopics
+            return !t.isEnabled || t.displaySubtopics.length > 0;
+        }
+    });
+
     return (
         <div className="min-h-screen bg-neutral-900 pt-16 md:pt-0 md:pl-64">
             <AdminNav />
 
             {/* Content */}
             <div className="max-w-7xl mx-auto px-4 md:px-6 py-6 md:py-12">
-                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-6 md:mb-8 gap-4">
+                <div className="flex flex-col md:flex-row items-start md:items-center justify-between mb-6 md:mb-8 gap-4 border-b border-neutral-800 pb-6">
                     <div>
-                        <h1 className="text-2xl md:text-3xl font-bold text-white mb-2">Topics Management</h1>
-                        <p className="text-sm md:text-base text-neutral-400">Manage conversation topics and subtopics</p>
+                        <h1 className="text-2xl md:text-3xl font-bold text-white mb-2 flex items-center gap-3">
+                            Topics Management
+                        </h1>
+                        <p className="text-sm md:text-base text-neutral-400">
+                            Configure conversation topics, adjust call limits, and manage active pipeline status
+                        </p>
                     </div>
-                    <button
-                        onClick={() => openTopicModal()}
-                        className="px-4 py-2 bg-warning-600 hover:bg-warning-700 text-white rounded-lg font-medium transition-all text-sm md:text-base w-full sm:w-auto"
-                    >
-                        <svg className="w-5 h-5 mr-2 inline-block" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
-                        </svg>
-                        Add Topic
-                    </button>
+
+                    <div className="flex flex-wrap items-center gap-3 w-full md:w-auto justify-between md:justify-end">
+                        {/* Tab Toggle: Active vs Disabled Topics */}
+                        <div className="flex items-center bg-neutral-800 p-1.5 rounded-xl border border-neutral-700">
+                            <button
+                                onClick={() => setActiveTab("active")}
+                                className={`px-4 py-2 rounded-lg text-xs md:text-sm font-bold transition-all flex items-center gap-2 ${
+                                    activeTab === "active"
+                                        ? "bg-warning-600 text-white shadow-md"
+                                        : "text-neutral-400 hover:text-white hover:bg-neutral-700"
+                                }`}
+                            >
+                                <span>Active Topics</span>
+                                <span className={`px-2 py-0.5 rounded-full text-[11px] font-bold ${activeTab === "active" ? "bg-black/30 text-white" : "bg-neutral-900 text-warning-400"}`}>
+                                    {totalActiveSubtopics}
+                                </span>
+                            </button>
+                            <button
+                                onClick={() => setActiveTab("disabled")}
+                                className={`px-4 py-2 rounded-lg text-xs md:text-sm font-bold transition-all flex items-center gap-2 ${
+                                    activeTab === "disabled"
+                                        ? "bg-neutral-700 text-white shadow-md border border-neutral-600"
+                                        : "text-neutral-400 hover:text-white hover:bg-neutral-700"
+                                }`}
+                            >
+                                <span>Disabled Topics</span>
+                                <span className={`px-2 py-0.5 rounded-full text-[11px] font-bold ${activeTab === "disabled" ? "bg-black/30 text-white" : "bg-neutral-900 text-neutral-400"}`}>
+                                    {totalDisabledSubtopics}
+                                </span>
+                            </button>
+                        </div>
+
+                        <button
+                            onClick={() => openTopicModal()}
+                            className="px-4 py-2 bg-warning-600 hover:bg-warning-700 text-white rounded-lg font-medium transition-all text-sm flex items-center gap-2"
+                        >
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
+                            </svg>
+                            Add Topic
+                        </button>
+                    </div>
                 </div>
 
                 {error && (
@@ -205,12 +337,12 @@ export default function AdminTopics() {
                     </div>
                 ) : (
                     <div className="space-y-4">
-                        {topics.map((topic) => (
-                            <div key={topic._id} className="bg-neutral-800 border border-neutral-700 rounded-xl overflow-hidden">
+                        {processedTopics.map((topic) => (
+                            <div key={topic._id} className="bg-neutral-800 border border-neutral-700 rounded-xl overflow-hidden shadow-sm">
                                 {/* Topic Header */}
                                 <div className="p-4 md:p-6">
-                                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-4 gap-3">
-                                        <div className="flex items-center space-x-2 md:space-x-3 flex-1 w-full sm:w-auto">
+                                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-2 gap-3">
+                                        <div className="flex items-center space-x-2 md:space-x-3 flex-1 w-full sm:w-auto flex-wrap">
                                             {/* Accordion Toggle Button */}
                                             <button
                                                 onClick={() => toggleTopicExpanded(topic._id)}
@@ -227,38 +359,41 @@ export default function AdminTopics() {
                                             </button>
 
                                             <h3 className="text-lg md:text-xl font-bold text-white break-words">{topic.title}</h3>
+                                            
                                             <button
                                                 onClick={() => toggleTopicEnabled(topic)}
-                                                className={`px-2 md:px-3 py-1 rounded-full text-xs font-medium flex-shrink-0 ${topic.isEnabled
-                                                    ? 'bg-success-900/50 text-success-300'
-                                                    : 'bg-neutral-700 text-neutral-400'
+                                                className={`px-2.5 py-1 rounded-full text-xs font-bold uppercase tracking-wider flex-shrink-0 ${topic.isEnabled
+                                                    ? 'bg-success-950 text-success-400 border border-success-900/50'
+                                                    : 'bg-neutral-900 text-neutral-500 border border-neutral-700'
                                                     }`}
                                             >
-                                                {topic.isEnabled ? 'On' : 'Off'}
+                                                {topic.isEnabled ? 'Enabled' : 'Disabled'}
                                             </button>
-                                            {topic.subtopics && topic.subtopics.length > 0 && (
-                                                <span className="text-xs md:text-sm text-neutral-500 whitespace-nowrap">({topic.subtopics.length})</span>
-                                            )}
+
+                                            <span className="text-xs text-neutral-400 whitespace-nowrap bg-neutral-900/60 px-2 py-0.5 rounded border border-neutral-700">
+                                                {activeTab === "active" ? `${topic.activeCount} active subtopics` : `${topic.disabledCount} disabled subtopics`}
+                                            </span>
+
                                             {topic.languages && topic.languages.length > 0 && (
-                                                <span className="text-xs text-primary-400 font-bold ml-2">[{topic.languages.join(", ")}]</span>
+                                                <span className="text-xs text-primary-400 font-bold ml-1">[{topic.languages.join(", ")}]</span>
                                             )}
                                         </div>
                                         <div className="flex items-center space-x-2 w-full sm:w-auto">
                                             <button
                                                 onClick={() => openSubtopicModal(topic)}
-                                                className="flex-1 sm:flex-none px-3 py-2 bg-neutral-700 hover:bg-neutral-600 text-neutral-300 rounded-lg text-xs md:text-sm transition-all"
+                                                className="flex-1 sm:flex-none px-3 py-1.5 bg-neutral-700 hover:bg-neutral-600 text-neutral-200 rounded-lg text-xs md:text-sm font-semibold transition-all"
                                             >
-                                                +Sub
+                                                + Subtopic
                                             </button>
                                             <button
                                                 onClick={() => openTopicModal(topic)}
-                                                className="flex-1 sm:flex-none px-3 py-2 bg-neutral-700 hover:bg-neutral-600 text-warning-400 rounded-lg text-xs md:text-sm transition-all"
+                                                className="flex-1 sm:flex-none px-3 py-1.5 bg-neutral-700 hover:bg-neutral-600 text-warning-400 rounded-lg text-xs md:text-sm font-semibold transition-all"
                                             >
                                                 Edit
                                             </button>
                                             <button
                                                 onClick={() => deleteTopic(topic._id)}
-                                                className="flex-1 sm:flex-none px-3 py-2 bg-error-900/50 hover:bg-error-900 text-error-300 rounded-lg text-xs md:text-sm transition-all"
+                                                className="flex-1 sm:flex-none px-3 py-1.5 bg-error-950 hover:bg-error-900 text-error-400 rounded-lg text-xs md:text-sm font-semibold transition-all border border-error-900/40"
                                             >
                                                 Del
                                             </button>
@@ -270,100 +405,140 @@ export default function AdminTopics() {
                                 </div>
 
                                 {/* Subtopics - Accordion Content */}
-                                {expandedTopics.has(topic._id) && topic.subtopics && topic.subtopics.length > 0 && (
-                                    <div className="border-t border-neutral-700 bg-neutral-900/50 p-4 md:p-6 animate-slide-down">
-                                        <div className="text-xs md:text-sm font-medium text-neutral-400 mb-3">Subtopics ({topic.subtopics.length})</div>
-                                        <div className="grid grid-cols-1 gap-3">
-                                            {topic.subtopics.map((subtopic) => (
-                                                <div key={subtopic._id} className="bg-neutral-800 border border-neutral-700 rounded-lg p-3 md:p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-                                                    <div className="flex-1 w-full">
-                                                        <div className="flex items-center space-x-2 mb-1.5 flex-wrap gap-y-1">
-                                                             <div className="text-white font-medium text-sm md:text-base break-words mr-1">{subtopic.title}</div>
-                                                             
-                                                             {/* Computed Status Badge */}
-                                                             {subtopic.calculatedStatus === "enabled" && (
-                                                                 <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-green-950 text-green-400 border border-green-900/30">
-                                                                     Enabled
-                                                                 </span>
-                                                             )}
-                                                             {subtopic.calculatedStatus === "froze" && (
-                                                                 <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-yellow-950 text-warning-400 border border-warning-900/30 animate-pulse">
-                                                                     ❄️ Froze
-                                                                 </span>
-                                                             )}
-                                                             {subtopic.calculatedStatus === "disabled" && (
-                                                                 <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-neutral-900 text-neutral-500 border border-neutral-800">
-                                                                     Disabled
-                                                                 </span>
-                                                             )}
+                                {expandedTopics.has(topic._id) && (
+                                    <div className="border-t border-neutral-700 bg-neutral-900/50 p-4 md:p-6">
+                                        <div className="text-xs md:text-sm font-bold text-neutral-400 mb-3 flex items-center justify-between">
+                                            <span>Subtopics in {activeTab === "active" ? "Active Pipeline" : "Disabled / Completed Archive"} ({topic.displaySubtopics.length})</span>
+                                        </div>
 
-                                                             <button
-                                                                 onClick={() => toggleSubtopicEnabled(subtopic)}
-                                                                 className={`px-2 py-0.5 rounded-full text-[10px] uppercase tracking-wider font-bold flex-shrink-0 transition-colors ${subtopic.isEnabled
-                                                                     ? 'bg-neutral-700 hover:bg-neutral-600 text-neutral-200'
-                                                                     : 'bg-red-950/40 hover:bg-red-900/30 text-red-400 border border-red-900/50'
-                                                                     }`}
-                                                             >
-                                                                 {subtopic.isEnabled ? 'Pause' : 'Activate'}
-                                                             </button>
+                                        {topic.displaySubtopics.length === 0 ? (
+                                            <div className="text-center py-6 bg-neutral-800/50 border border-neutral-700/50 rounded-lg text-xs text-neutral-500 italic">
+                                                No {activeTab} subtopics in this category.
+                                            </div>
+                                        ) : (
+                                            <div className="grid grid-cols-1 gap-3">
+                                                {topic.displaySubtopics.map((subtopic) => {
+                                                    const limit = subtopic.maxCalls !== undefined ? Number(subtopic.maxCalls) : 3;
+                                                    const approved = Number(subtopic.approvedCount || 0);
+                                                    const pending = Number(subtopic.pendingCount || 0);
+                                                    const isDone = approved >= limit;
 
-                                                             <span className="text-[11px] text-neutral-400 font-medium px-2 py-0.5 bg-neutral-900/80 rounded border border-neutral-700">
-                                                                 Approved: <strong className="text-success-400">{subtopic.approvedCount ?? 0}</strong> / Pending: <strong className="text-warning-400">{subtopic.pendingCount ?? 0}</strong> / Limit: <strong className="text-white">{subtopic.maxCalls !== undefined ? subtopic.maxCalls : 3}</strong>
-                                                             </span>
-                                                         </div>
-                                                        {subtopic.description && (
-                                                            <div className="text-xs text-neutral-500 break-words whitespace-pre-wrap">{subtopic.description}</div>
-                                                        )}
-                                                        {subtopic.instructions && (
-                                                            <div className="mt-1">
-                                                                <div className={`text-xs text-warning-500/80 break-words italic ${!expandedInstructions.has(subtopic._id) ? 'line-clamp-2' : ''}`}>
-                                                                    Instructions: {subtopic.instructions}
-                                                                </div>
-                                                                {subtopic.instructions.length > 100 && (
+                                                    return (
+                                                        <div key={subtopic._id} className="bg-neutral-800 border border-neutral-700 rounded-lg p-3 md:p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                                                            <div className="flex-1 w-full">
+                                                                <div className="flex items-center space-x-2 mb-2 flex-wrap gap-y-1">
+                                                                    <div className="text-white font-bold text-sm md:text-base break-words mr-1">{subtopic.title}</div>
+                                                                    
+                                                                    {/* Status Badges */}
+                                                                    {subtopic.isEnabled && !isDone && (
+                                                                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-green-950 text-green-400 border border-green-900/30">
+                                                                            Active Pipeline
+                                                                        </span>
+                                                                    )}
+                                                                    {subtopic.isEnabled && isDone && (
+                                                                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-neutral-900 text-neutral-400 border border-neutral-700">
+                                                                            Completed (Done {approved}/{limit})
+                                                                        </span>
+                                                                    )}
+                                                                    {!subtopic.isEnabled && (
+                                                                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-950/80 text-red-400 border border-red-900/50">
+                                                                            Paused / Disabled
+                                                                        </span>
+                                                                    )}
+
+                                                                    {/* Quick Pause / Activate Button */}
                                                                     <button
-                                                                        onClick={() => toggleInstructionExpanded(subtopic._id)}
-                                                                        className="text-[10px] text-warning-400 hover:text-warning-300 font-bold mt-0.5 uppercase tracking-tighter"
+                                                                        onClick={() => toggleSubtopicEnabled(subtopic)}
+                                                                        className={`px-2.5 py-0.5 rounded-full text-[10px] uppercase tracking-wider font-bold flex-shrink-0 transition-colors ${
+                                                                            subtopic.isEnabled && !isDone
+                                                                                ? 'bg-neutral-700 hover:bg-neutral-600 text-neutral-200'
+                                                                                : 'bg-warning-600 hover:bg-warning-700 text-white shadow-sm'
+                                                                        }`}
+                                                                        title={subtopic.isEnabled && !isDone ? "Pause this subtopic" : "Activate subtopic into user queue"}
                                                                     >
-                                                                        {expandedInstructions.has(subtopic._id) ? 'Show Less' : 'Show More'}
+                                                                        {subtopic.isEnabled && !isDone ? 'Pause' : 'Activate'}
                                                                     </button>
+
+                                                                    {/* Stats Counter */}
+                                                                    <span className="text-[11px] text-neutral-400 font-medium px-2 py-0.5 bg-neutral-900/80 rounded border border-neutral-700">
+                                                                        Approved: <strong className="text-success-400">{approved}</strong> | Pending: <strong className="text-warning-400">{pending}</strong>
+                                                                    </span>
+
+                                                                    {/* Dynamic Limit Control Box */}
+                                                                    <div className="flex items-center gap-1.5 bg-neutral-900 px-2 py-0.5 rounded border border-neutral-700 text-[11px] text-neutral-400 font-medium">
+                                                                        <label htmlFor={`limit_${subtopic._id}`} className="text-neutral-300 font-bold">Limit:</label>
+                                                                        <input
+                                                                            id={`limit_${subtopic._id}`}
+                                                                            type="number"
+                                                                            min="0"
+                                                                            value={subtopic.maxCalls !== undefined ? subtopic.maxCalls : 3}
+                                                                            onChange={(e) => updateSubtopicLimit(subtopic, e.target.value)}
+                                                                            className="w-14 px-1.5 py-0.5 bg-neutral-800 border border-neutral-600 rounded text-center text-white font-bold focus:outline-none focus:border-warning-500 text-xs"
+                                                                            title="Modify limit. Setting limit > approved count instantly reactivates topic into active pipeline!"
+                                                                        />
+                                                                    </div>
+                                                                </div>
+
+                                                                {subtopic.description && (
+                                                                    <div className="text-xs text-neutral-400 break-words whitespace-pre-wrap mb-1">{subtopic.description}</div>
+                                                                )}
+                                                                {subtopic.instructions && (
+                                                                    <div className="mt-1">
+                                                                        <div className={`text-xs text-warning-400/90 break-words italic ${!expandedInstructions.has(subtopic._id) ? 'line-clamp-2' : ''}`}>
+                                                                            Instructions: {subtopic.instructions}
+                                                                        </div>
+                                                                        {subtopic.instructions.length > 100 && (
+                                                                            <button
+                                                                                onClick={() => toggleInstructionExpanded(subtopic._id)}
+                                                                                className="text-[10px] text-warning-400 hover:text-warning-300 font-bold mt-0.5 uppercase tracking-tighter"
+                                                                            >
+                                                                                {expandedInstructions.has(subtopic._id) ? 'Show Less' : 'Show More'}
+                                                                            </button>
+                                                                        )}
+                                                                    </div>
                                                                 )}
                                                             </div>
-                                                        )}
-                                                    </div>
-                                                    <div className="flex items-center space-x-1 w-full sm:w-auto">
-                                                        <button
-                                                            onClick={() => openSubtopicModal(topic, subtopic)}
-                                                            className="flex-1 sm:flex-none p-2 text-warning-400 hover:bg-neutral-700 rounded"
-                                                        >
-                                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>
-                                                            </svg>
-                                                        </button>
-                                                        <button
-                                                            onClick={() => deleteSubtopic(subtopic._id)}
-                                                            className="flex-1 sm:flex-none p-2 text-error-400 hover:bg-neutral-700 rounded"
-                                                        >
-                                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
-                                                            </svg>
-                                                        </button>
-                                                    </div>
-                                                </div>
-                                            ))}
-                                        </div>
+
+                                                            <div className="flex items-center space-x-1 w-full sm:w-auto">
+                                                                <button
+                                                                    onClick={() => openSubtopicModal(topic, subtopic)}
+                                                                    className="flex-1 sm:flex-none p-2 text-warning-400 hover:bg-neutral-700 rounded transition-colors"
+                                                                    title="Edit subtopic details"
+                                                                >
+                                                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>
+                                                                    </svg>
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => deleteSubtopic(subtopic._id)}
+                                                                    className="flex-1 sm:flex-none p-2 text-error-400 hover:bg-neutral-700 rounded transition-colors"
+                                                                    title="Delete subtopic"
+                                                                >
+                                                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                                                                    </svg>
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        )}
                                     </div>
                                 )}
                             </div>
                         ))}
 
-                        {topics.length === 0 && (
+                        {processedTopics.length === 0 && (
                             <div className="bg-neutral-800 border border-neutral-700 rounded-xl p-8 md:p-12 text-center">
-                                <div className="text-neutral-500 mb-4 text-sm md:text-base">No topics yet</div>
+                                <div className="text-neutral-400 mb-4 text-sm md:text-base font-medium">
+                                    No {activeTab} topics found.
+                                </div>
                                 <button
                                     onClick={() => openTopicModal()}
                                     className="px-4 py-2 bg-warning-600 hover:bg-warning-700 text-white rounded-lg font-medium transition-all"
                                 >
-                                    Create First Topic
+                                    Create New Topic
                                 </button>
                             </div>
                         )}

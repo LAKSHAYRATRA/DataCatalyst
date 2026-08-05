@@ -1696,11 +1696,16 @@ router.post("/topics/:topicId/subtopics", async (req, res) => {
 router.put("/subtopics/:subtopicId", async (req, res) => {
     try {
         const { subtopicId } = req.params;
-        const { title, description, instructions, maxCalls, isEnabled } = req.body;
+        const updateData = {};
+        if (req.body.title !== undefined) updateData.title = req.body.title;
+        if (req.body.description !== undefined) updateData.description = req.body.description;
+        if (req.body.instructions !== undefined) updateData.instructions = req.body.instructions;
+        if (req.body.maxCalls !== undefined) updateData.maxCalls = Number(req.body.maxCalls);
+        if (req.body.isEnabled !== undefined) updateData.isEnabled = Boolean(req.body.isEnabled);
 
         const subtopic = await Subtopic.findByIdAndUpdate(
             subtopicId,
-            { title, description, instructions, maxCalls, isEnabled },
+            { $set: updateData },
             { new: true, runValidators: true }
         );
 
@@ -1708,7 +1713,35 @@ router.put("/subtopics/:subtopicId", async (req, res) => {
             return res.status(404).json({ error: "Subtopic not found" });
         }
 
-        res.json({ subtopic });
+        const approvedCount = await CallSession.countDocuments({
+            subtopicId: subtopic._id,
+            callActuallyStarted: true,
+            callStatus: "approved"
+        });
+        const pendingCount = await CallSession.countDocuments({
+            subtopicId: subtopic._id,
+            callActuallyStarted: true,
+            callStatus: "pending"
+        });
+        const limit = subtopic.maxCalls !== undefined ? subtopic.maxCalls : 3;
+
+        let calculatedStatus = "enabled";
+        if (!subtopic.isEnabled) {
+            calculatedStatus = "disabled";
+        } else if (approvedCount >= limit) {
+            calculatedStatus = "disabled";
+        } else if (approvedCount + pendingCount >= limit) {
+            calculatedStatus = "froze";
+        }
+
+        res.json({
+            subtopic: {
+                ...subtopic.toObject(),
+                approvedCount,
+                pendingCount,
+                calculatedStatus
+            }
+        });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }

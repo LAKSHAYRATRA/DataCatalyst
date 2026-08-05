@@ -81,6 +81,16 @@ export default function Call() {
   const [remoteStream, setRemoteStream] = useState(null);
   const [isFindingMatch, setIsFindingMatch] = useState(false);
 
+  // Auto-play remote audio stream whenever remoteStream state changes
+  useEffect(() => {
+    if (remoteStream && remoteAudioRef.current) {
+      remoteAudioRef.current.srcObject = remoteStream;
+      remoteAudioRef.current.play().catch(err => {
+        console.warn("Auto-play warning on remoteStream state change:", err);
+      });
+    }
+  }, [remoteStream]);
+
   // Negotiation State
   const [negotiationMode, setNegotiationMode] = useState(false);
   const [negotiationTimer, setNegotiationTimer] = useState(240); // 4 minutes
@@ -506,7 +516,9 @@ export default function Call() {
         setRemoteStream(stream);
         if (remoteAudioRef.current) {
           remoteAudioRef.current.srcObject = stream;
-          // console.log("🎧 Attached stream to audio element");
+          remoteAudioRef.current.play().catch(err => {
+            console.warn("Auto-play warning for remote audio:", err);
+          });
         }
       }
 
@@ -974,6 +986,8 @@ export default function Call() {
   // Render Call UI
   return (
     <div className="min-h-screen bg-neutral-50 dark:bg-neutral-950 text-neutral-900 dark:text-neutral-50 pt-16 md:pt-0 md:pl-64 transition-colors duration-300">
+      {/* Permanent top-level WebRTC remote audio playback element */}
+      <audio ref={remoteAudioRef} autoPlay playsInline className="hidden" />
       <Nav disabled={!!callId && !showFeedback} />
       <div className="max-w-full md:max-w-6xl mx-auto px-4 md:px-6 py-4 md:py-8 w-full">
         {/* Call Interface */}
