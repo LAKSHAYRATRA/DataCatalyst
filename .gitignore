@@ -22,6 +22,11 @@ DataCatalyst-Voclara-Agreement.pdf
 Oracle_TURN_Steps.txt
 turn.zip
 
+# Private / Personal document folders (never commit to git)
+offer letter/
+offer_letter/
+*offer*letter*
+
 # Reference/scratch code dumps (not imported by the app)
 friend_suggestion/
 joinqueue*/

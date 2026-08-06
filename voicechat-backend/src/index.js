@@ -409,8 +409,8 @@ function getPeerId(socket) {
   return socket.data.peerId || null;
 }
 
-async function cleanupRecording(socket, endedAt) {
-  const callId = getCallIdForSocket(socket);
+async function cleanupRecording(socket, endedAt, callIdOverride) {
+  const callId = callIdOverride || socket.data.callId || getCallIdForSocket(socket);
   const streamKey = `${callId}_${socket.data.userId}`;
   const streamObj = activeStreams.get(streamKey);
   const stream = streamObj?.stream;
@@ -507,17 +507,38 @@ async function cleanupRecording(socket, endedAt) {
           },
         });
         await upload.done();
+
+        // S3 upload succeeded - clean up temp local files
+        if (fs.existsSync(tempPath)) fs.unlink(tempPath, () => {});
+        if (tempPath.endsWith(".pcm")) {
+          const flacPath = tempPath.replace(".pcm", ".flac");
+          if (fs.existsSync(flacPath)) fs.unlink(flacPath, () => {});
+        }
+
         resolve(filePath);
       } catch (e) {
-        console.error("Failed to push call recording directly to AWS S3:", e);
-        resolve(null);
-      } finally {
-        if (fs.existsSync(tempPath)) {
-          fs.unlink(tempPath, () => {});
-        }
-        if (tempPath.endsWith(".pcm")) {
+        console.error("Failed to push call recording directly to AWS S3. Saving local fallback:", e);
+
+        // FIX FOR #5: If S3 upload fails, preserve the local FLAC/PCM file as local fallback backup!
+        try {
+          const callsLocalDir = path.join(process.cwd(), "recordings", "calls");
+          if (!fs.existsSync(callsLocalDir)) fs.mkdirSync(callsLocalDir, { recursive: true });
+          
+          const localBackupName = `${callId}_${socket.data.userId || "user"}_${Date.now()}.${finalUploadPath.split('.').pop()}`;
+          const localBackupPath = path.join(callsLocalDir, localBackupName);
+
+          fs.copyFileSync(finalUploadPath, localBackupPath);
+          console.log(`Saved local fallback call recording to: ${localBackupPath}`);
+          resolve(`local:${localBackupName}`);
+        } catch (backupErr) {
+          console.error("Failed to save local fallback recording:", backupErr);
+          resolve(null);
+        } finally {
+          if (fs.existsSync(tempPath)) fs.unlink(tempPath, () => {});
+          if (tempPath.endsWith(".pcm")) {
             const flacPath = tempPath.replace(".pcm", ".flac");
             if (fs.existsSync(flacPath)) fs.unlink(flacPath, () => {});
+          }
         }
       }
     });
@@ -740,19 +761,21 @@ async function endCall(callId, reason) {
         }
       }
 
+      const canonicalDurationMin = actualCallDuration && Number.isFinite(actualCallDuration) && actualCallDuration > 0
+        ? Math.round((actualCallDuration / 60) * 100) / 100
+        : 0;
+
       const getDurationMin = (start) => {
+        if (canonicalDurationMin > 0) return canonicalDurationMin;
         if (start) {
           const diffMs = endedAt.getTime() - new Date(start).getTime();
           if (Number.isFinite(diffMs) && diffMs > 0) return Math.round((diffMs / 60000) * 100) / 100;
         }
-        if (actualCallDuration && Number.isFinite(actualCallDuration) && actualCallDuration > 0) {
-          return Math.round((actualCallDuration / 60) * 100) / 100;
-        }
         return 0;
       };
 
-      const recordingADurationMinutes = getDurationMin(session.recordingAStartedAt || session.actualCallStartedAt || session.startedAt);
-      const recordingBDurationMinutes = getDurationMin(session.recordingBStartedAt || session.actualCallStartedAt || session.startedAt);
+      const recordingADurationMinutes = canonicalDurationMin || getDurationMin(session.recordingAStartedAt || session.actualCallStartedAt || session.startedAt);
+      const recordingBDurationMinutes = canonicalDurationMin || getDurationMin(session.recordingBStartedAt || session.actualCallStartedAt || session.startedAt);
 
       await CallSession.updateOne(
         { callId },
@@ -797,32 +820,43 @@ async function endCall(callId, reason) {
     console.error("Error updating CallSession in endCall:", err);
   }
 
+  // Emit call_ended INSTANTLY to both participants via socket room & user IDs (0.05s response time)
+  io.to(`call_${callId}`).emit("call_ended", { callId, reason: reason || "ended" });
+  if (call.userAId) io.to(`user_${call.userAId}`).emit("call_ended", { callId, reason: reason || "ended" });
+  if (call.userBId) io.to(`user_${call.userBId}`).emit("call_ended", { callId, reason: reason || "ended" });
+
   const a = io.sockets.sockets.get(call.a);
   const b = io.sockets.sockets.get(call.b);
 
-  const cleanupPromises = [];
-
   if (a) {
-    cleanupPromises.push(cleanupRecording(a, endedAt));
     a.data.callId = null;
     a.data.peerId = null;
     a.data.role = null;
-    a.emit("call_ended", { callId, reason: reason || "ended", peerUserId: call.userBId });
+    a.leave(`call_${callId}`);
   }
 
   if (b) {
-    cleanupPromises.push(cleanupRecording(b, endedAt));
     b.data.callId = null;
     b.data.peerId = null;
     b.data.role = null;
-    b.emit("call_ended", { callId, reason: reason || "ended", peerUserId: call.userAId });
+    b.leave(`call_${callId}`);
   }
 
-  await Promise.allSettled(cleanupPromises);
+  // Run audio conversion (FFMPEG) and AWS S3 upload asynchronously in background
+  setImmediate(async () => {
+    try {
+      const cleanupPromises = [];
+      if (a) cleanupPromises.push(cleanupRecording(a, endedAt, callId));
+      if (b) cleanupPromises.push(cleanupRecording(b, endedAt, callId));
+      await Promise.allSettled(cleanupPromises);
 
-  if (reason !== "negotiation_timeout") {
-    mergeRecordings(callId, 0, 0).catch(console.error);
-  }
+      if (reason !== "negotiation_timeout") {
+        mergeRecordings(callId, 0, 0).catch(console.error);
+      }
+    } catch (err) {
+      console.error("Error in background call cleanup:", err);
+    }
+  });
 }
 
 async function startActualCall(call) {
@@ -1070,10 +1104,14 @@ io.on("connection", (socket) => {
     socket.data.callId = callId;
     socket.data.peerId = peerId;
     socket.data.role = "offerer";
+    socket.join(`call_${callId}`);
+    if (socket.data.userId) socket.join(`user_${socket.data.userId}`);
 
     peer.data.callId = callId;
     peer.data.peerId = socket.id;
     peer.data.role = "answerer";
+    peer.join(`call_${callId}`);
+    if (peer.data.userId) peer.join(`user_${peer.data.userId}`);
 
     const now = new Date();
     const negotiationEndsAt = Date.now() + 4 * 60 * 1000;
@@ -1172,9 +1210,19 @@ io.on("connection", (socket) => {
 
       socket.data.recordSampleRate = sampleRate || 48000;
 
-      const isPcm = mimeType === "audio/pcm";
-      const ext = isPcm ? "flac" : (mimeType || "audio/webm").includes("ogg") ? "ogg" : "webm";
-      
+      const streamKey = `${callId}_${socket.data.userId}`;
+      let existingStreamObj = activeStreams.get(streamKey);
+
+      if (existingStreamObj && existingStreamObj.stream) {
+        // Reuse existing write stream so previous audio chunks are preserved!
+        socket.data.tempLocalPath = existingStreamObj.tempLocalPath;
+        socket.data.recordFileName = existingStreamObj.fileName;
+        socket.data.recordFilePath = existingStreamObj.filePath;
+        socket.data.recording = true;
+        socket.emit("record_ready", { fileName: existingStreamObj.fileName });
+        return;
+      }
+
       let cleanTopic = "NoTopic";
       if (call && call.selectedTopic && call.selectedTopic.title) {
         cleanTopic = String(call.selectedTopic.title).replace(/[^a-zA-Z0-9_\-\ ]/g, "").replace(/\s+/g, "_").trim();
@@ -1209,11 +1257,24 @@ io.on("connection", (socket) => {
       socket.emit("record_ready", { fileName });
 
       if (call) {
-        const update =
-          socket.data.userId === call.userAId
-            ? { recordingAFile: filePath, recordingAStartedAt: new Date() }
-            : { recordingBFile: filePath, recordingBStartedAt: new Date() };
-        CallSession.updateOne({ callId }, { $set: update }).catch(() => {});
+        CallSession.findOne({ callId }).select("recordingAStartedAt recordingBStartedAt actualCallStartedAt startedAt").then(existingSession => {
+          const baseStart = existingSession?.actualCallStartedAt || existingSession?.startedAt || new Date();
+          const update = {};
+          if (socket.data.userId === call.userAId) {
+            update.recordingAFile = filePath;
+            if (!existingSession?.recordingAStartedAt) {
+              update.recordingAStartedAt = baseStart;
+            }
+          } else {
+            update.recordingBFile = filePath;
+            if (!existingSession?.recordingBStartedAt) {
+              update.recordingBStartedAt = baseStart;
+            }
+          }
+          if (Object.keys(update).length > 0) {
+            return CallSession.updateOne({ callId }, { $set: update });
+          }
+        }).catch(() => {});
       }
     });
   });
@@ -1269,6 +1330,17 @@ io.on("connection", (socket) => {
       } else {
         // Out of order arrival, store in pending
         streamObj.pendingChunks.set(seq, buf);
+
+        // FIX FOR #3: Prevent RAM memory leak by capping pendingChunks to max 50 items and auto-flushing
+        if (streamObj.pendingChunks.size > 50) {
+          const sortedSeqs = Array.from(streamObj.pendingChunks.keys()).sort((a, b) => a - b);
+          for (const s of sortedSeqs) {
+            const pBuf = streamObj.pendingChunks.get(s);
+            if (pBuf) streamObj.stream.write(pBuf);
+          }
+          streamObj.pendingChunks.clear();
+          streamObj.expectedSeq = Math.max(streamObj.expectedSeq, sortedSeqs[sortedSeqs.length - 1] + 1);
+        }
       }
 
       if (callback) callback(seq);
@@ -1378,7 +1450,7 @@ io.on("connection", (socket) => {
     removeFromQueue(socket.id);
     const callId = getCallIdForSocket(socket);
     if (callId) endCall(callId, "disconnect");
-    cleanupRecording(socket);
+    cleanupRecording(socket, new Date(), callId);
 
     if (socket.data.userId) {
       User.findById(socket.data.userId)

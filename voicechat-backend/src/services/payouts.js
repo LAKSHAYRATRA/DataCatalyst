@@ -23,19 +23,23 @@ function getCallEntryForUser(call, userId) {
   let durationMinutes;
   let reviewNote;
 
+  const canonicalMin = (call.actualCallDuration && Number(call.actualCallDuration) > 0)
+    ? Math.round((Number(call.actualCallDuration) / 60) * 100) / 100
+    : 0;
+
   if (String(call.userA?._id || call.userA) === normalizedUserId) {
     me = call.userA;
     peer = call.userB;
     status = call.recordingAStatus || "pending";
     payoutUsd = Number(call.recordingAPayoutUsd) || 0;
-    durationMinutes = Number(call.recordingADurationMinutes) || 0;
+    durationMinutes = canonicalMin || Number(call.recordingADurationMinutes) || 0;
     reviewNote = call.recordingAReviewNote || null;
   } else if (String(call.userB?._id || call.userB) === normalizedUserId) {
     me = call.userB;
     peer = call.userA;
     status = call.recordingBStatus || "pending";
     payoutUsd = Number(call.recordingBPayoutUsd) || 0;
-    durationMinutes = Number(call.recordingBDurationMinutes) || 0;
+    durationMinutes = canonicalMin || Number(call.recordingBDurationMinutes) || 0;
     reviewNote = call.recordingBReviewNote || null;
   } else {
     return null;

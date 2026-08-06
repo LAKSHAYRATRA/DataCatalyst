@@ -149,11 +149,11 @@ export default function AdminCalls() {
     }
 
     function calcSpeakerDuration(call, isSpeakerA) {
-        const minVal = isSpeakerA ? call.recordingADurationMinutes : call.recordingBDurationMinutes;
-        if (minVal && Number(minVal) > 0) return Number(minVal).toFixed(2);
         if (call.actualCallDuration && Number(call.actualCallDuration) > 0) {
             return (Number(call.actualCallDuration) / 60).toFixed(2);
         }
+        const minVal = isSpeakerA ? call.recordingADurationMinutes : call.recordingBDurationMinutes;
+        if (minVal && Number(minVal) > 0) return Number(minVal).toFixed(2);
         const start = isSpeakerA ? call.recordingAStartedAt : call.recordingBStartedAt;
         const startedAt = start || call.actualCallStartedAt || call.startedAt;
         if (startedAt && call.endedAt) {
