@@ -246,7 +246,7 @@ export default function AdminCalls() {
                         status: call.recordingBStatus,
                         duration: calcSpeakerDuration(call, false),
                     },
-                ].filter((s) => s.file && s.user?._id && s.status === "approved");
+                ].filter((s) => s.file && (s.user?._id || s.user) && s.status === "approved");
 
                 for (const speaker of speakers) {
                     try {
@@ -344,7 +344,7 @@ export default function AdminCalls() {
                     payout: Number(call.recordingBPayoutUsd || 0).toFixed(2),
                     duration: calcSpeakerDuration(call, false),
                 },
-            ].filter((speaker) => speaker.file && speaker.user?._id);
+            ].filter((speaker) => speaker.file && (speaker.user?._id || speaker.user));
 
             if (!speakers.length) throw new Error("No recordings available");
 

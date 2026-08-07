@@ -678,9 +678,11 @@ qaCallRouter.post("/calls/:callId/analyze/:userId", async (req, res) => {
         if (!call) return res.status(404).json({ error: "Call not found" });
 
         let recordingFile;
-        if (call.userA.toString() === userId) {
+        const userAStr = (call.userA?._id || call.userA || "").toString();
+        const userBStr = (call.userB?._id || call.userB || "").toString();
+        if (userAStr === String(userId)) {
             recordingFile = call.recordingAFile;
-        } else if (call.userB.toString() === userId) {
+        } else if (userBStr === String(userId)) {
             recordingFile = call.recordingBFile;
         } else {
             return res.status(404).json({ error: "User not part of this call" });
@@ -886,9 +888,11 @@ qaCallRouter.get("/calls/:callId/recording/:userId", async (req, res) => {
         }
 
         let recordingFile;
-        if (call.userA.toString() === userId) {
+        const userAStr = (call.userA?._id || call.userA || "").toString();
+        const userBStr = (call.userB?._id || call.userB || "").toString();
+        if (userAStr === String(userId)) {
             recordingFile = call.recordingAFile;
-        } else if (call.userB.toString() === userId) {
+        } else if (userBStr === String(userId)) {
             recordingFile = call.recordingBFile;
         } else {
             return res.status(404).json({ error: "User not part of this call" });
@@ -1450,9 +1454,11 @@ router.get("/calls/:callId/recording/:userId", async (req, res) => {
 
         // Determine which recording file to send
         let recordingFile;
-        if (call.userA.toString() === userId) {
+        const userAStr = (call.userA?._id || call.userA || "").toString();
+        const userBStr = (call.userB?._id || call.userB || "").toString();
+        if (userAStr === String(userId)) {
             recordingFile = call.recordingAFile;
-        } else if (call.userB.toString() === userId) {
+        } else if (userBStr === String(userId)) {
             recordingFile = call.recordingBFile;
         } else {
             return res.status(404).json({ error: "User not part of this call" });

@@ -1248,6 +1248,19 @@ io.on("connection", (socket) => {
       const cleanLanguage = String((socket.data.language || (call && call.language) || "english")).replace(/[^a-zA-Z0-9_\-\ ]/g, "").replace(/\s+/g, "_").trim();
       const folderName = `${callId}_${cleanLanguage}_${cleanTopic}`;
 
+      const cleanMime = (mimeType || "").toLowerCase();
+      const isPcm = cleanMime.includes("pcm") || cleanMime.includes("raw") || cleanMime.includes("audio/l16");
+      let ext = "webm";
+      if (isPcm) {
+        ext = "flac";
+      } else if (cleanMime.includes("mp4") || cleanMime.includes("m4a")) {
+        ext = "mp4";
+      } else if (cleanMime.includes("ogg")) {
+        ext = "ogg";
+      } else if (cleanMime.includes("wav")) {
+        ext = "wav";
+      }
+
       const fileName = (call && socket.data.userId === call.userAId) ? `speaker1.${ext}` : `speaker2.${ext}`;
       const filePath = `calls/${folderName}/${fileName}`; 
 
