@@ -439,20 +439,31 @@ async function cleanupRecording(socket, endedAt, callIdOverride) {
         let finalUploadPath = tempPath;
         if (tempPath.endsWith(".pcm")) {
           try {
-            const session = await CallSession.findOne({ callId });
+            let session = await CallSession.findOne({ callId });
             if (session && session.actualCallStartedAt) {
+              const now = endedAt || new Date();
+              // Atomically freeze session.endedAt so both speakers use the exact same master end timestamp
+              if (!session.endedAt) {
+                const updatedSession = await CallSession.findOneAndUpdate(
+                  { _id: session._id, $or: [{ endedAt: null }, { endedAt: { $exists: false } }] },
+                  { $set: { endedAt: now } },
+                  { new: true }
+                );
+                if (updatedSession) session = updatedSession;
+              }
+
               const isUserA = String(session.userA) === String(socket.data.userId);
               const recordingStartedAt = isUserA ? session.recordingAStartedAt : session.recordingBStartedAt;
               
               const callStartTime = new Date(session.actualCallStartedAt).getTime();
-              const callEndTime = new Date(endedAt || session.endedAt || new Date()).getTime();
+              const callEndTime = new Date(session.endedAt || now).getTime();
               const recStartTime = recordingStartedAt ? new Date(recordingStartedAt).getTime() : callStartTime;
               
               const sampleRate = socket.data.recordSampleRate || 48000;
               const bytesPerSample = 4; // float32 is 4 bytes
               const bytesPerSec = sampleRate * bytesPerSample;
               
-              // 1. Pad Start
+              // 1. Pad Start (pre-pend silence if user started late)
               const startOffsetSec = Math.max(0, (recStartTime - callStartTime) / 1000);
               const startSilenceSize = Math.round(startOffsetSec * bytesPerSec);
               if (startSilenceSize > 0 && fs.existsSync(tempPath)) {
@@ -477,7 +488,7 @@ async function cleanupRecording(socket, endedAt, callIdOverride) {
                 fs.renameSync(tempPadded, tempPath);
               }
               
-              // 2. Pad End
+              // 2. Pad End / Trim End (Lock both files to identical target length)
               const totalCallDurationSec = Math.max(0, (callEndTime - callStartTime) / 1000);
               const targetSizeBytes = Math.round(totalCallDurationSec * bytesPerSec);
               if (fs.existsSync(tempPath)) {
@@ -487,6 +498,8 @@ async function cleanupRecording(socket, endedAt, callIdOverride) {
                   const endSilenceSize = targetSizeBytes - currentSize;
                   const silenceBuffer = Buffer.alloc(endSilenceSize, 0);
                   fs.appendFileSync(tempPath, silenceBuffer);
+                } else if (currentSize > targetSizeBytes) {
+                  fs.truncateSync(tempPath, targetSizeBytes);
                 }
               }
             }
@@ -1287,18 +1300,18 @@ io.on("connection", (socket) => {
       socket.emit("record_ready", { fileName });
 
       if (call) {
+        const now = new Date();
         CallSession.findOne({ callId }).select("recordingAStartedAt recordingBStartedAt actualCallStartedAt startedAt").then(existingSession => {
-          const baseStart = existingSession?.actualCallStartedAt || existingSession?.startedAt || new Date();
           const update = {};
           if (socket.data.userId === call.userAId) {
             update.recordingAFile = filePath;
             if (!existingSession?.recordingAStartedAt) {
-              update.recordingAStartedAt = baseStart;
+              update.recordingAStartedAt = now;
             }
           } else {
             update.recordingBFile = filePath;
             if (!existingSession?.recordingBStartedAt) {
-              update.recordingBStartedAt = baseStart;
+              update.recordingBStartedAt = now;
             }
           }
           if (Object.keys(update).length > 0) {
