@@ -978,7 +978,7 @@ export default function Call() {
   return (
     <div className="min-h-screen bg-neutral-50 dark:bg-neutral-950 text-neutral-900 dark:text-neutral-50 pt-16 md:pt-0 md:pl-64 transition-colors duration-300">
       {/* Permanent top-level WebRTC remote audio playback element */}
-      <audio ref={remoteAudioRef} autoPlay playsInline className="hidden" />
+      <audio ref={remoteAudioRef} autoPlay playsInline style={{ position: "absolute", width: 1, height: 1, opacity: 0, pointerEvents: "none" }} />
       <Nav disabled={!!callId && !showFeedback} />
       <div className="max-w-full md:max-w-6xl mx-auto px-4 md:px-6 py-4 md:py-8 w-full">
         {/* Call Interface */}
