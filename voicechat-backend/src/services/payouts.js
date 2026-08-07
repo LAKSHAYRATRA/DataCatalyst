@@ -239,6 +239,7 @@ export async function getPayoutOverview(userIds = null) {
     return { summaries: [], callsByUserId: {}, phrasesByUserId: {}, paymentsByUserId: {}, userMap: {} };
   }
 
+  const primaryUserId = String(validUsers[0]._id);
   const ids = validUsers.map((user) => String(user._id));
   const userMap = Object.fromEntries(validUsers.map(u => [String(u._id), u]));
   const [calls, payments, phrases, langs, projects, companies] = await Promise.all([
@@ -252,23 +253,54 @@ export async function getPayoutOverview(userIds = null) {
 
   const langRates = Object.fromEntries(langs.map(l => [l.code.toLowerCase(), Number(l.hourlyPayout) || 0]));
 
-  const callsByUserId = Object.fromEntries(ids.map((id) => [id, []]));
+  const callsByUserId = isSingleUserCheck 
+    ? { [primaryUserId]: [] }
+    : Object.fromEntries(ids.map((id) => [id, []]));
+
   for (const call of calls) {
-    for (const userId of ids) {
-      const entry = getCallEntryForUser(call, userId);
-      if (entry) callsByUserId[userId].push(entry);
+    if (isSingleUserCheck) {
+      for (const id of ids) {
+        const entry = getCallEntryForUser(call, id);
+        if (entry) {
+          callsByUserId[primaryUserId].push(entry);
+          break;
+        }
+      }
+    } else {
+      for (const userId of ids) {
+        const entry = getCallEntryForUser(call, userId);
+        if (entry) callsByUserId[userId].push(entry);
+      }
     }
   }
 
-  const phrasesByUserId = Object.fromEntries(ids.map((id) => [id, []]));
-  for (const phrase of phrases) {
-    const key = String(phrase.contributorId);
-    let targetKey = ids.find(id => id === key);
-    if (!targetKey && ids.length > 0) {
-      targetKey = ids[0];
+  const userLookupMap = new Map();
+  for (const u of validUsers) {
+    const uId = String(u._id);
+    userLookupMap.set(uId, uId);
+    if (u.speaker_id) {
+      userLookupMap.set(u.speaker_id, uId);
     }
+  }
+
+  const phrasesByUserId = isSingleUserCheck
+    ? { [primaryUserId]: [] }
+    : Object.fromEntries(ids.map((id) => [id, []]));
+
+  for (const phrase of phrases) {
+    let targetKey = null;
+    if (isSingleUserCheck) {
+      targetKey = primaryUserId;
+    } else {
+      if (phrase.contributorId && userLookupMap.has(String(phrase.contributorId))) {
+        targetKey = userLookupMap.get(String(phrase.contributorId));
+      } else if (phrase.speaker_id && userLookupMap.has(phrase.speaker_id)) {
+        targetKey = userLookupMap.get(phrase.speaker_id);
+      }
+    }
+
     if (targetKey && phrasesByUserId[targetKey]) {
-      let rate = langRates[String(phrase.language).toLowerCase()] || 0;
+      let rate = langRates[String(phrase.language || "").toLowerCase()] || 0;
       
       // Check if project has a specific rate
       if (phrase.projectName) {
@@ -313,9 +345,12 @@ export async function getPayoutOverview(userIds = null) {
     }
   }
 
-  const paymentsByUserId = Object.fromEntries(ids.map((id) => [id, []]));
+  const paymentsByUserId = isSingleUserCheck
+    ? { [primaryUserId]: [] }
+    : Object.fromEntries(ids.map((id) => [id, []]));
+
   for (const payment of payments) {
-    const key = String(payment.userId);
+    const key = isSingleUserCheck ? primaryUserId : String(payment.userId);
     if (paymentsByUserId[key]) {
       paymentsByUserId[key].push({
         id: String(payment._id),
@@ -333,7 +368,8 @@ export async function getPayoutOverview(userIds = null) {
     }
   }
 
-  const summaries = validUsers.map((user) => createSummary(
+  const targetUsers = isSingleUserCheck ? [validUsers[0]] : validUsers;
+  const summaries = targetUsers.map((user) => createSummary(
     user, 
     callsByUserId[String(user._id)] || [], 
     phrasesByUserId[String(user._id)] || [], 

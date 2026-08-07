@@ -153,8 +153,8 @@ export default function UserPayouts() {
                 <div className="text-xs text-neutral-500 dark:text-neutral-400 mt-2">{data?.payments?.length || 0} payout records</div>
               </div>
               <div className="card">
-                <div className="text-sm text-neutral-600 dark:text-neutral-400 mb-1">Pending Payout</div>
-                <div className="text-3xl font-bold text-warning-700 dark:text-warning-500">{money(totalPendingEst)}</div>
+                <div className="text-sm text-neutral-600 dark:text-neutral-400 mb-1">Remaining Payout</div>
+                <div className="text-3xl font-bold text-warning-700 dark:text-warning-500">{money(summary?.totalRemainingPayoutUsd)}</div>
                 <div className="text-xs text-neutral-500 dark:text-neutral-400 mt-2">{summary?.pendingCalls || pendingCallsCount} calls, {summary?.pendingPhrases || pendingPhrasesCount} phrases pending</div>
               </div>
             </div>
@@ -299,7 +299,7 @@ export default function UserPayouts() {
               {(tab === "calls" || tab === "phrases") && (
                 <div className="mb-6 space-y-4">
                   {/* Duration Counters */}
-                  <div className="grid grid-cols-2 gap-4 bg-neutral-900 dark:bg-neutral-900 text-white p-5 rounded-2xl border border-neutral-800 shadow-md">
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4 bg-neutral-900 dark:bg-neutral-900 text-white p-5 rounded-2xl border border-neutral-800 shadow-md">
                     <div>
                       <span className="block text-xs font-bold text-success-400 uppercase tracking-wider mb-1 flex items-center gap-1.5">
                         <span className="w-2 h-2 rounded-full bg-success-400"></span> Approved Duration
@@ -310,10 +310,18 @@ export default function UserPayouts() {
                     </div>
                     <div>
                       <span className="block text-xs font-bold text-warning-400 uppercase tracking-wider mb-1 flex items-center gap-1.5">
-                        <span className="w-2 h-2 rounded-full bg-warning-400"></span> Pending Duration
+                        <span className="w-2 h-2 rounded-full bg-warning-400"></span> Pending Review Duration
                       </span>
                       <span className="font-mono font-bold text-xl md:text-2xl text-white tracking-wide">
                         {formatHHMMSSFromSeconds(tab === "calls" ? callPendingSecs : phrasePendingSecs)}
+                      </span>
+                    </div>
+                    <div className="col-span-2 md:col-span-1">
+                      <span className="block text-xs font-bold text-primary-400 uppercase tracking-wider mb-1 flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-primary-400"></span> Est. Pending Value
+                      </span>
+                      <span className="font-mono font-bold text-xl md:text-2xl text-white tracking-wide">
+                        {money(tab === "calls" ? callPendingUsd : phrasePendingUsd)}
                       </span>
                     </div>
                   </div>
