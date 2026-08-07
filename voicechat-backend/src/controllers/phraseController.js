@@ -173,6 +173,29 @@ function calculateLufsFromWavBuffer(wavBuffer) {
   }
 }
 
+async function calculateLufsFromAudioFile(filePath) {
+  if (!filePath || !fs.existsSync(filePath)) return null;
+  const tempWav = path.join(os.tmpdir(), `lufs_temp_${Date.now()}_${Math.random().toString(36).slice(2)}.wav`);
+  try {
+    await new Promise((resolve, reject) => {
+      ffmpeg(filePath)
+        .format("wav")
+        .outputOptions(["-ar 48000", "-acodec pcm_s16le", "-ac 1"])
+        .on("error", reject)
+        .on("end", resolve)
+        .save(tempWav);
+    });
+
+    const wavBuf = fs.readFileSync(tempWav);
+    return calculateLufsFromWavBuffer(wavBuf);
+  } catch (err) {
+    console.error("LUFS calculation from audio file failed:", err);
+    return null;
+  } finally {
+    if (fs.existsSync(tempWav)) try { fs.unlinkSync(tempWav); } catch {}
+  }
+}
+
 /**
  * Admin: Upload JSON array of phrases
  */
@@ -1301,9 +1324,15 @@ export async function analyzePhrase(req, res) {
       let computedLufs = phrase.lufs;
       if (tempInputPath && fs.existsSync(tempInputPath)) {
         try {
-          const wBuf = fs.readFileSync(tempInputPath);
-          computedLufs = calculateLufsFromWavBuffer(wBuf);
-        } catch (e) {}
+          computedLufs = await calculateLufsFromAudioFile(tempInputPath);
+        } catch (e) {
+          console.error("Failed to decode FLAC for LUFS:", e);
+        }
+      }
+
+      if (computedLufs !== null && computedLufs !== undefined) {
+        phrase.lufs = computedLufs;
+        await Phrase.updateOne({ _id: phraseId }, { $set: { lufs: computedLufs } });
       }
 
       finalQC = {
