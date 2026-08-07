@@ -354,7 +354,11 @@ export default function Call() {
       return localStreamRef.current;
     }
     const rate = getCurrentSampleRate();
-    localStreamRef.current = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, sampleRate: rate, channelCount: 1 } });
+    try {
+      localStreamRef.current = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, sampleRate: rate, channelCount: 1 } });
+    } catch {
+      localStreamRef.current = await navigator.mediaDevices.getUserMedia({ audio: true });
+    }
     return localStreamRef.current;
   }
 
@@ -499,17 +503,14 @@ export default function Call() {
     };
 
     pc.ontrack = (ev) => {
-      // console.log("🎧 Received remote track");
-      const [stream] = ev.streams;
-      if (stream) {
-        // console.log("🎧 Setting remote stream to state");
-        setRemoteStream(stream);
-        if (remoteAudioRef.current) {
-          remoteAudioRef.current.srcObject = stream;
-          remoteAudioRef.current.play().catch(err => {
-            console.warn("Auto-play warning for remote audio:", err);
-          });
-        }
+      // console.log("🎧 Received remote track", ev);
+      const stream = (ev.streams && ev.streams[0]) ? ev.streams[0] : new MediaStream([ev.track]);
+      setRemoteStream(stream);
+      if (remoteAudioRef.current) {
+        remoteAudioRef.current.srcObject = stream;
+        remoteAudioRef.current.play().catch(err => {
+          console.warn("Auto-play warning for remote audio:", err);
+        });
       }
 
       setTimeout(async () => {
