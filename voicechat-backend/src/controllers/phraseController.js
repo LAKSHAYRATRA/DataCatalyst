@@ -1253,6 +1253,72 @@ export async function approveRejectedPhrase(req, res) {
 }
 
 /**
+ * POST /api/phrases/qa/lufs/:phraseId
+ * Calculate and return LUFS for a phrase recording directly in Node.js.
+ */
+export async function checkPhraseLufs(req, res) {
+  let tempInputPath = null;
+  try {
+    const { phraseId } = req.params;
+    const phrase = await Phrase.findById(phraseId);
+    if (!phrase) return res.status(404).json({ error: "Phrase not found" });
+
+    if (!phrase.audioFile) {
+      return res.status(400).json({ error: "No audio file recorded for this phrase yet." });
+    }
+
+    if (phrase.lufs !== null && phrase.lufs !== undefined && req.query.force !== "true") {
+      return res.json({ lufs: phrase.lufs, phraseId: phrase._id });
+    }
+
+    tempInputPath = path.join(os.tmpdir(), `phrase_lufs_${Date.now()}_${phraseId}.flac`);
+    const cleanKey = String(phrase.audioFile || "").replace(/^phrases\//, "");
+    const possiblePaths = [
+      path.join(process.cwd(), "uploads", phrase.audioFile),
+      path.join(process.cwd(), "uploads", "phrases", cleanKey),
+      path.join(process.cwd(), "recordings", phrase.audioFile),
+      path.join(process.cwd(), "recordings", "phrases", cleanKey),
+      path.join(process.cwd(), phrase.audioFile)
+    ];
+    let localAudio = possiblePaths.find(p => fs.existsSync(p));
+
+    if (localAudio) {
+      fs.copyFileSync(localAudio, tempInputPath);
+    } else {
+      const command = new GetObjectCommand({
+        Bucket: BUCKET_NAME,
+        Key: phrase.audioFile, 
+      });
+      const s3Response = await s3Client.send(command);
+      const fileStream = fs.createWriteStream(tempInputPath);
+      await new Promise((resolve, reject) => {
+        s3Response.Body.pipe(fileStream);
+        s3Response.Body.on("error", reject);
+        fileStream.on("finish", resolve);
+        fileStream.on("error", reject);
+      });
+    }
+
+    const lufsScore = await calculateLufsFromAudioFile(tempInputPath);
+
+    phrase.lufs = lufsScore;
+    if (phrase.qcResult) {
+      phrase.qcResult.freq = phrase.qcResult.freq || {};
+      phrase.qcResult.freq.lufs = lufsScore;
+      phrase.markModified('qcResult');
+    }
+    await phrase.save();
+
+    res.json({ lufs: lufsScore, phraseId: phrase._id });
+  } catch (err) {
+    console.error("checkPhraseLufs error:", err);
+    res.status(500).json({ error: err.message || "Failed to calculate LUFS" });
+  } finally {
+    if (tempInputPath && fs.existsSync(tempInputPath)) try { fs.unlinkSync(tempInputPath); } catch {}
+  }
+}
+
+/**
  * POST /api/phrases/qa/analyze/:phraseId
  * Run Freq2 audio analysis on a phrase recording.
  */
@@ -1389,6 +1455,28 @@ export async function analyzePhrase(req, res) {
           return_base64_plot: true
         });
 
+        let prodLufs = phrase.lufs;
+        if (prodLufs === null || prodLufs === undefined) {
+          try {
+            tempInputPath = path.join(os.tmpdir(), `phrase_lufs_prod_${Date.now()}_${phraseId}.flac`);
+            const s3Res = await s3Client.send(new GetObjectCommand({ Bucket: BUCKET_NAME, Key: phrase.audioFile }));
+            const ws = fs.createWriteStream(tempInputPath);
+            await new Promise((res, rej) => {
+              s3Res.Body.pipe(ws);
+              s3Res.Body.on("error", rej);
+              ws.on("finish", res);
+              ws.on("error", rej);
+            });
+            prodLufs = await calculateLufsFromAudioFile(tempInputPath);
+            if (prodLufs !== null && prodLufs !== undefined) {
+              phrase.lufs = prodLufs;
+              await Phrase.updateOne({ _id: phraseId }, { $set: { lufs: prodLufs } });
+            }
+          } catch (e) {
+            console.error("Failed to compute prod LUFS:", e);
+          }
+        }
+
         finalQC = {
           freq: {
             noise_floor: lambdaResult.freq.noise_floor,
@@ -1396,7 +1484,7 @@ export async function analyzePhrase(req, res) {
             bit_depth: lambdaResult.freq.bit_depth,
             processing_verdict: lambdaResult.freq.processing_verdict,
             spectrogram_img: lambdaResult.freq.spectrogram_img || null,
-            lufs: phrase.lufs
+            lufs: prodLufs
           },
           analyzedAt: new Date()
         };

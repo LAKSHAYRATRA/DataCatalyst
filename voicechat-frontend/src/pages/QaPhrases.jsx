@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Check, X, AlertCircle, Download, Trash2, Clock, CheckCircle2 } from 'lucide-react';
+import { Check, X, AlertCircle, Download, Trash2, Clock, CheckCircle2, Volume2 } from 'lucide-react';
 import Swal from 'sweetalert2';
 import { apiGet, apiPostJson } from '../lib/api';
 import { getUserInfo } from '../lib/auth';
@@ -22,7 +22,38 @@ export default function QaPhrases() {
   const [qcData, setQcData] = useState({});
   const [loadingQc, setLoadingQc] = useState({});
   const [errorQc, setErrorQc] = useState({});
+  const [loadingLufs, setLoadingLufs] = useState({});
   const [lightboxSrc, setLightboxSrc] = useState(null);
+
+  const handleCheckLufs = async (phraseId) => {
+    setLoadingLufs(prev => ({ ...prev, [phraseId]: true }));
+    try {
+      const res = await apiPostJson(`/api/phrases/qa/lufs/${phraseId}?force=true`, {});
+      if (res && res.lufs !== undefined) {
+        setQueue(prev => prev.map(q => q._id === phraseId ? { ...q, lufs: res.lufs } : q));
+        if (res.lufs === null) {
+          Swal.fire({
+            icon: "warning",
+            title: "No Speech Found",
+            text: "No clear speech samples detected in this recording.",
+            background: "#171717",
+            color: "#ffffff"
+          });
+        }
+      }
+    } catch (err) {
+      console.error("Failed to check LUFS:", err);
+      Swal.fire({
+        icon: "error",
+        title: "LUFS Error",
+        text: err.message || "Failed to calculate LUFS for this phrase.",
+        background: "#171717",
+        color: "#ffffff"
+      });
+    } finally {
+      setLoadingLufs(prev => ({ ...prev, [phraseId]: false }));
+    }
+  };
 
   useEffect(() => {
     fetchQueue(activeTab);
@@ -306,6 +337,25 @@ export default function QaPhrases() {
                         </div>
 
                         <div className="space-y-2">
+                          <button
+                            type="button"
+                            onClick={() => handleCheckLufs(p._id)}
+                            disabled={loadingLufs[p._id]}
+                            className="w-full py-2 px-3 bg-amber-600/90 hover:bg-amber-600 text-white text-xs font-bold rounded-lg transition-colors flex items-center justify-center gap-2 shadow-sm"
+                            title="Calculate exact ITU-R BS.1770-4 gated speech-only LUFS"
+                          >
+                            {loadingLufs[p._id] ? (
+                              <>
+                                <div className="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                                Calculating LUFS...
+                              </>
+                            ) : (
+                              <>
+                                <Volume2 className="w-4 h-4" /> Check LUFS Score
+                              </>
+                            )}
+                          </button>
+
                           {isAdmin && p.audioFile && (
                             <button
                               type="button"

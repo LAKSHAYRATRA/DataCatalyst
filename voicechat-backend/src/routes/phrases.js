@@ -19,6 +19,7 @@ import {
   getSamplePhrase,
   approveRejectedPhrase,
   analyzePhrase,
+  checkPhraseLufs,
   downloadSinglePhraseZip,
   deletePhraseAdmin,
   clearCompanyPhrases,
@@ -83,6 +84,7 @@ router.post("/admin/deduplicate", requireAuth(JWT_SECRET), requireAdmin, dedupli
 router.get("/qa/queue", requireAuth(JWT_SECRET), requireQAOrAdmin, getQaQueue);
 router.post("/qa/review/:phraseId", requireAuth(JWT_SECRET), requireQAOrAdmin, reviewPhrase);
 router.post("/qa/analyze/:phraseId", requireAuth(JWT_SECRET), requireQAOrAdmin, analyzePhrase);
+router.post("/qa/lufs/:phraseId", requireAuth(JWT_SECRET), requireQAOrAdmin, checkPhraseLufs);
 
 /* -------------------------------------------------------------------------- */
 /*                              Contributor Routes                            */
