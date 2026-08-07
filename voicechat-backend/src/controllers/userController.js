@@ -682,15 +682,16 @@ export async function streamRecording(req, res) {
 
   const allowedFile =
     req.userId === userAId ? session.recordingAFile : session.recordingBFile;
-  if (!allowedFile || allowedFile !== fileName) {
+  if (!allowedFile || path.basename(allowedFile) !== fileName) {
     return res.status(404).json({ error: "recording_not_found" });
   }
 
-  const awsKey = `calls/${callId}/${fileName}`;
+  // Use the full S3 key stored in the DB directly
+  const awsKey = allowedFile;
   try {
     const command = new GetObjectCommand({ Bucket: BUCKET_NAME, Key: awsKey });
     const s3Doc = await s3Client.send(command);
-    const mimeType = fileName.endsWith(".ogg") ? "audio/ogg" : "audio/webm";
+    const mimeType = fileName.endsWith(".ogg") ? "audio/ogg" : fileName.endsWith(".flac") ? "audio/flac" : "audio/webm";
     res.setHeader("Content-Type", s3Doc.ContentType || mimeType);
     s3Doc.Body.on('error', (err) => {
         console.error('S3 Stream error (call recording):', err);
