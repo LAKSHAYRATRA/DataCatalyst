@@ -46,7 +46,7 @@ function calculateEbuR128Lufs(pcmSamples, sampleRate = 48000) {
     let sumSq = 0;
     for (let i = 0; i < len; i++) sumSq += filtered[i] * filtered[i];
     const ms = sumSq / len;
-    if (ms <= 1e-6) return null;
+    if (ms <= 1e-12) return null;
     const l = LUFS_OFFSET + 10 * Math.log10(ms);
     return parseFloat(l.toFixed(1));
   }
@@ -64,7 +64,7 @@ function calculateEbuR128Lufs(pcmSamples, sampleRate = 48000) {
 
   // Absolute Threshold Gating (-70 LUFS)
   const absGatedMs = blockMeanSquares.filter(ms => {
-    if (ms <= 1e-7) return false;
+    if (ms <= 1e-12) return false;
     const l = LUFS_OFFSET + 10 * Math.log10(ms);
     return l > -70.0;
   });
@@ -667,6 +667,9 @@ export default function PhraseRecording() {
       formData.append('phraseId', currentPhrase._id);
       formData.append('recording', audioBlob, 'record.wav');
       formData.append('duration', duration);
+      if (lufsScore !== null && lufsScore !== undefined) {
+        formData.append('lufs', lufsScore);
+      }
 
       const token = document.cookie.split(";").find(c => c.trim().startsWith("vc_token="))?.split("=")[1] || localStorage.getItem("vc_token");
       

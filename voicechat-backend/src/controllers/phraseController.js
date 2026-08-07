@@ -63,7 +63,7 @@ function calculateEbuR128LufsFromPcm(pcmSamples, sampleRate = 48000) {
     let sumSq = 0;
     for (let i = 0; i < len; i++) sumSq += filtered[i] * filtered[i];
     const ms = sumSq / len;
-    if (ms <= 1e-6) return null;
+    if (ms <= 1e-12) return null;
     return parseFloat((LUFS_OFFSET + 10 * Math.log10(ms)).toFixed(1));
   }
 
@@ -79,7 +79,7 @@ function calculateEbuR128LufsFromPcm(pcmSamples, sampleRate = 48000) {
   if (blockMeanSquares.length === 0) return null;
 
   const absGatedMs = blockMeanSquares.filter(ms => {
-    if (ms <= 1e-7) return false;
+    if (ms <= 1e-12) return false;
     const l = LUFS_OFFSET + 10 * Math.log10(ms);
     return l > -70.0;
   });
@@ -786,6 +786,12 @@ export async function submitPhraseRecording(req, res) {
     phrase.recordedAt = new Date();
     phrase.duration = Number(req.body.duration) || 0; 
     phrase.lufs = lufsScore;
+    if (lufsScore !== null && lufsScore !== undefined) {
+      phrase.qcResult = phrase.qcResult || {};
+      phrase.qcResult.freq = phrase.qcResult.freq || {};
+      phrase.qcResult.freq.lufs = lufsScore;
+      phrase.markModified('qcResult');
+    }
     phrase.isTestPhrase = isTestPhrase;
     
     await phrase.save();
@@ -1260,7 +1266,16 @@ export async function analyzePhrase(req, res) {
 
     // Check if there is cached QC results
     if (phrase.qcResult && req.query.force !== "true") {
-      return res.json(phrase.qcResult);
+      if (phrase.qcResult.freq && (phrase.qcResult.freq.lufs === undefined || phrase.qcResult.freq.lufs === null)) {
+        if (phrase.lufs !== null && phrase.lufs !== undefined) {
+          phrase.qcResult.freq.lufs = phrase.lufs;
+          await Phrase.updateOne({ _id: phraseId }, { $set: { "qcResult.freq.lufs": phrase.lufs } });
+          return res.json(phrase.qcResult);
+        }
+        // If phrase.lufs is also missing/null, bypass cache so we recalculate LUFS
+      } else {
+        return res.json(phrase.qcResult);
+      }
     }
 
     if (!phrase.audioFile) {
@@ -1269,21 +1284,35 @@ export async function analyzePhrase(req, res) {
 
     let finalQC;
 
-    if (phrase.audioFile.startsWith("local:") || process.env.LOCAL_QC_FALLBACK === "true") {
-      // Local fallback (development environment only)
-      tempInputPath = path.join(os.tmpdir(), `phrase_input_${Date.now()}_${phraseId}.wav`);
-      const command = new GetObjectCommand({
-        Bucket: BUCKET_NAME,
-        Key: phrase.audioFile, 
-      });
-      const s3Response = await s3Client.send(command);
-      const fileStream = fs.createWriteStream(tempInputPath);
-      await new Promise((resolve, reject) => {
-        s3Response.Body.pipe(fileStream);
-        s3Response.Body.on("error", reject);
-        fileStream.on("finish", resolve);
-        fileStream.on("error", reject);
-      });
+    const runLocalAnalysis = async () => {
+      tempInputPath = path.join(os.tmpdir(), `phrase_input_${Date.now()}_${phraseId}.flac`);
+      
+      const cleanKey = String(phrase.audioFile || "").replace(/^phrases\//, "");
+      const possiblePaths = [
+        path.join(process.cwd(), "uploads", phrase.audioFile),
+        path.join(process.cwd(), "uploads", "phrases", cleanKey),
+        path.join(process.cwd(), "recordings", phrase.audioFile),
+        path.join(process.cwd(), "recordings", "phrases", cleanKey),
+        path.join(process.cwd(), phrase.audioFile)
+      ];
+      let localAudio = possiblePaths.find(p => fs.existsSync(p));
+
+      if (localAudio) {
+        fs.copyFileSync(localAudio, tempInputPath);
+      } else {
+        const command = new GetObjectCommand({
+          Bucket: BUCKET_NAME,
+          Key: phrase.audioFile, 
+        });
+        const s3Response = await s3Client.send(command);
+        const fileStream = fs.createWriteStream(tempInputPath);
+        await new Promise((resolve, reject) => {
+          s3Response.Body.pipe(fileStream);
+          s3Response.Body.on("error", reject);
+          fileStream.on("finish", resolve);
+          fileStream.on("error", reject);
+        });
+      }
 
       const PYTHON_BIN = process.env.YAMNET_PYTHON || "python";
       const freqScriptPath = path.resolve(process.cwd(), "..", "python scripts", "freq2.py");
@@ -1335,7 +1364,7 @@ export async function analyzePhrase(req, res) {
         await Phrase.updateOne({ _id: phraseId }, { $set: { lufs: computedLufs } });
       }
 
-      finalQC = {
+      return {
         freq: {
           noise_floor: freqResult.noise_floor_db,
           crest_factor: freqResult.crest_factor,
@@ -1346,26 +1375,35 @@ export async function analyzePhrase(req, res) {
         },
         analyzedAt: new Date()
       };
-    } else {
-      // Production: Invoke AWS Lambda Audio QC
-      const lambdaResult = await invokeAudioQC({
-        bucket: BUCKET_NAME,
-        key: phrase.audioFile,
-        skip_yamnet: true,
-        return_base64_plot: true
-      });
+    };
 
-      finalQC = {
-        freq: {
-          noise_floor: lambdaResult.freq.noise_floor,
-          crest_factor: lambdaResult.freq.crest_factor,
-          bit_depth: lambdaResult.freq.bit_depth,
-          processing_verdict: lambdaResult.freq.processing_verdict,
-          spectrogram_img: lambdaResult.freq.spectrogram_img || null,
-          lufs: phrase.lufs
-        },
-        analyzedAt: new Date()
-      };
+    if (phrase.audioFile.startsWith("local:") || process.env.LOCAL_QC_FALLBACK === "true" || !process.env.AWS_ACCESS_KEY_ID) {
+      finalQC = await runLocalAnalysis();
+    } else {
+      try {
+        // Production: Invoke AWS Lambda Audio QC
+        const lambdaResult = await invokeAudioQC({
+          bucket: BUCKET_NAME,
+          key: phrase.audioFile,
+          skip_yamnet: true,
+          return_base64_plot: true
+        });
+
+        finalQC = {
+          freq: {
+            noise_floor: lambdaResult.freq.noise_floor,
+            crest_factor: lambdaResult.freq.crest_factor,
+            bit_depth: lambdaResult.freq.bit_depth,
+            processing_verdict: lambdaResult.freq.processing_verdict,
+            spectrogram_img: lambdaResult.freq.spectrogram_img || null,
+            lufs: phrase.lufs
+          },
+          analyzedAt: new Date()
+        };
+      } catch (lambdaErr) {
+        console.warn("AWS Lambda Audio QC failed, falling back to local analysis:", lambdaErr.message);
+        finalQC = await runLocalAnalysis();
+      }
     }
 
     phrase.qcResult = finalQC;
