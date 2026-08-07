@@ -11,7 +11,8 @@ function roundCurrency(value) {
   return Math.round(value * 100) / 100;
 }
 
-function isRegularUser(user) {
+function isRegularUser(user, isSingleUserCheck = false) {
+  if (isSingleUserCheck) return !!user;
   return user && !user.isAdmin && !user.isQA;
 }
 
@@ -131,7 +132,7 @@ function createSummary(user, callEntries, phraseEntries, payments) {
 }
 
 async function loadUsers(userIds) {
-  const filter = { isAdmin: false, isQA: false };
+  const filter = {};
   if (userIds?.length) {
     const inputUsers = await User.find({ _id: { $in: userIds } }).lean();
     const searchConditions = [{ _id: { $in: userIds } }];
@@ -148,6 +149,9 @@ async function loadUsers(userIds) {
     }
     const allRelated = await User.find({ $or: searchConditions }).select("_id").lean();
     filter._id = { $in: allRelated.map(r => r._id) };
+  } else {
+    filter.isAdmin = false;
+    filter.isQA = false;
   }
   return User.find(filter)
     .select("firstname lastname username email upiId speaker_id isAdmin isQA")
@@ -178,11 +182,30 @@ async function loadPaymentsForUsers(userIds) {
 
 async function loadPhrasesForUsers(userIds) {
   const ids = userIds.map((id) => String(id));
-  const activePhrases = await Phrase.find({ contributorId: { $in: ids } })
+
+  // Collect any speaker_ids linked to userIds
+  const usersDoc = await User.find({ _id: { $in: ids } }).select("speaker_id").lean();
+  const speakerIds = usersDoc.map(u => u.speaker_id).filter(Boolean);
+
+  const phraseQuery = {
+    $or: [
+      { contributorId: { $in: ids } },
+      ...(speakerIds.length > 0 ? [{ speaker_id: { $in: speakerIds } }] : [])
+    ]
+  };
+
+  const activePhrases = await Phrase.find(phraseQuery)
     .sort({ recordedAt: -1, createdAt: -1 })
     .lean();
 
-  const rejections = await PhraseRejection.find({ contributorId: { $in: ids } })
+  const rejectionQuery = {
+    $or: [
+      { contributorId: { $in: ids } },
+      ...(speakerIds.length > 0 ? [{ speaker_id: { $in: speakerIds } }] : [])
+    ]
+  };
+
+  const rejections = await PhraseRejection.find(rejectionQuery)
     .sort({ rejectedAt: -1, createdAt: -1 })
     .lean();
 
@@ -209,8 +232,9 @@ async function loadPhrasesForUsers(userIds) {
 }
 
 export async function getPayoutOverview(userIds = null) {
+  const isSingleUserCheck = Array.isArray(userIds) && userIds.length > 0;
   const users = await loadUsers(userIds);
-  const validUsers = users.filter(isRegularUser);
+  const validUsers = users.filter(u => isRegularUser(u, isSingleUserCheck));
   if (validUsers.length === 0) {
     return { summaries: [], callsByUserId: {}, phrasesByUserId: {}, paymentsByUserId: {}, userMap: {} };
   }
