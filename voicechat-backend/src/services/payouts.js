@@ -2,6 +2,7 @@ import { CallSession } from "../models/CallSession.js";
 import { PayoutPayment } from "../models/PayoutPayment.js";
 import { User } from "../models/User.js";
 import { Phrase } from "../models/Phrase.js";
+import { PhraseRejection } from "../models/PhraseRejection.js";
 import { Language } from "../models/Language.js";
 import { Project } from "../models/Project.js";
 import { Company } from "../models/Company.js";
@@ -81,17 +82,25 @@ function createSummary(user, callEntries, phraseEntries, payments) {
   };
 
   for (const entry of callEntries) {
-    if (entry.status === "approved") stats.totalApprovedCalls += 1;
-    else if (entry.status === "rejected") stats.rejectedCalls += 1;
-    else stats.pendingCalls += 1;
-    stats.totalMoneyMadeUsd += Number(entry.payoutUsd) || 0;
+    if (entry.status === "approved") {
+      stats.totalApprovedCalls += 1;
+      stats.totalMoneyMadeUsd += Number(entry.payoutUsd) || 0;
+    } else if (entry.status === "rejected") {
+      stats.rejectedCalls += 1;
+    } else {
+      stats.pendingCalls += 1;
+    }
   }
 
   for (const phrase of phraseEntries) {
-    if (phrase.status === "approved") stats.totalApprovedPhrases += 1;
-    else if (phrase.status === "rejected") stats.rejectedPhrases += 1;
-    else stats.pendingPhrases += 1;
-    stats.totalMoneyMadeUsd += Number(phrase.payoutUsd) || 0;
+    if (phrase.status === "approved") {
+      stats.totalApprovedPhrases += 1;
+      stats.totalMoneyMadeUsd += Number(phrase.payoutUsd) || 0;
+    } else if (phrase.status === "rejected") {
+      stats.rejectedPhrases += 1;
+    } else {
+      stats.pendingPhrases += 1;
+    }
   }
 
   for (const payment of payments) {
@@ -117,7 +126,23 @@ function createSummary(user, callEntries, phraseEntries, payments) {
 
 async function loadUsers(userIds) {
   const filter = { isAdmin: false, isQA: false };
-  if (userIds?.length) filter._id = { $in: userIds };
+  if (userIds?.length) {
+    const inputUsers = await User.find({ _id: { $in: userIds } }).lean();
+    const searchConditions = [{ _id: { $in: userIds } }];
+    for (const u of inputUsers) {
+      if (u.speaker_id) searchConditions.push({ speaker_id: u.speaker_id });
+      if (u.email) {
+        const base = u.email.split("@")[0].replace(/[0-9]/g, "");
+        if (base.length > 3) searchConditions.push({ email: { $regex: new RegExp(`^${base}`, "i") } });
+      }
+      if (u.username) {
+        const base = u.username.replace(/[0-9]/g, "");
+        if (base.length > 3) searchConditions.push({ username: { $regex: new RegExp(`^${base}`, "i") } });
+      }
+    }
+    const allRelated = await User.find({ $or: searchConditions }).select("_id").lean();
+    filter._id = { $in: allRelated.map(r => r._id) };
+  }
   return User.find(filter)
     .select("firstname lastname username email upiId speaker_id isAdmin isQA")
     .sort({ firstname: 1, lastname: 1, email: 1 })
@@ -147,9 +172,34 @@ async function loadPaymentsForUsers(userIds) {
 
 async function loadPhrasesForUsers(userIds) {
   const ids = userIds.map((id) => String(id));
-  return Phrase.find({ contributorId: { $in: ids } })
-    .sort({ recordedAt: -1 })
+  const activePhrases = await Phrase.find({ contributorId: { $in: ids } })
+    .sort({ recordedAt: -1, createdAt: -1 })
     .lean();
+
+  const rejections = await PhraseRejection.find({ contributorId: { $in: ids } })
+    .sort({ rejectedAt: -1, createdAt: -1 })
+    .lean();
+
+  const rejectionItems = await Promise.all(rejections.map(async (r) => {
+    let text = r.text;
+    if (!text) {
+      const orig = await Phrase.findOne({ phraseId: r.phraseId }).select("text").lean();
+      text = orig?.text || "Phrase Recording";
+    }
+    return {
+      _id: r._id,
+      phraseId: r.phraseId,
+      companyId: r.companyId,
+      language: r.language,
+      contributorId: r.contributorId,
+      status: "rejected",
+      duration: r.duration || 0,
+      recordedAt: r.rejectedAt || r.createdAt,
+      text
+    };
+  }));
+
+  return [...activePhrases, ...rejectionItems].sort((a, b) => new Date(b.recordedAt || b.createdAt || 0) - new Date(a.recordedAt || a.createdAt || 0));
 }
 
 export async function getPayoutOverview(userIds = null) {
@@ -183,7 +233,11 @@ export async function getPayoutOverview(userIds = null) {
   const phrasesByUserId = Object.fromEntries(ids.map((id) => [id, []]));
   for (const phrase of phrases) {
     const key = String(phrase.contributorId);
-    if (phrasesByUserId[key]) {
+    let targetKey = ids.find(id => id === key);
+    if (!targetKey && ids.length > 0) {
+      targetKey = ids[0];
+    }
+    if (targetKey && phrasesByUserId[targetKey]) {
       let rate = langRates[String(phrase.language).toLowerCase()] || 0;
       
       // Check if project has a specific rate
@@ -208,10 +262,14 @@ export async function getPayoutOverview(userIds = null) {
       }
 
       let phrasePayout = 0;
-      if (phrase.status === "approved" && phrase.duration) {
-         phrasePayout = (phrase.duration / 3600) * rate;
+      if (phrase.duration && rate > 0) {
+        phrasePayout = (phrase.duration / 3600) * rate;
+        if (phrasePayout > 0) {
+          phrasePayout = Math.max(0.01, roundCurrency(phrasePayout));
+        }
       }
-      phrasesByUserId[key].push({
+
+      phrasesByUserId[targetKey].push({
         phraseId: phrase.phraseId,
         text: phrase.text,
         language: phrase.language,
@@ -219,7 +277,7 @@ export async function getPayoutOverview(userIds = null) {
         companyId: phrase.companyId || null,
         projectName: phrase.projectName || null,
         duration: phrase.duration || 0,
-        recordedAt: phrase.recordedAt,
+        recordedAt: phrase.recordedAt || phrase.createdAt,
         payoutUsd: roundCurrency(phrasePayout)
       });
     }

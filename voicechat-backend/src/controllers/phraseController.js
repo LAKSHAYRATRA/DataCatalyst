@@ -902,6 +902,7 @@ export async function reviewPhrase(req, res) {
             qaId: req.user ? req.user._id : null,
             duration: phrase.duration || 0,
             comment: comment || null,
+            text: phrase.text,
             rejectedAt: new Date()
           });
         } catch (rejErr) {
@@ -1103,17 +1104,76 @@ export async function getContributorStats(req, res) {
   try {
     const userId = req.user._id;
 
-    const history = await Phrase.find({ contributorId: userId })
-      .select("text language status duration recordedAt qaComment")
-      .sort({ recordedAt: -1 });
+    // Find all user IDs associated with this user (by _id, speaker_id, or related email/username)
+    const user = req.user;
+    const searchConditions = [{ _id: userId }];
+    if (user.speaker_id) {
+      searchConditions.push({ speaker_id: user.speaker_id });
+    }
+    if (user.email) {
+      const emailBase = user.email.split("@")[0].replace(/[0-9]/g, "");
+      if (emailBase && emailBase.length > 3) {
+        searchConditions.push({ email: { $regex: new RegExp(`^${emailBase}`, "i") } });
+      }
+    }
+    if (user.username) {
+      const unameBase = user.username.replace(/[0-9]/g, "");
+      if (unameBase && unameBase.length > 3) {
+        searchConditions.push({ username: { $regex: new RegExp(`^${unameBase}`, "i") } });
+      }
+    }
 
-    const totalSeconds = history
+    const relatedUsers = await User.find({ $or: searchConditions }).select("_id speaker_id").lean();
+    const userIds = Array.from(new Set(relatedUsers.map(u => String(u._id))));
+    const speakerIds = Array.from(new Set(relatedUsers.map(u => u.speaker_id).filter(Boolean)));
+
+    const phraseQuery = {
+      $or: [
+        { contributorId: { $in: userIds } },
+        ...(speakerIds.length > 0 ? [{ speaker_id: { $in: speakerIds } }] : [])
+      ]
+    };
+
+    const phrases = await Phrase.find(phraseQuery)
+      .select("text language status duration recordedAt createdAt qaComment")
+      .sort({ recordedAt: -1, createdAt: -1 })
+      .lean();
+
+    const formattedPhrases = phrases.map(p => ({
+      ...p,
+      recordedAt: p.recordedAt || p.createdAt
+    }));
+
+    const rejections = await PhraseRejection.find({ contributorId: { $in: userIds } })
+      .sort({ rejectedAt: -1 })
+      .lean();
+
+    const rejectionItems = await Promise.all(rejections.map(async (r) => {
+      let text = r.text;
+      if (!text) {
+        const origPhrase = await Phrase.findOne({ phraseId: r.phraseId }).select("text").lean();
+        text = origPhrase?.text || "Phrase Recording";
+      }
+      return {
+        _id: r._id,
+        text,
+        language: r.language,
+        status: "rejected",
+        duration: r.duration || 0,
+        recordedAt: r.rejectedAt || r.createdAt,
+        qaComment: r.comment
+      };
+    }));
+
+    const history = [...formattedPhrases, ...rejectionItems].sort((a, b) => new Date(b.recordedAt || 0) - new Date(a.recordedAt || 0));
+
+    const totalSeconds = formattedPhrases
       .filter((p) => p.status === "approved")
       .reduce((sum, p) => sum + (p.duration || 0), 0);
 
     const startOfDay = new Date();
     startOfDay.setHours(0, 0, 0, 0);
-    const phrasesToday = history.filter(p => p.recordedAt >= startOfDay).length;
+    const phrasesToday = history.filter(p => p.recordedAt && new Date(p.recordedAt) >= startOfDay).length;
 
     res.json({ 
         totalSeconds, 

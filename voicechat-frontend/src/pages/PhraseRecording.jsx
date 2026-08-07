@@ -334,6 +334,22 @@ export default function PhraseRecording() {
     };
   }, []);
 
+  async function fetchStats() {
+    try {
+      const statsData = await apiGet('/api/phrases/my-stats');
+      setStats({ 
+        totalSeconds: statsData.totalSeconds || 0, 
+        history: statsData.history || [],
+        dailyPhraseLimit: statsData.dailyPhraseLimit !== undefined ? statsData.dailyPhraseLimit : 1000,
+        phrasesRecordedToday: statsData.phrasesRecordedToday || 0,
+        overallPhraseLimit: statsData.overallPhraseLimit !== undefined ? statsData.overallPhraseLimit : -1,
+        totalPhrasesRecorded: statsData.totalPhrasesRecorded || 0
+      });
+    } catch (err) {
+      console.error('Failed to fetch phrase stats', err);
+    }
+  }
+
   async function fetchInitialData() {
     try {
       const [statsData, projectsData, languagesData, appsData, companiesData] = await Promise.all([
@@ -1254,12 +1270,12 @@ export default function PhraseRecording() {
               {stats.history.map(item => (
                 <div key={item._id} className="p-4 rounded-lg border border-neutral-100 dark:border-neutral-800 bg-neutral-50/50 dark:bg-neutral-800/30">
                   <div className="flex justify-between items-start mb-2">
-                    <span className="text-xs font-mono opacity-60 truncate mr-2 flex-1">"{item.text.substring(0, 30)}..."</span>
+                    <span className="text-xs font-mono opacity-60 truncate mr-2 flex-1">"{item.text ? (item.text.length > 30 ? item.text.substring(0, 30) + '...' : item.text) : 'Phrase Recording'}"</span>
                     <span className={`badge shrink-0 ${
                       item.status === 'approved' ? 'badge-success' : 
                       item.status === 'rejected' ? 'badge-error' : 'badge-warning'
                     }`}>
-                      {item.status}
+                      {item.status === 'recorded' || item.status === 'pending' ? 'Pending Review' : item.status}
                     </span>
                   </div>
                   <div className="flex justify-between text-xs opacity-70">

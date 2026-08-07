@@ -359,7 +359,7 @@ export default function UserPayouts() {
                           call.status === "rejected" ? "bg-error-100 text-error-700 dark:bg-error-900/40 dark:text-error-300" :
                           "bg-warning-100 text-warning-700 dark:bg-warning-900/40 dark:text-warning-300"
                         }`}>
-                          {call.status}
+                          {call.status === "recorded" || call.status === "pending" ? "Pending Review" : call.status}
                         </span>
                       </div>
                     </div>
@@ -382,7 +382,7 @@ export default function UserPayouts() {
                           phrase.status === "rejected" ? "bg-error-100 text-error-700 dark:bg-error-900/40 dark:text-error-300" :
                           "bg-warning-100 text-warning-700 dark:bg-warning-900/40 dark:text-warning-300"
                         }`}>
-                          {phrase.status}
+                          {phrase.status === "recorded" || phrase.status === "pending" ? "Pending Review" : phrase.status}
                         </span>
                       </div>
                     </div>

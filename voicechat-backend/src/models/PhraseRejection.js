@@ -9,7 +9,8 @@ const phraseRejectionSchema = new mongoose.Schema(
     qaId: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
     duration: { type: Number, default: 0 },
     comment: { type: String, default: null },
-    rejectedAt: { type: Date, default: Date.now }
+    rejectedAt: { type: Date, default: Date.now },
+    text: { type: String, default: null }
   },
   { timestamps: true }
 );
