@@ -85,14 +85,18 @@ export default function UserPayouts() {
     .reduce((sum, c) => sum + ((Number(c.durationMinutes) || 0) * 60 || Number(c.duration) || 0), 0);
 
   const callPendingSecs = callsList
-    .filter(c => c.status === "recorded" || c.status === "completed")
+    .filter(c => c.status === "recorded" || c.status === "completed" || c.status === "pending")
     .reduce((sum, c) => sum + ((Number(c.durationMinutes) || 0) * 60 || Number(c.duration) || 0), 0);
 
-  const pendingCallsCount = callsList.filter(c => c.status === "recorded" || c.status === "completed").length;
+  const callPendingUsd = callsList
+    .filter(c => c.status === "recorded" || c.status === "completed" || c.status === "pending")
+    .reduce((sum, c) => sum + (Number(c.payoutUsd) || 0), 0);
+
+  const pendingCallsCount = callsList.filter(c => c.status === "recorded" || c.status === "completed" || c.status === "pending").length;
   const reviewedCallsCount = callsList.filter(c => c.status === "approved" || c.status === "rejected").length;
 
   const filteredCalls = callsList.filter(c => {
-    if (subTab === "pending") return c.status === "recorded" || c.status === "completed";
+    if (subTab === "pending") return c.status === "recorded" || c.status === "completed" || c.status === "pending";
     if (subTab === "reviewed") return c.status === "approved" || c.status === "rejected";
     return true;
   });
@@ -102,17 +106,25 @@ export default function UserPayouts() {
     .reduce((sum, p) => sum + (Number(p.duration) || 0), 0);
 
   const phrasePendingSecs = phrasesList
-    .filter(p => p.status === "recorded")
+    .filter(p => p.status === "recorded" || p.status === "pending")
     .reduce((sum, p) => sum + (Number(p.duration) || 0), 0);
 
-  const pendingPhrasesCount = phrasesList.filter(p => p.status === "recorded").length;
+  const phrasePendingUsd = phrasesList
+    .filter(p => p.status === "recorded" || p.status === "pending")
+    .reduce((sum, p) => sum + (Number(p.payoutUsd) || 0), 0);
+
+  const pendingPhrasesCount = phrasesList.filter(p => p.status === "recorded" || p.status === "pending").length;
   const reviewedPhrasesCount = phrasesList.filter(p => p.status === "approved" || p.status === "rejected").length;
 
   const filteredPhrases = phrasesList.filter(p => {
-    if (subTab === "pending") return p.status === "recorded";
+    if (subTab === "pending") return p.status === "recorded" || p.status === "pending";
     if (subTab === "reviewed") return p.status === "approved" || p.status === "rejected";
     return true;
   });
+
+  const totalPendingEst = (summary?.totalRemainingPayoutUsd && summary.totalRemainingPayoutUsd > 0)
+    ? summary.totalRemainingPayoutUsd
+    : (summary?.totalPendingEstimatedUsd !== undefined ? summary.totalPendingEstimatedUsd : (phrasePendingUsd + callPendingUsd));
 
   return (
     <div className="min-h-screen bg-neutral-50 dark:bg-neutral-950 text-neutral-900 dark:text-neutral-50 pt-16 md:pt-0 md:pl-64 transition-colors duration-300">
@@ -141,9 +153,9 @@ export default function UserPayouts() {
                 <div className="text-xs text-neutral-500 dark:text-neutral-400 mt-2">{data?.payments?.length || 0} payout records</div>
               </div>
               <div className="card">
-                <div className="text-sm text-neutral-600 dark:text-neutral-400 mb-1">Remaining</div>
-                <div className="text-3xl font-bold text-warning-700 dark:text-warning-500">{money(summary?.totalRemainingPayoutUsd)}</div>
-                <div className="text-xs text-neutral-500 dark:text-neutral-400 mt-2">{summary?.pendingCalls || 0} calls, {summary?.pendingPhrases || 0} phrases pending</div>
+                <div className="text-sm text-neutral-600 dark:text-neutral-400 mb-1">Pending Payout</div>
+                <div className="text-3xl font-bold text-warning-700 dark:text-warning-500">{money(totalPendingEst)}</div>
+                <div className="text-xs text-neutral-500 dark:text-neutral-400 mt-2">{summary?.pendingCalls || pendingCallsCount} calls, {summary?.pendingPhrases || pendingPhrasesCount} phrases pending</div>
               </div>
             </div>
 

@@ -77,9 +77,12 @@ function createSummary(user, callEntries, phraseEntries, payments) {
     pendingPhrases: 0,
     rejectedPhrases: 0,
     totalMoneyMadeUsd: 0,
+    totalPendingEstimatedUsd: 0,
     totalPaidOutUsd: 0,
     totalRemainingPayoutUsd: 0,
   };
+
+  let pendingUsd = 0;
 
   for (const entry of callEntries) {
     if (entry.status === "approved") {
@@ -89,6 +92,7 @@ function createSummary(user, callEntries, phraseEntries, payments) {
       stats.rejectedCalls += 1;
     } else {
       stats.pendingCalls += 1;
+      pendingUsd += Number(entry.payoutUsd) || 0;
     }
   }
 
@@ -100,6 +104,7 @@ function createSummary(user, callEntries, phraseEntries, payments) {
       stats.rejectedPhrases += 1;
     } else {
       stats.pendingPhrases += 1;
+      pendingUsd += Number(phrase.payoutUsd) || 0;
     }
   }
 
@@ -108,6 +113,7 @@ function createSummary(user, callEntries, phraseEntries, payments) {
   }
 
   stats.totalMoneyMadeUsd = roundCurrency(stats.totalMoneyMadeUsd);
+  stats.totalPendingEstimatedUsd = roundCurrency(pendingUsd);
   stats.totalPaidOutUsd = roundCurrency(stats.totalPaidOutUsd);
   stats.totalRemainingPayoutUsd = roundCurrency(Math.max(0, stats.totalMoneyMadeUsd - stats.totalPaidOutUsd));
 
