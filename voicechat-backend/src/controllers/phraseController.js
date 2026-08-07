@@ -26,6 +26,153 @@ if (!fs.existsSync(PHRASE_RECORDINGS_DIR)) {
   fs.mkdirSync(PHRASE_RECORDINGS_DIR, { recursive: true });
 }
 
+function calculateEbuR128LufsFromPcm(pcmSamples, sampleRate = 48000) {
+  if (!pcmSamples || pcmSamples.length === 0) return null;
+
+  const len = pcmSamples.length;
+  const filtered = new Float32Array(len);
+
+  // K-Weighting Stage 1: High Shelf Filter (48kHz)
+  let f1_z1 = 0, f1_z2 = 0;
+  const b0_1 = 1.53512485958697, b1_1 = -2.69169618940638, b2_1 = 1.19839281085285;
+  const a1_1 = -1.69065929318241, a2_1 = 0.71623787421588;
+
+  // K-Weighting Stage 2: High Pass RLB Filter
+  let f2_z1 = 0, f2_z2 = 0;
+  const b0_2 = 1.0, b1_2 = -2.0, b2_2 = 1.0;
+  const a1_2 = -1.99004745483398, a2_2 = 0.99007225036621;
+
+  for (let i = 0; i < len; i++) {
+    const x = pcmSamples[i];
+    const y1 = b0_1 * x + f1_z1;
+    f1_z1 = b1_1 * x - a1_1 * y1 + f1_z2;
+    f1_z2 = b2_1 * x - a2_1 * y1;
+
+    const y2 = b0_2 * y1 + f2_z1;
+    f2_z1 = b1_2 * y1 - a1_2 * y2 + f2_z2;
+    f2_z2 = b2_2 * y1 - a2_2 * y2;
+
+    filtered[i] = y2;
+  }
+
+  const LUFS_OFFSET = -4.391;
+  const windowSize = Math.floor(sampleRate * 0.4);
+  const stepSize = Math.floor(sampleRate * 0.1);
+
+  if (len < windowSize) {
+    let sumSq = 0;
+    for (let i = 0; i < len; i++) sumSq += filtered[i] * filtered[i];
+    const ms = sumSq / len;
+    if (ms <= 1e-6) return null;
+    return parseFloat((LUFS_OFFSET + 10 * Math.log10(ms)).toFixed(1));
+  }
+
+  const blockMeanSquares = [];
+  for (let start = 0; start + windowSize <= len; start += stepSize) {
+    let sumSq = 0;
+    for (let i = start; i < start + windowSize; i++) {
+      sumSq += filtered[i] * filtered[i];
+    }
+    blockMeanSquares.push(sumSq / windowSize);
+  }
+
+  if (blockMeanSquares.length === 0) return null;
+
+  const absGatedMs = blockMeanSquares.filter(ms => {
+    if (ms <= 1e-7) return false;
+    const l = LUFS_OFFSET + 10 * Math.log10(ms);
+    return l > -70.0;
+  });
+
+  if (absGatedMs.length === 0) return null;
+
+  const absAvgMs = absGatedMs.reduce((a, b) => a + b, 0) / absGatedMs.length;
+  const absLufs = LUFS_OFFSET + 10 * Math.log10(absAvgMs);
+
+  const relativeThresholdLufs = absLufs - 10.0;
+  const relGatedMs = absGatedMs.filter(ms => {
+    const l = LUFS_OFFSET + 10 * Math.log10(ms);
+    return l >= relativeThresholdLufs;
+  });
+
+  if (relGatedMs.length === 0) return parseFloat(absLufs.toFixed(1));
+
+  const finalAvgMs = relGatedMs.reduce((a, b) => a + b, 0) / relGatedMs.length;
+  const finalLufs = LUFS_OFFSET + 10 * Math.log10(finalAvgMs);
+
+  return parseFloat(finalLufs.toFixed(1));
+}
+
+function calculateLufsFromWavBuffer(wavBuffer) {
+  try {
+    if (!wavBuffer || wavBuffer.length < 44) return null;
+    const numChannels = wavBuffer.readUInt16LE(22) || 1;
+    const sampleRate = wavBuffer.readUInt32LE(24) || 48000;
+    const bitsPerSample = wavBuffer.readUInt16LE(34) || 16;
+
+    let offset = 12;
+    while (offset < wavBuffer.length - 8) {
+      const chunkId = wavBuffer.toString('ascii', offset, offset + 4);
+      const chunkSize = wavBuffer.readUInt32LE(offset + 4);
+      if (chunkId === 'data') {
+        offset += 8;
+        break;
+      }
+      offset += 8 + chunkSize;
+    }
+
+    if (offset >= wavBuffer.length) return null;
+
+    const dataBuffer = wavBuffer.subarray(offset);
+    let pcmSamples;
+
+    if (bitsPerSample === 16) {
+      const totalSamples = Math.floor(dataBuffer.length / (2 * numChannels));
+      pcmSamples = new Float32Array(totalSamples);
+      for (let i = 0; i < totalSamples; i++) {
+        let sample = 0;
+        for (let ch = 0; ch < numChannels; ch++) {
+          sample += dataBuffer.readInt16LE((i * numChannels + ch) * 2);
+        }
+        pcmSamples[i] = (sample / numChannels) / 32768.0;
+      }
+    } else if (bitsPerSample === 24) {
+      const totalSamples = Math.floor(dataBuffer.length / (3 * numChannels));
+      pcmSamples = new Float32Array(totalSamples);
+      for (let i = 0; i < totalSamples; i++) {
+        let sample = 0;
+        for (let ch = 0; ch < numChannels; ch++) {
+          const idx = (i * numChannels + ch) * 3;
+          const b0 = dataBuffer[idx];
+          const b1 = dataBuffer[idx + 1];
+          const b2 = dataBuffer[idx + 2];
+          let val = (b2 << 16) | (b1 << 8) | b0;
+          if (val & 0x800000) val |= 0xFF000000;
+          sample += val;
+        }
+        pcmSamples[i] = (sample / numChannels) / 8388608.0;
+      }
+    } else if (bitsPerSample === 32) {
+      const totalSamples = Math.floor(dataBuffer.length / (4 * numChannels));
+      pcmSamples = new Float32Array(totalSamples);
+      for (let i = 0; i < totalSamples; i++) {
+        let sample = 0;
+        for (let ch = 0; ch < numChannels; ch++) {
+          sample += dataBuffer.readFloatLE((i * numChannels + ch) * 4);
+        }
+        pcmSamples[i] = sample / numChannels;
+      }
+    } else {
+      return null;
+    }
+
+    return calculateEbuR128LufsFromPcm(pcmSamples, sampleRate);
+  } catch (err) {
+    console.error("LUFS wav decode error:", err);
+    return null;
+  }
+}
+
 /**
  * Admin: Upload JSON array of phrases
  */
@@ -597,13 +744,25 @@ export async function submitPhraseRecording(req, res) {
       phrase.speaker_id = contributor.speaker_id;
     }
     
-    // Clear lock metadata since it is successfully recorded
+    // Calculate LUFS using Node.js EBU R128 BS.1770-4 gated loudness
+    let lufsScore = null;
+    if (req.body.lufs !== undefined && req.body.lufs !== null && req.body.lufs !== "") {
+      lufsScore = parseFloat(req.body.lufs);
+    } else if (req.file && req.file.path && fs.existsSync(req.file.path)) {
+      try {
+        const wavBuf = fs.readFileSync(req.file.path);
+        lufsScore = calculateLufsFromWavBuffer(wavBuf);
+      } catch (err) {
+        console.error("Failed to compute LUFS on phrase record:", err);
+      }
+    }
+
     phrase.lockedAt = null;
     phrase.lockedBy = null;
     phrase.audioFile = s3Key;
     phrase.recordedAt = new Date();
-    // Default duration to 0 if not provided, we can calculate via front-end
     phrase.duration = Number(req.body.duration) || 0; 
+    phrase.lufs = lufsScore;
     phrase.isTestPhrase = isTestPhrase;
     
     await phrase.save();
@@ -1139,13 +1298,22 @@ export async function analyzePhrase(req, res) {
         plotBase64 = plotBuffer.toString("base64");
       }
 
+      let computedLufs = phrase.lufs;
+      if (tempInputPath && fs.existsSync(tempInputPath)) {
+        try {
+          const wBuf = fs.readFileSync(tempInputPath);
+          computedLufs = calculateLufsFromWavBuffer(wBuf);
+        } catch (e) {}
+      }
+
       finalQC = {
         freq: {
           noise_floor: freqResult.noise_floor_db,
           crest_factor: freqResult.crest_factor,
           bit_depth: freqResult.bit_verdict,
           processing_verdict: freqResult.processing_verdict,
-          spectrogram_img: plotBase64 || null
+          spectrogram_img: plotBase64 || null,
+          lufs: computedLufs
         },
         analyzedAt: new Date()
       };
@@ -1164,7 +1332,8 @@ export async function analyzePhrase(req, res) {
           crest_factor: lambdaResult.freq.crest_factor,
           bit_depth: lambdaResult.freq.bit_depth,
           processing_verdict: lambdaResult.freq.processing_verdict,
-          spectrogram_img: lambdaResult.freq.spectrogram_img || null
+          spectrogram_img: lambdaResult.freq.spectrogram_img || null,
+          lufs: phrase.lufs
         },
         analyzedAt: new Date()
       };
@@ -1252,12 +1421,40 @@ export async function downloadSinglePhraseZip(req, res) {
       qc_result: phrase.qcResult || null
     };
 
-    const command = new GetObjectCommand({
-      Bucket: BUCKET_NAME,
-      Key: phrase.audioFile,
-    });
-    const s3Response = await s3Client.send(command);
-    const wavBuffer = await getWavBuffer(s3Response.Body);
+    let wavBuffer = null;
+    const cleanKey = (phrase.audioFile || "").replace(/^local:/, "").trim();
+    const baseName = cleanKey.substring(cleanKey.lastIndexOf("/") + 1);
+    const companyFolder = phrase.companyId ? String(phrase.companyId).replace(/[^a-zA-Z0-9_\-\ ]/g, "").trim() : "";
+
+    const localCandidates = [
+      path.join(process.cwd(), "uploads", cleanKey),
+      path.join(process.cwd(), "uploads", "phrases", companyFolder, baseName),
+      path.join(process.cwd(), "uploads", "phrases", cleanKey),
+      path.join(process.cwd(), "recordings", "phrases", baseName),
+      path.join(process.cwd(), "recordings", "temp", baseName),
+      path.join(process.cwd(), "uploads", "phrases", baseName)
+    ];
+
+    for (const candidate of localCandidates) {
+      if (candidate && fs.existsSync(candidate)) {
+        try {
+          const fileStream = fs.createReadStream(candidate);
+          wavBuffer = await getWavBuffer(fileStream);
+          if (wavBuffer) break;
+        } catch (err) {
+          console.warn("Failed to convert local audio file to WAV:", candidate, err.message);
+        }
+      }
+    }
+
+    if (!wavBuffer) {
+      const command = new GetObjectCommand({
+        Bucket: BUCKET_NAME,
+        Key: phrase.audioFile,
+      });
+      const s3Response = await s3Client.send(command);
+      wavBuffer = await getWavBuffer(s3Response.Body);
+    }
 
     const safePhraseId = (phrase.phraseId || String(phrase._id)).replace(/[^a-zA-Z0-9_\-]/g, "_");
     const filename = `${safePhraseId}_bundle.zip`;

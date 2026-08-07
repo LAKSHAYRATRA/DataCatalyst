@@ -235,6 +235,29 @@ export default function QaPhrases() {
                               TEST PHRASE
                             </span>
                           )}
+                          {(p.lufs !== undefined && p.lufs !== null) || (qcData[p._id]?.freq?.lufs !== undefined && qcData[p._id]?.freq?.lufs !== null) ? (
+                            (() => {
+                              const lufsVal = qcData[p._id]?.freq?.lufs !== undefined ? qcData[p._id]?.freq?.lufs : p.lufs;
+                              if (lufsVal === null) return (
+                                <span className="px-2 py-0.5 rounded text-xs font-mono font-bold bg-neutral-800 text-neutral-300 border border-neutral-700">
+                                  ⚠️ No Speech
+                                </span>
+                              );
+                              const isTarget = lufsVal >= -24.0 && lufsVal <= -18.0;
+                              const isLoud = lufsVal > -18.0;
+                              return (
+                                <span className={`px-2 py-0.5 rounded text-xs font-mono font-bold border shadow-sm ${
+                                  isTarget
+                                    ? "bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border-emerald-500/40"
+                                    : isLoud
+                                    ? "bg-rose-500/20 text-rose-700 dark:text-rose-300 border-rose-500/40"
+                                    : "bg-amber-500/20 text-amber-700 dark:text-amber-300 border-amber-500/40"
+                                }`}>
+                                  📊 {lufsVal} LUFS ({isTarget ? "✓ Perfect" : isLoud ? "⚠️ Too Loud" : "⚠️ Too Quiet"})
+                                </span>
+                              );
+                            })()
+                          ) : null}
                           <span className="text-sm font-mono opacity-60">ID: {p.phraseId}</span>
                           <span className="text-sm font-semibold capitalize bg-neutral-100 dark:bg-neutral-700 px-2 rounded">{p.language}</span>
                         </div>
@@ -377,7 +400,23 @@ export default function QaPhrases() {
                                 </button>
                               </div>
 
-                              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                              <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                                <div className="p-3 bg-white dark:bg-neutral-850 rounded-lg border border-neutral-200/50 dark:border-neutral-800/80">
+                                  <span className="block text-neutral-400 font-bold uppercase tracking-wider mb-1">LUFS Loudness</span>
+                                  <span className={`font-mono font-bold text-xs ${
+                                    qcData[p._id].freq.lufs === null || qcData[p._id].freq.lufs === undefined
+                                      ? "text-neutral-400"
+                                      : qcData[p._id].freq.lufs >= -24.0 && qcData[p._id].freq.lufs <= -18.0
+                                      ? "text-emerald-500"
+                                      : qcData[p._id].freq.lufs > -18.0
+                                      ? "text-rose-500"
+                                      : "text-amber-500"
+                                  }`}>
+                                    {qcData[p._id].freq.lufs !== null && qcData[p._id].freq.lufs !== undefined
+                                      ? `${qcData[p._id].freq.lufs} LUFS (${qcData[p._id].freq.lufs >= -24.0 && qcData[p._id].freq.lufs <= -18.0 ? '✓ Target' : qcData[p._id].freq.lufs > -18.0 ? '⚠️ Too Loud' : '⚠️ Too Quiet'})`
+                                      : '⚠️ No Speech'}
+                                  </span>
+                                </div>
                                 <div className="p-3 bg-white dark:bg-neutral-850 rounded-lg border border-neutral-200/50 dark:border-neutral-800/80">
                                   <span className="block text-neutral-400 font-bold uppercase tracking-wider mb-1">Bit Depth</span>
                                   <span className="font-semibold text-neutral-900 dark:text-neutral-100">{qcData[p._id].freq.bit_depth || '—'}</span>

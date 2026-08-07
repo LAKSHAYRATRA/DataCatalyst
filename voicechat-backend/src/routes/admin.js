@@ -3918,19 +3918,38 @@ router.get("/phrases/download-company", async (req, res) => {
             languageUtterances[langFolder].push(utterance);
             combinedUtterances.push(utterance);
 
-            // Fetch + convert audio to WAV
+            // Fetch + convert audio to WAV (checks local disk candidates before S3 fallback)
             try {
-                let wavBuffer;
-                if (key.startsWith("local:")) {
-                    const localPath = path.join(process.cwd(), "recordings", "temp", key.replace("local:", ""));
-                    if (fs.existsSync(localPath)) {
-                        const fileStream = fs.createReadStream(localPath);
-                        wavBuffer = await getWavBuffer(fileStream);
+                let wavBuffer = null;
+                const cleanKey = (key || "").replace(/^local:/, "").trim();
+                const baseName = cleanKey.substring(cleanKey.lastIndexOf("/") + 1);
+
+                const localCandidates = [
+                    path.join(process.cwd(), "uploads", cleanKey),
+                    path.join(process.cwd(), "uploads", "phrases", companyFolder, baseName),
+                    path.join(process.cwd(), "uploads", "phrases", cleanKey),
+                    path.join(process.cwd(), "recordings", "phrases", baseName),
+                    path.join(process.cwd(), "recordings", "temp", baseName),
+                    path.join(process.cwd(), "uploads", "phrases", baseName),
+                    path.join(process.cwd(), "recordings", "language-apps", baseName)
+                ];
+
+                for (const candidate of localCandidates) {
+                    if (candidate && fs.existsSync(candidate)) {
+                        try {
+                            const fileStream = fs.createReadStream(candidate);
+                            wavBuffer = await getWavBuffer(fileStream);
+                            if (wavBuffer) break;
+                        } catch (candErr) {
+                            console.warn(`Error converting local file ${candidate}:`, candErr.message);
+                        }
                     }
-                } else {
+                }
+
+                if (!wavBuffer) {
                     const audioCommand = new GetObjectCommand({
                         Bucket: BUCKET_NAME,
-                        Key: key
+                        Key: cleanKey
                     });
                     const s3Doc = await s3Client.send(audioCommand);
                     wavBuffer = await getWavBuffer(s3Doc.Body);

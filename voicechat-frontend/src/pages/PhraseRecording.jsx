@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Mic, Square, Play, UploadCloud, CheckCircle2, Clock, DollarSign, FolderGit2, RotateCcw, Sliders } from 'lucide-react';
+import { Mic, Square, Play, UploadCloud, CheckCircle2, Clock, DollarSign, FolderGit2, RotateCcw, Sliders, Volume2, Settings, X, Activity } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { apiGet, apiPostJson } from '../lib/api';
 import { encodeWAV } from '../utils/wavBuilder.js';
@@ -7,6 +7,88 @@ import { getUserInfo } from '../lib/auth.js';
 import { useNavigate, Link } from 'react-router-dom';
 import Nav from "../components/Nav.jsx";
 import Swal from 'sweetalert2';
+
+function calculateEbuR128Lufs(pcmSamples, sampleRate = 48000) {
+  if (!pcmSamples || pcmSamples.length === 0) return null;
+
+  const len = pcmSamples.length;
+  const filtered = new Float32Array(len);
+
+  // K-Weighting Stage 1: High Shelf Filter (48kHz)
+  let f1_z1 = 0, f1_z2 = 0;
+  const b0_1 = 1.53512485958697, b1_1 = -2.69169618940638, b2_1 = 1.19839281085285;
+  const a1_1 = -1.69065929318241, a2_1 = 0.71623787421588;
+
+  // K-Weighting Stage 2: High Pass RLB Filter
+  let f2_z1 = 0, f2_z2 = 0;
+  const b0_2 = 1.0, b1_2 = -2.0, b2_2 = 1.0;
+  const a1_2 = -1.99004745483398, a2_2 = 0.99007225036621;
+
+  for (let i = 0; i < len; i++) {
+    const x = pcmSamples[i];
+    const y1 = b0_1 * x + f1_z1;
+    f1_z1 = b1_1 * x - a1_1 * y1 + f1_z2;
+    f1_z2 = b2_1 * x - a2_1 * y1;
+
+    const y2 = b0_2 * y1 + f2_z1;
+    f2_z1 = b1_2 * y1 - a1_2 * y2 + f2_z2;
+    f2_z2 = b2_2 * y1 - a2_2 * y2;
+
+    filtered[i] = y2;
+  }
+
+  // ITU-R BS.1770-4 Standard Gating: 400ms window, 100ms step (Calibrated mono offset: -4.391 LUFS)
+  const LUFS_OFFSET = -4.391;
+  const windowSize = Math.floor(sampleRate * 0.4);
+  const stepSize = Math.floor(sampleRate * 0.1);
+
+  if (len < windowSize) {
+    let sumSq = 0;
+    for (let i = 0; i < len; i++) sumSq += filtered[i] * filtered[i];
+    const ms = sumSq / len;
+    if (ms <= 1e-6) return null;
+    const l = LUFS_OFFSET + 10 * Math.log10(ms);
+    return parseFloat(l.toFixed(1));
+  }
+
+  const blockMeanSquares = [];
+  for (let start = 0; start + windowSize <= len; start += stepSize) {
+    let sumSq = 0;
+    for (let i = start; i < start + windowSize; i++) {
+      sumSq += filtered[i] * filtered[i];
+    }
+    blockMeanSquares.push(sumSq / windowSize);
+  }
+
+  if (blockMeanSquares.length === 0) return null;
+
+  // Absolute Threshold Gating (-70 LUFS)
+  const absGatedMs = blockMeanSquares.filter(ms => {
+    if (ms <= 1e-7) return false;
+    const l = LUFS_OFFSET + 10 * Math.log10(ms);
+    return l > -70.0;
+  });
+
+  if (absGatedMs.length === 0) return null; // No speech detected
+
+  // Compute un-gated (absolute-gated) mean square and loudness
+  const absAvgMs = absGatedMs.reduce((a, b) => a + b, 0) / absGatedMs.length;
+  const absLufs = LUFS_OFFSET + 10 * Math.log10(absAvgMs);
+
+  // Relative Threshold Gating (Un-gated LUFS - 10.0 LUFS)
+  const relativeThresholdLufs = absLufs - 10.0;
+  const relGatedMs = absGatedMs.filter(ms => {
+    const l = LUFS_OFFSET + 10 * Math.log10(ms);
+    return l >= relativeThresholdLufs;
+  });
+
+  if (relGatedMs.length === 0) return parseFloat(absLufs.toFixed(1));
+
+  const finalAvgMs = relGatedMs.reduce((a, b) => a + b, 0) / relGatedMs.length;
+  const finalLufs = LUFS_OFFSET + 10 * Math.log10(finalAvgMs);
+
+  return parseFloat(finalLufs.toFixed(1));
+}
 
 export default function PhraseRecording() {
   const navigate = useNavigate();
@@ -53,6 +135,119 @@ export default function PhraseRecording() {
   }, [approvedApps, projectName, language]);
 
   const activeNoiseGateDb = activeApp?.noiseGateDb !== undefined ? activeApp.noiseGateDb : (userInfo?.noiseGateDb || 0);
+
+  const [rawPcm, setRawPcm] = useState(null);
+  const [recordedLufs, setRecordedLufs] = useState(null);
+  const [showMicSettingsModal, setShowMicSettingsModal] = useState(false);
+
+  const [micGainPercent, setMicGainPercent] = useState(() => {
+    const saved = localStorage.getItem("phrase_mic_gain_percent");
+    return saved !== null ? parseInt(saved) : 0; // Default 0% (Original)
+  });
+
+  const micGainMultiplier = React.useMemo(() => {
+    const pct = Math.max(-100, Math.min(100, parseInt(micGainPercent) || 0));
+    return parseFloat((1.0 + (pct / 100)).toFixed(2));
+  }, [micGainPercent]);
+
+  const approvedDurationSec = React.useMemo(() => {
+    return (stats.history || [])
+      .filter(item => item.status === 'approved')
+      .reduce((acc, item) => acc + (Number(item.duration) || 0), 0);
+  }, [stats.history]);
+
+  const pendingDurationSec = React.useMemo(() => {
+    return (stats.history || [])
+      .filter(item => item.status === 'pending' || item.status === 'recorded' || !item.status)
+      .reduce((acc, item) => acc + (Number(item.duration) || 0), 0);
+  }, [stats.history]);
+
+  const formatHHMMSS = (totalSecs) => {
+    const secs = Math.max(0, Math.floor(totalSecs || 0));
+    const h = Math.floor(secs / 3600);
+    const m = Math.floor((secs % 3600) / 60);
+    const s = secs % 60;
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  };
+
+  const handleMicGainPercentChange = (newVal) => {
+    const pct = Math.max(-100, Math.min(100, parseInt(newVal) || 0));
+    setMicGainPercent(pct);
+    localStorage.setItem("phrase_mic_gain_percent", String(pct));
+    const mult = parseFloat((1.0 + (pct / 100)).toFixed(2));
+    if (workletNodeRef.current) {
+      workletNodeRef.current.port.postMessage({ type: "setGainBoost", gainBoost: mult });
+    }
+  };
+
+  const [isLufsTesting, setIsLufsTesting] = useState(false);
+  const [lufsCountdown, setLufsCountdown] = useState(3);
+  const [lufsResult, setLufsResult] = useState(null);
+
+  const runLufsTest = async () => {
+    if (isLufsTesting || isRecording) return;
+    setIsLufsTesting(true);
+    setLufsCountdown(3);
+    setLufsResult(null);
+
+    let testStream;
+    try {
+      testStream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, sampleRate: { ideal: 48000 } }
+      });
+    } catch {
+      testStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    }
+
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    const testCtx = new AudioCtx({ sampleRate: 48000 });
+    if (testCtx.state === "suspended") await testCtx.resume();
+
+    try { await testCtx.audioWorklet.addModule("/pcm-worklet.js"); } catch {}
+    
+    const source = testCtx.createMediaStreamSource(testStream);
+    const workletNode = new AudioWorkletNode(testCtx, "pcm-processor");
+    workletNode.port.postMessage({ type: "setNoiseGate", noiseGateDb: activeNoiseGateDb });
+    workletNode.port.postMessage({ type: "setGainBoost", gainBoost: micGainMultiplier });
+
+    const gain = testCtx.createGain();
+    gain.gain.value = 0;
+    source.connect(workletNode);
+    workletNode.connect(gain);
+    gain.connect(testCtx.destination);
+
+    const capturedChunks = [];
+    workletNode.port.onmessage = (e) => {
+      capturedChunks.push(new Float32Array(e.data));
+    };
+
+    let remaining = 3;
+    const interval = setInterval(() => {
+      remaining -= 1;
+      setLufsCountdown(remaining);
+      if (remaining <= 0) {
+        clearInterval(interval);
+        testStream.getTracks().forEach(t => t.stop());
+        workletNode.disconnect();
+        testCtx.close().catch(() => {});
+
+        let totalLen = 0;
+        for (const c of capturedChunks) totalLen += c.length;
+        const combined = new Float32Array(totalLen);
+        let offset = 0;
+        for (const c of capturedChunks) { combined.set(c, offset); offset += c.length; }
+
+        const score = calculateEbuR128Lufs(combined);
+        let status = "pass";
+        if (score === null) status = "no_speech";
+        else if (score > -18.0) status = "too_loud";
+        else if (score < -24.0) status = "too_quiet";
+
+        setLufsResult({ lufs: score, status });
+        setIsLufsTesting(false);
+      }
+    }, 1000);
+  };
 
   async function handleNoiseGateChange(newDbVal) {
     const valNum = parseInt(newDbVal) || 0;
@@ -245,6 +440,8 @@ export default function PhraseRecording() {
     setAudioBlob(null);
     setAudioUrl(null);
     setDuration(0);
+    setRawPcm(null);
+    setRecordedLufs(null);
     audioChunksRef.current = [];
   }
 
@@ -322,6 +519,7 @@ export default function PhraseRecording() {
       });
       const assignedNoiseGateDb = activeApp?.noiseGateDb !== undefined ? activeApp.noiseGateDb : 0;
       workletNode.port.postMessage({ type: "setNoiseGate", noiseGateDb: assignedNoiseGateDb });
+      workletNode.port.postMessage({ type: "setGainBoost", gainBoost: micGainMultiplier });
 
       const gain = audioCtx.createGain();
       gain.gain.value = 0;
@@ -386,6 +584,11 @@ export default function PhraseRecording() {
     let offset = 0;
     for (const arr of audioChunksRef.current) { combined.set(arr, offset); offset += arr.length; }
 
+    setRawPcm(combined);
+    if (combined && combined.length > 0) {
+      const score = calculateEbuR128Lufs(combined);
+      setRecordedLufs(score);
+    }
     const wavBlob = encodeWAV(combined, audioCtxRef.current?.sampleRate || 48000, 1);
     setAudioBlob(wavBlob);
     setAudioUrl(URL.createObjectURL(wavBlob));
@@ -393,6 +596,70 @@ export default function PhraseRecording() {
 
   async function submitRecording() {
     if (!audioBlob || !currentPhrase) return;
+
+    // Strict LUFS Check (-18.0 to -24.0 LUFS Target)
+    let lufsScore = null;
+    if (rawPcm && rawPcm.length > 0) {
+      lufsScore = calculateEbuR128Lufs(rawPcm);
+    }
+
+    if (lufsScore === null) {
+      // No speech detected!
+      Swal.fire({
+        icon: "warning",
+        title: "No Speech Found",
+        background: "#171717",
+        color: "#ffffff",
+        html: `<div class="text-left space-y-2 text-sm text-neutral-300">
+          <p class="text-amber-400 font-bold">⚠️ No speech detected in your recording!</p>
+          <p>Please make sure your microphone is unmuted, speak clearly into your mic, and re-record this phrase.</p>
+        </div>`,
+        confirmButtonText: "Adjust Mic Settings",
+        confirmButtonColor: "#3b82f6"
+      });
+      setShowMicSettingsModal(true);
+      return;
+    }
+
+    if (lufsScore !== null) {
+      if (lufsScore > -18.0) {
+        // LUFS > -18 (e.g. -17, -15) => Too loud! Decrease gain!
+        Swal.fire({
+          icon: "warning",
+          title: "Mic Calibration Required (Too Loud)",
+          background: "#171717",
+          color: "#ffffff",
+          html: `<div class="text-left space-y-2 text-sm text-neutral-300">
+            <p>Your phrase recording loudness is <b class="font-mono text-base text-rose-400">${lufsScore} LUFS</b> (Target range: <b class="text-white">-18.0 to -24.0 LUFS</b>).</p>
+            <p class="text-rose-400 font-bold">⚠️ Audio is too loud (over -18.0 LUFS)!</p>
+            <p>Please open <b>Mic Settings</b> and <b>decrease your mic gain</b> (try -10% or -20%) or speak slightly softer, then re-record this phrase.</p>
+          </div>`,
+          confirmButtonText: "Adjust Mic Settings",
+          confirmButtonColor: "#3b82f6"
+        });
+        setShowMicSettingsModal(true);
+        return;
+      }
+
+      if (lufsScore < -24.0) {
+        // LUFS < -24 (e.g. -25, -28) => Too quiet! Increase gain!
+        Swal.fire({
+          icon: "warning",
+          title: "Mic Calibration Required (Too Quiet)",
+          background: "#171717",
+          color: "#ffffff",
+          html: `<div class="text-left space-y-2 text-sm text-neutral-300">
+            <p>Your phrase recording loudness is <b class="font-mono text-base text-amber-400">${lufsScore} LUFS</b> (Target range: <b class="text-white">-18.0 to -24.0 LUFS</b>).</p>
+            <p class="text-amber-400 font-bold">⚠️ Audio is too quiet (under -24.0 LUFS)!</p>
+            <p>Please open <b>Mic Settings</b> and <b>increase your mic gain</b> (try +10% or +20%) or speak slightly louder, then re-record this phrase.</p>
+          </div>`,
+          confirmButtonText: "Adjust Mic Settings",
+          confirmButtonColor: "#3b82f6"
+        });
+        setShowMicSettingsModal(true);
+        return;
+      }
+    }
     
     setLoading(true);
     try {
@@ -613,26 +880,174 @@ export default function PhraseRecording() {
                 </select>
               </div>
 
-              <div className="flex-1">
-                <label className="block text-xs font-bold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider mb-2 flex items-center gap-2">
-                  <Sliders className="w-4 h-4 text-warning-500" /> Noise Gate
-                </label>
-                <select 
-                  className="input w-full font-semibold border-warning-500/40 text-warning-700 dark:text-warning-300" 
-                  value={activeNoiseGateDb} 
-                  onChange={(e) => handleNoiseGateChange(e.target.value)}
+              <div className="flex-1 flex items-end">
+                <button 
+                  type="button"
+                  onClick={() => setShowMicSettingsModal(true)}
                   disabled={loading || isRecording}
-                  title="Attenuates background room noise during recording. Saved directly to database."
+                  className="input w-full bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700 text-neutral-800 dark:text-neutral-200 font-semibold flex items-center justify-between transition-all"
+                  title="Configure Noise Gate and Gain Control"
                 >
-                  <option value={0}>0 dB (RAW / Off)</option>
-                  <option value={-6}>-6 dB (Light)</option>
-                  <option value={-10}>-10 dB (Medium)</option>
-                  <option value={-12}>-12 dB (Strong)</option>
-                  <option value={-15}>-15 dB (Heavy)</option>
-                  <option value={-18}>-18 dB (Maximum)</option>
-                </select>
+                  <span className="flex items-center gap-2">
+                    <Settings className="w-4 h-4 text-primary-500" /> Mic Settings
+                  </span>
+                  <span className="text-xs font-mono font-bold px-2 py-0.5 rounded bg-primary-100 dark:bg-primary-900/40 text-primary-600 dark:text-primary-400">
+                    {micGainPercent > 0 ? `+${micGainPercent}%` : `${micGainPercent}%`} | {activeNoiseGateDb}dB
+                  </span>
+                </button>
               </div>
             </div>
+
+            {/* Mic Settings Popup Modal */}
+            <AnimatePresence>
+              {showMicSettingsModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+                  <motion.div 
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.95 }}
+                    className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-2xl p-6 w-full max-w-md shadow-2xl relative"
+                  >
+                    <div className="flex items-center justify-between border-b border-neutral-200 dark:border-neutral-800 pb-4 mb-5">
+                      <div className="flex items-center gap-3">
+                        <div className="bg-primary-500/10 text-primary-500 p-2 rounded-xl">
+                          <Settings className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <h3 className="font-bold text-lg text-neutral-900 dark:text-neutral-100">Microphone Settings</h3>
+                          <p className="text-xs text-neutral-500">Noise gate & gain adjustment</p>
+                        </div>
+                      </div>
+                      <button 
+                        onClick={() => setShowMicSettingsModal(false)}
+                        className="p-2 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200 rounded-lg transition-colors"
+                      >
+                        <X className="w-5 h-5" />
+                      </button>
+                    </div>
+
+                    {/* Noise Gate Section */}
+                    <div className="mb-6">
+                      <label className="block text-xs font-bold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider mb-2 flex items-center gap-2">
+                        <Sliders className="w-4 h-4 text-warning-500" /> Noise Gate
+                      </label>
+                      <select 
+                        className="input w-full font-semibold border-warning-500/40 text-warning-700 dark:text-warning-300" 
+                        value={activeNoiseGateDb} 
+                        onChange={(e) => handleNoiseGateChange(e.target.value)}
+                        disabled={loading || isRecording}
+                      >
+                        <option value={0}>0 dB (RAW / Off)</option>
+                        <option value={-6}>-6 dB (Light Attenuation)</option>
+                        <option value={-10}>-10 dB (Medium Attenuation)</option>
+                        <option value={-12}>-12 dB (Strong Attenuation)</option>
+                        <option value={-15}>-15 dB (Heavy Attenuation)</option>
+                        <option value={-18}>-18 dB (Maximum Attenuation)</option>
+                      </select>
+                      <p className="text-[11px] text-neutral-500 mt-1">Attenuates background room noise during quiet pauses.</p>
+                    </div>
+
+                    {/* Gain Control Section */}
+                    <div className="mb-6">
+                      <div className="flex items-center justify-between mb-2">
+                        <label className="block text-xs font-bold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider flex items-center gap-2">
+                          <Volume2 className="w-4 h-4 text-success-500" /> Volume / Gain Control
+                        </label>
+                        <span className={`text-xs font-mono font-bold px-2.5 py-0.5 rounded-full ${micGainPercent < 0 ? 'bg-error-100 dark:bg-error-900/30 text-error-600 dark:text-error-400' : micGainPercent > 0 ? 'bg-success-100 dark:bg-success-900/30 text-success-600 dark:text-success-400' : 'bg-neutral-200 dark:bg-neutral-700 text-neutral-700 dark:text-neutral-300'}`}>
+                          {micGainPercent > 0 ? `+${micGainPercent}%` : `${micGainPercent}%`} ({micGainMultiplier.toFixed(2)}x)
+                        </span>
+                      </div>
+                      <input 
+                        type="range"
+                        min="-100"
+                        max="100"
+                        step="1"
+                        value={micGainPercent}
+                        onChange={(e) => handleMicGainPercentChange(e.target.value)}
+                        disabled={loading || isRecording}
+                        className="w-full h-2 bg-neutral-200 dark:bg-neutral-700 rounded-lg appearance-none cursor-pointer accent-success-500"
+                      />
+                      <div className="flex justify-between text-[11px] text-neutral-400 font-mono font-semibold px-0.5 mt-1">
+                        <span>-100% (Mute)</span>
+                        <span>0% (Raw Input)</span>
+                        <span>+100% (2x Louder)</span>
+                      </div>
+                    </div>
+
+                    {/* LUFS Calibration Section */}
+                    <div className="mb-6 p-4 rounded-2xl border border-primary-500/30 bg-primary-950/20 dark:bg-neutral-800/90 text-neutral-900 dark:text-white shadow-inner">
+                      <div className="flex items-center justify-between mb-2">
+                        <label className="block text-xs font-bold text-primary-600 dark:text-primary-400 uppercase tracking-wider flex items-center gap-2">
+                          <Activity className="w-4 h-4 text-primary-500" /> Check LUFS (3s Calibration)
+                        </label>
+                        <span className="text-[10px] font-bold text-neutral-500 dark:text-neutral-300 font-mono px-2 py-0.5 rounded bg-primary-500/10 border border-primary-500/20">Target: -18 to -24 LUFS</span>
+                      </div>
+
+                      <p className="text-xs text-neutral-600 dark:text-neutral-300 mb-3 font-medium">
+                        Click below and speak naturally for 3 seconds to test your mic volume calibration.
+                      </p>
+
+                      <button
+                        type="button"
+                        onClick={runLufsTest}
+                        disabled={isLufsTesting || isRecording || loading}
+                        className={`w-full py-3 px-4 rounded-xl font-bold text-xs transition-all flex items-center justify-center gap-2 shadow-md ${
+                          isLufsTesting 
+                            ? "bg-error-600 text-white animate-pulse" 
+                            : "bg-primary-600 hover:bg-primary-500 text-white shadow-primary-600/20"
+                        }`}
+                      >
+                        {isLufsTesting ? (
+                          <>
+                            <span className="w-2.5 h-2.5 bg-white rounded-full animate-ping"></span>
+                            Recording & Measuring... ({lufsCountdown}s)
+                          </>
+                        ) : (
+                          <>
+                            <Activity className="w-4 h-4 text-white" /> Check Mic LUFS (3s)
+                          </>
+                        )}
+                      </button>
+
+                      {/* LUFS Result Display */}
+                      {lufsResult && (
+                        <div className={`mt-3 p-3.5 rounded-xl border flex items-center justify-between text-xs font-bold shadow-sm ${
+                          lufsResult.status === "pass" 
+                            ? "bg-emerald-500/15 border-emerald-500/40 text-emerald-700 dark:text-emerald-300"
+                            : lufsResult.status === "no_speech"
+                            ? "bg-neutral-800 border-neutral-700 text-neutral-300"
+                            : lufsResult.status === "too_loud"
+                            ? "bg-rose-500/15 border-rose-500/40 text-rose-700 dark:text-rose-300"
+                            : "bg-amber-500/15 border-amber-500/40 text-amber-700 dark:text-amber-300"
+                        }`}>
+                          <span className="flex items-center gap-1.5 font-semibold">
+                            {lufsResult.status === "pass" 
+                              ? "✓ Perfect Volume (-18 to -24 LUFS)" 
+                              : lufsResult.status === "no_speech"
+                              ? "⚠️ No speech found"
+                              : lufsResult.status === "too_loud" 
+                              ? "⚠️ Too Loud (Reduce Gain)" 
+                              : "⚠️ Too Quiet (Boost Gain)"}
+                          </span>
+                          <span className="font-mono text-sm font-black px-2 py-0.5 rounded bg-neutral-900 text-white">
+                            {lufsResult.lufs !== null ? `${lufsResult.lufs} LUFS` : "No Speech"}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="flex justify-end pt-2">
+                      <button 
+                        onClick={() => setShowMicSettingsModal(false)}
+                        className="btn btn-primary w-full py-2.5"
+                      >
+                        Done
+                      </button>
+                    </div>
+                  </motion.div>
+                </div>
+              )}
+            </AnimatePresence>
 
             <div className="flex justify-end mb-4">
                <Link to="/language-apply" className="text-sm font-medium text-primary-600 hover:text-primary-700">
@@ -742,10 +1157,36 @@ export default function PhraseRecording() {
 
                   {audioUrl && !isRecording && (
                     <div className="w-full">
-                      <div className="flex items-center justify-between mb-4">
-                        <span className="bg-success-100 dark:bg-success-900/40 text-success-700 dark:text-success-400 px-3 py-1 rounded-full text-sm font-semibold flex items-center gap-2">
-                          <CheckCircle2 className="w-4 h-4" /> Recorded ({formatTime(duration)})
-                        </span>
+                      <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="bg-success-100 dark:bg-success-900/40 text-success-700 dark:text-success-400 px-3 py-1 rounded-full text-sm font-semibold flex items-center gap-2">
+                            <CheckCircle2 className="w-4 h-4" /> Recorded ({formatTime(duration)})
+                          </span>
+
+                          {recordedLufs !== undefined && (
+                            <span className={`px-3 py-1 rounded-full text-sm font-bold flex items-center gap-1.5 border font-mono shadow-sm ${
+                              recordedLufs === null
+                                ? "bg-neutral-800 text-neutral-300 border-neutral-700"
+                                : recordedLufs >= -24.0 && recordedLufs <= -18.0
+                                ? "bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border-emerald-500/40"
+                                : recordedLufs > -18.0
+                                ? "bg-rose-500/20 text-rose-700 dark:text-rose-300 border-rose-500/40"
+                                : "bg-amber-500/20 text-amber-700 dark:text-amber-300 border-amber-500/40"
+                            }`}>
+                              <Activity className="w-3.5 h-3.5" />
+                              {recordedLufs !== null ? `${recordedLufs} LUFS` : "No Speech"}
+                              <span className="text-[11px] font-sans font-bold ml-0.5">
+                                ({recordedLufs === null 
+                                  ? "⚠️ No speech found" 
+                                  : recordedLufs >= -24.0 && recordedLufs <= -18.0 
+                                  ? "✓ Perfect" 
+                                  : recordedLufs > -18.0 
+                                  ? "⚠️ Too Loud" 
+                                  : "⚠️ Too Quiet"})
+                              </span>
+                            </span>
+                          )}
+                        </div>
                       </div>
                       
                       <div className="bg-neutral-100 dark:bg-neutral-800 rounded-xl p-2 mb-4">
@@ -786,7 +1227,25 @@ export default function PhraseRecording() {
           className="lg:col-span-1"
         >
           <div className="card h-full">
-            <h2 className="text-lg font-semibold mb-4 border-b border-neutral-100 dark:border-neutral-800 pb-3">My Submissions</h2>
+            <h3 className="text-xs font-bold uppercase tracking-wider text-neutral-500 dark:text-neutral-400 mb-3 border-b border-neutral-100 dark:border-neutral-800 pb-2">
+              My Submissions
+            </h3>
+            
+            {/* Approved & Pending Duration Counters */}
+            <div className="grid grid-cols-2 gap-2 mb-4 bg-neutral-50 dark:bg-neutral-800/60 p-3 rounded-xl border border-neutral-200/60 dark:border-neutral-700/60">
+              <div>
+                <span className="block text-[10px] font-bold text-success-600 dark:text-success-400 uppercase tracking-wider">Approved Duration</span>
+                <span className="font-mono font-bold text-sm text-neutral-900 dark:text-white">
+                  {formatHHMMSS(approvedDurationSec)}
+                </span>
+              </div>
+              <div>
+                <span className="block text-[10px] font-bold text-warning-600 dark:text-warning-400 uppercase tracking-wider">Pending Duration</span>
+                <span className="font-mono font-bold text-sm text-neutral-900 dark:text-white">
+                  {formatHHMMSS(pendingDurationSec)}
+                </span>
+              </div>
+            </div>
             
             <div className="space-y-4 max-h-[600px] overflow-y-auto pr-2">
               {stats.history.map(item => (

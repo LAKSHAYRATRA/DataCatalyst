@@ -10,11 +10,20 @@ function formatDate(value) {
   return value ? new Date(value).toLocaleString() : "-";
 }
 
+function formatHHMMSSFromSeconds(totalSecs) {
+  const secs = Math.max(0, Math.floor(Number(totalSecs) || 0));
+  const h = Math.floor(secs / 3600);
+  const m = Math.floor((secs % 3600) / 60);
+  const s = secs % 60;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+}
+
 export default function UserPayouts() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [tab, setTab] = useState("calls");
+  const [subTab, setSubTab] = useState("all"); // 'all' | 'pending' | 'reviewed'
 
   const [editingUpi, setEditingUpi] = useState(false);
   const [upiInput, setUpiInput] = useState("");
@@ -68,7 +77,42 @@ export default function UserPayouts() {
   };
 
   const summary = data?.summary;
-  const rows = tab === "calls" ? (data?.calls || []) : tab === "phrases" ? (data?.phrases || []) : (data?.payments || []);
+  const callsList = data?.calls || [];
+  const phrasesList = data?.phrases || [];
+
+  const callApprovedSecs = callsList
+    .filter(c => c.status === "approved")
+    .reduce((sum, c) => sum + ((Number(c.durationMinutes) || 0) * 60 || Number(c.duration) || 0), 0);
+
+  const callPendingSecs = callsList
+    .filter(c => c.status === "recorded" || c.status === "completed")
+    .reduce((sum, c) => sum + ((Number(c.durationMinutes) || 0) * 60 || Number(c.duration) || 0), 0);
+
+  const pendingCallsCount = callsList.filter(c => c.status === "recorded" || c.status === "completed").length;
+  const reviewedCallsCount = callsList.filter(c => c.status === "approved" || c.status === "rejected").length;
+
+  const filteredCalls = callsList.filter(c => {
+    if (subTab === "pending") return c.status === "recorded" || c.status === "completed";
+    if (subTab === "reviewed") return c.status === "approved" || c.status === "rejected";
+    return true;
+  });
+
+  const phraseApprovedSecs = phrasesList
+    .filter(p => p.status === "approved")
+    .reduce((sum, p) => sum + (Number(p.duration) || 0), 0);
+
+  const phrasePendingSecs = phrasesList
+    .filter(p => p.status === "recorded")
+    .reduce((sum, p) => sum + (Number(p.duration) || 0), 0);
+
+  const pendingPhrasesCount = phrasesList.filter(p => p.status === "recorded").length;
+  const reviewedPhrasesCount = phrasesList.filter(p => p.status === "approved" || p.status === "rejected").length;
+
+  const filteredPhrases = phrasesList.filter(p => {
+    if (subTab === "pending") return p.status === "recorded";
+    if (subTab === "reviewed") return p.status === "approved" || p.status === "rejected";
+    return true;
+  });
 
   return (
     <div className="min-h-screen bg-neutral-50 dark:bg-neutral-950 text-neutral-900 dark:text-neutral-50 pt-16 md:pt-0 md:pl-64 transition-colors duration-300">
@@ -216,19 +260,19 @@ export default function UserPayouts() {
               <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
                 <div className="inline-flex rounded-xl bg-neutral-100 dark:bg-neutral-800 p-1">
                   <button
-                    onClick={() => setTab("calls")}
+                    onClick={() => { setTab("calls"); setSubTab("all"); }}
                     className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors duration-200 ${tab === "calls" ? "bg-white dark:bg-neutral-700 text-neutral-900 dark:text-white shadow-sm" : "text-neutral-600 dark:text-neutral-400"}`}
                   >
                     Calls
                   </button>
                   <button
-                    onClick={() => setTab("phrases")}
+                    onClick={() => { setTab("phrases"); setSubTab("all"); }}
                     className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors duration-200 ${tab === "phrases" ? "bg-white dark:bg-neutral-700 text-neutral-900 dark:text-white shadow-sm" : "text-neutral-600 dark:text-neutral-400"}`}
                   >
                     Phrases
                   </button>
                   <button
-                    onClick={() => setTab("payments")}
+                    onClick={() => { setTab("payments"); setSubTab("all"); }}
                     className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors duration-200 ${tab === "payments" ? "bg-white dark:bg-neutral-700 text-neutral-900 dark:text-white shadow-sm" : "text-neutral-600 dark:text-neutral-400"}`}
                   >
                     Payments
@@ -239,9 +283,69 @@ export default function UserPayouts() {
                 </div>
               </div>
 
+              {/* Duration Counters & Sub-filters for Calls & Phrases */}
+              {(tab === "calls" || tab === "phrases") && (
+                <div className="mb-6 space-y-4">
+                  {/* Duration Counters */}
+                  <div className="grid grid-cols-2 gap-4 bg-neutral-900 dark:bg-neutral-900 text-white p-5 rounded-2xl border border-neutral-800 shadow-md">
+                    <div>
+                      <span className="block text-xs font-bold text-success-400 uppercase tracking-wider mb-1 flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-success-400"></span> Approved Duration
+                      </span>
+                      <span className="font-mono font-bold text-xl md:text-2xl text-white tracking-wide">
+                        {formatHHMMSSFromSeconds(tab === "calls" ? callApprovedSecs : phraseApprovedSecs)}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="block text-xs font-bold text-warning-400 uppercase tracking-wider mb-1 flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-warning-400"></span> Pending Duration
+                      </span>
+                      <span className="font-mono font-bold text-xl md:text-2xl text-white tracking-wide">
+                        {formatHHMMSSFromSeconds(tab === "calls" ? callPendingSecs : phrasePendingSecs)}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Sub-filters Toggle */}
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-xs font-bold uppercase tracking-wider text-neutral-500 mr-1">Filter Status:</span>
+                    <button
+                      onClick={() => setSubTab("all")}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all ${
+                        subTab === "all"
+                          ? "bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 shadow-sm"
+                          : "bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400 hover:bg-neutral-200 dark:hover:bg-neutral-700"
+                      }`}
+                    >
+                      All ({tab === "calls" ? callsList.length : phrasesList.length})
+                    </button>
+                    <button
+                      onClick={() => setSubTab("pending")}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all ${
+                        subTab === "pending"
+                          ? "bg-warning-500 text-white shadow-sm"
+                          : "bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400 hover:bg-neutral-200 dark:hover:bg-neutral-700"
+                      }`}
+                    >
+                      Pending ({tab === "calls" ? pendingCallsCount : pendingPhrasesCount})
+                    </button>
+                    <button
+                      onClick={() => setSubTab("reviewed")}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all ${
+                        subTab === "reviewed"
+                          ? "bg-success-600 text-white shadow-sm"
+                          : "bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400 hover:bg-neutral-200 dark:hover:bg-neutral-700"
+                      }`}
+                    >
+                      Reviewed ({tab === "calls" ? reviewedCallsCount : reviewedPhrasesCount})
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {tab === "calls" ? (
                 <div className="space-y-3">
-                  {(data?.calls || []).map((call) => (
+                  {filteredCalls.map((call) => (
                     <div key={call.callId} className="rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900/50 px-4 py-4 flex flex-col md:flex-row md:items-center md:justify-between gap-4 transition-colors duration-300">
                       <div>
                         <div className="text-sm font-semibold text-neutral-900 dark:text-white">{call.topic}</div>
@@ -250,15 +354,21 @@ export default function UserPayouts() {
                       </div>
                       <div className="text-left md:text-right">
                         <div className="text-xl font-bold text-neutral-900 dark:text-white">{money(call.payoutUsd)}</div>
-                        <div className="text-xs text-neutral-500 dark:text-neutral-400 capitalize">{call.status}</div>
+                        <span className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-semibold capitalize mt-1 ${
+                          call.status === "approved" ? "bg-success-100 text-success-700 dark:bg-success-900/40 dark:text-success-300" :
+                          call.status === "rejected" ? "bg-error-100 text-error-700 dark:bg-error-900/40 dark:text-error-300" :
+                          "bg-warning-100 text-warning-700 dark:bg-warning-900/40 dark:text-warning-300"
+                        }`}>
+                          {call.status}
+                        </span>
                       </div>
                     </div>
                   ))}
-                  {!(data?.calls || []).length && <div className="text-center py-12 text-neutral-500 dark:text-neutral-400">No call earnings yet.</div>}
+                  {!filteredCalls.length && <div className="text-center py-12 text-neutral-500 dark:text-neutral-400">No {subTab !== "all" ? subTab : ""} calls found.</div>}
                 </div>
               ) : tab === "phrases" ? (
                 <div className="space-y-3">
-                  {(data?.phrases || []).map((phrase) => (
+                  {filteredPhrases.map((phrase) => (
                     <div key={phrase.phraseId} className="rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900/50 px-4 py-4 flex flex-col md:flex-row md:items-center md:justify-between gap-4 transition-colors duration-300">
                       <div className="flex-1 min-w-0 pr-4">
                         <div className="text-sm font-semibold text-neutral-900 dark:text-white truncate" title={phrase.text}>{phrase.text}</div>
@@ -267,11 +377,17 @@ export default function UserPayouts() {
                       </div>
                       <div className="text-left md:text-right flex-shrink-0">
                         <div className="text-xl font-bold text-neutral-900 dark:text-white">{money(phrase.payoutUsd)}</div>
-                        <div className="text-xs text-neutral-500 dark:text-neutral-400 capitalize">{phrase.status}</div>
+                        <span className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-semibold capitalize mt-1 ${
+                          phrase.status === "approved" ? "bg-success-100 text-success-700 dark:bg-success-900/40 dark:text-success-300" :
+                          phrase.status === "rejected" ? "bg-error-100 text-error-700 dark:bg-error-900/40 dark:text-error-300" :
+                          "bg-warning-100 text-warning-700 dark:bg-warning-900/40 dark:text-warning-300"
+                        }`}>
+                          {phrase.status}
+                        </span>
                       </div>
                     </div>
                   ))}
-                  {!(data?.phrases || []).length && <div className="text-center py-12 text-neutral-500 dark:text-neutral-400">No phrase earnings yet.</div>}
+                  {!filteredPhrases.length && <div className="text-center py-12 text-neutral-500 dark:text-neutral-400">No {subTab !== "all" ? subTab : ""} phrases found.</div>}
                 </div>
               ) : (
                 (data?.payments || []).length ? (

@@ -33,6 +33,7 @@ const phraseSchema = new mongoose.Schema(
     contributorId: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
     audioFile: { type: String, default: null },
     duration: { type: Number, default: 0 }, // audio duration in seconds
+    lufs: { type: Number, default: null }, // BS.1770-4 gated LUFS score
     recordedAt: { type: Date, default: null },
 
     // QA Info
