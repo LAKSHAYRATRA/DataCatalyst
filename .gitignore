@@ -33,4 +33,6 @@ joinqueue*/
 scratch/
 *.zip
 voicechat-backend/s3_data/
-
+# Desktop app / local builds
+Electron/
+electron/
