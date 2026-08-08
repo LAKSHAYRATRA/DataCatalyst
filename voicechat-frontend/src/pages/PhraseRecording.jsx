@@ -609,6 +609,21 @@ export default function PhraseRecording() {
         const wavBlob = new Blob([bytes], { type: 'audio/wav' });
         setAudioBlob(wavBlob);
         setAudioUrl(URL.createObjectURL(wavBlob));
+
+        // Decode WAV bytes into Float32Array PCM for LUFS validation and visualization
+        try {
+          const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+          const decoded = await audioCtx.decodeAudioData(bytes.buffer.slice(0));
+          const floatPcm = decoded.getChannelData(0);
+          setRawPcm(floatPcm);
+          if (floatPcm && floatPcm.length > 0) {
+            const score = calculateEbuR128Lufs(floatPcm, decoded.sampleRate || 48000);
+            setRecordedLufs(score);
+          }
+          await audioCtx.close();
+        } catch (decodeErr) {
+          console.warn('WAV decoding for native LUFS failed:', decodeErr);
+        }
       } catch (err) {
         console.error('Native stop failed:', err);
         alert('Failed to stop recording.');
