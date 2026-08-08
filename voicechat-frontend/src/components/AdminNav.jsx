@@ -1,6 +1,32 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { clearToken, getUserInfo } from '../lib/auth.js';
+import { RotateCw } from 'lucide-react';
+
+function RefreshButton({ className = "" }) {
+  const [isSpinning, setIsSpinning] = useState(false);
+  const isElectronApp = typeof window !== 'undefined' && Boolean(window.voclaraRecorder?.isNative || navigator.userAgent.includes("Electron"));
+
+  if (!isElectronApp) return null;
+
+  const handleRefresh = () => {
+    setIsSpinning(true);
+    setTimeout(() => {
+      window.location.reload();
+    }, 150);
+  };
+
+  return (
+    <button
+      onClick={handleRefresh}
+      title="Refresh App (Ctrl+R)"
+      aria-label="Refresh App"
+      className={`p-1.5 rounded-lg text-neutral-400 hover:text-white hover:bg-neutral-700 transition-all duration-200 group ${className}`}
+    >
+      <RotateCw className={`w-4 h-4 transition-transform duration-500 ${isSpinning ? 'animate-spin text-primary-400' : 'group-hover:rotate-180'}`} />
+    </button>
+  );
+}
 
 function CursorToggle() {
   const [enabled, setEnabled] = useState(() => localStorage.getItem("rainbowCursorEnabled") === "true");
@@ -76,6 +102,7 @@ export default function AdminNav() {
                     <div className="flex items-center space-x-1">
                         <img src="/logo.png" alt="Voclara Logo" className="w-11 h-11 object-contain" />
                         <span className="text-lg font-bold text-white">Voclara Admin</span>
+                        <RefreshButton className="ml-1" />
                     </div>
 
                     <button
@@ -117,9 +144,12 @@ export default function AdminNav() {
             >
                 <div className="flex flex-col h-full">
                     {/* Logo Section */}
-                    <div className="flex items-center space-x-1 px-6 h-16 border-b border-neutral-700">
-                        <img src="/logo.png" alt="Voclara Logo" className="w-12 h-12 object-contain" />
-                        <span className="text-lg font-bold text-white">Voclara Admin</span>
+                    <div className="flex items-center justify-between px-6 h-16 border-b border-neutral-700">
+                        <div className="flex items-center space-x-1">
+                            <img src="/logo.png" alt="Voclara Logo" className="w-12 h-12 object-contain" />
+                            <span className="text-lg font-bold text-white">Voclara Admin</span>
+                        </div>
+                        <RefreshButton />
                     </div>
 
                     {/* Navigation Links */}

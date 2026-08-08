@@ -1104,35 +1104,8 @@ export async function getContributorStats(req, res) {
   try {
     const userId = req.user._id;
 
-    // Find all user IDs associated with this user (by _id, speaker_id, or related email/username)
-    const user = req.user;
-    const searchConditions = [{ _id: userId }];
-    if (user.speaker_id) {
-      searchConditions.push({ speaker_id: user.speaker_id });
-    }
-    if (user.email) {
-      const emailBase = user.email.split("@")[0].replace(/[0-9]/g, "");
-      if (emailBase && emailBase.length > 3) {
-        searchConditions.push({ email: { $regex: new RegExp(`^${emailBase}`, "i") } });
-      }
-    }
-    if (user.username) {
-      const unameBase = user.username.replace(/[0-9]/g, "");
-      if (unameBase && unameBase.length > 3) {
-        searchConditions.push({ username: { $regex: new RegExp(`^${unameBase}`, "i") } });
-      }
-    }
-
-    const relatedUsers = await User.find({ $or: searchConditions }).select("_id speaker_id").lean();
-    const userIds = Array.from(new Set(relatedUsers.map(u => String(u._id))));
-    const speakerIds = Array.from(new Set(relatedUsers.map(u => u.speaker_id).filter(Boolean)));
-
-    const phraseQuery = {
-      $or: [
-        { contributorId: { $in: userIds } },
-        ...(speakerIds.length > 0 ? [{ speaker_id: { $in: speakerIds } }] : [])
-      ]
-    };
+    // Query strictly by the logged-in user's ObjectId to prevent cross-account data leakage
+    const phraseQuery = { contributorId: userId };
 
     const phrases = await Phrase.find(phraseQuery)
       .select("text language status duration recordedAt createdAt qaComment")
@@ -1144,7 +1117,7 @@ export async function getContributorStats(req, res) {
       recordedAt: p.recordedAt || p.createdAt
     }));
 
-    const rejections = await PhraseRejection.find({ contributorId: { $in: userIds } })
+    const rejections = await PhraseRejection.find({ contributorId: userId })
       .sort({ rejectedAt: -1 })
       .lean();
 

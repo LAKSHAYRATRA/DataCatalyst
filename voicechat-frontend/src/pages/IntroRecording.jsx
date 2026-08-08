@@ -85,6 +85,25 @@ export default function IntroRecording() {
 
     async function loadMics(autoSelect = false) {
         try {
+            if (window.voclaraRecorder?.isNative && window.voclaraRecorder?.getDevices) {
+                try {
+                    const nativeDevs = await window.voclaraRecorder.getDevices();
+                    if (nativeDevs && nativeDevs.length > 0) {
+                        const nativeMicList = nativeDevs.map(d => ({
+                            deviceId: String(d.id),
+                            label: d.name || `Microphone ${d.id}`
+                        }));
+                        setMics(nativeMicList);
+                        if (autoSelect && nativeMicList.length > 0) {
+                            setSelectedMicId(nativeMicList[0].deviceId);
+                        }
+                        return;
+                    }
+                } catch (e) {
+                    console.warn("Native WASAPI device query error, falling back to WebRTC:", e);
+                }
+            }
+
             let tmp;
             try {
                 tmp = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: { ideal: 1 }, sampleRate: { ideal: 48000 } } });
@@ -96,8 +115,6 @@ export default function IntroRecording() {
             const devices = await navigator.mediaDevices.enumerateDevices();
 
             const audioInputs = devices.filter((d) => d.kind === "audioinput");
-            // console.log("audioInputs", audioInputs);
-            // console.log("[IntroRecording] All detected audio inputs:", audioInputs.map(d => ({ deviceId: d.deviceId, label: d.label, kind: d.kind })));
 
             const filteredMics =
                 MODE === "dev"
@@ -110,14 +127,13 @@ export default function IntroRecording() {
             }));
 
             setMics(micList);
-            // console.log("[IntroRecording] Filtered mic list (shown to user):", micList);
 
             if (autoSelect && micList.length > 0) {
                 setSelectedMicId(micList[0].deviceId);
             }
 
         } catch (err) {
-            console.log("Mic permission denied");
+            console.log("Mic permission denied:", err);
         }
     }
 

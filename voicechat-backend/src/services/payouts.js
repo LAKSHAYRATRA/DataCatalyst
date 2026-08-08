@@ -142,21 +142,7 @@ function createSummary(user, callEntries, phraseEntries, payments) {
 async function loadUsers(userIds) {
   const filter = {};
   if (userIds?.length) {
-    const inputUsers = await User.find({ _id: { $in: userIds } }).lean();
-    const searchConditions = [{ _id: { $in: userIds } }];
-    for (const u of inputUsers) {
-      if (u.speaker_id) searchConditions.push({ speaker_id: u.speaker_id });
-      if (u.email) {
-        const base = u.email.split("@")[0].replace(/[0-9]/g, "");
-        if (base.length > 3) searchConditions.push({ email: { $regex: new RegExp(`^${base}`, "i") } });
-      }
-      if (u.username) {
-        const base = u.username.replace(/[0-9]/g, "");
-        if (base.length > 3) searchConditions.push({ username: { $regex: new RegExp(`^${base}`, "i") } });
-      }
-    }
-    const allRelated = await User.find({ $or: searchConditions }).select("_id").lean();
-    filter._id = { $in: allRelated.map(r => r._id) };
+    filter._id = { $in: userIds };
   } else {
     filter.isAdmin = false;
     filter.isQA = false;
@@ -192,28 +178,14 @@ async function loadPaymentsForUsers(userIds) {
 async function loadPhrasesForUsers(userIds) {
   const ids = userIds.map((id) => String(id));
 
-  // Collect any speaker_ids linked to userIds
-  const usersDoc = await User.find({ _id: { $in: ids } }).select("speaker_id").lean();
-  const speakerIds = usersDoc.map(u => u.speaker_id).filter(Boolean);
-
-  const phraseQuery = {
-    $or: [
-      { contributorId: { $in: ids } },
-      ...(speakerIds.length > 0 ? [{ speaker_id: { $in: speakerIds } }] : [])
-    ]
-  };
+  const phraseQuery = { contributorId: { $in: ids } };
 
   const activePhrases = await Phrase.find(phraseQuery)
     .populate("qaId", "firstname lastname username email")
     .sort({ recordedAt: -1, createdAt: -1 })
     .lean();
 
-  const rejectionQuery = {
-    $or: [
-      { contributorId: { $in: ids } },
-      ...(speakerIds.length > 0 ? [{ speaker_id: { $in: speakerIds } }] : [])
-    ]
-  };
+  const rejectionQuery = { contributorId: { $in: ids } };
 
   const rejections = await PhraseRejection.find(rejectionQuery)
     .populate("qaId", "firstname lastname username email")
@@ -254,7 +226,6 @@ export async function getPayoutOverview(userIds = null) {
     return { summaries: [], callsByUserId: {}, phrasesByUserId: {}, paymentsByUserId: {}, userMap: {} };
   }
 
-  const primaryUserId = String(validUsers[0]._id);
   const ids = validUsers.map((user) => String(user._id));
   const userMap = Object.fromEntries(validUsers.map(u => [String(u._id), u]));
   const [calls, payments, phrases, langs, projects, companies] = await Promise.all([
@@ -268,24 +239,12 @@ export async function getPayoutOverview(userIds = null) {
 
   const langRates = Object.fromEntries(langs.map(l => [l.code.toLowerCase(), Number(l.hourlyPayout) || 0]));
 
-  const callsByUserId = isSingleUserCheck 
-    ? { [primaryUserId]: [] }
-    : Object.fromEntries(ids.map((id) => [id, []]));
+  const callsByUserId = Object.fromEntries(ids.map((id) => [id, []]));
 
   for (const call of calls) {
-    if (isSingleUserCheck) {
-      for (const id of ids) {
-        const entry = getCallEntryForUser(call, id);
-        if (entry) {
-          callsByUserId[primaryUserId].push(entry);
-          break;
-        }
-      }
-    } else {
-      for (const userId of ids) {
-        const entry = getCallEntryForUser(call, userId);
-        if (entry) callsByUserId[userId].push(entry);
-      }
+    for (const userId of ids) {
+      const entry = getCallEntryForUser(call, userId);
+      if (entry) callsByUserId[userId].push(entry);
     }
   }
 
@@ -293,25 +252,14 @@ export async function getPayoutOverview(userIds = null) {
   for (const u of validUsers) {
     const uId = String(u._id);
     userLookupMap.set(uId, uId);
-    if (u.speaker_id) {
-      userLookupMap.set(u.speaker_id, uId);
-    }
   }
 
-  const phrasesByUserId = isSingleUserCheck
-    ? { [primaryUserId]: [] }
-    : Object.fromEntries(ids.map((id) => [id, []]));
+  const phrasesByUserId = Object.fromEntries(ids.map((id) => [id, []]));
 
   for (const phrase of phrases) {
     let targetKey = null;
-    if (isSingleUserCheck) {
-      targetKey = primaryUserId;
-    } else {
-      if (phrase.contributorId && userLookupMap.has(String(phrase.contributorId))) {
-        targetKey = userLookupMap.get(String(phrase.contributorId));
-      } else if (phrase.speaker_id && userLookupMap.has(phrase.speaker_id)) {
-        targetKey = userLookupMap.get(phrase.speaker_id);
-      }
+    if (phrase.contributorId && userLookupMap.has(String(phrase.contributorId))) {
+      targetKey = userLookupMap.get(String(phrase.contributorId));
     }
 
     if (targetKey && phrasesByUserId[targetKey]) {
@@ -369,12 +317,10 @@ export async function getPayoutOverview(userIds = null) {
     }
   }
 
-  const paymentsByUserId = isSingleUserCheck
-    ? { [primaryUserId]: [] }
-    : Object.fromEntries(ids.map((id) => [id, []]));
+  const paymentsByUserId = Object.fromEntries(ids.map((id) => [id, []]));
 
   for (const payment of payments) {
-    const key = isSingleUserCheck ? primaryUserId : String(payment.userId);
+    const key = String(payment.userId);
     if (paymentsByUserId[key]) {
       paymentsByUserId[key].push({
         id: String(payment._id),
@@ -392,8 +338,7 @@ export async function getPayoutOverview(userIds = null) {
     }
   }
 
-  const targetUsers = isSingleUserCheck ? [validUsers[0]] : validUsers;
-  const summaries = targetUsers.map((user) => createSummary(
+  const summaries = validUsers.map((user) => createSummary(
     user, 
     callsByUserId[String(user._id)] || [], 
     phrasesByUserId[String(user._id)] || [], 

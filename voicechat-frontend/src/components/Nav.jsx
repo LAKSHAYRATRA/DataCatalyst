@@ -2,11 +2,36 @@ import React, { useEffect, useState } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import { clearToken, getUserInfo } from "../lib/auth.js";
 import { motion } from "framer-motion";
-import { LayoutDashboard, PhoneCall, Wallet, LogOut, Menu, X, Mic2, FolderGit2 } from "lucide-react";
+import { LayoutDashboard, PhoneCall, Wallet, LogOut, Menu, X, Mic2, FolderGit2, RotateCw } from "lucide-react";
 
 function BrandLogo({ className = "" }) {
   return (
     <img src="/logo.png" alt="Voclara Logo" className={`${className} object-contain`} />
+  );
+}
+
+function RefreshButton({ className = "" }) {
+  const [isSpinning, setIsSpinning] = useState(false);
+  const isElectronApp = typeof window !== 'undefined' && Boolean(window.voclaraRecorder?.isNative || navigator.userAgent.includes("Electron"));
+
+  if (!isElectronApp) return null;
+
+  const handleRefresh = () => {
+    setIsSpinning(true);
+    setTimeout(() => {
+      window.location.reload();
+    }, 150);
+  };
+
+  return (
+    <button
+      onClick={handleRefresh}
+      title="Refresh App (Ctrl+R)"
+      aria-label="Refresh App"
+      className={`p-2 rounded-xl text-neutral-400 hover:text-primary-600 dark:text-neutral-500 dark:hover:text-primary-400 hover:bg-neutral-100 dark:hover:bg-neutral-800/80 transition-all duration-200 group ${className}`}
+    >
+      <RotateCw className={`w-4.5 h-4.5 transition-transform duration-500 ${isSpinning ? 'animate-spin text-primary-500' : 'group-hover:rotate-180'}`} />
+    </button>
   );
 }
 
@@ -47,6 +72,43 @@ export default function Nav({ disabled = false }) {
     setUserInfo(info);
   }, []);
 
+  // Keyboard Shortcuts: Ctrl+R (Refresh), Ctrl++ (Zoom in), Ctrl+- (Zoom out), Ctrl+0 (Reset) - ONLY inside Electron App
+  useEffect(() => {
+    const isElectronApp = typeof window !== 'undefined' && Boolean(window.voclaraRecorder?.isNative || navigator.userAgent.includes("Electron"));
+    if (!isElectronApp) return;
+
+    const handleKeyDown = (e) => {
+      const isCtrlOrCmd = e.ctrlKey || e.metaKey;
+      if (!isCtrlOrCmd) return;
+
+      const key = e.key.toLowerCase();
+      if (key === 'r') {
+        e.preventDefault();
+        window.location.reload();
+      } else if (key === '+' || key === '=' || e.code === 'NumpadAdd') {
+        e.preventDefault();
+        try {
+          const currentZoom = parseFloat(document.body.style.zoom || "1");
+          document.body.style.zoom = Math.min(currentZoom + 0.1, 2.0).toString();
+        } catch {}
+      } else if (key === '-' || key === '_' || e.code === 'NumpadSubtract') {
+        e.preventDefault();
+        try {
+          const currentZoom = parseFloat(document.body.style.zoom || "1");
+          document.body.style.zoom = Math.max(currentZoom - 0.1, 0.5).toString();
+        } catch {}
+      } else if (key === '0' || e.code === 'Numpad0') {
+        e.preventDefault();
+        try {
+          document.body.style.zoom = "1";
+        } catch {}
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
   const isActive = (path) => location.pathname === path;
 
   // Close mobile menu when route changes
@@ -70,6 +132,7 @@ export default function Nav({ disabled = false }) {
           <span className="text-xl font-extrabold tracking-tight text-neutral-900 dark:text-white">
             Voclara
           </span>
+          <RefreshButton className="ml-1" />
         </div>
 
         {/* Hamburger Button */}
@@ -101,7 +164,7 @@ export default function Nav({ disabled = false }) {
         top-0
       `}>
         {/* Logo & Brand */}
-        <div className="p-5 md:py-6 md:px-5 border-b border-neutral-100 dark:border-neutral-800">
+        <div className="p-5 md:py-6 md:px-5 border-b border-neutral-100 dark:border-neutral-800 flex items-center justify-between">
           <Link to="/" className="flex items-center space-x-2.5 group">
             <motion.div 
               whileHover={!disabled ? { scale: 1.05, rotate: -5 } : {}}
@@ -113,6 +176,7 @@ export default function Nav({ disabled = false }) {
               Voclara
             </span>
           </Link>
+          <RefreshButton />
         </div>
 
         {/* Navigation Links */}

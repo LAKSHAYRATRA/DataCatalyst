@@ -39,6 +39,20 @@ const Phase = {
 };
 
 async function getMics() {
+  if (window.voclaraRecorder?.isNative && window.voclaraRecorder?.getDevices) {
+    try {
+      const nativeDevs = await window.voclaraRecorder.getDevices();
+      if (nativeDevs && nativeDevs.length > 0) {
+        return nativeDevs.map(d => ({
+          deviceId: String(d.id),
+          label: d.name || `Microphone (${d.id})`
+        }));
+      }
+    } catch (e) {
+      console.warn('Native WASAPI device query error:', e);
+    }
+  }
+
   const tempStream = await navigator.mediaDevices.getUserMedia({
     audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
   });
