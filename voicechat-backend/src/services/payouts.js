@@ -35,17 +35,23 @@ function getCallEntryForUser(call, userId) {
     status = call.recordingAStatus || "pending";
     payoutUsd = Number(call.recordingAPayoutUsd) || 0;
     durationMinutes = canonicalMin || Number(call.recordingADurationMinutes) || 0;
-    reviewNote = call.recordingAReviewNote || null;
+    reviewNote = call.recordingAReviewNote || call.reviewNotes || null;
   } else if (String(call.userB?._id || call.userB) === normalizedUserId) {
     me = call.userB;
     peer = call.userA;
     status = call.recordingBStatus || "pending";
     payoutUsd = Number(call.recordingBPayoutUsd) || 0;
     durationMinutes = canonicalMin || Number(call.recordingBDurationMinutes) || 0;
-    reviewNote = call.recordingBReviewNote || null;
+    reviewNote = call.recordingBReviewNote || call.reviewNotes || null;
   } else {
     return null;
   }
+
+  const reviewedByObj = call.reviewedBy ? {
+    id: String(call.reviewedBy._id || call.reviewedBy),
+    name: `${call.reviewedBy.firstname || ""} ${call.reviewedBy.lastname || ""}`.trim() || call.reviewedBy.username || "QA Reviewer",
+    email: call.reviewedBy.email || null,
+  } : null;
 
   return {
     callId: call.callId,
@@ -63,6 +69,8 @@ function getCallEntryForUser(call, userId) {
     payoutUsd: roundCurrency(payoutUsd),
     durationMinutes: roundCurrency(durationMinutes),
     reviewNote,
+    reviewedBy: reviewedByObj,
+    reviewedAt: call.reviewedAt || null,
     paidOut: false,
   };
 }
@@ -169,6 +177,7 @@ async function loadCallsForUsers(userIds) {
     .populate("userB", "firstname lastname username email")
     .populate("topicId", "title")
     .populate("subtopicId", "title")
+    .populate("reviewedBy", "firstname lastname username email")
     .sort({ startedAt: -1 })
     .lean();
 }
@@ -195,6 +204,7 @@ async function loadPhrasesForUsers(userIds) {
   };
 
   const activePhrases = await Phrase.find(phraseQuery)
+    .populate("qaId", "firstname lastname username email")
     .sort({ recordedAt: -1, createdAt: -1 })
     .lean();
 
@@ -206,6 +216,7 @@ async function loadPhrasesForUsers(userIds) {
   };
 
   const rejections = await PhraseRejection.find(rejectionQuery)
+    .populate("qaId", "firstname lastname username email")
     .sort({ rejectedAt: -1, createdAt: -1 })
     .lean();
 
@@ -221,9 +232,13 @@ async function loadPhrasesForUsers(userIds) {
       companyId: r.companyId,
       language: r.language,
       contributorId: r.contributorId,
+      qaId: r.qaId,
       status: "rejected",
       duration: r.duration || 0,
       recordedAt: r.rejectedAt || r.createdAt,
+      rejectedAt: r.rejectedAt || r.createdAt,
+      qaComment: r.comment,
+      comment: r.comment,
       text
     };
   }));
@@ -331,6 +346,12 @@ export async function getPayoutOverview(userIds = null) {
         }
       }
 
+      const reviewedByObj = phrase.qaId ? {
+        id: String(phrase.qaId._id || phrase.qaId),
+        name: `${phrase.qaId.firstname || ""} ${phrase.qaId.lastname || ""}`.trim() || phrase.qaId.username || "QA Reviewer",
+        email: phrase.qaId.email || null,
+      } : null;
+
       phrasesByUserId[targetKey].push({
         phraseId: phrase.phraseId,
         text: phrase.text,
@@ -340,7 +361,10 @@ export async function getPayoutOverview(userIds = null) {
         projectName: phrase.projectName || null,
         duration: phrase.duration || 0,
         recordedAt: phrase.recordedAt || phrase.createdAt,
-        payoutUsd: roundCurrency(phrasePayout)
+        payoutUsd: roundCurrency(phrasePayout),
+        qaComment: phrase.qaComment || phrase.comment || null,
+        reviewedAt: phrase.reviewedAt || phrase.rejectedAt || null,
+        reviewedBy: reviewedByObj
       });
     }
   }

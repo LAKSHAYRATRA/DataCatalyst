@@ -553,6 +553,7 @@ export async function getCallHistory(req, res) {
     .populate("userA", "username")
     .populate("userB", "username")
     .populate("subtopicId", "title description")
+    .populate("reviewedBy", "firstname lastname username email")
     .lean();
 
   const currentUser = await User.findById(req.userId).select("isAdmin").lean();
@@ -577,8 +578,14 @@ export async function getCallHistory(req, res) {
           ? s.recordingAStatus || "pending"
           : s.recordingBStatus || "pending",
         reviewNote: meIsA
-          ? s.recordingAReviewNote || null
-          : s.recordingBReviewNote || null,
+          ? s.recordingAReviewNote || s.reviewNotes || null
+          : s.recordingBReviewNote || s.reviewNotes || null,
+        reviewedBy: s.reviewedBy ? {
+          id: s.reviewedBy._id?.toString(),
+          name: `${s.reviewedBy.firstname || ""} ${s.reviewedBy.lastname || ""}`.trim() || s.reviewedBy.username || "QA Reviewer",
+          email: s.reviewedBy.email || null,
+        } : null,
+        reviewedAt: s.reviewedAt || null,
         callActuallyStarted: s.callActuallyStarted || false,
         language: s.language || "english",
         subtopic: s.subtopicId

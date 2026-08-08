@@ -384,7 +384,7 @@ export default function Dashboard() {
 
                                                 <td className="px-8 py-5 text-center">
                                                     <button
-                                                        onClick={() => setFeedbackModal({ note: session.reviewNote, status: session.callStatus })}
+                                                        onClick={() => setFeedbackModal({ note: session.reviewNote, status: session.callStatus, reviewedBy: session.reviewedBy })}
                                                         title="View admin note"
                                                         className="inline-flex items-center justify-center p-2 rounded-xl bg-neutral-100 dark:bg-neutral-800 text-neutral-500 dark:text-neutral-400 hover:bg-primary-50 dark:hover:bg-primary-900/40 hover:text-primary-600 dark:hover:text-primary-400 transition-colors"
                                                     >

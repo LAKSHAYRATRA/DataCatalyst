@@ -32,6 +32,9 @@ class PcmProcessor extends AudioWorkletProcessor {
     if (!input || !input[0]) return true;
 
     const ch0 = input[0];
+    const ch1 = input[1];
+    const hasStereo = !!(ch1 && ch1.length === ch0.length);
+
     const noiseGateActive = this.noiseGateDb < 0;
     const gateThresholdRms = 0.005; // ~ -46 dBFS threshold
     const minGain = noiseGateActive ? Math.pow(10, this.noiseGateDb / 20) : 1.0;
@@ -39,6 +42,16 @@ class PcmProcessor extends AudioWorkletProcessor {
 
     for (let i = 0; i < ch0.length; i++) {
       let sample = ch0[i];
+
+      // Smart channel selection: Preserve full scale amplitude for 2-channel USB/XLR audio interfaces
+      if (hasStereo) {
+        const s0 = ch0[i];
+        const s1 = ch1[i];
+        // Select channel with greater magnitude to prevent -6dB downmix attenuation
+        if (Math.abs(s1) > Math.abs(s0)) {
+          sample = s1;
+        }
+      }
 
       // 1. Apply Gain Scaling (Percentage adjustment: -30% = 0.70x, +30% = 1.30x)
       if (boost !== 1.0) {

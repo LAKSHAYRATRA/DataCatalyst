@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import Nav from "../components/Nav.jsx";
 import { apiGet, apiPostJson } from "../lib/api.js";
+import { PhoneCall, Mic2, CreditCard } from "lucide-react";
 
 function money(value) {
   return `$${(Number(value) || 0).toFixed(2)}`;
@@ -269,29 +270,61 @@ export default function UserPayouts() {
             </div>
 
             <div className="card">
-              <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
-                <div className="inline-flex rounded-xl bg-neutral-100 dark:bg-neutral-800 p-1">
+              <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6 border-b border-neutral-200 dark:border-neutral-800 pb-5">
+                <div className="inline-flex flex-wrap p-1.5 rounded-2xl bg-neutral-200/80 dark:bg-neutral-900/90 border border-neutral-300 dark:border-neutral-800 shadow-inner gap-1.5">
                   <button
                     onClick={() => { setTab("calls"); setSubTab("all"); }}
-                    className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors duration-200 ${tab === "calls" ? "bg-white dark:bg-neutral-700 text-neutral-900 dark:text-white shadow-sm" : "text-neutral-600 dark:text-neutral-400"}`}
+                    className={`flex items-center gap-2.5 px-5 py-2.5 rounded-xl text-sm font-bold transition-all duration-300 ${
+                      tab === "calls"
+                        ? "bg-gradient-to-r from-primary-600 to-indigo-600 text-white shadow-lg shadow-primary-500/30 scale-[1.02]"
+                        : "text-neutral-700 dark:text-neutral-300 hover:text-neutral-900 dark:hover:text-white hover:bg-neutral-300/60 dark:hover:bg-neutral-800"
+                    }`}
                   >
-                    Calls
+                    <PhoneCall className={`w-4 h-4 ${tab === "calls" ? "text-white" : "text-primary-600 dark:text-primary-400"}`} />
+                    <span>Calls</span>
+                    <span className={`px-2 py-0.5 rounded-full text-xs font-extrabold ${
+                      tab === "calls" ? "bg-white/20 text-white" : "bg-neutral-300 dark:bg-neutral-800 text-neutral-800 dark:text-neutral-200"
+                    }`}>
+                      {data?.calls?.length || 0}
+                    </span>
                   </button>
+
                   <button
                     onClick={() => { setTab("phrases"); setSubTab("all"); }}
-                    className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors duration-200 ${tab === "phrases" ? "bg-white dark:bg-neutral-700 text-neutral-900 dark:text-white shadow-sm" : "text-neutral-600 dark:text-neutral-400"}`}
+                    className={`flex items-center gap-2.5 px-5 py-2.5 rounded-xl text-sm font-bold transition-all duration-300 ${
+                      tab === "phrases"
+                        ? "bg-gradient-to-r from-primary-600 to-indigo-600 text-white shadow-lg shadow-primary-500/30 scale-[1.02]"
+                        : "text-neutral-700 dark:text-neutral-300 hover:text-neutral-900 dark:hover:text-white hover:bg-neutral-300/60 dark:hover:bg-neutral-800"
+                    }`}
                   >
-                    Phrases
+                    <Mic2 className={`w-4 h-4 ${tab === "phrases" ? "text-white" : "text-primary-600 dark:text-primary-400"}`} />
+                    <span>Phrases</span>
+                    <span className={`px-2 py-0.5 rounded-full text-xs font-extrabold ${
+                      tab === "phrases" ? "bg-white/20 text-white" : "bg-neutral-300 dark:bg-neutral-800 text-neutral-800 dark:text-neutral-200"
+                    }`}>
+                      {data?.phrases?.length || 0}
+                    </span>
                   </button>
+
                   <button
                     onClick={() => { setTab("payments"); setSubTab("all"); }}
-                    className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors duration-200 ${tab === "payments" ? "bg-white dark:bg-neutral-700 text-neutral-900 dark:text-white shadow-sm" : "text-neutral-600 dark:text-neutral-400"}`}
+                    className={`flex items-center gap-2.5 px-5 py-2.5 rounded-xl text-sm font-bold transition-all duration-300 ${
+                      tab === "payments"
+                        ? "bg-gradient-to-r from-primary-600 to-indigo-600 text-white shadow-lg shadow-primary-500/30 scale-[1.02]"
+                        : "text-neutral-700 dark:text-neutral-300 hover:text-neutral-900 dark:hover:text-white hover:bg-neutral-300/60 dark:hover:bg-neutral-800"
+                    }`}
                   >
-                    Payments
+                    <CreditCard className={`w-4 h-4 ${tab === "payments" ? "text-white" : "text-primary-600 dark:text-primary-400"}`} />
+                    <span>Payments</span>
+                    <span className={`px-2 py-0.5 rounded-full text-xs font-extrabold ${
+                      tab === "payments" ? "bg-white/20 text-white" : "bg-neutral-300 dark:bg-neutral-800 text-neutral-800 dark:text-neutral-200"
+                    }`}>
+                      {data?.payments?.length || 0}
+                    </span>
                   </button>
                 </div>
-                <div className="text-sm text-neutral-500 dark:text-neutral-400">
-                  {tab === "calls" ? `${data?.calls?.length || 0} calls` : tab === "phrases" ? `${data?.phrases?.length || 0} phrases` : `${data?.payments?.length || 0} payments`}
+                <div className="text-xs font-bold uppercase tracking-wider text-neutral-500 dark:text-neutral-400 bg-neutral-100 dark:bg-neutral-900/80 px-3.5 py-2 rounded-xl border border-neutral-200 dark:border-neutral-800 self-start md:self-auto">
+                  Showing <span className="text-neutral-900 dark:text-white font-extrabold">{tab === "calls" ? `${data?.calls?.length || 0} calls` : tab === "phrases" ? `${data?.phrases?.length || 0} phrases` : `${data?.payments?.length || 0} payments`}</span>
                 </div>
               </div>
 
@@ -366,22 +399,33 @@ export default function UserPayouts() {
               {tab === "calls" ? (
                 <div className="space-y-3">
                   {filteredCalls.map((call) => (
-                    <div key={call.callId} className="rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900/50 px-4 py-4 flex flex-col md:flex-row md:items-center md:justify-between gap-4 transition-colors duration-300">
-                      <div>
-                        <div className="text-sm font-semibold text-neutral-900 dark:text-white">{call.topic}</div>
-                        <div className="text-sm text-neutral-600 dark:text-neutral-400">{call.subtopic || "-"} • {call.language || "-"}</div>
-                        <div className="text-xs text-neutral-500 dark:text-neutral-500 mt-2">{formatDate(call.startedAt)} • {call.durationMinutes?.toFixed?.(2) || "0.00"} min</div>
+                    <div key={call.callId} className="rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900/50 p-4 flex flex-col gap-3 transition-colors duration-300">
+                      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                        <div>
+                          <div className="text-sm font-semibold text-neutral-900 dark:text-white">{call.topic}</div>
+                          <div className="text-sm text-neutral-600 dark:text-neutral-400">{call.subtopic || "-"} • {call.language || "-"}</div>
+                          <div className="text-xs text-neutral-500 dark:text-neutral-500 mt-2">{formatDate(call.startedAt)} • {call.durationMinutes?.toFixed?.(2) || "0.00"} min</div>
+                        </div>
+                        <div className="text-left md:text-right">
+                          <div className="text-xl font-bold text-neutral-900 dark:text-white">{money(call.payoutUsd)}</div>
+                          <span className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-semibold capitalize mt-1 ${
+                            call.status === "approved" ? "bg-success-100 text-success-700 dark:bg-success-900/40 dark:text-success-300" :
+                            call.status === "rejected" ? "bg-error-100 text-error-700 dark:bg-error-900/40 dark:text-error-300" :
+                            "bg-warning-100 text-warning-700 dark:bg-warning-900/40 dark:text-warning-300"
+                          }`}>
+                            {call.status === "recorded" || call.status === "pending" ? "Pending Review" : call.status}
+                          </span>
+                        </div>
                       </div>
-                      <div className="text-left md:text-right">
-                        <div className="text-xl font-bold text-neutral-900 dark:text-white">{money(call.payoutUsd)}</div>
-                        <span className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-semibold capitalize mt-1 ${
-                          call.status === "approved" ? "bg-success-100 text-success-700 dark:bg-success-900/40 dark:text-success-300" :
-                          call.status === "rejected" ? "bg-error-100 text-error-700 dark:bg-error-900/40 dark:text-error-300" :
-                          "bg-warning-100 text-warning-700 dark:bg-warning-900/40 dark:text-warning-300"
-                        }`}>
-                          {call.status === "recorded" || call.status === "pending" ? "Pending Review" : call.status}
-                        </span>
-                      </div>
+
+                      {call.reviewNote && (
+                        <div className="mt-1 pt-3 border-t border-neutral-100 dark:border-neutral-800/80 bg-neutral-50/80 dark:bg-neutral-800/40 p-3 rounded-xl text-xs">
+                          <div className="text-neutral-700 dark:text-neutral-300 flex items-start gap-2">
+                            <span className="font-semibold text-neutral-900 dark:text-white shrink-0">Feedback Note:</span>
+                            <span className="italic">"{call.reviewNote}"</span>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   ))}
                   {!filteredCalls.length && <div className="text-center py-12 text-neutral-500 dark:text-neutral-400">No {subTab !== "all" ? subTab : ""} calls found.</div>}
@@ -389,22 +433,33 @@ export default function UserPayouts() {
               ) : tab === "phrases" ? (
                 <div className="space-y-3">
                   {filteredPhrases.map((phrase) => (
-                    <div key={phrase.phraseId} className="rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900/50 px-4 py-4 flex flex-col md:flex-row md:items-center md:justify-between gap-4 transition-colors duration-300">
-                      <div className="flex-1 min-w-0 pr-4">
-                        <div className="text-sm font-semibold text-neutral-900 dark:text-white truncate" title={phrase.text}>{phrase.text}</div>
-                        <div className="text-sm text-neutral-600 dark:text-neutral-400 capitalize">{phrase.language || "-"}</div>
-                        <div className="text-xs text-neutral-500 dark:text-neutral-500 mt-2">{formatDate(phrase.recordedAt)} • {phrase.duration?.toFixed?.(2) || "0.00"} sec</div>
+                    <div key={phrase.phraseId} className="rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900/50 p-4 flex flex-col gap-3 transition-colors duration-300">
+                      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                        <div className="flex-1 min-w-0 pr-4">
+                          <div className="text-sm font-semibold text-neutral-900 dark:text-white truncate" title={phrase.text}>{phrase.text}</div>
+                          <div className="text-sm text-neutral-600 dark:text-neutral-400 capitalize">{phrase.language || "-"}</div>
+                          <div className="text-xs text-neutral-500 dark:text-neutral-500 mt-2">{formatDate(phrase.recordedAt)} • {phrase.duration?.toFixed?.(2) || "0.00"} sec</div>
+                        </div>
+                        <div className="text-left md:text-right flex-shrink-0">
+                          <div className="text-xl font-bold text-neutral-900 dark:text-white">{money(phrase.payoutUsd)}</div>
+                          <span className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-semibold capitalize mt-1 ${
+                            phrase.status === "approved" ? "bg-success-100 text-success-700 dark:bg-success-900/40 dark:text-success-300" :
+                            phrase.status === "rejected" ? "bg-error-100 text-error-700 dark:bg-error-900/40 dark:text-error-300" :
+                            "bg-warning-100 text-warning-700 dark:bg-warning-900/40 dark:text-warning-300"
+                          }`}>
+                            {phrase.status === "recorded" || phrase.status === "pending" ? "Pending Review" : phrase.status}
+                          </span>
+                        </div>
                       </div>
-                      <div className="text-left md:text-right flex-shrink-0">
-                        <div className="text-xl font-bold text-neutral-900 dark:text-white">{money(phrase.payoutUsd)}</div>
-                        <span className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-semibold capitalize mt-1 ${
-                          phrase.status === "approved" ? "bg-success-100 text-success-700 dark:bg-success-900/40 dark:text-success-300" :
-                          phrase.status === "rejected" ? "bg-error-100 text-error-700 dark:bg-error-900/40 dark:text-error-300" :
-                          "bg-warning-100 text-warning-700 dark:bg-warning-900/40 dark:text-warning-300"
-                        }`}>
-                          {phrase.status === "recorded" || phrase.status === "pending" ? "Pending Review" : phrase.status}
-                        </span>
-                      </div>
+
+                      {phrase.qaComment && (
+                        <div className="mt-1 pt-3 border-t border-neutral-100 dark:border-neutral-800/80 bg-neutral-50/80 dark:bg-neutral-800/40 p-3 rounded-xl text-xs">
+                          <div className="text-neutral-700 dark:text-neutral-300 flex items-start gap-2">
+                            <span className="font-semibold text-neutral-900 dark:text-white shrink-0">Feedback Note:</span>
+                            <span className="italic">"{phrase.qaComment}"</span>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   ))}
                   {!filteredPhrases.length && <div className="text-center py-12 text-neutral-500 dark:text-neutral-400">No {subTab !== "all" ? subTab : ""} phrases found.</div>}

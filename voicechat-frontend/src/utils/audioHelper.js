@@ -17,11 +17,21 @@ export const getMediaStream = async () => {
                 echoCancellation: false,
                 noiseSuppression: false,
                 autoGainControl: false,
-                channelCount: { ideal: 1 },
+                channelCount: { ideal: 2 },
                 sampleRate: { ideal: 48000 }
             }
         });
     } catch (e) {
-        return await navigator.mediaDevices.getUserMedia({ audio: true });
+        try {
+            return await navigator.mediaDevices.getUserMedia({
+                audio: {
+                    echoCancellation: false,
+                    noiseSuppression: false,
+                    autoGainControl: false
+                }
+            });
+        } catch (err2) {
+            return await navigator.mediaDevices.getUserMedia({ audio: true });
+        }
     }
 };

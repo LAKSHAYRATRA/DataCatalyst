@@ -142,7 +142,7 @@ export default function AdminPayoutUser() {
                   <table className="w-full text-sm">
                     <thead className="bg-neutral-700">
                       <tr>
-                        {["Date", "Peer", "Topic", "Language", "Status", "Minutes", "Payout"].map((h) => (
+                        {["Date", "Peer", "Topic", "Language", "Status", "QA Reviewer", "Feedback", "Minutes", "Payout"].map((h) => (
                           <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-neutral-300 uppercase tracking-wider whitespace-nowrap">{h}</th>
                         ))}
                       </tr>
@@ -159,6 +159,8 @@ export default function AdminPayoutUser() {
                               {call.status}
                             </span>
                           </td>
+                          <td className="px-4 py-3 text-neutral-300 text-xs">{call.reviewedBy?.name || call.reviewedBy?.username || "-"}</td>
+                          <td className="px-4 py-3 text-neutral-300 text-xs italic truncate max-w-[150px]" title={call.reviewNote}>{call.reviewNote || "-"}</td>
                           <td className="px-4 py-3 text-neutral-300">{call.durationMinutes?.toFixed?.(2) || "0.00"}</td>
                           <td className="px-4 py-3 text-white font-semibold">{money(call.payoutUsd)}</td>
                         </tr>
@@ -176,7 +178,7 @@ export default function AdminPayoutUser() {
                   <table className="w-full text-sm">
                     <thead className="bg-neutral-700">
                       <tr>
-                        {["Date", "Phrase", "Language", "Status", "Duration (s)", "Payout"].map((h) => (
+                        {["Date", "Phrase", "Language", "Status", "QA Reviewer", "Feedback", "Duration (s)", "Payout"].map((h) => (
                           <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-neutral-300 uppercase tracking-wider whitespace-nowrap">{h}</th>
                         ))}
                       </tr>
@@ -192,6 +194,8 @@ export default function AdminPayoutUser() {
                               {phrase.status}
                             </span>
                           </td>
+                          <td className="px-4 py-3 text-neutral-300 text-xs">{phrase.reviewedBy?.name || phrase.reviewedBy?.username || "-"}</td>
+                          <td className="px-4 py-3 text-neutral-300 text-xs italic truncate max-w-[150px]" title={phrase.qaComment}>{phrase.qaComment || "-"}</td>
                           <td className="px-4 py-3 text-neutral-300">{phrase.duration?.toFixed?.(2) || "0.00"}</td>
                           <td className="px-4 py-3 text-white font-semibold">{money(phrase.payoutUsd)}</td>
                         </tr>

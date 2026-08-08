@@ -14,15 +14,26 @@ function calculateEbuR128Lufs(pcmSamples, sampleRate = 48000) {
   const len = pcmSamples.length;
   const filtered = new Float32Array(len);
 
-  // K-Weighting Stage 1: High Shelf Filter (48kHz)
-  let f1_z1 = 0, f1_z2 = 0;
-  const b0_1 = 1.53512485958697, b1_1 = -2.69169618940638, b2_1 = 1.19839281085285;
-  const a1_1 = -1.69065929318241, a2_1 = 0.71623787421588;
+  // K-Weighting Filter Coefficients for 48kHz vs 44.1kHz
+  let b0_1, b1_1, b2_1, a1_1, a2_1;
+  let b0_2, b1_2, b2_2, a1_2, a2_2;
 
-  // K-Weighting Stage 2: High Pass RLB Filter
+  if (Math.abs(sampleRate - 44100) < 1000) {
+    // 44.1 kHz coefficients
+    b0_1 = 1.53084123005035; b1_1 = -2.65097999815682; b2_1 = 1.16907907992956;
+    a1_1 = -1.66367375253835; a2_1 = 0.71261405006450;
+    b0_2 = 1.0; b1_2 = -2.0; b2_2 = 1.0;
+    a1_2 = -1.98916967560867; a2_2 = 0.98919903522204;
+  } else {
+    // Default 48 kHz coefficients
+    b0_1 = 1.53512485958697; b1_1 = -2.69169618940638; b2_1 = 1.19839281085285;
+    a1_1 = -1.69065929318241; a2_1 = 0.71623787421588;
+    b0_2 = 1.0; b1_2 = -2.0; b2_2 = 1.0;
+    a1_2 = -1.99004745483398; a2_2 = 0.99007225036621;
+  }
+
+  let f1_z1 = 0, f1_z2 = 0;
   let f2_z1 = 0, f2_z2 = 0;
-  const b0_2 = 1.0, b1_2 = -2.0, b2_2 = 1.0;
-  const a1_2 = -1.99004745483398, a2_2 = 0.99007225036621;
 
   for (let i = 0; i < len; i++) {
     const x = pcmSamples[i];
@@ -193,10 +204,16 @@ export default function PhraseRecording() {
     let testStream;
     try {
       testStream = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, sampleRate: { ideal: 48000 } }
+        audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: { ideal: 2 }, sampleRate: { ideal: 48000 } }
       });
     } catch {
-      testStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      try {
+        testStream = await navigator.mediaDevices.getUserMedia({
+          audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
+        });
+      } catch {
+        testStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      }
     }
 
     const AudioCtx = window.AudioContext || window.webkitAudioContext;
@@ -237,7 +254,7 @@ export default function PhraseRecording() {
         let offset = 0;
         for (const c of capturedChunks) { combined.set(c, offset); offset += c.length; }
 
-        const score = calculateEbuR128Lufs(combined);
+        const score = calculateEbuR128Lufs(combined, testCtx?.sampleRate || 48000);
         let status = "pass";
         if (score === null) status = "no_speech";
         else if (score > -18.0) status = "too_loud";
@@ -500,12 +517,22 @@ export default function PhraseRecording() {
             echoCancellation: false,
             noiseSuppression: false,
             autoGainControl: false,
-            channelCount: { ideal: 1 },
+            channelCount: { ideal: 2 },
             sampleRate: { ideal: 48000 }
           }
         });
       } catch (err) {
-        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            audio: {
+              echoCancellation: false,
+              noiseSuppression: false,
+              autoGainControl: false
+            }
+          });
+        } catch (err2) {
+          stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        }
       }
       resetRecording();
 
@@ -602,7 +629,7 @@ export default function PhraseRecording() {
 
     setRawPcm(combined);
     if (combined && combined.length > 0) {
-      const score = calculateEbuR128Lufs(combined);
+      const score = calculateEbuR128Lufs(combined, audioCtxRef.current?.sampleRate || 48000);
       setRecordedLufs(score);
     }
     const wavBlob = encodeWAV(combined, audioCtxRef.current?.sampleRate || 48000, 1);
@@ -616,7 +643,7 @@ export default function PhraseRecording() {
     // Strict LUFS Check (-18.0 to -24.0 LUFS Target)
     let lufsScore = null;
     if (rawPcm && rawPcm.length > 0) {
-      lufsScore = calculateEbuR128Lufs(rawPcm);
+      lufsScore = calculateEbuR128Lufs(rawPcm, audioCtxRef.current?.sampleRate || 48000);
     }
 
     if (lufsScore === null) {
@@ -1282,9 +1309,14 @@ export default function PhraseRecording() {
                     <span className="capitalize">{item.language}</span>
                     <span>{item.duration > 0 ? formatTime(item.duration) : '--'}</span>
                   </div>
-                  {item.qaComment && item.status === 'rejected' && (
-                    <div className="mt-2 text-xs text-error-600 dark:text-error-400 bg-error-50 dark:bg-error-900/20 p-2 rounded">
-                      <span className="font-semibold block">Feedback:</span> {item.qaComment}
+                  {item.qaComment && (
+                    <div className={`mt-2 text-xs p-2.5 rounded-lg font-medium ${
+                      item.status === 'approved' ? 'text-success-800 dark:text-success-300 bg-success-50 dark:bg-success-950/40 border border-success-200/60 dark:border-success-800/60' :
+                      item.status === 'rejected' ? 'text-error-800 dark:text-error-300 bg-error-50 dark:bg-error-950/40 border border-error-200/60 dark:border-error-800/60' :
+                      'text-neutral-800 dark:text-neutral-200 bg-neutral-100 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700'
+                    }`}>
+                      <span className="font-bold block mb-0.5 uppercase tracking-wider text-[10px] opacity-80">Feedback Note:</span>
+                      <span className="italic font-medium">"{item.qaComment}"</span>
                     </div>
                   )}
                 </div>

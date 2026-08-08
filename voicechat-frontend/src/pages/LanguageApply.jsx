@@ -13,15 +13,26 @@ function calculateEbuR128Lufs(pcmSamples, sampleRate = 48000) {
   const len = pcmSamples.length;
   const filtered = new Float32Array(len);
 
-  // K-Weighting Stage 1: High Shelf Filter (48kHz)
-  let f1_z1 = 0, f1_z2 = 0;
-  const b0_1 = 1.53512485958697, b1_1 = -2.69169618940638, b2_1 = 1.19839281085285;
-  const a1_1 = -1.69065929318241, a2_1 = 0.71623787421588;
+  // K-Weighting Filter Coefficients for 48kHz vs 44.1kHz
+  let b0_1, b1_1, b2_1, a1_1, a2_1;
+  let b0_2, b1_2, b2_2, a1_2, a2_2;
 
-  // K-Weighting Stage 2: High Pass RLB Filter
+  if (Math.abs(sampleRate - 44100) < 1000) {
+    // 44.1 kHz coefficients
+    b0_1 = 1.53084123005035; b1_1 = -2.65097999815682; b2_1 = 1.16907907992956;
+    a1_1 = -1.66367375253835; a2_1 = 0.71261405006450;
+    b0_2 = 1.0; b1_2 = -2.0; b2_2 = 1.0;
+    a1_2 = -1.98916967560867; a2_2 = 0.98919903522204;
+  } else {
+    // Default 48 kHz coefficients
+    b0_1 = 1.53512485958697; b1_1 = -2.69169618940638; b2_1 = 1.19839281085285;
+    a1_1 = -1.69065929318241; a2_1 = 0.71623787421588;
+    b0_2 = 1.0; b1_2 = -2.0; b2_2 = 1.0;
+    a1_2 = -1.99004745483398; a2_2 = 0.99007225036621;
+  }
+
+  let f1_z1 = 0, f1_z2 = 0;
   let f2_z1 = 0, f2_z2 = 0;
-  const b0_2 = 1.0, b1_2 = -2.0, b2_2 = 1.0;
-  const a1_2 = -1.99004745483398, a2_2 = 0.99007225036621;
 
   for (let i = 0; i < len; i++) {
     const x = pcmSamples[i];
@@ -154,10 +165,16 @@ export default function LanguageApply() {
         let testStream;
         try {
             testStream = await navigator.mediaDevices.getUserMedia({
-                audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, sampleRate: { ideal: 48000 } }
+                audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: { ideal: 2 }, sampleRate: { ideal: 48000 } }
             });
         } catch {
-            testStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            try {
+                testStream = await navigator.mediaDevices.getUserMedia({
+                    audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
+                });
+            } catch {
+                testStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            }
         }
 
         const AudioCtx = window.AudioContext || window.webkitAudioContext;
@@ -198,7 +215,7 @@ export default function LanguageApply() {
                 let offset = 0;
                 for (const c of capturedChunks) { combined.set(c, offset); offset += c.length; }
 
-                const score = calculateEbuR128Lufs(combined);
+                const score = calculateEbuR128Lufs(combined, testCtx?.sampleRate || 48000);
                 let status = "pass";
                 if (score > -18.0) status = "too_loud";
                 else if (score < -24.0) status = "too_quiet";
@@ -304,12 +321,22 @@ export default function LanguageApply() {
                          echoCancellation: false,
                          noiseSuppression: false,
                          autoGainControl: false,
-                         channelCount: { ideal: 1 },
+                         channelCount: { ideal: 2 },
                          sampleRate: { ideal: 48000 }
                      }
                  });
              } catch (err) {
-                 stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                 try {
+                     stream = await navigator.mediaDevices.getUserMedia({
+                         audio: {
+                             echoCancellation: false,
+                             noiseSuppression: false,
+                             autoGainControl: false
+                         }
+                     });
+                 } catch (err2) {
+                     stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                 }
              }
              streamRef.current = stream;
              chunksRef.current = [];
