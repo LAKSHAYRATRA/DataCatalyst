@@ -148,7 +148,7 @@ app.use(
         "http://127.0.0.1:5173"
       ];
       // Allow if it's in the whitelist OR if it's a Netlify staging domain
-      if (!origin || allowedOrigins.includes(origin) || origin.endsWith(".netlify.app")) {
+      if (!origin || allowedOrigins.includes(origin) || origin.endsWith(".netlify.app") || origin.endsWith(".amplifyapp.com")) {
         callback(null, true);
       } else {
         callback(new Error("Not allowed by CORS"));
