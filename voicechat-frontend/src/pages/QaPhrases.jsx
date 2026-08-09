@@ -132,7 +132,19 @@ export default function QaPhrases() {
     try {
       await apiPostJson(`/api/phrases/qa/review/${phraseId}`, { action, comment: comments[phraseId] || '' });
       setComments(prev => { const next = { ...prev }; delete next[phraseId]; return next; });
-      setQueue(queue.filter(q => q._id !== phraseId));
+
+      if (activeTab === 'recorded' && !isAdmin) {
+        // Dynamic replenishment: Backend locks 1 new phrase to maintain a constant queue of 5
+        try {
+          const data = await apiGet(`/api/phrases/qa/queue?status=recorded`);
+          setQueue(data.phrases || []);
+        } catch (rErr) {
+          console.error("Failed to replenish QA queue:", rErr);
+          setQueue(prev => prev.filter(q => q._id !== phraseId));
+        }
+      } else {
+        setQueue(prev => prev.filter(q => q._id !== phraseId));
+      }
     } catch (err) {
       console.error(err);
       alert('Failed to submit review');
