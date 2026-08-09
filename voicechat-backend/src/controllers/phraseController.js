@@ -4,6 +4,8 @@ import { spawn } from "child_process";
 import os from "os";
 import { Phrase } from "../models/Phrase.js";
 import { PhraseRejection } from "../models/PhraseRejection.js";
+import { Ambiguity } from "../models/Ambiguity.js";
+import { QaFlag } from "../models/QaFlag.js";
 import { User } from "../models/User.js";
 import { Counter } from "../models/Counter.js";
 import { Company } from "../models/Company.js";
@@ -812,17 +814,116 @@ export async function submitPhraseRecording(req, res) {
 export async function getQaQueue(req, res) {
   try {
     const requestedStatus = req.query.status || "recorded";
-    const query = { status: requestedStatus };
+    const fifteenMinsAgo = new Date(Date.now() - 15 * 60 * 1000);
+
+    // Dynamic 5-Phrase Batch Queue Lock for QA reviewers
+    if (requestedStatus === "recorded" && req.user && req.user.isQA && !req.user.isAdmin) {
+      const allowedLangs = Array.isArray(req.user.qaLanguageCodes) && req.user.qaLanguageCodes.length > 0 
+          ? req.user.qaLanguageCodes 
+          : [req.user.qaLanguageCode];
+      const langRegex = allowedLangs.map(l => new RegExp(`^${l}$`, "i"));
+
+      // 1. Release expired QA locks (>15 mins old)
+      await Phrase.updateMany(
+        { qaLockedAt: { $lt: fifteenMinsAgo } },
+        { $set: { qaLockedBy: null, qaLockedAt: null } }
+      );
+
+      // 2. Fetch phrases currently locked by THIS QA reviewer
+      let lockedForMe = await Phrase.find({
+        status: "recorded",
+        language: { $in: langRegex },
+        qaLockedBy: req.user._id,
+        qaLockedAt: { $gte: fifteenMinsAgo }
+      })
+      .populate("contributorId", "firstname lastname username email speaker_id")
+      .sort({ recordedAt: 1, createdAt: 1 });
+
+      // 3. Replenish up to 5 phrases by locking additional available recorded phrases
+      const neededCount = 5 - lockedForMe.length;
+      if (neededCount > 0) {
+        const currentlyLockedIds = lockedForMe.map(p => p._id);
+        
+        const availablePhrases = await Phrase.find({
+          status: "recorded",
+          language: { $in: langRegex },
+          _id: { $nin: currentlyLockedIds },
+          "firstQaReview.qaId": { $ne: req.user._id },
+          $or: [
+            { qaLockedBy: null },
+            { qaLockedBy: req.user._id },
+            { qaLockedAt: { $lt: fifteenMinsAgo } }
+          ]
+        })
+        .sort({ recordedAt: 1, createdAt: 1 })
+        .limit(neededCount);
+
+        if (availablePhrases.length > 0) {
+          const idsToLock = availablePhrases.map(p => p._id);
+          const now = new Date();
+          
+          await Phrase.updateMany(
+            { _id: { $in: idsToLock } },
+            { $set: { qaLockedBy: req.user._id, qaLockedAt: now } }
+          );
+
+          // Re-fetch populated locked list
+          lockedForMe = await Phrase.find({
+            status: "recorded",
+            language: { $in: langRegex },
+            qaLockedBy: req.user._id,
+            qaLockedAt: { $gte: fifteenMinsAgo }
+          })
+          .populate("contributorId", "firstname lastname username email speaker_id")
+          .sort({ recordedAt: 1, createdAt: 1 });
+        }
+      }
+
+      const companies = await Company.find({}).lean();
+      const companyProjectMap = Object.fromEntries(
+        companies.map(c => [c.name, c.projectName])
+      );
+      const companyAllowEditMap = Object.fromEntries(
+        companies.map(c => [c.name, Boolean(c.allowPhraseTextEdit)])
+      );
+
+      const phrasesLean = lockedForMe.map(p => (typeof p.toObject === 'function' ? p.toObject() : p));
+      for (const p of phrasesLean) {
+        if (!p.projectName && p.companyId) {
+          p.projectName = companyProjectMap[p.companyId] || p.companyId;
+        }
+        p.allowPhraseTextEdit = companyAllowEditMap[p.companyId] ?? false;
+      }
+
+      return res.json({ phrases: phrasesLean });
+    }
+
+    let query = {};
+    if (requestedStatus === "edited") {
+      if (!req.user || !req.user.isAdmin) {
+        return res.status(403).json({ error: "Only admins can access edited phrases queue" });
+      }
+      query = { isEdited: true };
+    } else {
+      query = { status: requestedStatus };
+    }
+
     if (req.user && req.user.isQA && !req.user.isAdmin) {
       const allowedLangs = Array.isArray(req.user.qaLanguageCodes) && req.user.qaLanguageCodes.length > 0 
           ? req.user.qaLanguageCodes 
           : [req.user.qaLanguageCode];
       query.language = { $in: allowedLangs.map(l => new RegExp(`^${l}$`, "i")) };
+      
+      // For approved and rejected tabs, only show phrases reviewed by THIS QA user
+      if (requestedStatus === "approved" || requestedStatus === "rejected") {
+        query.qaId = req.user._id;
+      }
     }
 
     const phrases = await Phrase.find(query)
       .populate("contributorId", "firstname lastname username email speaker_id")
-      .sort({ recordedAt: -1, createdAt: -1 })
+      .populate("editedBy", "firstname lastname username email")
+      .sort({ editedAt: -1, recordedAt: -1, createdAt: -1 })
       .lean();
 
     // Map companyId to friendly projectName dynamically
@@ -830,17 +931,140 @@ export async function getQaQueue(req, res) {
     const companyProjectMap = Object.fromEntries(
       companies.map(c => [c.name, c.projectName])
     );
+    const companyAllowEditMap = Object.fromEntries(
+      companies.map(c => [c.name, Boolean(c.allowPhraseTextEdit)])
+    );
 
     for (const p of phrases) {
       if (!p.projectName && p.companyId) {
         p.projectName = companyProjectMap[p.companyId] || p.companyId;
       }
+      p.allowPhraseTextEdit = companyAllowEditMap[p.companyId] ?? false;
     }
 
     res.json({ phrases });
   } catch (error) {
     console.error("getQaQueue error:", error);
     res.status(500).json({ error: "Server error" });
+  }
+}
+
+/**
+ * Update Phrase Text (QA & Admin)
+ */
+export async function updatePhraseText(req, res) {
+  try {
+    const { phraseId } = req.params;
+    const { text } = req.body;
+
+    if (!text || !text.trim()) {
+      return res.status(400).json({ error: "Text cannot be empty" });
+    }
+
+    const phrase = await Phrase.findById(phraseId);
+    if (!phrase) return res.status(404).json({ error: "Phrase not found" });
+
+    // Permission check: Admin can always edit; QA can edit if company setting is enabled
+    if (phrase.companyId) {
+      const companyDoc = await Company.findOne({ name: phrase.companyId }).lean();
+      if (companyDoc && !companyDoc.allowPhraseTextEdit && !req.user.isAdmin) {
+        return res.status(403).json({ error: "Text editing is disabled for this company project" });
+      }
+    }
+
+    const newText = text.trim();
+    if (newText !== phrase.text) {
+      if (!phrase.originalText) {
+        phrase.originalText = phrase.text; // Store pristine original text
+      }
+      phrase.text = newText;
+      phrase.isEdited = true;
+      phrase.editedBy = req.user._id;
+      phrase.editedAt = new Date();
+      phrase.editedPhraseStatus = "pending_admin";
+      await phrase.save();
+    }
+
+    res.json({ success: true, message: "Phrase text updated successfully", phrase });
+  } catch (error) {
+    console.error("updatePhraseText error:", error);
+    res.status(500).json({ error: error.message || "Failed to update phrase text" });
+  }
+}
+
+/**
+ * Admin: Review / Approve / Revert edited phrase text & flag conflicts for QA
+ */
+export async function reviewEditedPhrase(req, res) {
+  try {
+    const { phraseId } = req.params;
+    const { action, adminText, adminNote } = req.body; // action: "approved" | "rejected"
+
+    if (!["approved", "rejected"].includes(action)) {
+      return res.status(400).json({ error: "Action must be 'approved' or 'rejected'" });
+    }
+
+    const phrase = await Phrase.findById(phraseId);
+    if (!phrase) return res.status(404).json({ error: "Phrase not found" });
+
+    // Store initial states for conflict detection
+    const initialQaVerdict = phrase.status === "approved" || phrase.status === "rejected" ? phrase.status : "approved";
+    const qaUserId = phrase.editedBy || phrase.qaId || phrase.firstQaReview?.qaId;
+    const originalScriptText = phrase.originalText || phrase.text;
+    const qaEditedScriptText = phrase.text;
+
+    // Apply Admin further script edit if provided
+    if (adminText && adminText.trim() && adminText.trim() !== phrase.text) {
+      if (!phrase.originalText) phrase.originalText = phrase.text;
+      phrase.text = adminText.trim();
+      phrase.isEdited = true;
+    }
+
+    if (action === "approved") {
+      phrase.status = "approved";
+      phrase.editedPhraseStatus = "approved";
+    } else {
+      // Revert text to original on rejection
+      if (phrase.originalText) {
+        phrase.text = phrase.originalText;
+      }
+      phrase.status = "rejected";
+      phrase.isEdited = false;
+      phrase.editedPhraseStatus = "rejected";
+    }
+
+    await phrase.save();
+
+    // Check conflict & create QaFlag for QA reviewer
+    const isVerdictConflict = (initialQaVerdict !== action);
+    const isAdminScriptModified = Boolean(adminText && adminText.trim() !== qaEditedScriptText);
+
+    if (qaUserId && (isVerdictConflict || isAdminScriptModified)) {
+      const defaultNote = isVerdictConflict
+        ? (action === "approved"
+            ? `Admin override: QA rejected phrase, but Admin updated script text to "${phrase.text}" and approved it.`
+            : `Admin override: QA approved phrase script, but Admin rejected it upon quality review.`)
+        : `Admin modified script text further to "${phrase.text}".`;
+
+      await QaFlag.create({
+        qaId: qaUserId,
+        type: "phrase",
+        itemId: phrase.phraseId || phrase._id.toString(),
+        qaVerdict: initialQaVerdict,
+        adminVerdict: action,
+        isOverridden: isVerdictConflict,
+        originalText: originalScriptText,
+        qaText: qaEditedScriptText,
+        adminText: phrase.text,
+        note: adminNote && adminNote.trim() ? adminNote.trim() : defaultNote,
+        resolvedBy: req.user._id
+      });
+    }
+
+    res.json({ success: true, message: `Edited phrase ${action} successfully`, phrase });
+  } catch (error) {
+    console.error("reviewEditedPhrase error:", error);
+    res.status(500).json({ error: error.message || "Failed to review edited phrase" });
   }
 }
 
@@ -874,6 +1098,8 @@ export async function reviewPhrase(req, res) {
       phrase.qaId = req.user._id;
       phrase.qaComment = comment || null;
       phrase.reviewedAt = new Date();
+      phrase.qaLockedBy = null;
+      phrase.qaLockedAt = null;
 
       const contributor = await User.findById(phrase.contributorId);
       if (contributor) {
@@ -936,6 +1162,9 @@ export async function reviewPhrase(req, res) {
       phrase.lockedAt = null;
       phrase.lockedBy = null;
 
+      phrase.qaLockedBy = null;
+      phrase.qaLockedAt = null;
+
       await phrase.save();
     } else {
       return res.status(400).json({ error: "Invalid action" });
@@ -958,6 +1187,65 @@ export async function reviewPhrase(req, res) {
           await contributor.save();
         }
       }
+    }
+
+    // 2% Random Dual-QA Cross Audit & Ambiguity Mismatch Tracking
+    try {
+      if (phrase.needsSecondQaReview && phrase.firstQaReview && String(phrase.firstQaReview.qaId) !== String(req.user._id)) {
+        // This is QA 2 doing the blind cross-review!
+        const qa1Action = phrase.firstQaReview.action;
+        const qa2Action = action;
+
+        if (qa1Action !== qa2Action) {
+          // Verdict Mismatch! Create Ambiguity for Admin
+          const firstQaUser = await User.findById(phrase.firstQaReview.qaId).lean();
+          await Ambiguity.create({
+            type: "phrase",
+            phraseId: phrase.phraseId,
+            companyId: phrase.companyId,
+            language: phrase.language,
+            reason: "conflict",
+            audioFile: phrase.audioFile,
+            text: phrase.text,
+            duration: phrase.duration || 0,
+            qaReviews: [
+              {
+                qaId: phrase.firstQaReview.qaId,
+                qaName: firstQaUser ? `${firstQaUser.firstname || ""} ${firstQaUser.lastname || ""}`.trim() || firstQaUser.username : "QA 1 Reviewer",
+                qaUsername: firstQaUser?.username || "",
+                qaEmail: firstQaUser?.email || "",
+                action: qa1Action,
+                comment: phrase.firstQaReview.comment,
+                reviewedAt: phrase.firstQaReview.reviewedAt
+              },
+              {
+                qaId: req.user._id,
+                qaName: `${req.user.firstname || ""} ${req.user.lastname || ""}`.trim() || req.user.username,
+                qaUsername: req.user.username,
+                qaEmail: req.user.email,
+                action: qa2Action,
+                comment: comment || null,
+                reviewedAt: new Date()
+              }
+            ],
+            status: "pending"
+          });
+        }
+        phrase.needsSecondQaReview = false;
+        await phrase.save();
+      } else if (!phrase.needsSecondQaReview && Math.random() < 0.02) {
+        // 2% chance to flag for Dual-QA Cross Audit
+        phrase.needsSecondQaReview = true;
+        phrase.firstQaReview = {
+          qaId: req.user._id,
+          action,
+          comment: comment || null,
+          reviewedAt: new Date()
+        };
+        await phrase.save();
+      }
+    } catch (ambErr) {
+      console.error("Phrase Ambiguity dual-audit tracking error:", ambErr);
     }
 
     res.json({ success: true, phrase });

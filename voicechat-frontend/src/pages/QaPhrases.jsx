@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Check, X, AlertCircle, Download, Trash2, Clock, CheckCircle2, Volume2 } from 'lucide-react';
 import Swal from 'sweetalert2';
-import { apiGet, apiPostJson } from '../lib/api';
+import { apiGet, apiPostJson, apiPatchJson } from '../lib/api';
 import { getUserInfo } from '../lib/auth';
 import SecureAudioPlayer from '../components/SecureAudioPlayer';
 import AdminNav from '../components/AdminNav.jsx';
@@ -16,6 +16,15 @@ export default function QaPhrases() {
   const [comments, setComments] = useState({});
   const [processing, setProcessing] = useState(null);
   const [filterProject, setFilterProject] = useState('All');
+  const [filterLanguage, setFilterLanguage] = useState('All');
+  const [listenedOnce, setListenedOnce] = useState({});
+
+  // Text Editing States
+  const [editingTextId, setEditingTextId] = useState(null);
+  const [editTextValue, setEditTextValue] = useState({});
+  const [savingText, setSavingText] = useState({});
+  const [adminNotes, setAdminNotes] = useState({});
+  const [adminEdits, setAdminEdits] = useState({});
 
   // QC States
   const [expandedQc, setExpandedQc] = useState({});
@@ -55,6 +64,43 @@ export default function QaPhrases() {
     }
   };
 
+  const handleSaveText = async (phraseId) => {
+    const textVal = editTextValue[phraseId];
+    if (!textVal || !textVal.trim()) {
+      Swal.fire({ icon: "warning", title: "Empty Text", text: "Phrase script text cannot be empty.", background: "#171717", color: "#ffffff" });
+      return;
+    }
+
+    setSavingText(prev => ({ ...prev, [phraseId]: true }));
+    try {
+      const res = await apiPatchJson(`/api/phrases/qa/text/${phraseId}`, { text: textVal.trim() });
+      if (res && res.phrase) {
+        setQueue(prev => prev.map(p => p._id === phraseId ? { ...p, text: res.phrase.text } : p));
+        setEditingTextId(null);
+        Swal.fire({
+          icon: "success",
+          title: "Script Updated",
+          text: "Phrase script text updated successfully!",
+          timer: 1500,
+          showConfirmButton: false,
+          background: "#171717",
+          color: "#ffffff"
+        });
+      }
+    } catch (err) {
+      console.error("Failed to update phrase text:", err);
+      Swal.fire({
+        icon: "error",
+        title: "Update Failed",
+        text: err.message || "Failed to update phrase script.",
+        background: "#171717",
+        color: "#ffffff"
+      });
+    } finally {
+      setSavingText(prev => ({ ...prev, [phraseId]: false }));
+    }
+  };
+
   useEffect(() => {
     fetchQueue(activeTab);
   }, [activeTab]);
@@ -66,11 +112,12 @@ export default function QaPhrases() {
       const phrases = data.phrases || [];
       setQueue(phrases);
       
-      // Auto-reset project filter if the selected project is no longer in the active queue
+      // Auto-reset filters if selected options are no longer in the queue
       if (filterProject !== 'All') {
         const activeProjects = new Set(phrases.map(q => q.projectName || q.companyId).filter(Boolean));
         if (!activeProjects.has(filterProject)) {
           setFilterProject('All');
+          setFilterLanguage('All');
         }
       }
     } catch (err) {
@@ -89,6 +136,40 @@ export default function QaPhrases() {
     } catch (err) {
       console.error(err);
       alert('Failed to submit review');
+    } finally {
+      setProcessing(null);
+    }
+  };
+
+  const handleReviewEditedPhrase = async (phraseId, action) => {
+    setProcessing(phraseId);
+    try {
+      await apiPostJson(`/api/phrases/admin/review-edit/${phraseId}`, {
+        action,
+        adminText: adminEdits[phraseId] !== undefined ? adminEdits[phraseId] : undefined,
+        adminNote: adminNotes[phraseId] || ''
+      });
+      Swal.fire({
+        icon: "success",
+        title: action === "approved" ? "Edit Approved" : "Phrase Reverted & Rejected",
+        text: action === "approved"
+          ? "Edited phrase text verified and approved!"
+          : "Phrase text reverted and marked as rejected. QA has been flagged if conflict exists.",
+        timer: 1500,
+        showConfirmButton: false,
+        background: "#171717",
+        color: "#ffffff"
+      });
+      fetchQueue("edited");
+    } catch (err) {
+      console.error(err);
+      Swal.fire({
+        icon: "error",
+        title: "Action Failed",
+        text: err.message || "Failed to submit review",
+        background: "#171717",
+        color: "#ffffff"
+      });
     } finally {
       setProcessing(null);
     }
@@ -180,6 +261,14 @@ export default function QaPhrases() {
     }
   };
 
+  const availableLanguages = React.useMemo(() => {
+    let phrasesToScan = queue;
+    if (filterProject !== 'All') {
+      phrasesToScan = queue.filter(q => (q.projectName || q.companyId) === filterProject);
+    }
+    return [...new Set(phrasesToScan.map(q => q.language).filter(Boolean))].sort();
+  }, [queue, filterProject]);
+
   return (
     <div className="min-h-screen bg-neutral-50 dark:bg-neutral-900 flex transition-colors duration-300">
       <AdminNav />
@@ -216,6 +305,18 @@ export default function QaPhrases() {
             >
               <CheckCircle2 className="w-3.5 h-3.5" /> Approved Phrases
             </button>
+            {isAdmin && (
+              <button
+                onClick={() => setActiveTab('edited')}
+                className={`px-4 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-2 ${
+                  activeTab === 'edited'
+                    ? 'bg-indigo-600 text-white shadow-md'
+                    : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white'
+                }`}
+              >
+                ✏️ Edited Phrases
+              </button>
+            )}
           </div>
         </motion.div>
 
@@ -226,22 +327,44 @@ export default function QaPhrases() {
         ) : (
           <div className="space-y-6">
             {queue.length > 0 && (
-              <div className="flex justify-end mb-4">
+              <div className="flex flex-wrap items-center gap-3 mb-6 justify-start">
+                {/* Project Dropdown (Left Aligned) */}
                 <select 
                   className="input w-full md:w-64"
                   value={filterProject}
-                  onChange={(e) => setFilterProject(e.target.value)}
+                  onChange={(e) => {
+                    setFilterProject(e.target.value);
+                    setFilterLanguage('All');
+                  }}
                 >
                   <option value="All">All Projects</option>
                   {[...new Set(queue.map(q => q.projectName || q.companyId).filter(Boolean))].sort().map(project => (
                     <option key={project} value={project}>{project}</option>
                   ))}
                 </select>
+
+                {/* Dynamic Languages Dropdown (Available in Selected Project) */}
+                <select 
+                  className="input w-full md:w-64 capitalize"
+                  value={filterLanguage}
+                  onChange={(e) => setFilterLanguage(e.target.value)}
+                >
+                  <option value="All">{!isAdmin ? "All Approved Languages" : "All Languages"}</option>
+                  {availableLanguages.map(lang => (
+                    <option key={lang} value={lang} className="capitalize">
+                      {lang.charAt(0).toUpperCase() + lang.slice(1)}
+                    </option>
+                  ))}
+                </select>
               </div>
             )}
 
             <AnimatePresence>
-              {(filterProject === 'All' ? queue : queue.filter(q => (q.projectName || q.companyId) === filterProject)).map((p) => (
+              {queue.filter(q => {
+                const matchProject = filterProject === 'All' || (q.projectName || q.companyId) === filterProject;
+                const matchLanguage = filterLanguage === 'All' || (q.language && q.language.toLowerCase() === filterLanguage.toLowerCase());
+                return matchProject && matchLanguage;
+              }).map((p) => (
                 <motion.div 
                   key={p._id}
                   layout
@@ -293,9 +416,128 @@ export default function QaPhrases() {
                           <span className="text-sm font-semibold capitalize bg-neutral-100 dark:bg-neutral-700 px-2 rounded">{p.language}</span>
                         </div>
                         
-                        <h3 className="text-xl font-medium mb-4 leading-relaxed bg-neutral-50 dark:bg-neutral-800/50 p-4 rounded-lg border border-neutral-100 dark:border-neutral-700">
-                          "{p.text}"
-                        </h3>
+                        {activeTab === 'edited' ? (
+                          <div className="mb-4 space-y-2 bg-neutral-900/80 p-3.5 rounded-lg border border-indigo-500/40 text-sm">
+                            <div className="flex items-center justify-between text-xs font-bold text-neutral-400 border-b border-neutral-800 pb-2">
+                              <span>✏️ EDITED PHRASE SCRIPT</span>
+                              {p.editedBy && (
+                                <span className="text-neutral-400 font-normal">
+                                  Edited by: <strong className="text-indigo-400">{p.editedBy.firstname || p.editedBy.username || "QA"}</strong> ({p.editedBy.email})
+                                </span>
+                              )}
+                            </div>
+
+                            <div className="space-y-1.5 pt-1">
+                              <div>
+                                <span className="text-[10px] font-bold text-rose-400 uppercase tracking-wider block">Original Script:</span>
+                                <p className="text-neutral-400 line-through italic text-base bg-neutral-950/60 p-2.5 rounded border border-neutral-800">
+                                  "{p.originalText || p.text}"
+                                </p>
+                              </div>
+                              <div className="relative group">
+                                <div className="flex items-center justify-between mb-1">
+                                  <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider block">Updated Script:</span>
+                                  {isAdmin && editingTextId !== p._id && (
+                                    <button
+                                      onClick={() => {
+                                        setEditingTextId(p._id);
+                                        setEditTextValue(prev => ({ ...prev, [p._id]: adminEdits[p._id] !== undefined ? adminEdits[p._id] : p.text }));
+                                      }}
+                                      className="px-2 py-0.5 bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 border border-indigo-500/40 rounded text-[11px] font-bold transition-all flex items-center gap-1"
+                                      title="Edit updated script text further"
+                                    >
+                                      ✏️ Edit Script
+                                    </button>
+                                  )}
+                                </div>
+                                {editingTextId === p._id ? (
+                                  <div className="space-y-2 bg-neutral-950 p-2.5 rounded border border-indigo-500/50">
+                                    <textarea
+                                      rows={2}
+                                      value={editTextValue[p._id] !== undefined ? editTextValue[p._id] : p.text}
+                                      onChange={(e) => {
+                                        const val = e.target.value;
+                                        setEditTextValue(prev => ({ ...prev, [p._id]: val }));
+                                        setAdminEdits(prev => ({ ...prev, [p._id]: val }));
+                                      }}
+                                      className="w-full input text-base font-medium resize-none bg-neutral-900 text-white border-neutral-700 focus:border-indigo-400"
+                                      placeholder="Modify updated phrase text..."
+                                    />
+                                    <div className="flex items-center gap-2">
+                                      <button
+                                        onClick={() => {
+                                          const val = editTextValue[p._id];
+                                          if (val && val.trim()) {
+                                            setAdminEdits(prev => ({ ...prev, [p._id]: val.trim() }));
+                                            setQueue(prev => prev.map(q => q._id === p._id ? { ...q, text: val.trim() } : q));
+                                          }
+                                          setEditingTextId(null);
+                                        }}
+                                        className="px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-xs font-bold transition-colors"
+                                      >
+                                        ✓ Save Admin Script
+                                      </button>
+                                      <button
+                                        onClick={() => setEditingTextId(null)}
+                                        className="px-3 py-1 bg-neutral-700 hover:bg-neutral-600 text-neutral-300 rounded text-xs font-semibold transition-colors"
+                                      >
+                                        Cancel
+                                      </button>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <p className="text-white font-semibold text-lg bg-emerald-950/30 p-2.5 rounded border border-emerald-800/60">
+                                    "{adminEdits[p._id] !== undefined ? adminEdits[p._id] : p.text}"
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        ) : editingTextId === p._id ? (
+                          <div className="mb-4 space-y-2.5 bg-neutral-800 p-3.5 rounded-lg border border-amber-500/50">
+                            <label className="block text-xs font-bold uppercase tracking-wider text-amber-400">Edit Phrase Script Text</label>
+                            <textarea
+                              rows={3}
+                              value={editTextValue[p._id] !== undefined ? editTextValue[p._id] : p.text}
+                              onChange={(e) => setEditTextValue(prev => ({ ...prev, [p._id]: e.target.value }))}
+                              className="w-full input text-base font-medium resize-none bg-neutral-900 text-white border-neutral-700 focus:border-amber-400"
+                              placeholder="Edit phrase text..."
+                            />
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={() => handleSaveText(p._id)}
+                                disabled={savingText[p._id]}
+                                className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold flex items-center gap-1 transition-colors disabled:opacity-50"
+                              >
+                                {savingText[p._id] ? "Saving..." : "✓ Save Script"}
+                              </button>
+                              <button
+                                onClick={() => setEditingTextId(null)}
+                                className="px-3.5 py-1.5 bg-neutral-700 hover:bg-neutral-600 text-neutral-300 rounded-lg text-xs font-semibold transition-colors"
+                              >
+                                ✕ Cancel
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="relative group mb-4">
+                            <h3 className="text-xl font-medium leading-relaxed bg-neutral-50 dark:bg-neutral-800/50 p-4 rounded-lg border border-neutral-100 dark:border-neutral-700 pr-28">
+                              "{p.text}"
+                            </h3>
+                            {(p.allowPhraseTextEdit || isAdmin) && (
+                              <button
+                                onClick={() => {
+                                  setEditingTextId(p._id);
+                                  setEditTextValue(prev => ({ ...prev, [p._id]: p.text }));
+                                }}
+                                className="absolute right-3 top-3 px-2.5 py-1 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 rounded-lg text-xs font-bold transition-all flex items-center gap-1 shadow-sm"
+                                title="Edit phrase text to remove skipped words or event tags"
+                              >
+                                ✏️ Edit Text
+                              </button>
+                            )}
+                          </div>
+                        )}
 
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm mb-4 opacity-80">
                           {p.emotion && <div><span className="font-semibold block text-xs uppercase tracking-wider opacity-70">Emotion</span> {p.emotion}</div>}
@@ -308,18 +550,22 @@ export default function QaPhrases() {
                         </div>
 
                         <p className="text-sm border-t border-neutral-200 dark:border-neutral-700 pt-3 mt-3">
-                          <span className="opacity-70">Contributor: </span>
-                          <span className="font-semibold">{p.contributorId?.username || p.contributorId?.firstname || 'Unknown'}</span>
-                          {p.contributorId?.speaker_id && (
+                          {isAdmin && (
                             <>
-                              <span className="mx-2 opacity-30">|</span>
-                              <span className="opacity-70">Speaker ID: </span>
-                              <span className="font-mono text-xs font-semibold bg-neutral-200 dark:bg-neutral-800 px-1.5 py-0.5 rounded">{p.contributorId.speaker_id}</span>
+                              <span className="opacity-70">Contributor: </span>
+                              <span className="font-semibold">{p.contributorId?.username || p.contributorId?.firstname || 'Unknown'}</span>
+                              {p.contributorId?.speaker_id && (
+                                <>
+                                  <span className="mx-2 opacity-30">|</span>
+                                  <span className="opacity-70">Speaker ID: </span>
+                                  <span className="font-mono text-xs font-semibold bg-neutral-200 dark:bg-neutral-800 px-1.5 py-0.5 rounded">{p.contributorId.speaker_id}</span>
+                                </>
+                              )}
+                              {(p.projectName || p.companyId) && <span className="mx-2 opacity-30">|</span>}
                             </>
                           )}
                           {(p.projectName || p.companyId) && (
                             <>
-                              <span className="mx-2 opacity-30">|</span>
                               <span className="opacity-70">Project: </span>
                               <span className="font-semibold">{p.projectName || p.companyId}</span>
                             </>
@@ -333,7 +579,13 @@ export default function QaPhrases() {
                             Playback Audio
                             <span className="opacity-50 font-mono text-xs">NO DOWNLOADING</span>
                           </h4>
-                          <SecureAudioPlayer url={`/api/phrases/${p._id}/audio`} />
+                          <SecureAudioPlayer 
+                            url={`/api/phrases/${p._id}/audio`} 
+                            requireFullListen={activeTab === 'recorded'}
+                            onFirstListenComplete={() => {
+                              setListenedOnce(prev => ({ ...prev, [p._id]: true }));
+                            }}
+                          />
                         </div>
 
                         <div className="space-y-2">
@@ -369,28 +621,76 @@ export default function QaPhrases() {
 
                           {activeTab === 'recorded' && (
                             <div>
+                              {!listenedOnce[p._id] && (
+                                <div className="mb-2 text-xs font-semibold text-amber-500 bg-amber-500/10 border border-amber-500/20 px-2.5 py-1.5 rounded-lg text-center flex items-center justify-center gap-1.5">
+                                  <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
+                                  Listen to audio completely once to enable review
+                                </div>
+                              )}
                               <input 
                                 type="text" 
                                 placeholder="Add QA comment (optional)"
                                 className="input text-sm mb-2"
                                 value={comments[p._id] || ''}
                                 onChange={(e) => setComments(prev => ({ ...prev, [p._id]: e.target.value }))}
-                                disabled={processing === p._id}
+                                disabled={processing === p._id || !listenedOnce[p._id]}
                               />
                               <div className="flex gap-2 mb-2">
                                 <button 
-                                  className="flex-1 btn btn-success flex items-center justify-center gap-2 py-2"
+                                  className="flex-1 btn btn-success flex items-center justify-center gap-2 py-2 disabled:opacity-40 disabled:cursor-not-allowed"
                                   onClick={() => handleReview(p._id, 'approve')}
-                                  disabled={processing === p._id}
+                                  disabled={processing === p._id || !listenedOnce[p._id]}
+                                  title={!listenedOnce[p._id] ? "Listen to full audio once to approve" : ""}
                                 >
                                   <Check className="w-4 h-4" /> Approve
                                 </button>
                                 <button 
-                                  className="flex-1 btn btn-error flex items-center justify-center gap-2 py-2"
+                                  className="flex-1 btn btn-error flex items-center justify-center gap-2 py-2 disabled:opacity-40 disabled:cursor-not-allowed"
                                   onClick={() => handleReview(p._id, 'reject')}
-                                  disabled={processing === p._id}
+                                  disabled={processing === p._id || !listenedOnce[p._id]}
+                                  title={!listenedOnce[p._id] ? "Listen to full audio once to reject" : ""}
                                 >
                                   <X className="w-4 h-4" /> Reject
+                                </button>
+                              </div>
+                            </div>
+                          )}
+
+                          {activeTab === 'edited' && isAdmin && (
+                            <div className="space-y-3 pt-3 border-t border-neutral-700 bg-neutral-900/60 p-3 rounded-xl border border-indigo-500/30">
+                              <div className="text-xs font-bold text-amber-400 uppercase tracking-wider text-center flex items-center justify-center gap-1">
+                                🛡️ Admin Verification & Audit
+                              </div>
+
+                              {/* Admin Feedback Note for QA */}
+                              <div>
+                                <label className="block text-[10px] font-bold uppercase tracking-wider text-neutral-400 mb-1">
+                                  Feedback Note for QA (Shown in QA Flags if conflict)
+                                </label>
+                                <textarea
+                                  rows={2}
+                                  placeholder="Explain why edit was rejected or modified (e.g. Skipped event tag <gasps> should remain)..."
+                                  className="w-full input text-xs resize-none bg-neutral-950 text-white border-neutral-700 focus:border-indigo-400"
+                                  value={adminNotes[p._id] || ''}
+                                  onChange={(e) => setAdminNotes(prev => ({ ...prev, [p._id]: e.target.value }))}
+                                />
+                              </div>
+
+                              {/* Verification Action Buttons */}
+                              <div className="flex gap-2 pt-1">
+                                <button 
+                                  className="flex-1 py-2 px-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-lg transition-colors flex items-center justify-center gap-1 shadow-sm"
+                                  onClick={() => handleReviewEditedPhrase(p._id, 'approved')}
+                                  disabled={processing === p._id}
+                                >
+                                  <Check className="w-3.5 h-3.5" /> Approve Phrase
+                                </button>
+                                <button 
+                                  className="flex-1 py-2 px-2.5 bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs rounded-lg transition-colors flex items-center justify-center gap-1 shadow-sm"
+                                  onClick={() => handleReviewEditedPhrase(p._id, 'rejected')}
+                                  disabled={processing === p._id}
+                                >
+                                  <X className="w-3.5 h-3.5" /> Reject Phrase
                                 </button>
                               </div>
                             </div>

@@ -112,13 +112,15 @@ async function run() {
       topicId: topic._id,
       subtopicId: subtopic._id,
       language: "english",
-      callStatus: "approved",
-      recordingAStatus: "approved",
-      recordingBStatus: "approved",
-      recordingADurationMinutes: 10.5,
-      recordingBDurationMinutes: 10.2,
-      recordingAPayoutUsd: 5.25,
-      recordingBPayoutUsd: 5.10
+      callStatus: "pending",
+      recordingAStatus: "pending",
+      recordingBStatus: "pending",
+      recordingAFile: "local:spk_test_userA.wav",
+      recordingBFile: "local:spk_test_userB.wav",
+      recordingADurationMinutes: 5.0,
+      recordingBDurationMinutes: 5.0,
+      recordingAPayoutUsd: 0,
+      recordingBPayoutUsd: 0
     });
 
     console.log("Successfully created call session!", call);

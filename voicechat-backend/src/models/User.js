@@ -16,6 +16,8 @@ const userSchema = new mongoose.Schema(
     overallCallLimit: { type: Number, default: -1 }, // -1 means unlimited
     dailyPhraseLimit: { type: Number, default: 1000, min: 0 },
     overallPhraseLimit: { type: Number, default: -1 }, // -1 means unlimited
+    perCallPayrate: { type: Number, default: 0, min: 0 },
+    hourlyPhrasePayrate: { type: Number, default: 0, min: 0 },
     tokenVersion: { type: Number, default: 0 },
     isEmailVerified: { type: Boolean, default: false },
     dob: { type: Date, required: true },
@@ -95,6 +97,7 @@ const userSchema = new mongoose.Schema(
       adminReviewedAt: { type: Date, default: null },
       adminReviewedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
       adminReviewReason: { type: String, default: null },
+      assignedAgreementDoc: { type: String, default: "default" },
     },
 
     // Language applications — one entry per language the user has applied for

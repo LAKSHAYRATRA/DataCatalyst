@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { apiGet, apiPostJson } from "../lib/api.js";
+import { apiGet, apiPostJson, apiDeleteJson } from "../lib/api.js";
 import AdminNav from "../components/AdminNav.jsx";
 import AudioVisualizer from "../components/AudioVisualizer.jsx";
 import { fetchAndConvertToWav } from "../lib/audioToWav.js";
@@ -57,6 +57,8 @@ export default function AdminCalls() {
     const [error, setError] = useState("");
     const [selectedCall, setSelectedCall] = useState(null);
     const [recordingNotes, setRecordingNotes] = useState({});
+    const [rejectionReasons, setRejectionReasons] = useState({});
+    const [selectedCalls, setSelectedCalls] = useState(new Set());
     const [downloadingUser, setDownloadingUser] = useState(null);
     const [downloadingCallId, setDownloadingCallId] = useState(null);
     const [downloadStep, setDownloadStep] = useState("");
@@ -70,9 +72,29 @@ export default function AdminCalls() {
     const [loadingAudio, setLoadingAudio] = useState({});
     const audioRefs = useRef({});
 
+    const [selectedCallIds, setSelectedCallIds] = useState([]);
+    const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+
     useEffect(() => {
+        setSelectedCallIds([]);
         loadCalls();
     }, [pagination.page, statusFilter]);
+
+    const isAllSelected = calls.length > 0 && calls.every(c => selectedCallIds.includes(c.callId));
+
+    const toggleSelectAll = () => {
+        if (isAllSelected) {
+            setSelectedCallIds([]);
+        } else {
+            setSelectedCallIds(calls.map(c => c.callId));
+        }
+    };
+
+    const toggleSelectCall = (callId) => {
+        setSelectedCallIds(prev =>
+            prev.includes(callId) ? prev.filter(id => id !== callId) : [...prev, callId]
+        );
+    };
 
     async function loadCalls() {
         try {
@@ -128,21 +150,23 @@ export default function AdminCalls() {
         }
     }
 
-    function metadataForSpeaker(call, speakerLabel, user, duration) {
-        const age = user?.dob ? new Date().getFullYear() - new Date(user.dob).getFullYear() : "";
-        const speakerId = user?.speaker_id || "";
+    function metadataForSpeaker(call, speakerLabel, user, duration, isNoisy) {
+        const userObj = (typeof user === "object" && user !== null) ? user : {};
+        const age = userObj.dob ? new Date().getFullYear() - new Date(userObj.dob).getFullYear() : "";
+        const speakerId = userObj.speaker_id || userObj.username || (userObj._id ? String(userObj._id) : "");
         const audioPath = speakerId ? `audio/${speakerId}-${call.callId}.wav` : "";
         const data = [
             ["speaker_id", speakerId],
             ["age", age],
-            ["gender", user?.gender || ""],
-            ["region", user?.address?.state || ""],
-            ["accent", user?.locality || ""],
-            ["dialect", user?.regionalLanguage || ""],
+            ["gender", userObj.gender || ""],
+            ["region", userObj.address?.state || ""],
+            ["accent", userObj.locality || ""],
+            ["dialect", userObj.regionalLanguage || ""],
             ["topic_of_conversation", call.topicId?.title || ""],
             ["subtopic", call.subtopicId?.title || ""],
             ["description", call.subtopicId?.description || ""],
             ["duration_minutes", duration ?? ""],
+            ["is_noisy", isNoisy ? "true" : "false"],
             ["path", audioPath],
         ];
         return data.map(([key, value]) => `"${key}","${String(value ?? "").replace(/"/g, '""')}"`).join("\n");
@@ -189,6 +213,39 @@ export default function AdminCalls() {
         return res.json();
     }
 
+    function getSpeakerList(call) {
+        const getSpeakerInfo = (user, file, status, duration, isNoisy, folder, isSpeakerA) => {
+            if (!file || !user) return null;
+            const userId = (user._id || user.id || user).toString();
+            const speakerId = user.speaker_id || user.username || userId || (isSpeakerA ? "speakerA" : "speakerB");
+            return {
+                folder,
+                user,
+                userId,
+                speakerId,
+                file,
+                status,
+                duration,
+                isNoisy,
+            };
+        };
+
+        return [
+            getSpeakerInfo(call.userA, call.recordingAFile, call.recordingAStatus, calcSpeakerDuration(call, true), !!call.recordingANoisy, "speaker1", true),
+            getSpeakerInfo(call.userB, call.recordingBFile, call.recordingBStatus, calcSpeakerDuration(call, false), !!call.recordingBNoisy, "speaker2", false),
+        ].filter(Boolean);
+    }
+
+    function getCallCategoryFolder(call) {
+        const isNoisy = Boolean(
+            call.recordingANoisy ||
+            call.recordingBNoisy ||
+            call.recordingARejectionReason === "Noisy" ||
+            call.recordingBRejectionReason === "Noisy"
+        );
+        return isNoisy ? "Noisy" : "Clean";
+    }
+
     async function handleBulkDownload() {
         if (isBulkDownloading) return;
         const res = await apiGet("/api/admin/calls/exportable");
@@ -231,39 +288,25 @@ export default function AdminCalls() {
                     label: `Processing ${call.callId.slice(0, 8)}...` 
                 });
 
-                const speakers = [
-                    {
-                        folder: "speaker1",
-                        user: call.userA,
-                        file: call.recordingAFile,
-                        status: call.recordingAStatus,
-                        duration: calcSpeakerDuration(call, true),
-                    },
-                    {
-                        folder: "speaker2",
-                        user: call.userB,
-                        file: call.recordingBFile,
-                        status: call.recordingBStatus,
-                        duration: calcSpeakerDuration(call, false),
-                    },
-                ].filter((s) => s.file && (s.user?._id || s.user) && s.status === "approved");
+                const speakers = getSpeakerList(call);
 
+                const categoryFolder = getCallCategoryFolder(call);
                 for (const speaker of speakers) {
                     try {
-                        const speakerFileBase = `${speaker.user.speaker_id}-${call.callId}`;
-                        const blob = await fetchRecordingBlob(call.callId, speaker.user._id, speaker.file);
+                        const speakerFileBase = `${speaker.speakerId}-${call.callId}`;
+                        const blob = await fetchRecordingBlob(call.callId, speaker.userId, speaker.file);
                         allFiles.push({
-                            path: `${call.callId}/${speakerFileBase}.wav`,
+                            path: `${categoryFolder}/${call.callId}/${speakerFileBase}.wav`,
                             data: new Uint8Array(await blob.arrayBuffer()),
                             modifiedAt: new Date(),
                         });
                         allFiles.push({
-                            path: `${call.callId}/${speakerFileBase}_metadata.csv`,
-                            data: textEncoder.encode(metadataForSpeaker(call, speaker.folder, speaker.user, speaker.duration)),
+                            path: `${categoryFolder}/${call.callId}/${speakerFileBase}_metadata.csv`,
+                            data: textEncoder.encode(metadataForSpeaker(call, speaker.folder, speaker.user, speaker.duration, speaker.isNoisy)),
                             modifiedAt: new Date(),
                         });
                     } catch (err) {
-                        console.error(`Failed to fetch speaker ${speaker.folder} for call ${call.callId}:`, err);
+                        console.error(`Failed to fetch speaker ${speaker.speakerId} for call ${call.callId}:`, err);
                     }
                 }
 
@@ -273,6 +316,16 @@ export default function AdminCalls() {
                 } catch (err) {
                     console.error("Failed to post download log for", call.callId, err);
                 }
+            }
+
+            if (allFiles.length === 0) {
+                Swal.fire({
+                    icon: 'warning',
+                    title: 'No Audio Files',
+                    text: 'No recording audio files were found or downloaded.',
+                    confirmButtonColor: '#ea580c'
+                });
+                return;
             }
 
             setBulkProgress((prev) => ({ ...prev, label: "Creating master ZIP..." }));
@@ -307,6 +360,178 @@ export default function AdminCalls() {
         }
     }
 
+    async function handleDownloadSelected() {
+        if (isBulkDownloading || selectedCallIds.length === 0) return;
+        const callsToDownload = calls.filter(c => selectedCallIds.includes(c.callId));
+        if (callsToDownload.length === 0) return;
+
+        try {
+            setIsBulkDownloading(true);
+            setBulkProgress({ current: 0, total: callsToDownload.length, label: "Starting..." });
+
+            const allFiles = [];
+            const textEncoder = new TextEncoder();
+
+            for (let i = 0; i < callsToDownload.length; i++) {
+                const call = callsToDownload[i];
+                setBulkProgress({
+                    current: i + 1,
+                    total: callsToDownload.length,
+                    label: `Processing ${call.callId.slice(0, 8)}...`
+                });
+
+                const speakers = getSpeakerList(call);
+
+                const categoryFolder = getCallCategoryFolder(call);
+                for (const speaker of speakers) {
+                    try {
+                        const speakerFileBase = `${speaker.speakerId}-${call.callId}`;
+                        const blob = await fetchRecordingBlob(call.callId, speaker.userId, speaker.file);
+                        allFiles.push({
+                            path: `${categoryFolder}/${call.callId}/${speakerFileBase}.wav`,
+                            data: new Uint8Array(await blob.arrayBuffer()),
+                            modifiedAt: new Date(),
+                        });
+                        allFiles.push({
+                            path: `${categoryFolder}/${call.callId}/${speakerFileBase}_metadata.csv`,
+                            data: textEncoder.encode(metadataForSpeaker(call, speaker.folder, speaker.user, speaker.duration, speaker.isNoisy)),
+                            modifiedAt: new Date(),
+                        });
+                    } catch (err) {
+                        console.error(`Failed to fetch speaker ${speaker.speakerId} for call ${call.callId}:`, err);
+                    }
+                }
+
+                try {
+                    await postDownloadLog(call.callId);
+                } catch (err) {
+                    console.error("Failed to post download log for", call.callId, err);
+                }
+            }
+
+            if (allFiles.length === 0) {
+                Swal.fire({
+                    icon: 'warning',
+                    title: 'No Audio Files',
+                    text: 'No audio recording files were found for the selected calls.',
+                    confirmButtonColor: '#ea580c'
+                });
+                return;
+            }
+
+            setBulkProgress((prev) => ({ ...prev, label: "Creating master ZIP..." }));
+            const zipBlob = await createStoredZip(allFiles);
+
+            const url = window.URL.createObjectURL(zipBlob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = `Selected_Calls_${new Date().toISOString().split('T')[0]}.zip`;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            window.URL.revokeObjectURL(url);
+
+            Swal.fire({
+                icon: 'success',
+                title: 'Success',
+                text: 'Selected calls downloaded successfully!',
+                confirmButtonColor: '#ea580c'
+            });
+            await loadCalls();
+        } catch (e) {
+            Swal.fire({
+                icon: 'error',
+                title: 'Download Failed',
+                text: e.message,
+                confirmButtonColor: '#ea580c'
+            });
+        } finally {
+            setIsBulkDownloading(false);
+            setBulkProgress({ current: 0, total: 0, label: "" });
+        }
+    }
+
+    async function handleDeleteSelected() {
+        if (selectedCallIds.length === 0 || isBulkDeleting) return;
+
+        const result = await Swal.fire({
+            title: 'Delete Selected Calls?',
+            text: `Are you sure you want to permanently delete ${selectedCallIds.length} call(s)? This will remove all audio files from S3/storage and permanently erase call records from the database. This action CANNOT be undone!`,
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#dc2626',
+            cancelButtonColor: '#404040',
+            confirmButtonText: 'Yes, delete permanently'
+        });
+
+        if (!result.isConfirmed) return;
+
+        setIsBulkDeleting(true);
+        try {
+            const res = await apiPostJson("/api/admin/calls/bulk-delete", { callIds: selectedCallIds });
+
+            Swal.fire({
+                icon: 'success',
+                title: 'Deleted Successfully',
+                text: res.message || `${res.deletedCount || selectedCallIds.length} call(s) deleted.`,
+                timer: 2000,
+                showConfirmButton: false
+            });
+            setSelectedCallIds([]);
+            await loadCalls();
+        } catch (e) {
+            Swal.fire({
+                icon: 'error',
+                title: 'Delete Failed',
+                text: e.message,
+                confirmButtonColor: '#ea580c'
+            });
+        } finally {
+            setIsBulkDeleting(false);
+        }
+    }
+
+    async function handleDeleteSingleCall(callId) {
+        const result = await Swal.fire({
+            title: 'Delete Call Record?',
+            text: 'Are you sure you want to permanently delete this call record and its audio files from database and storage? This cannot be undone.',
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#dc2626',
+            cancelButtonColor: '#404040',
+            confirmButtonText: 'Yes, delete call'
+        });
+
+        if (!result.isConfirmed) return;
+
+        try {
+            try {
+                await apiDeleteJson(`/api/admin/calls/${callId}`);
+            } catch (err) {
+                if (err.status === 404) {
+                    await apiDeleteJson(`/api/admin/qa/calls/${callId}`);
+                } else {
+                    throw err;
+                }
+            }
+            setSelectedCall(null);
+            await loadCalls();
+            Swal.fire({
+                icon: 'success',
+                title: 'Call Deleted',
+                timer: 1500,
+                showConfirmButton: false
+            });
+        } catch (e) {
+            Swal.fire({
+                icon: 'error',
+                title: 'Delete Failed',
+                text: e.message,
+                confirmButtonColor: '#ea580c'
+            });
+        }
+    }
+
     async function downloadCallBundle(call) {
         if (!call || downloadingCallId === call.callId) return;
 
@@ -327,24 +552,7 @@ export default function AdminCalls() {
                 if (!result.isConfirmed) return;
             }
 
-            const speakers = [
-                {
-                    folder: "speaker1",
-                    user: call.userA,
-                    file: call.recordingAFile,
-                    reviewNote: call.recordingAReviewNote,
-                    payout: Number(call.recordingAPayoutUsd || 0).toFixed(2),
-                    duration: calcSpeakerDuration(call, true),
-                },
-                {
-                    folder: "speaker2",
-                    user: call.userB,
-                    file: call.recordingBFile,
-                    reviewNote: call.recordingBReviewNote,
-                    payout: Number(call.recordingBPayoutUsd || 0).toFixed(2),
-                    duration: calcSpeakerDuration(call, false),
-                },
-            ].filter((speaker) => speaker.file && (speaker.user?._id || speaker.user));
+            const speakers = getSpeakerList(call);
 
             if (!speakers.length) throw new Error("No recordings available");
 
@@ -353,9 +561,10 @@ export default function AdminCalls() {
             const rootFolder = `call_${call.callId}`;
 
             for (const speaker of speakers) {
-                setDownloadStep(`Fetching ${speaker.user.username}'s recording...`);
-                const speakerFileBase = `${speaker.user.speaker_id}-${call.callId}`;
-                const blob = await fetchRecordingBlob(call.callId, speaker.user._id, speaker.file);
+                const displayName = speaker.user?.username || speaker.speakerId;
+                setDownloadStep(`Fetching ${displayName}'s recording...`);
+                const speakerFileBase = `${speaker.speakerId}-${call.callId}`;
+                const blob = await fetchRecordingBlob(call.callId, speaker.userId, speaker.file);
                 files.push({
                     path: `${rootFolder}/${speakerFileBase}.wav`,
                     data: new Uint8Array(await blob.arrayBuffer()),
@@ -366,6 +575,10 @@ export default function AdminCalls() {
                     data: textEncoder.encode(metadataForSpeaker(call, speaker.folder, speaker.user, speaker.duration)),
                     modifiedAt: new Date(),
                 });
+            }
+
+            if (files.length === 0) {
+                throw new Error("No audio files could be fetched for this call.");
             }
 
             setDownloadStep("Creating ZIP bundle...");
@@ -555,13 +768,48 @@ export default function AdminCalls() {
     }
 
     async function rejectRecording(callId, userId, username) {
+        if (!rejectionReasons[userId]) {
+            Swal.fire({
+                icon: 'warning',
+                title: 'Rejection Reason Required',
+                text: 'Please select a rejection reason (Off-Topic Conversation or Noisy) before rejecting this recording.',
+                confirmButtonColor: '#ea580c'
+            });
+            return;
+        }
+
         try {
             const note = recordingNotes[userId] || "";
-            const data = await apiPatchJson(`/api/admin/calls/${callId}/reject/${userId}`, { note: note.trim() });
+            const isNoisy = rejectionReasons[userId] === "Noisy" || (selectedCall?.userA?._id?.toString() === userId.toString()
+                ? !!selectedCall?.recordingANoisy
+                : !!selectedCall?.recordingBNoisy);
+
+            const data = await apiPatchJson(`/api/admin/calls/${callId}/reject/${userId}`, {
+                note: note.trim(),
+                isNoisy,
+                rejectionReason: rejectionReasons[userId]
+            });
             if (selectedCall?.callId === callId) setSelectedCall((prev) => mergeReviewFields(prev, data.call));
             await loadCalls();  // Refresh list
         } catch (e) {
-            alert("Error: " + e.message);
+            Swal.fire({
+                icon: 'error',
+                title: 'Error',
+                text: e.message,
+                confirmButtonColor: '#ea580c'
+            });
+        }
+    }
+
+    async function toggleNoisy(callId, userId, isNoisy) {
+        try {
+            await apiPatchJson(`/api/admin/calls/${callId}/noisy/${userId}`, { isNoisy });
+            // Refresh call state
+            const data = await apiGet(`/api/admin/calls/${callId}`);
+            setSelectedCall(data);
+            await loadCalls();
+        } catch (e) {
+            Swal.fire({ icon: 'error', title: 'Error', text: e.message, confirmButtonColor: '#ea580c' });
         }
     }
 
@@ -778,7 +1026,7 @@ export default function AdminCalls() {
                 ) : (
                     <>
                         {/* Status Tabs */}
-                        <div className="flex gap-2 mb-4 border-b border-neutral-700 pb-4">
+                        <div className="flex flex-wrap items-center gap-1.5 mb-4 border-b border-neutral-700 pb-3">
                             {[
                                 { label: "Pending", value: "pending" },
                                 { label: "Approved", value: "approved" },
@@ -792,9 +1040,9 @@ export default function AdminCalls() {
                                         setStatusFilter(tab.value);
                                         setPagination(prev => ({ ...prev, page: 1 }));
                                     }}
-                                    className={`px-4 py-2 text-sm font-semibold rounded-lg transition-all ${
+                                    className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${
                                         statusFilter === tab.value
-                                            ? "bg-warning-600 text-white shadow-lg shadow-warning-900/20"
+                                            ? "bg-warning-600 text-white shadow-md shadow-warning-900/20"
                                             : "bg-neutral-800 text-neutral-400 hover:text-white border border-neutral-700"
                                     }`}
                                 >
@@ -817,125 +1065,178 @@ export default function AdminCalls() {
                             </div>
                         )}
 
+                        {/* Bulk Action Toolbar for Selected Calls */}
+                        {selectedCallIds.length > 0 && (
+                            <div className="bg-warning-950/60 border border-warning-700/60 rounded-xl p-4 mb-4 flex flex-col sm:flex-row items-center justify-between gap-4 animate-fade-in">
+                                <div className="flex items-center gap-3">
+                                    <span className="bg-warning-600 text-white font-bold text-xs px-2.5 py-1 rounded-full">
+                                        {selectedCallIds.length} Selected
+                                    </span>
+                                    <span className="text-neutral-300 text-sm font-medium">
+                                        Apply bulk action to selected call(s):
+                                    </span>
+                                </div>
+                                <div className="flex items-center gap-3 w-full sm:w-auto">
+                                    <button
+                                        onClick={handleDownloadSelected}
+                                        disabled={isBulkDownloading || isBulkDeleting}
+                                        className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 px-4 py-2 bg-warning-600 hover:bg-warning-700 disabled:opacity-50 text-white text-xs font-semibold rounded-lg transition-all"
+                                    >
+                                        {isBulkDownloading ? "Downloading..." : "⬇ Download Selected ZIP"}
+                                    </button>
+                                    <button
+                                        onClick={handleDeleteSelected}
+                                        disabled={isBulkDownloading || isBulkDeleting}
+                                        className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 px-4 py-2 bg-error-600 hover:bg-error-700 disabled:opacity-50 text-white text-xs font-semibold rounded-lg transition-all"
+                                    >
+                                        {isBulkDeleting ? "Deleting..." : "🗑 Delete Selected (DB & S3)"}
+                                    </button>
+                                    <button
+                                        onClick={() => setSelectedCallIds([])}
+                                        className="px-3 py-2 text-neutral-400 hover:text-white text-xs"
+                                    >
+                                        Clear Selection
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+
                         {/* Calls Table */}
                         <div className="bg-neutral-800 border border-neutral-700 rounded-xl overflow-hidden">
                             <div className="overflow-x-auto">
                                 <table className="w-full">
                                     <thead className="bg-neutral-700">
                                         <tr>
+                                            <th className="w-8 px-2 py-2 text-center">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={isAllSelected}
+                                                    onChange={toggleSelectAll}
+                                                    className="w-3.5 h-3.5 rounded accent-warning-500 cursor-pointer"
+                                                    title="Select All Calls on this page"
+                                                />
+                                            </th>
                                             {statusFilter === "logs" ? (
                                                 <>
-                                                    <th className="px-3 md:px-6 py-3 text-left text-xs font-medium text-neutral-300 uppercase tracking-wider">Call ID</th>
-                                                    <th className="px-3 md:px-6 py-3 text-left text-xs font-medium text-neutral-300 uppercase tracking-wider">Participants</th>
-                                                    <th className="px-3 md:px-6 py-3 text-left text-xs font-medium text-neutral-300 uppercase tracking-wider">Speaker IDs</th>
-                                                    <th className="hidden md:table-cell px-6 py-3 text-left text-xs font-medium text-neutral-300 uppercase tracking-wider">Topic</th>
-                                                    <th className="px-3 md:px-6 py-3 text-left text-xs font-medium text-neutral-300 uppercase tracking-wider">Reviewed By (QA)</th>
-                                                    <th className="px-3 md:px-6 py-3 text-left text-xs font-medium text-neutral-300 uppercase tracking-wider">Verdict</th>
-                                                    <th className="hidden lg:table-cell px-6 py-3 text-left text-xs font-medium text-neutral-300 uppercase tracking-wider">Date</th>
-                                                    <th className="px-3 md:px-6 py-3 text-left text-xs font-medium text-neutral-300 uppercase tracking-wider">Actions</th>
+                                                    <th className="px-2.5 py-2.5 text-left text-xs font-semibold text-neutral-300 uppercase tracking-tight">Call ID</th>
+                                                    <th className="px-2.5 py-2.5 text-left text-xs font-semibold text-neutral-300 uppercase tracking-tight">Participants</th>
+                                                    <th className="px-2.5 py-2.5 text-left text-xs font-semibold text-neutral-300 uppercase tracking-tight">Speaker IDs</th>
+                                                    <th className="hidden md:table-cell px-2.5 py-2.5 text-left text-xs font-semibold text-neutral-300 uppercase tracking-tight">Topic</th>
+                                                    <th className="px-2.5 py-2.5 text-left text-xs font-semibold text-neutral-300 uppercase tracking-tight">Reviewed By (QA)</th>
+                                                    <th className="px-2.5 py-2.5 text-left text-xs font-semibold text-neutral-300 uppercase tracking-tight">Verdict</th>
+                                                    <th className="hidden lg:table-cell px-2.5 py-2.5 text-left text-xs font-semibold text-neutral-300 uppercase tracking-tight">Date</th>
+                                                    <th className="sticky right-0 bg-neutral-700 z-20 px-3 py-2.5 text-left text-xs font-bold text-warning-400 uppercase tracking-tight shadow-[-4px_0_10px_rgba(0,0,0,0.4)]">Actions</th>
                                                 </>
                                             ) : (
                                                 <>
-                                                    <th className="px-3 md:px-6 py-3 text-left text-xs font-medium text-neutral-300 uppercase tracking-wider">Call ID</th>
-                                                    <th className="px-3 md:px-6 py-3 text-left text-xs font-medium text-neutral-300 uppercase tracking-wider">Users</th>
-                                                    <th className="hidden md:table-cell px-6 py-3 text-left text-xs font-medium text-neutral-300 uppercase tracking-wider">Topic</th>
-                                                    <th className="hidden md:table-cell px-6 py-3 text-left text-xs font-medium text-neutral-300 uppercase tracking-wider">Language</th>
-                                                    <th className="hidden lg:table-cell px-6 py-3 text-left text-xs font-medium text-neutral-300 uppercase tracking-wider">Started</th>
-                                                    <th className="px-3 md:px-6 py-3 text-left text-xs font-medium text-neutral-300 uppercase tracking-wider">Duration</th>
-                                                    <th className="hidden sm:table-cell px-3 md:px-6 py-3 text-left text-xs font-medium text-neutral-300 uppercase tracking-wider">End Reason</th>
-                                                    <th className="px-3 md:px-6 py-3 text-left text-xs font-medium text-neutral-300 uppercase tracking-wider">Call Status</th>
-                                                    <th className="px-3 md:px-6 py-3 text-left text-xs font-medium text-neutral-300 uppercase tracking-wider">Actions</th>
+                                                    <th className="px-2.5 py-2.5 text-left text-xs font-semibold text-neutral-300 uppercase tracking-tight">Call ID</th>
+                                                    <th className="px-2.5 py-2.5 text-left text-xs font-semibold text-neutral-300 uppercase tracking-tight">Users</th>
+                                                    <th className="hidden md:table-cell px-2.5 py-2.5 text-left text-xs font-semibold text-neutral-300 uppercase tracking-tight">Topic</th>
+                                                    <th className="hidden md:table-cell px-2.5 py-2.5 text-left text-xs font-semibold text-neutral-300 uppercase tracking-tight">Language</th>
+                                                    <th className="hidden lg:table-cell px-2.5 py-2.5 text-left text-xs font-semibold text-neutral-300 uppercase tracking-tight">Started</th>
+                                                    <th className="px-2.5 py-2.5 text-left text-xs font-semibold text-neutral-300 uppercase tracking-tight">Duration</th>
+                                                    <th className="hidden sm:table-cell px-2.5 py-2.5 text-left text-xs font-semibold text-neutral-300 uppercase tracking-tight">End Reason</th>
+                                                    <th className="px-2.5 py-2.5 text-left text-xs font-semibold text-neutral-300 uppercase tracking-tight">Call Status</th>
+                                                    <th className="sticky right-0 bg-neutral-700 z-20 px-3 py-2.5 text-left text-xs font-bold text-warning-400 uppercase tracking-tight shadow-[-4px_0_10px_rgba(0,0,0,0.4)]">Actions</th>
                                                 </>
                                             )}
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-neutral-700">
                                         {calls.map((call) => (
-                                            <tr key={call.callId} className="hover:bg-neutral-700/50 transition-colors">
+                                            <tr key={call.callId} className={`group hover:bg-neutral-700/50 transition-colors ${selectedCallIds.includes(call.callId) ? 'bg-warning-950/20' : ''}`}>
+                                                <td className="w-8 px-2 py-2 text-center">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={selectedCallIds.includes(call.callId)}
+                                                        onChange={() => toggleSelectCall(call.callId)}
+                                                        className="w-3.5 h-3.5 rounded accent-warning-500 cursor-pointer"
+                                                    />
+                                                </td>
                                                 {statusFilter === "logs" ? (
                                                     <>
                                                         {/* Call ID */}
-                                                        <td className="px-3 md:px-6 py-4 whitespace-nowrap">
-                                                            <div className="text-xs md:text-sm font-mono text-neutral-300" title={call.callId}>
+                                                        <td className="px-2.5 py-2 whitespace-nowrap">
+                                                            <div className="text-xs font-mono text-neutral-300" title={call.callId}>
                                                                 {call.callId.slice(0, 8)}...
                                                             </div>
                                                         </td>
                                                         {/* Participants */}
-                                                        <td className="px-3 md:px-6 py-4">
-                                                             <div className="text-xs md:text-sm text-white font-medium">
-                                                                 A: {call.userA?.username || "Unknown"}
-                                                             </div>
-                                                             <div className="text-xs md:text-sm text-white font-medium">
-                                                                 B: {call.userB?.username || "Unknown"}
-                                                             </div>
+                                                        <td className="px-2.5 py-2">
+                                                            <div className="text-xs text-white font-medium">
+                                                                A: {call.userA?.username || "Unknown"}
+                                                            </div>
+                                                            <div className="text-xs text-white font-medium">
+                                                                B: {call.userB?.username || "Unknown"}
+                                                            </div>
                                                         </td>
                                                         {/* Speaker IDs */}
-                                                        <td className="px-3 md:px-6 py-4 whitespace-nowrap">
-                                                             <div className="text-xs font-mono text-neutral-400">
-                                                                 A: {call.userA?.speaker_id || "—"}
-                                                             </div>
-                                                             <div className="text-xs font-mono text-neutral-400">
-                                                                 B: {call.userB?.speaker_id || "—"}
-                                                             </div>
+                                                        <td className="px-2.5 py-2 whitespace-nowrap">
+                                                            <div className="text-xs font-mono text-neutral-400">
+                                                                A: {call.userA?.speaker_id || "—"}
+                                                            </div>
+                                                            <div className="text-xs font-mono text-neutral-400">
+                                                                B: {call.userB?.speaker_id || "—"}
+                                                            </div>
                                                         </td>
                                                         {/* Topic */}
-                                                        <td className="hidden md:table-cell px-6 py-4">
-                                                             {call.subtopicId ? (
-                                                                 <div className="text-xs md:text-sm font-medium text-white max-w-[180px] truncate" title={call.subtopicId.title}>
-                                                                     {call.subtopicId.title}
-                                                                 </div>
-                                                             ) : (
-                                                                 <span className="text-xs text-neutral-500 italic">-</span>
-                                                             )}
+                                                        <td className="hidden md:table-cell px-2.5 py-2">
+                                                            {call.subtopicId ? (
+                                                                <div className="text-xs font-medium text-white max-w-[140px] truncate" title={call.subtopicId.title}>
+                                                                    {call.subtopicId.title}
+                                                                </div>
+                                                            ) : (
+                                                                <span className="text-xs text-neutral-500 italic">-</span>
+                                                            )}
                                                         </td>
                                                         {/* Reviewed By (QA) */}
-                                                        <td className="px-3 md:px-6 py-4 whitespace-nowrap">
-                                                             {call.reviewedBy ? (
-                                                                 <div>
-                                                                     <div className="text-xs md:text-sm text-white font-semibold">
-                                                                         {call.reviewedBy.username || `${call.reviewedBy.firstname || ""} ${call.reviewedBy.lastname || ""}`.trim()}
-                                                                     </div>
-                                                                     <div className="text-[10px] text-neutral-400">
-                                                                         {call.reviewedBy.email}
-                                                                     </div>
-                                                                 </div>
-                                                             ) : (
-                                                                 <span className="text-xs text-neutral-500 italic">System / Auto</span>
-                                                             )}
+                                                        <td className="px-2.5 py-2 whitespace-nowrap">
+                                                            {call.reviewedBy ? (
+                                                                <div>
+                                                                    <div className="text-xs text-white font-semibold">
+                                                                        {call.reviewedBy.username || `${call.reviewedBy.firstname || ""} ${call.reviewedBy.lastname || ""}`.trim()}
+                                                                    </div>
+                                                                    <div className="text-[10px] text-neutral-400">
+                                                                        {call.reviewedBy.email}
+                                                                    </div>
+                                                                </div>
+                                                            ) : (
+                                                                <span className="text-xs text-neutral-500 italic">System / Auto</span>
+                                                            )}
                                                         </td>
                                                         {/* Verdict */}
-                                                        <td className="px-3 md:px-6 py-4 whitespace-nowrap">
-                                                             {getCallStatusBadge(call.callStatus)}
+                                                        <td className="px-2.5 py-2 whitespace-nowrap">
+                                                            {getCallStatusBadge(call.callStatus)}
                                                         </td>
                                                         {/* Date */}
-                                                        <td className="hidden lg:table-cell px-6 py-4 whitespace-nowrap">
-                                                             <div className="text-xs text-neutral-300">
-                                                                 {call.reviewedAt ? formatDate(call.reviewedAt) : formatDate(call.startedAt)}
-                                                             </div>
+                                                        <td className="hidden lg:table-cell px-2.5 py-2 whitespace-nowrap">
+                                                            <div className="text-xs text-neutral-300">
+                                                                {call.reviewedAt ? formatDate(call.reviewedAt) : formatDate(call.startedAt)}
+                                                            </div>
                                                         </td>
                                                     </>
                                                 ) : (
                                                     <>
-                                                        <td className="px-3 md:px-6 py-4 whitespace-nowrap">
-                                                            <div className="text-xs md:text-sm font-mono text-neutral-300">{call.callId.slice(0, 8)}...</div>
+                                                        <td className="px-2.5 py-2 whitespace-nowrap">
+                                                            <div className="text-xs font-mono text-neutral-300">{call.callId.slice(0, 8)}...</div>
                                                         </td>
-                                                        <td className="px-3 md:px-6 py-4">
-                                                            <div className="text-xs md:text-sm text-white">
+                                                        <td className="px-2.5 py-2">
+                                                            <div className="text-xs text-white font-medium">
                                                                 {call.userA?.username || "Unknown"}
                                                             </div>
                                                             <div className="text-xs text-neutral-400">
                                                                 {call.userB?.username || "Unknown"}
                                                             </div>
                                                         </td>
-                                                        <td className="hidden md:table-cell px-6 py-4">
+                                                        <td className="hidden md:table-cell px-2.5 py-2">
                                                             {call.subtopicId ? (
                                                                 <div>
-                                                                    <div className="text-sm font-medium text-white leading-tight">
+                                                                    <div className="text-xs font-medium text-white leading-tight max-w-[150px] truncate" title={call.subtopicId.title}>
                                                                         {call.subtopicId.title}
                                                                     </div>
                                                                     {call.subtopicId.description && (
                                                                         <div 
-                                                                            className="text-xs text-neutral-400 mt-0.5 max-w-[200px] truncate"
+                                                                            className="text-[10px] text-neutral-400 mt-0.5 max-w-[150px] truncate"
                                                                             title={call.subtopicId.description}
                                                                         >
                                                                             {call.subtopicId.description}
@@ -943,36 +1244,36 @@ export default function AdminCalls() {
                                                                     )}
                                                                 </div>
                                                             ) : (
-                                                                <span className="text-sm text-neutral-500 italic">-</span>
+                                                                <span className="text-xs text-neutral-500 italic">-</span>
                                                             )}
                                                         </td>
-                                                        <td className="hidden md:table-cell px-6 py-4 whitespace-nowrap">
-                                                            <span className="px-2 py-1 text-xs font-medium rounded-full bg-indigo-900/50 text-indigo-300 capitalize">
+                                                        <td className="hidden md:table-cell px-2.5 py-2 whitespace-nowrap">
+                                                            <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-indigo-900/50 text-indigo-300 capitalize">
                                                                 {call.language || '—'}
                                                             </span>
                                                         </td>
-                                                        <td className="hidden lg:table-cell px-6 py-4 whitespace-nowrap">
-                                                            <div className="text-sm text-neutral-300">{formatDate(call.startedAt)}</div>
+                                                        <td className="hidden lg:table-cell px-2.5 py-2 whitespace-nowrap">
+                                                            <div className="text-xs text-neutral-300">{formatDate(call.startedAt)}</div>
                                                         </td>
-                                                        <td className="px-3 md:px-6 py-4 whitespace-nowrap">
-                                                            <div className="text-xs md:text-sm text-neutral-300">{formatDuration(call.recordingAStartedAt || call.recordingBStartedAt || call.actualCallStartedAt || call.startedAt, call.endedAt)}</div>
+                                                        <td className="px-2.5 py-2 whitespace-nowrap">
+                                                            <div className="text-xs text-neutral-300">{formatDuration(call.recordingAStartedAt || call.recordingBStartedAt || call.actualCallStartedAt || call.startedAt, call.endedAt)}</div>
                                                         </td>
-                                                        <td className="hidden sm:table-cell px-3 md:px-6 py-4 whitespace-nowrap">
-                                                            <span className={`px-2 py-1 text-xs font-medium rounded-full ${call.endReason === 'completed' ? 'bg-success-900/50 text-success-300' :
+                                                        <td className="hidden sm:table-cell px-2.5 py-2 whitespace-nowrap">
+                                                            <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${call.endReason === 'completed' ? 'bg-success-900/50 text-success-300' :
                                                                 call.endReason === 'timeout' ? 'bg-warning-900/50 text-warning-300' :
                                                                     'bg-neutral-700 text-neutral-300'
                                                                 }`}>
                                                                 {call.endReason || 'Unknown'}
                                                             </span>
                                                         </td>
-                                                        <td className="px-3 md:px-6 py-4 whitespace-nowrap">
-                                                            <div className="space-y-1">
+                                                        <td className="px-2.5 py-2 whitespace-nowrap">
+                                                            <div className="space-y-0.5">
                                                                 {/* User A Status */}
-                                                                <div className="flex items-center gap-2 text-xs">
-                                                                    <span className="text-neutral-300 min-w-[80px] truncate">
+                                                                <div className="flex items-center gap-1.5 text-xs">
+                                                                    <span className="text-neutral-300 max-w-[70px] truncate">
                                                                         {call.userA?.username || "User A"}
                                                                     </span>
-                                                                    <span className={`text-lg ${call.recordingAStatus === 'approved' ? 'text-success-400' :
+                                                                    <span className={`text-base leading-none ${call.recordingAStatus === 'approved' ? 'text-success-400' :
                                                                         call.recordingAStatus === 'rejected' ? 'text-error-400' : 'text-warning-400'
                                                                         }`}>
                                                                         {call.recordingAStatus === 'approved' ? '✓' :
@@ -980,11 +1281,11 @@ export default function AdminCalls() {
                                                                     </span>
                                                                 </div>
                                                                 {/* User B Status */}
-                                                                <div className="flex items-center gap-2 text-xs">
-                                                                    <span className="text-neutral-300 min-w-[80px] truncate">
+                                                                <div className="flex items-center gap-1.5 text-xs">
+                                                                    <span className="text-neutral-300 max-w-[70px] truncate">
                                                                         {call.userB?.username || "User B"}
                                                                     </span>
-                                                                    <span className={`text-lg ${call.recordingBStatus === 'approved' ? 'text-success-400' :
+                                                                    <span className={`text-base leading-none ${call.recordingBStatus === 'approved' ? 'text-success-400' :
                                                                         call.recordingBStatus === 'rejected' ? 'text-error-400' : 'text-warning-400'
                                                                         }`}>
                                                                         {call.recordingBStatus === 'approved' ? '✓' :
@@ -996,8 +1297,8 @@ export default function AdminCalls() {
                                                     </>
                                                 )}
                                                 {/* Actions */}
-                                                <td className="px-3 md:px-6 py-4 whitespace-nowrap text-xs">
-                                                    <div className="flex flex-col sm:flex-row gap-1">
+                                                <td className="sticky right-0 bg-neutral-800 group-hover:bg-neutral-700/90 z-10 px-3 py-2 whitespace-nowrap text-xs shadow-[-4px_0_10px_rgba(0,0,0,0.4)]">
+                                                    <div className="flex items-center gap-1.5">
                                                         <button
                                                             onClick={() => {
                                                                 setSelectedCall(call);
@@ -1005,13 +1306,12 @@ export default function AdminCalls() {
                                                                     [call.userA?._id]: call.recordingAReviewNote || "",
                                                                     [call.userB?._id]: call.recordingBReviewNote || ""
                                                                 });
-                                                                // Preload computed QC analytics from CallSession document
                                                                 setQcResults({
                                                                     [call.userA?._id]: call.recordingAQCResult || null,
                                                                     [call.userB?._id]: call.recordingBQCResult || null
                                                                 });
                                                             }}
-                                                            className="text-warning-400 hover:text-warning-300"
+                                                            className="px-2.5 py-1 bg-warning-600/90 hover:bg-warning-500 text-white font-semibold rounded text-xs transition-colors shadow-sm"
                                                         >
                                                             View
                                                         </button>
@@ -1143,22 +1443,30 @@ export default function AdminCalls() {
                             <div className="pt-4 border-t border-neutral-700">
                                 <div className="flex items-center justify-between gap-3 mb-3">
                                     <div className="text-sm text-neutral-400">Recordings</div>
-                                    {(userInfo?.isAdmin && (selectedCall.recordingAFile || selectedCall.recordingBFile)) && (
+                                    <div className="flex items-center gap-2">
+                                        {(userInfo?.isAdmin && (selectedCall.recordingAFile || selectedCall.recordingBFile)) && (
+                                            <button
+                                                onClick={() => downloadCallBundle(selectedCall)}
+                                                disabled={downloadingCallId === selectedCall.callId}
+                                                className="inline-flex items-center justify-center px-3 py-1.5 bg-warning-600 hover:bg-warning-700 disabled:bg-neutral-600 disabled:cursor-not-allowed text-white rounded-lg text-xs font-medium transition-all"
+                                            >
+                                                {downloadingCallId === selectedCall.callId ? downloadStep || "Processing..." : "Download ZIP"}
+                                            </button>
+                                        )}
                                         <button
-                                            onClick={() => downloadCallBundle(selectedCall)}
-                                            disabled={downloadingCallId === selectedCall.callId}
-                                            className="inline-flex items-center justify-center px-4 py-2 bg-warning-600 hover:bg-warning-700 disabled:bg-neutral-600 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-all"
+                                            onClick={() => handleDeleteSingleCall(selectedCall.callId)}
+                                            className="inline-flex items-center justify-center px-3 py-1.5 bg-error-600 hover:bg-error-700 text-white rounded-lg text-xs font-medium transition-all"
                                         >
-                                            {downloadingCallId === selectedCall.callId ? downloadStep || "Processing..." : "Download ZIP"}
+                                            🗑 Delete Call
                                         </button>
-                                    )}
+                                    </div>
                                 </div>
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     {/* User A Recording */}
                                     {selectedCall.recordingAFile && (
                                         <div className="bg-neutral-700 p-4 rounded-lg flex flex-col justify-between">
                                             <div>
-                                                <div className="text-white font-semibold mb-2">{selectedCall.userA.username}</div>
+                                                <div className="text-white font-semibold mb-2">{selectedCall.userA?.username}</div>
                                                 <div className="mb-3">
                                                     <div className="text-xs text-neutral-400 mb-1">Status</div>
                                                     {getRecordingStatusBadge(selectedCall.recordingAStatus)}
@@ -1299,8 +1607,42 @@ export default function AdminCalls() {
                                                         className="w-full bg-neutral-800 border border-neutral-600 text-white text-xs rounded-lg px-2 py-1.5 resize-none focus:border-warning-500 outline-none"
                                                     />
                                                 </div>
-                                            </div>
-                                            <div className="flex gap-2 mt-4">
+                                                {/* Rejection Reason Selector */}
+                                                <div className="mb-3 bg-neutral-800/80 p-2.5 rounded-lg border border-neutral-600">
+                                                    <div className="text-[10px] text-neutral-400 font-bold uppercase mb-1.5 flex items-center justify-between">
+                                                        <span>Rejection Reason</span>
+                                                        <span className="text-[9px] text-neutral-500 font-normal">(Required if rejecting)</span>
+                                                    </div>
+                                                    <div className="flex flex-wrap items-center gap-3">
+                                                        <label className="inline-flex items-center gap-1.5 text-xs text-neutral-200 cursor-pointer select-none">
+                                                            <input
+                                                                type="radio"
+                                                                name={`rejectReason_${selectedCall.userA._id}`}
+                                                                value="Off-Topic Conversation"
+                                                                checked={rejectionReasons[selectedCall.userA._id] === "Off-Topic Conversation"}
+                                                                onChange={(e) => {
+                                                                    setRejectionReasons(prev => ({ ...prev, [selectedCall.userA._id]: e.target.value }));
+                                                                }}
+                                                                className="w-4 h-4 accent-error-500 cursor-pointer"
+                                                            />
+                                                            <span>🗣️ Off-Topic Conversation</span>
+                                                        </label>
+                                                        <label className="inline-flex items-center gap-1.5 text-xs text-neutral-200 cursor-pointer select-none">
+                                                            <input
+                                                                type="radio"
+                                                                name={`rejectReason_${selectedCall.userA._id}`}
+                                                                value="Noisy"
+                                                                checked={rejectionReasons[selectedCall.userA._id] === "Noisy"}
+                                                                onChange={(e) => {
+                                                                    setRejectionReasons(prev => ({ ...prev, [selectedCall.userA._id]: e.target.value }));
+                                                                }}
+                                                                className="w-4 h-4 accent-error-500 cursor-pointer"
+                                                            />
+                                                            <span>🔊 Noisy</span>
+                                                        </label>
+                                                    </div>
+                                                </div>
+                                            <div className="flex items-center gap-2 mt-4">
                                                 <button
                                                     onClick={() => approveRecording(selectedCall.callId, selectedCall.userA._id, selectedCall.userA.username)}
                                                     className="flex-1 px-3 py-2 bg-success-600 hover:bg-success-700 text-white rounded-lg text-xs font-medium transition-all"
@@ -1314,13 +1656,14 @@ export default function AdminCalls() {
                                                     ✗ Reject
                                                 </button>
                                             </div>
+                                            </div>
                                         </div>
                                     )}
                                     {/* User B Recording */}
                                     {selectedCall.recordingBFile && (
                                         <div className="bg-neutral-700 p-4 rounded-lg flex flex-col justify-between">
                                             <div>
-                                                <div className="text-white font-semibold mb-2">{selectedCall.userB.username}</div>
+                                                <div className="text-white font-semibold mb-2">{selectedCall.userB?.username}</div>
                                                 <div className="mb-3">
                                                     <div className="text-xs text-neutral-400 mb-1">Status</div>
                                                     {getRecordingStatusBadge(selectedCall.recordingBStatus)}
@@ -1461,8 +1804,43 @@ export default function AdminCalls() {
                                                         className="w-full bg-neutral-800 border border-neutral-600 text-white text-xs rounded-lg px-2 py-1.5 resize-none focus:border-warning-500 outline-none"
                                                     />
                                                 </div>
+                                                {/* Rejection Reason Selector */}
+                                                <div className="mb-3 bg-neutral-800/80 p-2.5 rounded-lg border border-neutral-600">
+                                                    <div className="text-[10px] text-neutral-400 font-bold uppercase mb-1.5 flex items-center justify-between">
+                                                        <span>Rejection Reason</span>
+                                                        <span className="text-[9px] text-neutral-500 font-normal">(Required if rejecting)</span>
+                                                    </div>
+                                                    <div className="flex flex-wrap items-center gap-3">
+                                                        <label className="inline-flex items-center gap-1.5 text-xs text-neutral-200 cursor-pointer select-none">
+                                                            <input
+                                                                type="radio"
+                                                                name={`rejectReason_${selectedCall.userB._id}`}
+                                                                value="Off-Topic Conversation"
+                                                                checked={rejectionReasons[selectedCall.userB._id] === "Off-Topic Conversation"}
+                                                                onChange={(e) => {
+                                                                    setRejectionReasons(prev => ({ ...prev, [selectedCall.userB._id]: e.target.value }));
+                                                                }}
+                                                                className="w-4 h-4 accent-error-500 cursor-pointer"
+                                                            />
+                                                            <span>🗣️ Off-Topic Conversation</span>
+                                                        </label>
+                                                        <label className="inline-flex items-center gap-1.5 text-xs text-neutral-200 cursor-pointer select-none">
+                                                            <input
+                                                                type="radio"
+                                                                name={`rejectReason_${selectedCall.userB._id}`}
+                                                                value="Noisy"
+                                                                checked={rejectionReasons[selectedCall.userB._id] === "Noisy"}
+                                                                onChange={(e) => {
+                                                                    setRejectionReasons(prev => ({ ...prev, [selectedCall.userB._id]: e.target.value }));
+                                                                }}
+                                                                className="w-4 h-4 accent-error-500 cursor-pointer"
+                                                            />
+                                                            <span>🔊 Noisy</span>
+                                                        </label>
+                                                    </div>
+                                                </div>
                                             </div>
-                                            <div className="flex gap-2 mt-4">
+                                            <div className="flex items-center gap-2 mt-4">
                                                 <button
                                                     onClick={() => approveRecording(selectedCall.callId, selectedCall.userB._id, selectedCall.userB.username)}
                                                     className="flex-1 px-3 py-2 bg-success-600 hover:bg-success-700 text-white rounded-lg text-xs font-medium transition-all"

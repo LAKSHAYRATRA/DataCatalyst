@@ -51,3 +51,7 @@ Thumbs.db
 # Local App Media 
 recordings/
 uploads/
+s3data/
+s3_data/
+s3rver_data/
+

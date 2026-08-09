@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from "react";
+import { Navigate } from "react-router-dom";
 import AdminNav from "../components/AdminNav.jsx";
 import { fetchAndConvertToWav } from "../lib/audioToWav.js";
+import { getUserInfo } from "../lib/auth.js";
 
 const BASE = import.meta.env.VITE_BACKEND_URL || "http://localhost:3001";
 const REVIEW_BASE = "/api/admin/qa/language-applications";
@@ -30,6 +32,10 @@ function StatusBadge({ status }) {
 }
 
 export default function AdminCallApps() {
+    const userInfo = getUserInfo();
+    if (userInfo?.isQA && !userInfo?.isAdmin) {
+        return <Navigate to="/admin/qa" replace />;
+    }
     const [apps, setApps] = useState([]);
     const [loading, setLoading] = useState(true);
     const [statusFilter, setStatusFilter] = useState("pending");

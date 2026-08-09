@@ -33,6 +33,22 @@ joinqueue*/
 scratch/
 *.zip
 voicechat-backend/s3_data/
-# Desktop app / local builds
+voicechat-backend/s3data/
+voicechat-backend/s3rver_data/
+
+# Local test conversational data & local S3 storage
+test conversational data/
+test_conversational_data/
+s3data/
+s3rver_data/
+
+# Local scratch files & PDF dumps
+Company_PAN_DataCatalyst*
+DataCatalyst Changes/
+Voclara App/
+suggestion.txt
+*.pdf
+!voicechat-frontend/public/Legal/*.pdf
 Electron/
 electron/
+

@@ -79,7 +79,18 @@ function classifyLine(rawLine) {
 }
 
 export async function generateSignedAgreementPdf({ user, signaturePngBuffer, signingMeta }) {
-  const template = await fs.readFile(TEMPLATE_PATH, "utf-8");
+  const isNoCloning = user.contributorAgreement?.assignedAgreementDoc === "datacatalyst-voice-dataset-consent-agreement";
+  const selectedTemplatePath = isNoCloning
+    ? path.join(__dirname, "..", "templates", "DataCatalyst-Voice-Dataset-Consent-Agreement.md")
+    : TEMPLATE_PATH;
+
+  let template;
+  try {
+    template = await fs.readFile(selectedTemplatePath, "utf-8");
+  } catch {
+    template = await fs.readFile(TEMPLATE_PATH, "utf-8");
+  }
+
   const content = substituteTemplate(template, user, signingMeta);
 
   const pdfDoc = await PDFDocument.create();

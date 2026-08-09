@@ -49,7 +49,8 @@ export default function AdminCompanies() {
         hourlyPayout: Number(company.hourlyPayout),
         singlePhraseFrequency: Math.max(1, Number(company.singlePhraseFrequency) || 1),
         projectName: company.projectName || '',
-        namingPattern: company.namingPattern || '{phraseId}'
+        namingPattern: company.namingPattern || '{phraseId}',
+        allowPhraseTextEdit: Boolean(company.allowPhraseTextEdit)
       });
       setMessage('Company saved successfully!');
       setTimeout(() => setMessage(''), 3000);
@@ -349,6 +350,28 @@ export default function AdminCompanies() {
                       />
                       <span className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-400 text-sm font-medium">Contributor(s)</span>
                     </div>
+                  </div>
+
+                  {/* Editable Phrases Checkbox */}
+                  <div className="bg-neutral-100 dark:bg-neutral-800 p-5 rounded-xl border border-neutral-200 dark:border-neutral-700 flex flex-col justify-between">
+                    <div>
+                      <label className="block text-sm font-semibold text-neutral-700 dark:text-neutral-300 mb-1">
+                        Editable Phrases in Review
+                      </label>
+                      <p className="text-xs text-neutral-500 mb-4">Allow QA reviewers and Admins to edit phrase text during review (e.g. remove gasps/laughs or minor skipped words)</p>
+                    </div>
+
+                    <label className="inline-flex items-center gap-2 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(company.allowPhraseTextEdit)}
+                        onChange={(e) => handleFieldChange(company._id, 'allowPhraseTextEdit', e.target.checked)}
+                        className="w-5 h-5 text-amber-600 bg-neutral-900 border-neutral-600 rounded focus:ring-amber-500 cursor-pointer"
+                      />
+                      <span className="text-sm font-bold text-neutral-200">
+                        {company.allowPhraseTextEdit ? "✓ Phrase Editing Enabled" : "Disabled (Read-Only)"}
+                      </span>
+                    </label>
                   </div>
                 </div>
               </motion.div>

@@ -20,6 +20,8 @@ import {
   approveRejectedPhrase,
   analyzePhrase,
   checkPhraseLufs,
+  updatePhraseText,
+  reviewEditedPhrase,
   downloadSinglePhraseZip,
   deletePhraseAdmin,
   clearCompanyPhrases,
@@ -77,6 +79,7 @@ router.get("/admin/download-zip/:phraseId", requireAuth(JWT_SECRET), requireAdmi
 router.post("/admin/delete/:phraseId", requireAuth(JWT_SECRET), requireAdmin, deletePhraseAdmin);
 router.post("/admin/clear", requireAuth(JWT_SECRET), requireAdmin, clearCompanyPhrases);
 router.post("/admin/deduplicate", requireAuth(JWT_SECRET), requireAdmin, deduplicateCompanyPhrases);
+router.post("/admin/review-edit/:phraseId", requireAuth(JWT_SECRET), requireAdmin, reviewEditedPhrase);
 
 /* -------------------------------------------------------------------------- */
 /*                                   QA Routes                                */
@@ -85,6 +88,7 @@ router.get("/qa/queue", requireAuth(JWT_SECRET), requireQAOrAdmin, getQaQueue);
 router.post("/qa/review/:phraseId", requireAuth(JWT_SECRET), requireQAOrAdmin, reviewPhrase);
 router.post("/qa/analyze/:phraseId", requireAuth(JWT_SECRET), requireQAOrAdmin, analyzePhrase);
 router.post("/qa/lufs/:phraseId", requireAuth(JWT_SECRET), requireQAOrAdmin, checkPhraseLufs);
+router.patch("/qa/text/:phraseId", requireAuth(JWT_SECRET), requireQAOrAdmin, updatePhraseText);
 
 /* -------------------------------------------------------------------------- */
 /*                              Contributor Routes                            */

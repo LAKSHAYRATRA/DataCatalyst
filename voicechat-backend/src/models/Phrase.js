@@ -36,13 +36,31 @@ const phraseSchema = new mongoose.Schema(
     lufs: { type: Number, default: null }, // BS.1770-4 gated LUFS score
     recordedAt: { type: Date, default: null },
 
-    // QA Info
+    // QA Info & 15-min review lock
     qaId: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
     qaComment: { type: String, default: null },
     reviewedAt: { type: Date, default: null },
+    qaLockedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+    qaLockedAt: { type: Date, default: null },
     isTestPhrase: { type: Boolean, default: false },
     isSample: { type: Boolean, default: false },
     qcResult: { type: mongoose.Schema.Types.Mixed, default: null },
+
+    // Dual-QA Cross Audit & Ambiguity Tracking
+    needsSecondQaReview: { type: Boolean, default: false },
+    firstQaReview: {
+      qaId: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+      action: { type: String },
+      comment: { type: String },
+      reviewedAt: { type: Date }
+    },
+
+    // Phrase Text Editing Tracking
+    isEdited: { type: Boolean, default: false },
+    originalText: { type: String, default: null },
+    editedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+    editedAt: { type: Date, default: null },
+    editedPhraseStatus: { type: String, enum: ["pending_admin", "approved", "rejected"], default: null }
   },
   { timestamps: true }
 );

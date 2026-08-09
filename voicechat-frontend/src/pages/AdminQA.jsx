@@ -23,10 +23,33 @@ async function apiPatch(path, data = {}) {
     });
 }
 
+async function apiPostJson(path, data = {}) {
+    return apiFetch(path, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+    });
+}
+
 const STATUS_COLOR = {
     pending: "bg-yellow-900/50 text-yellow-300",
     approved: "bg-green-900/50 text-green-300",
     rejected: "bg-red-900/50 text-red-300",
+};
+
+const getRecordingStatusBadge = (status) => {
+    if (!status) {
+        return <span className="px-2 py-1 text-xs font-medium rounded-full bg-neutral-700 text-neutral-300">N/A</span>;
+    }
+
+    const config = {
+        pending: { bg: 'bg-yellow-900/50', text: 'text-yellow-300', icon: '⏳' },
+        approved: { bg: 'bg-success-900/50', text: 'text-success-300', icon: '✓' },
+        rejected: { bg: 'bg-error-900/50', text: 'text-error-300', icon: '✗' }
+    };
+
+    const { bg, text, icon } = config[status] || config.pending;
+    return <span className={`px-2 py-1 text-xs font-medium rounded-full ${bg} ${text}`}>{icon} {status}</span>;
 };
 
 function StatusBadge({ status }) {
@@ -47,10 +70,12 @@ function mergeReviewFields(call, updatedCall) {
         recordingAReviewNote: updatedCall.recordingAReviewNote,
         recordingADurationMinutes: updatedCall.recordingADurationMinutes,
         recordingAPayoutUsd: updatedCall.recordingAPayoutUsd,
+        recordingANoisy: updatedCall.recordingANoisy,
         recordingBStatus: updatedCall.recordingBStatus,
         recordingBReviewNote: updatedCall.recordingBReviewNote,
         recordingBDurationMinutes: updatedCall.recordingBDurationMinutes,
         recordingBPayoutUsd: updatedCall.recordingBPayoutUsd,
+        recordingBNoisy: updatedCall.recordingBNoisy,
         reviewedBy: updatedCall.reviewedBy,
         reviewedAt: updatedCall.reviewedAt,
         reviewNotes: updatedCall.reviewNotes,
@@ -62,7 +87,8 @@ export default function AdminQA() {
     const userInfo = getUserInfo();
     const isQaOnly = Boolean(userInfo?.isQA && !userInfo?.isAdmin);
     const [page, setPage] = useState(1);
-    const [statusFilter, setStatusFilter] = useState(isQaOnly ? "pending" : "");
+    const [statusFilter, setStatusFilter] = useState("pending");
+    const [languageFilter, setLanguageFilter] = useState("");
     const [error, setError] = useState("");
 
     const [calls, setCalls] = useState([]);
@@ -72,6 +98,7 @@ export default function AdminQA() {
     const [reviewing, setReviewing] = useState(null);
     const [notes, setNotes] = useState("");
     const [recordingNotes, setRecordingNotes] = useState({});
+    const [rejectionReasons, setRejectionReasons] = useState({});
     const [actionLoading, setActionLoading] = useState(null);
     const [audioUrls, setAudioUrls] = useState({});
     const [loadingAudio, setLoadingAudio] = useState(null);
@@ -79,19 +106,61 @@ export default function AdminQA() {
     const [qcResults, setQcResults] = useState({});
     const [qcErrors, setQcErrors] = useState({});
     const [zoomedImage, setZoomedImage] = useState(null);
+    const [lockTimerSeconds, setLockTimerSeconds] = useState(900);
+    const [lockExpired, setLockExpired] = useState(false);
+    const [playedSpotchecks, setPlayedSpotchecks] = useState({});
+
+    const [allLanguages, setAllLanguages] = useState([]);
+
+    const rawQaList = (userInfo?.qaLanguageCodes && userInfo.qaLanguageCodes.length > 0)
+        ? userInfo.qaLanguageCodes
+        : (userInfo?.qaLanguageCode ? [userInfo.qaLanguageCode] : []);
+
+    const availableLanguagesList = isQaOnly
+        ? rawQaList
+        : (allLanguages.length > 0 ? allLanguages : (rawQaList.length > 0 ? rawQaList : ["english", "hindi", "marathi", "bengali", "tamil", "telugu", "gujarati", "kannada", "malayalam", "punjabi"]));
 
     // Audio refs for visualizer
     const audioRefs = React.useRef({});
 
     useEffect(() => {
+        async function fetchLanguages() {
+            try {
+                const data = await apiFetch("/api/admin/qa/languages");
+                if (data?.languages && Array.isArray(data.languages)) {
+                    setAllLanguages(data.languages.map(l => String(l.code || l.name || l).toLowerCase()));
+                }
+            } catch {}
+        }
+        fetchLanguages();
+    }, []);
+
+    useEffect(() => {
         loadCalls();
-    }, [page, statusFilter]);
+    }, [page, statusFilter, languageFilter]);
+
+    useEffect(() => {
+        if (!reviewing) return;
+        setLockTimerSeconds(900);
+        setLockExpired(false);
+        const interval = setInterval(() => {
+            setLockTimerSeconds((prev) => {
+                if (prev <= 1) {
+                    clearInterval(interval);
+                    setLockExpired(true);
+                    return 0;
+                }
+                return prev - 1;
+            });
+        }, 1000);
+        return () => clearInterval(interval);
+    }, [reviewing]);
 
     async function loadCalls() {
         setLoadingCalls(true);
         setError("");
         try {
-            const qs = `?page=${page}&limit=20${statusFilter ? `&status=${statusFilter}` : ""}`;
+            const qs = `?page=${page}&limit=20${statusFilter ? `&status=${statusFilter}` : ""}${languageFilter ? `&language=${encodeURIComponent(languageFilter)}` : ""}`;
             const data = await apiFetch(`/api/admin/qa/calls${qs}`);
             setCalls(data.calls || []);
             setCallPages(data.pages || 1);
@@ -102,6 +171,45 @@ export default function AdminQA() {
         } finally {
             setLoadingCalls(false);
         }
+    }
+
+    async function openCallReview(call) {
+        try {
+            await apiPostJson(`/api/admin/qa/calls/${call.callId}/lock`);
+            setReviewing(call);
+            setNotes(call.reviewNotes || "");
+            setPlayedSpotchecks({});
+            setRejectionReasons({
+                [call.userA?._id]: call.recordingARejectionReason ? call.recordingARejectionReason.split(", ").map(s => s.trim()) : (call.recordingANoisy ? ["Noisy"] : []),
+                [call.userB?._id]: call.recordingBRejectionReason ? call.recordingBRejectionReason.split(", ").map(s => s.trim()) : (call.recordingBNoisy ? ["Noisy"] : [])
+            });
+            setRecordingNotes({
+                [call.userA?._id]: call.recordingAReviewNote || "",
+                [call.userB?._id]: call.recordingBReviewNote || ""
+            });
+            setQcResults({
+                [call.userA?._id]: call.recordingAQCResult || null,
+                [call.userB?._id]: call.recordingBQCResult || null
+            });
+        } catch (err) {
+            await loadCalls();
+            Swal.fire({
+                icon: 'warning',
+                title: 'Call Locked',
+                text: err.message || 'This call is currently locked for review by another QA reviewer.',
+                confirmButtonColor: '#ea580c'
+            });
+        }
+    }
+
+    async function closeCallReview() {
+        if (reviewing?.callId) {
+            try {
+                await apiPostJson(`/api/admin/qa/calls/${reviewing.callId}/unlock`);
+            } catch {}
+        }
+        setReviewing(null);
+        setLockExpired(false);
     }
 
     async function runAudioQC(callId, userId) {
@@ -129,20 +237,57 @@ export default function AdminQA() {
         }
     }
 
-    function filterOverlappingEvents(events) {
+    function getSortedQcEvents(events) {
         if (!Array.isArray(events)) return [];
-        const sorted = [...events].sort((a, b) => (a.timestamp_sec || 0) - (b.timestamp_sec || 0));
+        const sortedByTime = [...events].sort((a, b) => (a.timestamp_sec || 0) - (b.timestamp_sec || 0));
         const filtered = [];
-        for (const evt of sorted) {
+        for (const evt of sortedByTime) {
             const last = filtered[filtered.length - 1];
             if (!last || (evt.timestamp_sec - last.timestamp_sec >= 4)) {
                 filtered.push(evt);
+            } else if ((Number(evt.score) || 0) > (Number(last.score) || 0)) {
+                filtered[filtered.length - 1] = evt;
             }
         }
-        return filtered;
+        // Sort descending by noise intensity (score e.g. 0.85 -> 0.70 -> 0.55)
+        return filtered.sort((a, b) => (Number(b.score) || 0) - (Number(a.score) || 0));
+    }
+
+    function getSelectedReasons(userId) {
+        const val = rejectionReasons[userId];
+        if (Array.isArray(val)) return val;
+        if (typeof val === 'string' && val.trim()) return val.split(", ").map(s => s.trim());
+        return [];
+    }
+
+    function toggleReason(userId, reason, callId) {
+        setRejectionReasons(prev => {
+            const current = getSelectedReasons(userId);
+            let next;
+            if (current.includes(reason)) {
+                next = current.filter(r => r !== reason);
+            } else {
+                next = [...current, reason];
+            }
+            
+            if (reason === "Noisy") {
+                const isNowNoisy = next.includes("Noisy");
+                toggleNoisy(callId, userId, isNowNoisy);
+            }
+            
+            return { ...prev, [userId]: next };
+        });
     }
 
     function playSpotcheck(callId, userId, timestampSec) {
+        setPlayedSpotchecks(prev => {
+            const userPlayed = prev[userId] || [];
+            if (!userPlayed.includes(timestampSec)) {
+                return { ...prev, [userId]: [...userPlayed, timestampSec] };
+            }
+            return prev;
+        });
+
         const key = `${callId}_${userId}`;
         const audioEl = audioRefs.current[key];
         if (audioEl) {
@@ -182,6 +327,27 @@ export default function AdminQA() {
     }
 
     async function actOnRecording(callId, userId, action) {
+        if (lockExpired) {
+            Swal.fire({
+                icon: 'error',
+                title: '15-Min Lock Expired',
+                text: 'Your 15-minute review window for this call has expired. Please close and re-open the call from the queue to lock it again.',
+                confirmButtonColor: '#ea580c'
+            });
+            return;
+        }
+
+        const selectedReasons = getSelectedReasons(userId);
+        if (action === 'reject' && selectedReasons.length === 0) {
+            Swal.fire({
+                icon: 'warning',
+                title: 'Rejection Reason Required',
+                text: 'Please check at least one rejection reason (Off-Topic Conversation or Noisy) before rejecting this recording.',
+                confirmButtonColor: '#ea580c'
+            });
+            return;
+        }
+
         const result = await Swal.fire({
             title: action === 'approve' ? 'Approve Recording?' : 'Reject Recording?',
             text: `Are you sure you want to ${action} this recording?`,
@@ -196,8 +362,16 @@ export default function AdminQA() {
 
         setActionLoading(`${action}_${userId}`);
         const note = recordingNotes[userId] || "";
+        const isNoisy = selectedReasons.includes("Noisy") || (reviewing?.userA?._id?.toString() === userId.toString()
+            ? !!reviewing?.recordingANoisy
+            : !!reviewing?.recordingBNoisy);
+
         try {
-            const data = await apiPatch(`/api/admin/qa/calls/${callId}/${action}/${userId}`, { note: note.trim() });
+            const data = await apiPatch(`/api/admin/qa/calls/${callId}/${action}/${userId}`, {
+                note: note.trim(),
+                isNoisy,
+                rejectionReason: action === 'reject' ? selectedReasons.join(", ") : null
+            });
             if (reviewing?.callId === callId && data.call) {
                 setReviewing((prev) => mergeReviewFields(prev, data.call));
             }
@@ -218,6 +392,23 @@ export default function AdminQA() {
             });
         } finally {
             setActionLoading(null);
+        }
+    }
+
+    async function toggleNoisy(callId, userId, isNoisy) {
+        try {
+            const data = await apiPatch(`/api/admin/qa/calls/${callId}/noisy/${userId}`, { isNoisy });
+            if (reviewing?.callId === callId && data.call) {
+                setReviewing((prev) => mergeReviewFields(prev, data.call));
+            }
+            await loadCalls();
+        } catch (e) {
+            Swal.fire({
+                icon: 'error',
+                title: 'Error',
+                text: e.message,
+                confirmButtonColor: '#ea580c'
+            });
         }
     }
 
@@ -265,13 +456,22 @@ export default function AdminQA() {
         return `${Math.floor(diff / 60000)}m ${Math.floor((diff % 60000) / 1000)}s`;
     }
 
+    function formatSeconds(seconds) {
+        if (!seconds || seconds < 0) return "-";
+        const mins = Math.floor(seconds / 60);
+        const secs = Math.floor(seconds % 60);
+        return `${mins}m ${secs}s`;
+    }
+
     function getCallStart(call) {
         return call?.recordingAStartedAt || call?.recordingBStartedAt || call?.actualCallStartedAt || call?.startedAt;
     }
 
-    function getParticipantLabel(user) {
-        if (!user) return "?";
-        if (isQaOnly) return user._id || "?";
+    function getParticipantLabel(user, side = "") {
+        if (!user) return side ? `Speaker ${side}` : "?";
+        if (isQaOnly) {
+            return side ? `Speaker ${side}` : "Speaker";
+        }
         return user.username || user._id || "?";
     }
 
@@ -294,23 +494,47 @@ export default function AdminQA() {
                         <h1 className="text-2xl md:text-3xl font-bold text-white mb-1">Q/A Review</h1>
                         <p className="text-neutral-400 text-sm">Review call recordings.</p>
                     </div>
-                    {isQaOnly ? (
-                        <div className="bg-yellow-900/40 border border-yellow-700/50 text-yellow-300 text-sm font-semibold rounded-lg px-3 py-2 flex items-center gap-2">
-                            <span className="w-2 h-2 rounded-full bg-yellow-400 animate-pulse"></span>
-                            Pending Calls Only
-                        </div>
-                    ) : (
+                    <div className="flex items-center gap-3">
+                        {/* Approved / All Languages Dropdown */}
                         <select
-                            value={statusFilter}
-                            onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
-                            className="bg-neutral-700 border border-neutral-600 text-white text-sm rounded-lg px-3 py-2"
+                            value={languageFilter}
+                            onChange={(e) => { setLanguageFilter(e.target.value); setPage(1); }}
+                            className="bg-neutral-700 border border-neutral-600 text-white text-sm rounded-lg px-3 py-2 outline-none focus:border-warning-500 capitalize"
                         >
-                            <option value="">All Calls</option>
-                            <option value="pending">Pending</option>
-                            <option value="approved">Approved</option>
-                            <option value="rejected">Rejected</option>
+                            <option value="">
+                                {isQaOnly ? "All Approved Languages" : "All Languages"}
+                            </option>
+                            {availableLanguagesList.map((lang) => (
+                                <option key={lang} value={lang} className="capitalize">
+                                    {lang.charAt(0).toUpperCase() + lang.slice(1)}
+                                </option>
+                            ))}
                         </select>
-                    )}
+                    </div>
+                </div>
+
+                {/* 3 Status Tabs: Pending, Approved, Rejected (Left Aligned) */}
+                <div className="flex flex-wrap gap-2 mb-6">
+                    {[
+                        { label: "Pending", value: "pending" },
+                        { label: "Approved", value: "approved" },
+                        { label: "Rejected", value: "rejected" }
+                    ].map((tab) => (
+                        <button
+                            key={tab.value}
+                            onClick={() => {
+                                setStatusFilter(tab.value);
+                                setPage(1);
+                            }}
+                            className={`px-4 py-2 text-sm font-semibold rounded-lg transition-all ${
+                                (statusFilter || "pending") === tab.value
+                                    ? "bg-warning-600 text-white shadow-lg shadow-warning-900/20"
+                                    : "bg-neutral-800 text-neutral-400 hover:text-white border border-neutral-700"
+                            }`}
+                        >
+                            {tab.label}
+                        </button>
+                    ))}
                 </div>
 
                 {error && <div className="bg-red-900/50 border border-red-700 text-red-300 px-4 py-3 rounded-lg mb-4">{error}</div>}
@@ -333,15 +557,15 @@ export default function AdminQA() {
                                 <tbody className="divide-y divide-neutral-700">
                                     {calls.map((call) => (
                                             <tr key={call.callId} className="hover:bg-neutral-700/40 transition-colors">
-                                                <td className="px-4 py-3 font-mono text-xs text-neutral-400">{call.callId.slice(0, 8)}...</td>
+                                                <td className="px-4 py-3 font-mono text-xs text-neutral-300 break-all">{call.callId}</td>
                                                 <td className="px-4 py-3">
                                                     <div className="space-y-1">
                                                         <div className="flex items-center gap-2">
-                                                            <span className="text-white text-xs font-mono">{getParticipantLabel(call.userA)}</span>
+                                                            <span className="text-white text-xs font-mono">{getParticipantLabel(call.userA, "A")}</span>
                                                             <StatusBadge status={call.recordingAStatus || "pending"} />
                                                         </div>
                                                         <div className="flex items-center gap-2">
-                                                            <span className="text-neutral-300 text-xs font-mono">{getParticipantLabel(call.userB)}</span>
+                                                            <span className="text-neutral-300 text-xs font-mono">{getParticipantLabel(call.userB, "B")}</span>
                                                             <StatusBadge status={call.recordingBStatus || "pending"} />
                                                         </div>
                                                     </div>
@@ -374,18 +598,7 @@ export default function AdminQA() {
                                                 <td className="px-4 py-3 text-neutral-300">{dur(getCallStart(call), call.endedAt)}</td>
                                                 <td className="px-4 py-3">
                                                     <button
-                                                        onClick={() => {
-                                                            setReviewing(call);
-                                                            setNotes(call.reviewNotes || "");
-                                                            setRecordingNotes({
-                                                                [call.userA?._id]: call.recordingAReviewNote || "",
-                                                                [call.userB?._id]: call.recordingBReviewNote || ""
-                                                            });
-                                                            setQcResults({
-                                                                [call.userA?._id]: call.recordingAQCResult || null,
-                                                                [call.userB?._id]: call.recordingBQCResult || null
-                                                            });
-                                                        }}
+                                                        onClick={() => openCallReview(call)}
                                                         className="px-3 py-1.5 bg-warning-600 hover:bg-warning-700 text-white text-xs font-semibold rounded-lg"
                                                     >
                                                         Review
@@ -409,199 +622,344 @@ export default function AdminQA() {
             </div>
 
             {reviewing && (
-                <div className="fixed inset-0 bg-black/75 z-50 flex items-center justify-center p-4" onClick={() => setReviewing(null)}>
-                    <div className="bg-neutral-800 border border-neutral-700 rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-                        <div className="flex items-center justify-between px-6 py-4 border-b border-neutral-700">
-                            <div>
-                                <h2 className="text-lg font-bold text-white">Review Call</h2>
-                                <p className="text-xs text-neutral-400 font-mono">{reviewing.callId}</p>
-                            </div>
-                            <button onClick={() => setReviewing(null)} className="text-neutral-400 hover:text-white">x</button>
+                <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50" onClick={closeCallReview}>
+                    <div className="bg-neutral-800 border border-neutral-700 rounded-xl max-w-6xl w-full max-h-[90vh] overflow-y-auto p-4 md:p-6 animate-scale-in" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center justify-between mb-4 md:mb-6">
+                            <h2 className="text-xl md:text-2xl font-bold text-white">Review Call</h2>
+                            <button onClick={closeCallReview} className="text-neutral-400 hover:text-white">
+                                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path>
+                                </svg>
+                            </button>
                         </div>
-                        <div className="p-6 space-y-6">
-                            <div className="grid grid-cols-2 gap-4 text-sm">
+
+                        <div className="space-y-4">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <div>
-                                    <div className="text-neutral-400 mb-1">Topic</div>
-                                    <div className="text-white">
-                                        <div>{reviewing.subtopicId?.title || "-"}</div>
-                                        {reviewing.subtopicId?.description && (
-                                            <div className="text-xs text-neutral-500 mt-0.5">{reviewing.subtopicId.description}</div>
+                                    <div className="text-sm text-neutral-400 mb-1">Call ID</div>
+                                    <div className="text-white font-mono text-xs md:text-sm break-all">{reviewing.callId}</div>
+                                </div>
+                                <div>
+                                    <div className="text-sm text-neutral-400 mb-1">Status</div>
+                                    <span className={`px-2 py-1 text-xs font-medium rounded-full ${reviewing.endReason === 'completed' ? 'bg-success-900/50 text-success-300' :
+                                        'bg-neutral-700 text-neutral-300'
+                                        }`}>
+                                        {reviewing.endReason || 'Unknown'}
+                                    </span>
+                                </div>
+                            </div>
+
+                            <div>
+                                <div className="text-sm text-neutral-400 mb-2">Participants</div>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div className="bg-neutral-700 p-3 rounded-lg">
+                                        <div className="text-white font-semibold text-sm md:text-base">{getParticipantLabel(reviewing.userA, "A")}</div>
+                                        {!isQaOnly && <div className="text-xs text-neutral-400 break-all">{reviewing.userA?.email}</div>}
+                                        {reviewing.questionerUserId?.toString() === reviewing.userA?._id?.toString() && (
+                                            <div className="text-xs text-warning-400 mt-1">Questioner</div>
+                                        )}
+                                        {reviewing.answererUserId?.toString() === reviewing.userA?._id?.toString() && (
+                                            <div className="text-xs text-success-400 mt-1">Answerer</div>
+                                        )}
+                                    </div>
+                                    <div className="bg-neutral-700 p-3 rounded-lg">
+                                        <div className="text-white font-semibold text-sm md:text-base">{getParticipantLabel(reviewing.userB, "B")}</div>
+                                        {!isQaOnly && <div className="text-xs text-neutral-400 break-all">{reviewing.userB?.email}</div>}
+                                        {reviewing.questionerUserId?.toString() === reviewing.userB?._id?.toString() && (
+                                            <div className="text-xs text-warning-400 mt-1">Questioner</div>
+                                        )}
+                                        {reviewing.answererUserId?.toString() === reviewing.userB?._id?.toString() && (
+                                            <div className="text-xs text-success-400 mt-1">Answerer</div>
                                         )}
                                     </div>
                                 </div>
-                                <div><div className="text-neutral-400 mb-1">Duration</div><div className="text-white">{dur(getCallStart(reviewing), reviewing.endedAt)}</div></div>
-                                <div><div className="text-neutral-400 mb-1">Language</div><div className="text-white capitalize">{reviewing.language || "-"}</div></div>
-                                <div><div className="text-neutral-400 mb-1">Date</div><div className="text-white text-xs">{fmt(reviewing.startedAt)}</div></div>
                             </div>
-                            {[
-                                { user: reviewing.userA, status: reviewing.recordingAStatus, file: reviewing.recordingAFile, side: "A" },
-                                { user: reviewing.userB, status: reviewing.recordingBStatus, file: reviewing.recordingBFile, side: "B" },
-                            ].map(({ user, status, file, side }) => {
-                                if (!user) return null;
-                                const key = `${reviewing.callId}_${user._id}`;
-                                const recStatus = status || "pending";
-                                return (
-                                    <div key={key} className="bg-neutral-700 rounded-xl p-4 space-y-3">
-                                        <div className="flex items-center justify-between">
-                                            <div>
-                                                <div className="font-semibold text-white text-sm font-mono">{getParticipantLabel(user)}</div>
-                                                <div className="text-xs text-neutral-400">Recording {side}</div>
-                                            </div>
-                                            <StatusBadge status={recStatus} />
-                                        </div>
-                                        <div className="text-xs text-neutral-400">
-                                            {side === "A"
-                                                ? formatPayout(reviewing.recordingAPayoutUsd, reviewing.recordingADurationMinutes)
-                                                : formatPayout(reviewing.recordingBPayoutUsd, reviewing.recordingBDurationMinutes)}
-                                        </div>
-                                        {((side === "A" ? reviewing.recordingAReviewNote : reviewing.recordingBReviewNote) || "").trim() && (
-                                            <div className="rounded-lg border border-neutral-600 bg-neutral-800/60 px-3 py-2 text-xs text-neutral-300">
-                                                {side === "A" ? reviewing.recordingAReviewNote : reviewing.recordingBReviewNote}
-                                            </div>
-                                        )}
-                                        <div>
-                                            <label className="block text-[10px] text-neutral-500 mb-1 uppercase font-bold">Review Note</label>
-                                            <textarea
-                                                rows={2}
-                                                value={recordingNotes[user._id] || ""}
-                                                onChange={(e) => setRecordingNotes(prev => ({ ...prev, [user._id]: e.target.value }))}
-                                                placeholder="Enter review notes..."
-                                                className="w-full bg-neutral-800 border border-neutral-600 text-white text-xs rounded-lg px-2 py-1.5 resize-none focus:border-warning-500 outline-none"
-                                            />
-                                        </div>
-                                        {file ? (
-                                            audioUrls[key] ? (
-                                                <div className="space-y-2">
-                                                    <AudioVisualizer 
-                                                        url={audioUrls[key]}
-                                                        audioRef={{ current: audioRefs.current[key] }} 
-                                                    />
-                                                    <audio 
-                                                        ref={(el) => (audioRefs.current[key] = el)}
-                                                        controls 
-                                                        src={audioUrls[key]} 
-                                                        className="w-full h-9 rounded" 
-                                                        controlsList="nodownload noplaybackrate" 
-                                                        onContextMenu={(e) => e.preventDefault()}
-                                                    />
-                                                </div>
-                                            ) : (
-                                                <button onClick={() => loadCallAudio(reviewing.callId, user._id)} disabled={loadingAudio === key} className="w-full py-2 bg-neutral-600 hover:bg-neutral-500 text-white text-xs rounded-lg disabled:opacity-50">
-                                                    {loadingAudio === key ? "Loading..." : "Load Audio (WAV)"}
-                                                </button>
-                                            )
-                                        ) : <div className="text-xs text-neutral-500 text-center py-2">No recording available</div>}
-                                        
-                                        {/* Audio QC Analyzer Card */}
-                                        {file && (
-                                            <div className="pt-2 border-t border-neutral-600">
-                                                <button
-                                                    onClick={() => runAudioQC(reviewing.callId, user._id)}
-                                                    disabled={qcLoading[user._id]}
-                                                    className="w-full inline-flex items-center justify-center px-4 py-2 bg-neutral-800 hover:bg-neutral-600 disabled:opacity-50 text-white rounded-lg text-xs font-bold border border-neutral-600 transition-colors"
-                                                >
-                                                    {qcLoading[user._id] ? (
-                                                        <span className="flex items-center gap-1.5">
-                                                            <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                                                            Running QC Analysis...
-                                                        </span>
-                                                    ) : (qcResults[user._id] ? "🔄 Re-run QC Analyzer" : "📊 Run Audio QC Analyzer")}
-                                                </button>
 
-                                                {qcErrors[user._id] && (
-                                                    <div className="mt-2 text-xs text-error-400 font-medium">
-                                                        ⚠️ {qcErrors[user._id]}
+                            {reviewing.subtopicId && (
+                                <div>
+                                    <div className="text-sm text-neutral-400 mb-1">Topic</div>
+                                    <div className="text-white text-sm md:text-base">{reviewing.subtopicId.title}</div>
+                                    {reviewing.subtopicId.description && (
+                                        <div className="text-xs text-neutral-500 mt-1">{reviewing.subtopicId.description}</div>
+                                    )}
+                                </div>
+                            )}
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <div className="text-sm text-neutral-400 mb-1">Started</div>
+                                    <div className="text-white text-xs md:text-sm">{fmt(reviewing.startedAt)}</div>
+                                </div>
+                                <div>
+                                    <div className="text-sm text-neutral-400 mb-1">Ended</div>
+                                    <div className="text-white text-xs md:text-sm">{reviewing.endedAt ? fmt(reviewing.endedAt) : '-'}</div>
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <div className="text-sm text-neutral-400 mb-1">Negotiation Duration</div>
+                                    <div className="text-white">{formatSeconds(reviewing.negotiationDuration)}</div>
+                                </div>
+                                <div>
+                                    <div className="text-sm text-neutral-400 mb-1">Call Duration</div>
+                                    <div className="text-white">{dur(getCallStart(reviewing), reviewing.endedAt)}</div>
+                                </div>
+                            </div>
+
+                            <div className="pt-4 border-t border-neutral-700">
+                                <div className="flex items-center justify-between gap-3 mb-3">
+                                    <div className="text-sm text-neutral-400">Recordings</div>
+                                </div>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    {[
+                                        { user: reviewing.userA, status: reviewing.recordingAStatus, file: reviewing.recordingAFile, side: "A", payoutUsd: reviewing.recordingAPayoutUsd, durMins: reviewing.recordingADurationMinutes, prevNote: reviewing.recordingAReviewNote },
+                                        { user: reviewing.userB, status: reviewing.recordingBStatus, file: reviewing.recordingBFile, side: "B", payoutUsd: reviewing.recordingBPayoutUsd, durMins: reviewing.recordingBDurationMinutes, prevNote: reviewing.recordingBReviewNote },
+                                    ].map(({ user, status, file, side, payoutUsd, durMins, prevNote }) => {
+                                        if (!user) return null;
+                                        const key = `${reviewing.callId}_${user._id}`;
+                                        return (
+                                            <div key={key} className="bg-neutral-700 p-4 rounded-lg flex flex-col justify-between">
+                                                <div>
+                                                    <div className="text-white font-semibold mb-2">{getParticipantLabel(user, side)}</div>
+                                                    <div className="mb-3">
+                                                        <div className="text-xs text-neutral-400 mb-1">Status</div>
+                                                        {getRecordingStatusBadge(status)}
                                                     </div>
-                                                )}
-
-                                                {qcResults[user._id] && (
-                                                    <div className="mt-3 space-y-3 bg-neutral-900/40 p-3 rounded-lg border border-neutral-700/50">
-                                                        <div className="flex justify-between text-xs">
-                                                            <span className="text-neutral-400">YAMNet Noise:</span>
-                                                            <span className={`font-bold ${qcResults[user._id].yamnet?.suspicion_rating === 10 ? 'text-error-400' : qcResults[user._id].yamnet?.suspicion_rating === 5 ? 'text-warning-400' : 'text-success-400'}`}>
-                                                                {qcResults[user._id].yamnet?.rating_label || 'Pass'}
-                                                            </span>
+                                                    <div className="mb-3 text-xs text-neutral-400">
+                                                        {formatPayout(payoutUsd, durMins)}
+                                                    </div>
+                                                    {(prevNote || "").trim() && (
+                                                        <div className="mb-3 rounded-lg border border-neutral-600 bg-neutral-800/60 px-3 py-2 text-xs text-neutral-300">
+                                                            {prevNote}
                                                         </div>
-                                                        {qcResults[user._id].yamnet?.events && qcResults[user._id].yamnet.events.length > 0 ? (
-                                                            <div className="space-y-1.5">
-                                                                <div className="text-[10px] text-neutral-400 font-bold uppercase tracking-wider">Spotcheck Noise Events (Click to play 8s)</div>
-                                                                <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto pr-1">
-                                                                    {filterOverlappingEvents(qcResults[user._id].yamnet.events).map((e, idx) => (
-                                                                        <button
-                                                                            key={idx}
-                                                                            onClick={() => playSpotcheck(reviewing.callId, user._id, e.timestamp_sec)}
-                                                                            className={`inline-flex items-center gap-1 px-2 py-1 text-[10px] font-medium rounded border transition-all ${
-                                                                                e.severity === 'heavy' 
-                                                                                    ? 'bg-error-950/40 text-error-300 border-error-800 hover:bg-error-900/60' 
-                                                                                    : 'bg-warning-950/40 text-warning-300 border-warning-800 hover:bg-warning-900/60'
-                                                                            }`}
-                                                                        >
-                                                                            <span>🔊</span>
-                                                                            <span className="font-mono font-bold">[{e.timestamp}]</span>
-                                                                            <span>{e.class}</span>
-                                                                            <span className="opacity-60">({Number(e.score).toFixed(2)})</span>
-                                                                        </button>
-                                                                    ))}
-                                                                </div>
-                                                            </div>
-                                                        ) : (
-                                                            qcResults[user._id].yamnet?.top_noise_events && qcResults[user._id].yamnet.top_noise_events !== "None" && (
-                                                                <div className="text-[10px] text-error-300/80 bg-error-950/20 px-2 py-1 rounded border border-error-900/30">
-                                                                    Events: {qcResults[user._id].yamnet.top_noise_events}
-                                                                </div>
-                                                            )
-                                                        )}
-                                                        {qcResults[user._id].freq && (
-                                                            <div className="grid grid-cols-2 gap-2 text-[10px] text-neutral-300">
-                                                                <div>Bit Verdict: <span className="font-bold">{qcResults[user._id].freq.bit_verdict}</span></div>
-                                                                <div>Noise Floor: <span className="font-bold">{qcResults[user._id].freq.noise_floor_db} dBFS</span></div>
-                                                                <div>Crest Factor: <span className="font-bold">{qcResults[user._id].freq.crest_factor} dB</span></div>
-                                                                <div>Processing: <span className="font-bold">{qcResults[user._id].freq.processing_verdict}</span></div>
-                                                            </div>
-                                                        )}
-                                                        {(qcResults[user._id].spectrogram || qcResults[user._id].spectrogramS3Key) && (
-                                                            <div className="mt-2 bg-black/40 rounded p-1 border border-neutral-800">
-                                                                <div className="text-[9px] text-neutral-500 mb-1 font-bold tracking-wider uppercase text-center">Nyquist Spectrogram (Click to zoom)</div>
-                                                                <img 
-                                                                    src={qcResults[user._id].spectrogram 
-                                                                         ? `data:image/png;base64,${qcResults[user._id].spectrogram}`
-                                                                         : `${BACKEND_URL}/api/admin/qa/calls/${reviewing.callId}/spectrogram/${user._id}`
-                                                                     }
-                                                                    alt="Spectrogram"
-                                                                    crossOrigin="use-credentials"
-                                                                    className="w-full rounded border border-neutral-900 cursor-zoom-in hover:opacity-80 transition-opacity"
-                                                                    onClick={() => {
-                                                                        const src = qcResults[user._id].spectrogram 
-                                                                            ? `data:image/png;base64,${qcResults[user._id].spectrogram}`
-                                                                            : `${BACKEND_URL}/api/admin/qa/calls/${reviewing.callId}/spectrogram/${user._id}`;
-                                                                        setZoomedImage({ src, title: `${getParticipantLabel(user)}'s Spectrogram` });
-                                                                    }}
+                                                    )}
+
+                                                    {/* Audio Visualizer & Player */}
+                                                    <div className="mb-3">
+                                                        <label className="block text-[10px] text-neutral-400 mb-1 uppercase font-bold">Listen Recording</label>
+                                                        {audioUrls[key] ? (
+                                                            <div className="space-y-2">
+                                                                <AudioVisualizer 
+                                                                    url={audioUrls[key]}
+                                                                    audioRef={{ current: audioRefs.current[key] }} 
+                                                                />
+                                                                <audio 
+                                                                    ref={(el) => (audioRefs.current[key] = el)}
+                                                                    controls 
+                                                                    src={audioUrls[key]} 
+                                                                    className="w-full h-9 rounded" 
+                                                                    controlsList="nodownload noplaybackrate" 
+                                                                    onContextMenu={(e) => e.preventDefault()}
                                                                 />
                                                             </div>
+                                                        ) : file ? (
+                                                            <button 
+                                                                onClick={() => loadCallAudio(reviewing.callId, user._id)} 
+                                                                disabled={loadingAudio === key} 
+                                                                className="w-full py-2 bg-neutral-800 hover:bg-neutral-600 border border-neutral-600 text-white text-xs font-semibold rounded-lg disabled:opacity-50 transition-colors"
+                                                            >
+                                                                {loadingAudio === key ? "Loading WAV..." : "▶ Load Audio Waveform"}
+                                                            </button>
+                                                        ) : (
+                                                            <div className="text-xs text-neutral-500 text-center py-2">No recording available</div>
                                                         )}
                                                     </div>
-                                                )}
+
+                                                    {/* Audio QC Analyzer Card */}
+                                                    {file && (
+                                                        <div className="mb-4 pt-3 border-t border-neutral-600">
+                                                            <button
+                                                                onClick={() => runAudioQC(reviewing.callId, user._id)}
+                                                                disabled={qcLoading[user._id]}
+                                                                className="w-full inline-flex items-center justify-center px-4 py-2 bg-neutral-800 hover:bg-neutral-600 disabled:opacity-50 text-white rounded-lg text-xs font-bold border border-neutral-600 transition-colors"
+                                                            >
+                                                                {qcLoading[user._id] ? (
+                                                                    <span className="flex items-center gap-1.5">
+                                                                        <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                                                        Running QC Analysis...
+                                                                    </span>
+                                                                ) : (qcResults[user._id] ? "🔄 Re-run QC Analyzer" : "📊 Run Audio QC Analyzer")}
+                                                            </button>
+
+                                                            {qcErrors[user._id] && (
+                                                                <div className="mt-2 text-xs text-error-400 font-medium">
+                                                                    ⚠️ {qcErrors[user._id]}
+                                                                </div>
+                                                            )}
+
+                                                            {qcResults[user._id] && (
+                                                                <div className="mt-3 space-y-3 bg-neutral-900/40 p-3 rounded-lg border border-neutral-700/50">
+                                                                    <div className="flex justify-between text-xs">
+                                                                        <span className="text-neutral-400">YAMNet Noise:</span>
+                                                                        <span className={`font-bold ${qcResults[user._id].yamnet?.suspicion_rating === 10 ? 'text-error-400' : qcResults[user._id].yamnet?.suspicion_rating === 5 ? 'text-warning-400' : 'text-success-400'}`}>
+                                                                            {qcResults[user._id].yamnet?.rating_label || 'Pass'}
+                                                                        </span>
+                                                                    </div>
+                                                                    {qcResults[user._id].yamnet?.events && qcResults[user._id].yamnet.events.length > 0 ? (
+                                                                        <div className="space-y-1.5">
+                                                                            <div className="text-[10px] text-neutral-400 font-bold uppercase tracking-wider">Spotcheck Noise Events (Click to play 8s)</div>
+                                                                            <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto pr-1">
+                                                                                {getSortedQcEvents(qcResults[user._id].yamnet.events).map((e, idx) => {
+                                                                                     const isPlayed = (playedSpotchecks[user._id] || []).includes(e.timestamp_sec);
+                                                                                     return (
+                                                                                         <button
+                                                                                             key={idx}
+                                                                                             onClick={() => playSpotcheck(reviewing.callId, user._id, e.timestamp_sec)}
+                                                                                             className={`inline-flex items-center gap-1 px-2 py-1 text-[10px] font-medium rounded border transition-all ${
+                                                                                                 isPlayed
+                                                                                                     ? 'bg-emerald-950/70 text-emerald-300 border-emerald-600 font-bold'
+                                                                                                     : e.severity === 'heavy' 
+                                                                                                         ? 'bg-error-950/40 text-error-300 border-error-800 hover:bg-error-900/60' 
+                                                                                                         : 'bg-warning-950/40 text-warning-300 border-warning-800 hover:bg-warning-900/60'
+                                                                                             }`}
+                                                                                         >
+                                                                                             <span>{isPlayed ? '✓' : '🔊'}</span>
+                                                                                             <span className="font-mono font-bold">[{e.timestamp}]</span>
+                                                                                             <span>{e.class}</span>
+                                                                                             <span className="opacity-80 font-bold text-amber-300">({Number(e.score).toFixed(2)})</span>
+                                                                                         </button>
+                                                                                     );
+                                                                                 })}
+                                                                            </div>
+                                                                        </div>
+                                                                    ) : (
+                                                                        qcResults[user._id].yamnet?.top_noise_events && qcResults[user._id].yamnet.top_noise_events !== "None" && (
+                                                                            <div className="text-[10px] text-error-300/80 bg-error-950/20 px-2 py-1 rounded border border-error-900/30">
+                                                                                Events: {qcResults[user._id].yamnet.top_noise_events}
+                                                                            </div>
+                                                                        )
+                                                                    )}
+                                                                    {qcResults[user._id].freq && (
+                                                                        <div className="grid grid-cols-2 gap-2 text-[10px] text-neutral-300">
+                                                                            <div>Bit Verdict: <span className="font-bold">{qcResults[user._id].freq.bit_verdict}</span></div>
+                                                                            <div>Noise Floor: <span className="font-bold">{qcResults[user._id].freq.noise_floor_db} dBFS</span></div>
+                                                                            <div>Crest Factor: <span className="font-bold">{qcResults[user._id].freq.crest_factor} dB</span></div>
+                                                                            <div>Processing: <span className="font-bold">{qcResults[user._id].freq.processing_verdict}</span></div>
+                                                                        </div>
+                                                                    )}
+                                                                    {(qcResults[user._id].spectrogram || qcResults[user._id].spectrogramS3Key) && (
+                                                                        <div className="mt-2 bg-black/40 rounded p-1 border border-neutral-800">
+                                                                            <div className="text-[9px] text-neutral-500 mb-1 font-bold tracking-wider uppercase text-center">Nyquist Spectrogram (Click to zoom)</div>
+                                                                            <img 
+                                                                                src={qcResults[user._id].spectrogram 
+                                                                                     ? `data:image/png;base64,${qcResults[user._id].spectrogram}`
+                                                                                     : `${BACKEND_URL}/api/admin/qa/calls/${reviewing.callId}/spectrogram/${user._id}`
+                                                                                 }
+                                                                                alt="Spectrogram"
+                                                                                crossOrigin="use-credentials"
+                                                                                className="w-full rounded border border-neutral-900 cursor-zoom-in hover:opacity-80 transition-opacity"
+                                                                                onClick={() => {
+                                                                                    const src = qcResults[user._id].spectrogram 
+                                                                                        ? `data:image/png;base64,${qcResults[user._id].spectrogram}`
+                                                                                        : `${BACKEND_URL}/api/admin/qa/calls/${reviewing.callId}/spectrogram/${user._id}`;
+                                                                                    setZoomedImage({ src, title: `${getParticipantLabel(user)}'s Spectrogram` });
+                                                                                }}
+                                                                            />
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    )}
+
+                                                    <div className="mb-3">
+                                                        <label className="block text-[10px] text-neutral-500 mb-1 uppercase font-bold">Review Note</label>
+                                                        <textarea
+                                                            rows={2}
+                                                            value={recordingNotes[user._id] || ""}
+                                                            onChange={(e) => setRecordingNotes(prev => ({ ...prev, [user._id]: e.target.value }))}
+                                                            placeholder="Enter review notes..."
+                                                            className="w-full bg-neutral-800 border border-neutral-600 text-white text-xs rounded-lg px-2 py-1.5 resize-none focus:border-warning-500 outline-none"
+                                                        />
+                                                    </div>
+                                                      {/* Rejection Reason Selector */}
+                                                      <div className="mb-3 bg-neutral-800/80 p-2.5 rounded-lg border border-neutral-600">
+                                                          <div className="text-[10px] text-neutral-400 font-bold uppercase mb-1.5 flex items-center justify-between">
+                                                              <span>Rejection Reason(s)</span>
+                                                              <span className="text-[9px] text-neutral-500 font-normal">(At least 1 required if rejecting)</span>
+                                                          </div>
+                                                          <div className="flex flex-wrap items-center gap-3">
+                                                              <label className="inline-flex items-center gap-1.5 text-xs text-neutral-200 cursor-pointer select-none">
+                                                                  <input
+                                                                      type="checkbox"
+                                                                      checked={getSelectedReasons(user._id).includes("Off-Topic Conversation")}
+                                                                      onChange={() => toggleReason(user._id, "Off-Topic Conversation", reviewing.callId)}
+                                                                      className="w-4 h-4 text-error-600 bg-neutral-900 border-neutral-600 rounded focus:ring-error-500 cursor-pointer"
+                                                                  />
+                                                                  <span>🗣️ Off-Topic Conversation</span>
+                                                              </label>
+                                                              <label className="inline-flex items-center gap-1.5 text-xs text-neutral-200 cursor-pointer select-none">
+                                                                  <input
+                                                                      type="checkbox"
+                                                                      checked={getSelectedReasons(user._id).includes("Noisy")}
+                                                                      onChange={() => toggleReason(user._id, "Noisy", reviewing.callId)}
+                                                                      className="w-4 h-4 text-error-600 bg-neutral-900 border-neutral-600 rounded focus:ring-error-500 cursor-pointer"
+                                                                  />
+                                                                  <span>🔊 Noisy</span>
+                                                              </label>
+                                                          </div>
+                                                      </div>
+                                                </div>
+
+                                                     {(() => {
+                                                          const hasQcResult = Boolean(qcResults[user._id]);
+                                                          const yamnetEvents = qcResults[user._id]?.yamnet?.events || [];
+                                                          const sortedEvts = getSortedQcEvents(yamnetEvents);
+                                                          const totalEvts = sortedEvts.length;
+                                                          const reqSpotchecks = totalEvts >= 3 ? 3 : totalEvts;
+                                                          
+                                                          const playedTimestamps = playedSpotchecks[user._id] || [];
+                                                          const requiredTopEvts = sortedEvts.slice(0, reqSpotchecks);
+                                                          const playedReqCount = requiredTopEvts.filter(evt => playedTimestamps.includes(evt.timestamp_sec)).length;
+
+                                                          const isSatisfied = !isQaOnly || (hasQcResult && playedReqCount >= reqSpotchecks);
+
+                                                          let statusMsg = "";
+                                                          if (isQaOnly && !isSatisfied) {
+                                                              if (!hasQcResult) {
+                                                                  statusMsg = "🔒 QC Analyzer Compulsory: Run Audio QC Analyzer first to process this recording";
+                                                              } else {
+                                                                  statusMsg = `🔒 Spotcheck Required: Listen to at least ${reqSpotchecks} top noise events (${playedReqCount}/${reqSpotchecks} listened)`;
+                                                              }
+                                                          }
+
+                                                          return (
+                                                              <div>
+                                                                  {isQaOnly && !isSatisfied && (
+                                                                      <div className="mb-2 text-[11px] font-semibold text-amber-400 bg-amber-950/40 border border-amber-800/60 px-2.5 py-1.5 rounded-lg text-center">
+                                                                          {statusMsg}
+                                                                      </div>
+                                                                  )}
+
+                                                                  <div className="flex items-center gap-2 mt-4">
+                                                                      <button
+                                                                          onClick={() => actOnRecording(reviewing.callId, user._id, "approve")}
+                                                                          disabled={actionLoading === `approve_${user._id}` || !isSatisfied}
+                                                                          className="flex-1 px-3 py-2 bg-success-600 hover:bg-success-700 text-white rounded-lg text-xs font-medium transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                                                                          title={!isSatisfied ? statusMsg : ""}
+                                                                      >
+                                                                          {actionLoading === `approve_${user._id}` ? "Saving..." : "✓ Approve"}
+                                                                      </button>
+                                                                      <button
+                                                                          onClick={() => actOnRecording(reviewing.callId, user._id, "reject")}
+                                                                          disabled={actionLoading === `reject_${user._id}` || !isSatisfied}
+                                                                          className="flex-1 px-3 py-2 bg-error-600 hover:bg-error-700 text-white rounded-lg text-xs font-medium transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                                                                          title={!isSatisfied ? statusMsg : ""}
+                                                                      >
+                                                                          {actionLoading === `reject_${user._id}` ? "Saving..." : "✗ Reject"}
+                                                                      </button>
+                                                                  </div>
+                                                              </div>
+                                                          );
+                                                     })()}
                                             </div>
-                                        )}
-                                        
-                                        <div className="flex gap-2">
-                                            <button onClick={() => actOnRecording(reviewing.callId, user._id, "approve")} disabled={!!actionLoading} className="flex-1 py-2 bg-green-600 hover:bg-green-700 text-white text-xs font-semibold rounded-lg disabled:opacity-50">
-                                                {actionLoading === `approve_${user._id}` ? "Saving..." : "Approve"}
-                                            </button>
-                                            <button onClick={() => actOnRecording(reviewing.callId, user._id, "reject")} disabled={!!actionLoading} className="flex-1 py-2 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold rounded-lg disabled:opacity-50">
-                                                {actionLoading === `reject_${user._id}` ? "Saving..." : "Reject"}
-                                            </button>
-                                        </div>
-                                    </div>
-                                );
-                            })}
-                            <div>
-                                <label className="block text-sm text-neutral-400 mb-1">Review Notes (optional)</label>
-                                <textarea rows={3} value={notes} onChange={(e) => setNotes(e.target.value)} className="w-full bg-neutral-700 border border-neutral-600 text-white text-sm rounded-lg px-3 py-2 resize-none" />
-                                <button onClick={saveNotes} disabled={!!actionLoading} className="mt-2 w-full py-2 bg-neutral-600 hover:bg-neutral-500 text-white text-xs font-semibold rounded-lg disabled:opacity-50">
-                                    {actionLoading === "notes" ? "Saving..." : "Save Notes"}
-                                </button>
+                                        );
+                                    })}
+                                </div>
                             </div>
+
+
                         </div>
                     </div>
                 </div>

@@ -39,6 +39,9 @@ import AdminCompanyPhraseWorkloads from "./pages/AdminCompanyPhraseWorkloads.jsx
 import AdminCompanyLanguagePhrases from "./pages/AdminCompanyLanguagePhrases.jsx";
 import AdminCompanyContributorsSummary from "./pages/AdminCompanyContributorsSummary.jsx";
 import AdminPhraseDownloads from "./pages/AdminPhraseDownloads.jsx";
+import AdminQAPayments from "./pages/AdminQAPayments.jsx";
+import AdminAmbiguity from "./pages/AdminAmbiguity.jsx";
+import QaFlags from "./pages/QaFlags.jsx";
 import { getUserInfo, setUserInfo, clearToken } from "./lib/auth.js";
 import { apiGet, apiPatchJson } from "./lib/api.js";
 import { SystemCheckProvider } from "./context/SystemCheckContext.jsx";
@@ -347,6 +350,9 @@ export default function App() {
         <Route path="/admin/companies/:id/phrase-workloads/:language" element={<RequireAdmin><AdminCompanyLanguagePhrases /></RequireAdmin>} />
         <Route path="/admin/companies/:id/contributors-summary" element={<RequireAdmin><AdminCompanyContributorsSummary /></RequireAdmin>} />
         <Route path="/admin/qaphrase" element={<RequireAdminOrQA><QaPhrases /></RequireAdminOrQA>} />
+        <Route path="/admin/qa-payments" element={<RequireAdminOrQA><AdminQAPayments /></RequireAdminOrQA>} />
+        <Route path="/admin/qa-flags" element={<RequireAdminOrQA><QaFlags /></RequireAdminOrQA>} />
+        <Route path="/admin/ambiguity" element={<RequireAdmin><AdminAmbiguity /></RequireAdmin>} />
         <Route path="/admin/media" element={<RequireAdmin><AdminMedia /></RequireAdmin>} />
         <Route path="/language-apply" element={<RequireAuth><RequireProfileFields><LanguageApply /></RequireProfileFields></RequireAuth>} />
         <Route path="/phrases" element={<RequireAuth><RequireProfileFields><PhraseRecording /></RequireProfileFields></RequireAuth>} />

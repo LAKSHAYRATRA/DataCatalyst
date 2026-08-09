@@ -16,9 +16,10 @@ import {
   X,
   Loader2,
   Clock,
-  CheckCircle2
+  CheckCircle2,
+  ShieldCheck
 } from "lucide-react";
-import { apiGet } from "../lib/api.js";
+import { apiGet, apiPostJson } from "../lib/api.js";
 import Swal from "sweetalert2";
 
 function money(value) {
@@ -29,8 +30,9 @@ export default function AdminFinances() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [data, setData] = useState(null);
+  const [qaData, setQaData] = useState(null);
   
-  const [activeTab, setActiveTab] = useState("projects"); // "projects" | "contributors"
+  const [activeTab, setActiveTab] = useState("projects"); // "projects" | "contributors" | "qa"
   const [search, setSearch] = useState("");
   const [expandedProjects, setExpandedProjects] = useState({});
   const [selectedUserModal, setSelectedUserModal] = useState(null);
@@ -44,8 +46,12 @@ export default function AdminFinances() {
     setLoading(true);
     setError("");
     try {
-      const res = await apiGet("/api/admin/payouts/finances");
+      const [res, qaRes] = await Promise.all([
+        apiGet("/api/admin/payouts/finances"),
+        apiGet("/api/admin/qa/payments-stats").catch(() => null)
+      ]);
       setData(res);
+      setQaData(qaRes);
     } catch (err) {
       console.error("Failed to load finances", err);
       setError(err.message || "Failed to load financial overview");
@@ -71,6 +77,58 @@ export default function AdminFinances() {
   const openUserModal = (userObj) => {
     setSelectedUserModal(userObj);
     setCopiedUpi(false);
+  };
+
+  const handleQaPayNow = async (item) => {
+    const upiId = item.qaUser.upiId || "Not Provided";
+    const remaining = item.totalRemainingUsd !== undefined ? item.totalRemainingUsd : item.totalEarningsUsd;
+    const result = await Swal.fire({
+      title: "Confirm QA Payout",
+      html: `
+        <div style="text-align: left; background: #111827; padding: 16px; border-radius: 12px; margin-top: 12px; border: 1px solid #374151;">
+          <div style="margin-bottom: 12px;">
+            <div style="color: #9ca3af; font-size: 12px; text-transform: uppercase; font-weight: 600; letter-spacing: 0.05em;">QA Reviewer</div>
+            <div style="color: #ffffff; font-weight: 600; font-size: 15px; margin-top: 2px;">${item.qaUser.name}</div>
+            <div style="color: #6b7280; font-size: 12px;">${item.qaUser.email}</div>
+          </div>
+
+          <div style="margin-bottom: 12px;">
+            <div style="color: #9ca3af; font-size: 12px; text-transform: uppercase; font-weight: 600; letter-spacing: 0.05em;">UPI ID for Payment</div>
+            <div style="display: flex; align-items: center; justify-content: space-between; background: #1f2937; padding: 8px 12px; border-radius: 8px; border: 1px solid #4b5563; margin-top: 4px;">
+              <span style="font-family: monospace; color: #f59e0b; font-weight: 700; font-size: 14px;">${upiId}</span>
+              ${item.qaUser.upiId ? `<button type="button" onclick="navigator.clipboard.writeText('${item.qaUser.upiId}'); this.innerText='Copied!';" style="background: #374151; color: #e5e7eb; border: none; padding: 4px 8px; border-radius: 6px; font-size: 11px; cursor: pointer; font-weight: 600;">Copy UPI</button>` : ''}
+            </div>
+          </div>
+
+          <div>
+            <div style="color: #9ca3af; font-size: 12px; text-transform: uppercase; font-weight: 600; letter-spacing: 0.05em;">Remaining Owed Balance</div>
+            <div style="color: #10b981; font-weight: 700; font-size: 22px; margin-top: 2px;">${money(remaining)}</div>
+          </div>
+        </div>
+        <p style="margin-top: 14px; font-size: 13px; color: #d1d5db;">Are you sure you want to mark this QA payout as paid?</p>
+      `,
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonColor: "#10b981",
+      cancelButtonColor: "#475569",
+      confirmButtonText: "Yes, Pay Now",
+      cancelButtonText: "Cancel",
+      background: "#1f2937",
+      color: "#fff"
+    });
+
+    if (result.isConfirmed) {
+      try {
+        await apiPostJson(`/api/admin/payouts/users/${item.qaUser._id}/payments`, {
+          amountUsd: remaining,
+          note: "QA Payout from Finances tab"
+        });
+        Swal.fire({ title: "Paid!", text: "The QA payout has been recorded successfully.", icon: "success", background: "#1f2937", color: "#fff" });
+        fetchFinances();
+      } catch (e) {
+        Swal.fire({ title: "Error", text: e.message, icon: "error", background: "#1f2937", color: "#fff" });
+      }
+    }
   };
 
   return (
@@ -197,6 +255,17 @@ export default function AdminFinances() {
                 >
                   <Users className="w-4 h-4" />
                   All Contributors ({data?.contributors?.length || 0})
+                </button>
+                <button
+                  onClick={() => setActiveTab("qa")}
+                  className={`px-5 py-2.5 text-xs font-bold rounded-xl transition-all flex items-center gap-2 ${
+                    activeTab === "qa"
+                      ? "bg-warning-500 text-neutral-950 shadow-lg font-extrabold"
+                      : "bg-neutral-800 text-neutral-300 hover:bg-neutral-700 hover:text-white"
+                  }`}
+                >
+                  <ShieldCheck className="w-4 h-4 text-warning-400" />
+                  QA ({qaData?.stats?.length || 0})
                 </button>
               </div>
 
@@ -484,6 +553,102 @@ export default function AdminFinances() {
                     </div>
                   );
                 })()}
+              </div>
+            )}
+
+            {/* TAB 3: QA FINANCIAL OVERVIEW */}
+            {activeTab === "qa" && (
+              <div className="space-y-6">
+                <div className="bg-neutral-800 border border-neutral-700 p-5 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-xl">
+                  <div>
+                    <div className="text-xs uppercase font-bold text-warning-400 tracking-wider mb-1">Total QA Liabilities / Payouts Owed</div>
+                    <div className="text-3xl font-black text-white">
+                      {money(qaData?.totalCompanyQaExpenseUsd || 0)}
+                    </div>
+                  </div>
+                  <div className="text-xs text-neutral-400">
+                    Active QA Reviewers: <strong className="text-white text-sm">{qaData?.stats?.length || 0}</strong>
+                  </div>
+                </div>
+
+                <div className="bg-neutral-800 border border-neutral-700 rounded-2xl overflow-hidden shadow-xl">
+                  <div className="p-4 border-b border-neutral-700 font-bold text-sm text-neutral-200">
+                    QA Reviewers Payrates & Workload Financials
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs">
+                      <thead className="bg-neutral-750 text-neutral-300 uppercase tracking-wider font-semibold">
+                        <tr>
+                          <th className="px-4 py-3 text-left">QA Reviewer</th>
+                          <th className="px-4 py-3 text-left">Per Call Rate</th>
+                          <th className="px-4 py-3 text-left">Hourly Phrase Rate</th>
+                          <th className="px-4 py-3 text-center">Calls Reviewed</th>
+                          <th className="px-4 py-3 text-center">Phrases Reviewed (Duration)</th>
+                          <th className="px-4 py-3 text-right">Call Payout</th>
+                          <th className="px-4 py-3 text-right">Phrase Payout</th>
+                          <th className="px-4 py-3 text-right font-bold text-warning-400">Total Owed</th>
+                          <th className="px-4 py-3 text-center">Action</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-neutral-700/60">
+                        {(() => {
+                          const filteredQa = (qaData?.stats || []).filter(item => {
+                            if (!search.trim()) return true;
+                            const q = search.toLowerCase();
+                            return item.qaUser.name.toLowerCase().includes(q) || item.qaUser.email.toLowerCase().includes(q) || item.qaUser.username.toLowerCase().includes(q);
+                          });
+
+                          if (filteredQa.length === 0) {
+                            return (
+                              <tr>
+                                <td colSpan="9" className="text-center py-12 text-neutral-500">No QA reviewers match your filter.</td>
+                              </tr>
+                            );
+                          }
+
+                          return filteredQa.map((item) => (
+                            <tr key={item.qaUser._id} className="hover:bg-neutral-700/40 transition-colors">
+                              <td className="px-4 py-3.5 whitespace-nowrap">
+                                <div className="font-semibold text-white">{item.qaUser.name}</div>
+                                <div className="text-xs text-neutral-400">{item.qaUser.email}</div>
+                              </td>
+                              <td className="px-4 py-3.5 whitespace-nowrap font-mono text-neutral-200">
+                                ${item.qaUser.qaPerCallPayrateUsd?.toFixed(2) || "0.00"}
+                              </td>
+                              <td className="px-4 py-3.5 whitespace-nowrap font-mono text-neutral-200">
+                                ${item.qaUser.qaHourlyPhrasePayrateUsd?.toFixed(2) || "0.00"}
+                              </td>
+                              <td className="px-4 py-3.5 text-center font-bold text-white">
+                                {item.callsReviewed}
+                              </td>
+                              <td className="px-4 py-3.5 text-center">
+                                <span className="font-bold text-white">{item.phrasesReviewed} phrases</span>
+                                <span className="text-xs text-neutral-400 block">({item.totalPhraseSecs || 0}s / {item.phraseHours}h)</span>
+                              </td>
+                              <td className="px-4 py-3.5 text-right font-mono text-neutral-300">
+                                ${item.callEarningsUsd?.toFixed(2) || "0.00"}
+                              </td>
+                              <td className="px-4 py-3.5 text-right font-mono text-neutral-300">
+                                ${item.phraseEarningsUsd?.toFixed(2) || "0.00"}
+                              </td>
+                              <td className="px-4 py-3.5 text-right font-mono font-bold text-warning-400 text-sm">
+                                ${item.totalEarningsUsd?.toFixed(2) || "0.00"}
+                              </td>
+                              <td className="px-4 py-3.5 text-center">
+                                <button
+                                  onClick={() => handleQaPayNow(item)}
+                                  className="inline-flex px-3 py-1.5 rounded-lg bg-warning-600 hover:bg-warning-700 text-white text-xs font-semibold whitespace-nowrap transition-colors"
+                                >
+                                  Pay Now
+                                </button>
+                              </td>
+                            </tr>
+                          ));
+                        })()}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
               </div>
             )}
           </div>

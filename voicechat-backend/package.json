@@ -5,7 +5,7 @@
   "type": "module",
   "main": "src/index.js",
   "scripts": {
-    "dev": "node src/index.js",
+    "dev": "node --watch src/index.js",
     "start": "node src/index.js",
     "make-user": "node scripts/make_user.js",
     "make-admin": "node scripts/make_admin.js"

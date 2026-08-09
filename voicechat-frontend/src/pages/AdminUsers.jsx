@@ -1,22 +1,10 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { apiGet } from "../lib/api.js";
+import { apiGet, apiPostJson, apiPatchJson, apiDeleteJson } from "../lib/api.js";
 import AdminNav from "../components/AdminNav.jsx";
 import Swal from "sweetalert2";
 
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:3001";
-
-async function apiPatchJson(path, data = {}, method = "PATCH") {
-    const res = await fetch(`${BACKEND_URL}${path}`, {
-        method,
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify(data),
-    });
-    const json = await res.json().catch(() => ({ error: "Request failed" }));
-    if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
-    return json;
-}
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || (typeof window !== "undefined" && window.location.hostname !== "localhost" && window.location.hostname !== "127.0.0.1" ? "https://api.voclara.com" : "http://localhost:3001");
 
 const STATUS_BADGE = {
     approved: "bg-success-100 text-success-700 border border-success-200",
@@ -71,12 +59,14 @@ export default function AdminUsers() {
     // QA Users state
     const [qaUsers, setQaUsers] = useState([]);
     const [qaLoading, setQaLoading] = useState(false);
-    const [qaForm, setQaForm] = useState({ firstname: "", lastname: "", email: "", password: "", qaLanguageCodes: [] });
+    const [qaForm, setQaForm] = useState({ firstname: "", lastname: "", email: "", password: "", qaLanguageCodes: [], perCallPayrate: 0, hourlyPhrasePayrate: 0 });
     const [qaCreating, setQaCreating] = useState(false);
 
     // QA Edit state
     const [editQaId, setEditQaId] = useState(null);
     const [editQaLanguageCodes, setEditQaLanguageCodes] = useState([]);
+    const [editQaPerCallPayrate, setEditQaPerCallPayrate] = useState(0);
+    const [editQaHourlyPhrasePayrate, setEditQaHourlyPhrasePayrate] = useState(0);
     const [qaUpdating, setQaUpdating] = useState(false);
     const [qaError, setQaError] = useState("");
     const [languages, setLanguages] = useState([]);
@@ -115,13 +105,45 @@ export default function AdminUsers() {
         if (!confirm.isConfirmed) return;
 
         try {
-            await apiPatchJson(`/api/admin/users/${userId}/resend-agreement`, {}, "POST");
+            await apiPostJson(`/api/admin/users/${userId}/resend-agreement`, {});
             Swal.fire("Success", "Agreement reset successfully. User will be required to re-sign with updated details.", "success");
             if (tab === "all") loadUsers();
             else if (tab === "approved") loadApprovedUsers();
             else loadPending();
         } catch (err) {
             Swal.fire("Error", "Failed to reset agreement: " + err.message, "error");
+        }
+    }
+
+    async function sendDifferentAgreement(userId, username) {
+        const confirm = await Swal.fire({
+            title: "Send different agreement?",
+            text: `Assign the DataCatalyst Voice Dataset Consent Agreement (No-Cloning PDF) to ${username || 'this user'}?`,
+            icon: "question",
+            showCancelButton: true,
+            confirmButtonColor: "#0284c7",
+            confirmButtonText: "Yes, Send Agreement",
+            footer: '<a href="/Legal/DataCatalyst-Voice-Dataset-Consent-Agreement.pdf" target="_blank" style="color: #38bdf8;">Preview Agreement PDF</a>'
+        });
+
+        if (!confirm.isConfirmed) return;
+
+        try {
+            await apiPostJson(`/api/admin/users/${userId}/resend-agreement`, { agreementDoc: "datacatalyst-voice-dataset-consent-agreement" });
+            Swal.fire({
+                title: "Agreement Sent!",
+                text: "DataCatalyst Voice Dataset Consent Agreement assigned successfully. Opening PDF preview...",
+                icon: "success",
+                timer: 2500,
+                showConfirmButton: false
+            });
+            window.open("/Legal/DataCatalyst-Voice-Dataset-Consent-Agreement.pdf", "_blank");
+            if (tab === "pending") loadPending();
+            else if (tab === "all") loadUsers();
+            else loadApprovedUsers();
+        } catch (err) {
+            window.open("/Legal/DataCatalyst-Voice-Dataset-Consent-Agreement.pdf", "_blank");
+            Swal.fire("Agreement Opened", "Opened DataCatalyst Voice Dataset Consent Agreement PDF.", "info");
         }
     }
 
@@ -167,7 +189,7 @@ export default function AdminUsers() {
 
         try {
             setJsonSaving(true);
-            await apiPatchJson(`/api/admin/users/${jsonModalUser._id}`, {}, "DELETE");
+            await apiDeleteJson(`/api/admin/users/${jsonModalUser._id}`);
             Swal.fire({ title: "User Deleted", text: `User @${jsonModalUser.username} deleted permanently.`, icon: "success", timer: 2000, showConfirmButton: false });
             setJsonModalUser(null);
 
@@ -319,8 +341,8 @@ export default function AdminUsers() {
         setQaCreating(true);
         setQaError("");
         try {
-            await apiPatchJson("/api/admin/qa-users", qaForm, "POST");
-            setQaForm({ firstname: "", lastname: "", email: "", password: "", qaLanguageCodes: [] });
+            await apiPostJson("/api/admin/qa-users", qaForm);
+            setQaForm({ firstname: "", lastname: "", email: "", password: "", qaLanguageCodes: [], perCallPayrate: 0, hourlyPhrasePayrate: 0 });
             await loadQaUsers();
         } catch (e) {
             setQaError(e.message);
@@ -329,14 +351,18 @@ export default function AdminUsers() {
         }
     }
 
-    async function updateQaLanguages(id) {
+    async function updateQaUser(id) {
         if (!editQaLanguageCodes || editQaLanguageCodes.length === 0) {
             alert("Select at least one language."); 
             return;
         }
         setQaUpdating(true);
         try {
-            await apiPatchJson(`/api/admin/qa-users/${id}/languages`, { qaLanguageCodes: editQaLanguageCodes });
+            await apiPatchJson(`/api/admin/qa-users/${id}`, { 
+                qaLanguageCodes: editQaLanguageCodes,
+                perCallPayrate: editQaPerCallPayrate,
+                hourlyPhrasePayrate: editQaHourlyPhrasePayrate
+            });
             setEditQaId(null);
             await loadQaUsers();
         } catch (e) {
@@ -349,11 +375,7 @@ export default function AdminUsers() {
     async function deleteQaUser(id, name) {
         if (!window.confirm(`Delete QA user "${name}"? This cannot be undone.`)) return;
         try {
-            const res = await fetch(`${import.meta.env.VITE_BACKEND_URL || "http://localhost:3001"}/api/admin/qa-users/${id}`, {
-                method: "DELETE",
-                credentials: "include",
-            });
-            if (!res.ok) { const j = await res.json(); throw new Error(j.error); }
+            await apiDeleteJson(`/api/admin/qa-users/${id}`);
             await loadQaUsers();
         } catch (e) {
             alert("Error: " + e.message);
@@ -524,6 +546,13 @@ export default function AdminUsers() {
                                                 >
                                                     📄 Resend Agreement
                                                 </button>
+                                                <button
+                                                    onClick={() => sendDifferentAgreement(user._id, user.username)}
+                                                    className="w-full py-1.5 bg-sky-600/20 hover:bg-sky-600/30 text-sky-300 text-xs font-semibold rounded-lg transition-colors flex items-center justify-center gap-1 mt-1 border border-sky-500/30"
+                                                    title="Send DataCatalyst Voice Dataset Consent Agreement (No-Cloning PDF)"
+                                                >
+                                                    📜 Send different agreement
+                                                </button>
                                             </div>
                                         </div>
                                     </div>
@@ -619,6 +648,13 @@ export default function AdminUsers() {
                                                             title="Force user to re-sign agreement with fresh profile details"
                                                         >
                                                             📄 Resend Agreement
+                                                        </button>
+                                                        <button
+                                                            onClick={() => sendDifferentAgreement(user._id, user.username)}
+                                                            className="text-sky-400 hover:text-sky-300 font-medium bg-sky-400/10 hover:bg-sky-400/20 px-3 py-1.5 rounded transition-colors flex items-center gap-1"
+                                                            title="Send DataCatalyst Voice Dataset Consent Agreement (No-Cloning PDF)"
+                                                        >
+                                                            📜 Send different agreement
                                                         </button>
                                                     </div>
                                                 </td>
@@ -731,6 +767,13 @@ export default function AdminUsers() {
                                                                 Download Agreement
                                                             </button>
                                                             <button
+                                                                onClick={() => sendDifferentAgreement(u.userId, u.username)}
+                                                                className="px-3 py-1.5 rounded-md bg-sky-500/10 text-sky-400 hover:bg-sky-500/20 text-xs font-medium flex items-center gap-1"
+                                                                title="Send DataCatalyst Voice Dataset Consent Agreement (No-Cloning PDF)"
+                                                            >
+                                                                📜 Send different agreement
+                                                            </button>
+                                                            <button
                                                                 onClick={() => resendAgreement(u.userId, u.username)}
                                                                 className="px-3 py-1.5 rounded-md bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 text-xs font-medium flex items-center gap-1"
                                                                 title="Force user to re-sign agreement with fresh profile details"
@@ -775,6 +818,30 @@ export default function AdminUsers() {
                                         />
                                     </div>
                                 ))}
+                                <div>
+                                    <label className="block text-xs text-neutral-400 mb-1">Per Call Payrate ($)</label>
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        step="0.01"
+                                        value={qaForm.perCallPayrate}
+                                        onChange={e => setQaForm(f => ({ ...f, perCallPayrate: e.target.value }))}
+                                        className="w-full bg-neutral-700 border border-neutral-600 text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-warning-500"
+                                        placeholder="0.00"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-xs text-neutral-400 mb-1">Hourly Phrase Payrate ($)</label>
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        step="0.01"
+                                        value={qaForm.hourlyPhrasePayrate}
+                                        onChange={e => setQaForm(f => ({ ...f, hourlyPhrasePayrate: e.target.value }))}
+                                        className="w-full bg-neutral-700 border border-neutral-600 text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-warning-500"
+                                        placeholder="0.00"
+                                    />
+                                </div>
                             </div>
                             <div className="mb-4">
                                 <label className="block text-xs text-neutral-400 mb-2">Assigned Languages</label>
@@ -831,7 +898,7 @@ export default function AdminUsers() {
                                 <table className="w-full text-sm">
                                     <thead className="bg-neutral-700/50">
                                         <tr>
-                                            {["Name", "Email", "Username", "Language", "Created", "Action"].map(h => (
+                                            {["QA ID", "Name", "Email", "Username", "Language", "Per Call Payrate", "Hourly Phrase Payrate", "Created", "Action"].map(h => (
                                                 <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-neutral-300 uppercase tracking-wider">{h}</th>
                                             ))}
                                         </tr>
@@ -839,6 +906,7 @@ export default function AdminUsers() {
                                     <tbody className="divide-y divide-neutral-700">
                                         {qaUsers.map(u => (
                                             <tr key={u._id} className="hover:bg-neutral-700/30 transition-colors">
+                                                <td className="px-4 py-3 font-mono font-bold text-amber-400 text-xs">{u.speaker_id || "QA_--"}</td>
                                                 <td className="px-4 py-3 text-white font-medium">{u.firstname} {u.lastname}</td>
                                                 <td className="px-4 py-3 text-neutral-400">{u.email}</td>
                                                 <td className="px-4 py-3 text-neutral-400 font-mono text-xs">{u.username}</td>
@@ -847,12 +915,20 @@ export default function AdminUsers() {
                                                         ? u.qaLanguageCodes.join(", ")
                                                         : u.qaLanguageCode || "—"}
                                                 </td>
+                                                <td className="px-4 py-3 text-emerald-400 font-mono text-xs font-semibold">
+                                                    ${u.perCallPayrate !== undefined ? u.perCallPayrate : 0}
+                                                </td>
+                                                <td className="px-4 py-3 text-emerald-400 font-mono text-xs font-semibold">
+                                                    ${u.hourlyPhrasePayrate !== undefined ? u.hourlyPhrasePayrate : 0}/hr
+                                                </td>
                                                 <td className="px-4 py-3 text-neutral-500 text-xs">{formatDate(u.createdAt)}</td>
                                                 <td className="px-4 py-3 flex gap-2">
                                                     <button
                                                         onClick={() => {
                                                             setEditQaId(u._id);
                                                             setEditQaLanguageCodes(u.qaLanguageCodes && u.qaLanguageCodes.length > 0 ? u.qaLanguageCodes : (u.qaLanguageCode ? [u.qaLanguageCode] : []));
+                                                            setEditQaPerCallPayrate(u.perCallPayrate || 0);
+                                                            setEditQaHourlyPhrasePayrate(u.hourlyPhrasePayrate || 0);
                                                         }}
                                                         className="px-3 py-1 bg-neutral-600 hover:bg-neutral-500 text-white text-xs font-semibold rounded-lg transition-colors"
                                                     >
@@ -877,9 +953,35 @@ export default function AdminUsers() {
                 {editQaId && (
                     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
                         <div className="bg-neutral-800 border border-neutral-700 rounded-2xl p-6 w-full max-w-md shadow-2xl">
-                            <h3 className="text-lg font-bold text-white mb-1">Edit Assigned Languages</h3>
-                            <p className="text-sm text-neutral-400 mb-4">Select the language queues this reviewer can access.</p>
+                            <h3 className="text-lg font-bold text-white mb-1">Edit QA Reviewer Settings</h3>
+                            <p className="text-sm text-neutral-400 mb-4">Update payrates and assigned language queues.</p>
                             
+                            <div className="grid grid-cols-2 gap-3 mb-4">
+                                <div>
+                                    <label className="block text-xs text-neutral-400 mb-1">Per Call Payrate ($)</label>
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        step="0.01"
+                                        value={editQaPerCallPayrate}
+                                        onChange={(e) => setEditQaPerCallPayrate(e.target.value)}
+                                        className="w-full bg-neutral-700 border border-neutral-600 text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-warning-500"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-xs text-neutral-400 mb-1">Hourly Phrase Payrate ($)</label>
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        step="0.01"
+                                        value={editQaHourlyPhrasePayrate}
+                                        onChange={(e) => setEditQaHourlyPhrasePayrate(e.target.value)}
+                                        className="w-full bg-neutral-700 border border-neutral-600 text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-warning-500"
+                                    />
+                                </div>
+                            </div>
+
+                            <label className="block text-xs text-neutral-400 mb-2 font-semibold">Assigned Languages</label>
                             <div className="grid grid-cols-2 gap-2 mb-6 max-h-48 overflow-y-auto custom-scrollbar">
                                 {languages.map((language) => (
                                     <label key={language._id} className="flex items-center space-x-2 text-sm text-white cursor-pointer hover:bg-neutral-700 p-2 rounded-lg transition-colors border border-neutral-600">
@@ -907,7 +1009,7 @@ export default function AdminUsers() {
                                     Cancel
                                 </button>
                                 <button
-                                    onClick={() => updateQaLanguages(editQaId)}
+                                    onClick={() => updateQaUser(editQaId)}
                                     disabled={qaUpdating || editQaLanguageCodes.length === 0}
                                     className="flex-1 px-4 py-2 bg-warning-600 hover:bg-warning-700 text-white rounded-lg text-sm font-semibold disabled:opacity-50"
                                 >

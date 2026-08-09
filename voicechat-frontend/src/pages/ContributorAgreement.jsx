@@ -81,13 +81,18 @@ export default function ContributorAgreement() {
   const [submitSuccess, setSubmitSuccess] = useState(false);
   const [retryable, setRetryable] = useState(false);
 
+  const assignedDoc = userInfo?.contributorAgreement?.assignedAgreementDoc;
+
   useEffect(() => {
     let cancelled = false;
     async function loadDoc() {
       setLoadError("");
       setLoadingDoc(true);
       try {
-        const res = await fetchWithRetry(AGREEMENT_URL, { credentials: "same-origin" });
+        const targetUrl = assignedDoc === "datacatalyst-voice-dataset-consent-agreement"
+          ? "/Legal/DataCatalyst-Voice-Dataset-Consent-Agreement.md"
+          : AGREEMENT_URL;
+        const res = await fetchWithRetry(targetUrl, { credentials: "same-origin" });
         const text = await res.text();
         if (!cancelled) setMarkdown(text);
       } catch (err) {
@@ -98,7 +103,7 @@ export default function ContributorAgreement() {
     }
     loadDoc();
     return () => { cancelled = true; };
-  }, []);
+  }, [assignedDoc]);
 
   useEffect(() => {
     saveDraft(checkboxes);

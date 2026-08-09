@@ -961,6 +961,11 @@ export async function signContributorAgreement(req, res) {
   }
 
   const signerName = `${req.user.firstname || ""} ${req.user.lastname || ""}`.trim();
+  const assignedDoc = req.user.contributorAgreement?.assignedAgreementDoc || "default";
+  const savedVersion = assignedDoc === "datacatalyst-voice-dataset-consent-agreement"
+    ? "v2.0-NoCloning"
+    : AGREEMENT_VERSION;
+
   try {
     await User.updateOne(
       { _id: req.user._id },
@@ -971,7 +976,7 @@ export async function signContributorAgreement(req, res) {
           "contributorAgreement.s3Key": recordingFileRef,
           "contributorAgreement.signerName": signerName,
           "contributorAgreement.signerIp": ip,
-          "contributorAgreement.agreementVersion": AGREEMENT_VERSION,
+          "contributorAgreement.agreementVersion": savedVersion,
           "contributorAgreement.pdfHash": pdfHash,
           "contributorAgreement.adminReviewStatus": "pending",
           "contributorAgreement.adminReviewedAt": null,
@@ -981,9 +986,9 @@ export async function signContributorAgreement(req, res) {
       }
     );
 
-    // Send confirmation email
+    // Send confirmation email with PDF attachment
     try {
-      await sendAgreementSignedEmail(req.user.email, req.user.firstname);
+      await sendAgreementSignedEmail(req.user.email, req.user.firstname, recordingFileRef, pdfBytes);
     } catch (mailErr) {
       console.error("Failed to send agreement signed email:", mailErr.message);
     }

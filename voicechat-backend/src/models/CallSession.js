@@ -57,6 +57,8 @@ const callSessionSchema = new mongoose.Schema(
     recordingAReviewNote: { type: String, default: null },
     recordingADurationMinutes: { type: Number, default: 0, min: 0 },
     recordingAPayoutUsd: { type: Number, default: 0, min: 0 },
+    recordingANoisy: { type: Boolean, default: false },
+    recordingARejectionReason: { type: String, enum: ['Off-Topic Conversation', 'Noisy', null], default: null },
     recordingBStatus: {
       type: String,
       enum: ['pending', 'approved', 'rejected'],
@@ -65,11 +67,16 @@ const callSessionSchema = new mongoose.Schema(
     recordingBReviewNote: { type: String, default: null },
     recordingBDurationMinutes: { type: Number, default: 0, min: 0 },
     recordingBPayoutUsd: { type: Number, default: 0, min: 0 },
+    recordingBNoisy: { type: Boolean, default: false },
+    recordingBRejectionReason: { type: String, enum: ['Off-Topic Conversation', 'Noisy', null], default: null },
 
-    // QA Review tracking
+
+    // QA Review tracking & 15-minute lock window
     reviewedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
     reviewedAt: { type: Date, default: null },
     reviewNotes: { type: String, default: null },
+    qaLockedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+    qaLockedAt: { type: Date, default: null },
     downloadLogs: [
       {
         adminUserId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
@@ -81,6 +88,23 @@ const callSessionSchema = new mongoose.Schema(
     // Persistent QC Analytics
     recordingAQCResult: { type: mongoose.Schema.Types.Mixed, default: null },
     recordingBQCResult: { type: mongoose.Schema.Types.Mixed, default: null },
+
+    // Dual-QA Cross Audit & Ambiguity Tracking
+    needsSecondQaReview: { type: Boolean, default: false },
+    firstQaReview: {
+      qaId: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+      action: { type: String },
+      recordingAStatus: { type: String },
+      recordingBStatus: { type: String },
+      recordingARejectionReason: { type: String },
+      recordingBRejectionReason: { type: String },
+      recordingAReviewNote: { type: String },
+      recordingBReviewNote: { type: String },
+      reviewedAt: { type: Date }
+    },
+
+    // Soft delete for Admin UI while retaining user earnings and history
+    adminDeleted: { type: Boolean, default: false },
   },
   { timestamps: true }
 );

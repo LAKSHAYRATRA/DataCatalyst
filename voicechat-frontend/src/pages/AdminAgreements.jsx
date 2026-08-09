@@ -141,6 +141,18 @@ export default function AdminAgreements() {
     }
   }
 
+  function sendDifferentAgreement(row) {
+    window.open("/Legal/DataCatalyst-Voice-Dataset-Consent-Agreement.pdf", "_blank");
+    Swal.fire({
+      icon: "info",
+      title: "Send different agreement",
+      text: `Opening DataCatalyst Voice Dataset Consent Agreement (No-Cloning PDF) for ${row.firstname || row.email || 'this user'}.`,
+      background: "#1f2937",
+      color: "#fff",
+      confirmButtonColor: "#0284c7"
+    });
+  }
+
   const filtered = rows.filter(r => {
     if (!search.trim()) return true;
     const q = search.trim().toLowerCase();
@@ -255,6 +267,13 @@ export default function AdminAgreements() {
                             className="px-3 py-1.5 rounded-md bg-success-600 hover:bg-success-700 text-white text-xs disabled:opacity-50"
                           >
                             Approve
+                          </button>
+                          <button
+                            onClick={() => sendDifferentAgreement(row)}
+                            className="px-3 py-1.5 rounded-md bg-sky-600 hover:bg-sky-700 text-white text-xs disabled:opacity-50 border border-sky-500/30"
+                            title="Send DataCatalyst Voice Dataset Consent Agreement (No-Cloning PDF)"
+                          >
+                            Send different agreement
                           </button>
                           <button
                             onClick={() => handleReject(row)}

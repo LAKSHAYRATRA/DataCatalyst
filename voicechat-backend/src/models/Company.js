@@ -10,7 +10,8 @@ const companySchema = new mongoose.Schema(
     languages: [{ type: String, lowercase: true, trim: true }],
     namingPattern: { type: String, default: "{phraseId}" },
     userCustomizations: { type: [String], default: [] },
-    downloadCustomizations: { type: [String], default: [] }
+    downloadCustomizations: { type: [String], default: [] },
+    allowPhraseTextEdit: { type: Boolean, default: false }
   },
   { timestamps: true }
 );

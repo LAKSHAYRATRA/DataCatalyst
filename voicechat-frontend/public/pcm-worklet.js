@@ -11,6 +11,11 @@ class PcmProcessor extends AudioWorkletProcessor {
     this.currentGain = 1.0;
     this.envelope = 0.0;
 
+    // High-pass filter state (80Hz cutoff to eliminate AC electrical hum and low-end mic rumble)
+    this.hpX1 = 0;
+    this.hpY1 = 0;
+    this.hpAlpha = 0.9895; // 80Hz cutoff at 48000Hz sample rate
+
     this.port.onmessage = (e) => {
       if (typeof e.data === "object" && e.data !== null) {
         if (e.data.type === "setNoiseGate") {
@@ -47,11 +52,16 @@ class PcmProcessor extends AudioWorkletProcessor {
       if (hasStereo) {
         const s0 = ch0[i];
         const s1 = ch1[i];
-        // Select channel with greater magnitude to prevent -6dB downmix attenuation
         if (Math.abs(s1) > Math.abs(s0)) {
           sample = s1;
         }
       }
+
+      // Apply 80Hz High-Pass Filter (removes DC offset, 50/60Hz AC electrical hum, and sub-bass desk rumble)
+      const hpSample = this.hpAlpha * (this.hpY1 + sample - this.hpX1);
+      this.hpX1 = sample;
+      this.hpY1 = hpSample;
+      sample = hpSample;
 
       // 1. Apply Gain Scaling (Percentage adjustment: -30% = 0.70x, +30% = 1.30x)
       if (boost !== 1.0) {

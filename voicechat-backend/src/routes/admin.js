@@ -15,6 +15,8 @@ import fs from "fs";
 import path from "path";
 import { Phrase } from "../models/Phrase.js";
 import { PhraseRejection } from "../models/PhraseRejection.js";
+import { Ambiguity } from "../models/Ambiguity.js";
+import { QaFlag } from "../models/QaFlag.js";
 import { Company } from "../models/Company.js";
 import { Counter } from "../models/Counter.js";
 import { getPayoutOverview, getSingleUserPayout, getFinancesOverview } from "../services/payouts.js";
@@ -176,12 +178,17 @@ router.get("/companies/:id", requireAuth(JWT_SECRET), async (req, res) => {
 
 function getReviewerLanguageCodes(user) {
     if (!user?.isQA || user?.isAdmin) return [];
+    const codes = [];
     if (user?.qaLanguageCode) {
-        return [String(user.qaLanguageCode).trim().toLowerCase()].filter(Boolean);
+        codes.push(String(user.qaLanguageCode).trim().toLowerCase());
     }
-    return Array.isArray(user.qaLanguageCodes)
-        ? user.qaLanguageCodes.map((code) => String(code).trim().toLowerCase()).filter(Boolean).slice(0, 1)
-        : [];
+    if (Array.isArray(user?.qaLanguageCodes)) {
+        user.qaLanguageCodes.forEach(c => {
+            const trimmed = String(c).trim().toLowerCase();
+            if (trimmed && !codes.includes(trimmed)) codes.push(trimmed);
+        });
+    }
+    return codes.filter(Boolean);
 }
 
 function hasLanguageAccess(user, languageCode) {
@@ -478,12 +485,102 @@ qaCallRouter.get("/calls", async (req, res) => {
         const status = req.query.status;
         const skip = (page - 1) * limit;
 
-        const filter = { callActuallyStarted: true };
+        const fifteenMinsAgo = new Date(Date.now() - 15 * 60 * 1000);
+        const filter = { callActuallyStarted: true, adminDeleted: { $ne: true } };
+        const selectedLanguage = req.query.language ? String(req.query.language).trim().toLowerCase() : null;
+
         if (req.user.isQA && !req.user.isAdmin) {
-            filter.callStatus = "pending";
-            filter.language = { $in: getReviewerLanguageCodes(req.user) };
-        } else if (status) {
-            filter.callStatus = status;
+            const allowedLangs = getReviewerLanguageCodes(req.user);
+            if (selectedLanguage && allowedLangs.includes(selectedLanguage)) {
+                filter.language = selectedLanguage;
+            } else if (allowedLangs.length > 0) {
+                filter.language = { $in: allowedLangs };
+            }
+
+            if (status === "approved" || status === "rejected") {
+                filter.callStatus = status;
+                filter.reviewedBy = req.user._id;
+            } else {
+                // Pending Tab: Lock a batch of up to 2 calls for this QA reviewer
+                filter.callStatus = "pending";
+
+                // 1. Release expired locks (>15 mins old)
+                await CallSession.updateMany(
+                    { qaLockedAt: { $lt: fifteenMinsAgo } },
+                    { $set: { qaLockedBy: null, qaLockedAt: null } }
+                );
+
+                // 2. Find pending calls currently locked by THIS QA reviewer
+                let lockedForMe = await CallSession.find({
+                    callActuallyStarted: true,
+                    adminDeleted: { $ne: true },
+                    callStatus: "pending",
+                    ...(filter.language ? { language: filter.language } : {}),
+                    qaLockedBy: req.user._id,
+                    qaLockedAt: { $gte: fifteenMinsAgo }
+                })
+                .populate("userA", "firstname lastname username email dob gender address locality regionalLanguage speaker_id")
+                .populate("userB", "firstname lastname username email dob gender address locality regionalLanguage speaker_id")
+                .populate("topicId", "title")
+                .populate("subtopicId", "title description instructions")
+                .populate("reviewedBy", "firstname lastname email")
+                .sort({ createdAt: 1 });
+
+                // 3. If fewer than 2 calls locked for this QA user, lock additional available calls up to 2
+                const neededCount = 2 - lockedForMe.length;
+                if (neededCount > 0) {
+                    const currentlyLockedIds = lockedForMe.map(c => c._id);
+                    const availableCalls = await CallSession.find({
+                        callActuallyStarted: true,
+                        adminDeleted: { $ne: true },
+                        callStatus: "pending",
+                        ...(filter.language ? { language: filter.language } : {}),
+                        _id: { $nin: currentlyLockedIds },
+                        "firstQaReview.qaId": { $ne: req.user._id },
+                        $or: [
+                            { qaLockedBy: null },
+                            { qaLockedBy: req.user._id },
+                            { qaLockedAt: { $lt: fifteenMinsAgo } }
+                        ]
+                    })
+                    .sort({ createdAt: 1 })
+                    .limit(neededCount);
+
+                    if (availableCalls.length > 0) {
+                        const idsToLock = availableCalls.map(c => c._id);
+                        const now = new Date();
+                        await CallSession.updateMany(
+                            { _id: { $in: idsToLock } },
+                            { $set: { qaLockedBy: req.user._id, qaLockedAt: now } }
+                        );
+
+                        // Re-fetch populated locked list
+                        lockedForMe = await CallSession.find({
+                            callActuallyStarted: true,
+                            adminDeleted: { $ne: true },
+                            callStatus: "pending",
+                            ...(filter.language ? { language: filter.language } : {}),
+                            qaLockedBy: req.user._id,
+                            qaLockedAt: { $gte: fifteenMinsAgo }
+                        })
+                        .populate("userA", "firstname lastname username email dob gender address locality regionalLanguage speaker_id")
+                        .populate("userB", "firstname lastname username email dob gender address locality regionalLanguage speaker_id")
+                        .populate("topicId", "title")
+                        .populate("subtopicId", "title description instructions")
+                        .populate("reviewedBy", "firstname lastname email")
+                        .sort({ createdAt: 1 });
+                    }
+                }
+
+                return res.json({ calls: lockedForMe, total: lockedForMe.length, page: 1, pages: 1 });
+            }
+        } else {
+            if (selectedLanguage) {
+                filter.language = selectedLanguage;
+            }
+            if (status) {
+                filter.callStatus = status;
+            }
         }
 
         const [calls, total] = await Promise.all([
@@ -531,9 +628,15 @@ qaCallRouter.patch("/calls/:callId", async (req, res) => {
 
 // Helper: compute overall callStatus from individual recording statuses
 function computeCallStatus(recordingAStatus, recordingBStatus) {
-    if (recordingAStatus === "approved" && recordingBStatus === "approved") return "approved";
-    if (recordingAStatus === "rejected" || recordingBStatus === "rejected") return "rejected";
-    return "pending";
+    // Only finalize callStatus when BOTH recordings have been reviewed (neither is pending)
+    if (recordingAStatus === "pending" || recordingBStatus === "pending") {
+        return "pending";
+    }
+    if (recordingAStatus === "approved" && recordingBStatus === "approved") {
+        return "approved";
+    }
+    // If one is rejected and other is approved/rejected, overall call goes to rejected
+    return "rejected";
 }
 
 function roundCurrency(value) {
@@ -563,7 +666,7 @@ async function getLanguageHourlyPayout(languageCode) {
     return Number(language?.hourlyPayout) || 0;
 }
 
-async function applyRecordingDecision(call, userId, action, reviewerId, note) {
+async function applyRecordingDecision(call, userId, action, reviewerId, note, isNoisy, rejectionReason) {
     const normalizedNote = typeof note === "string" ? note.trim() : "";
 
     let side;
@@ -581,9 +684,37 @@ async function applyRecordingDecision(call, userId, action, reviewerId, note) {
     const noteKey = side === "A" ? "recordingAReviewNote" : "recordingBReviewNote";
     const durationKey = side === "A" ? "recordingADurationMinutes" : "recordingBDurationMinutes";
     const payoutKey = side === "A" ? "recordingAPayoutUsd" : "recordingBPayoutUsd";
+    const noisyKey = side === "A" ? "recordingANoisy" : "recordingBNoisy";
+    const reasonKey = side === "A" ? "recordingARejectionReason" : "recordingBRejectionReason";
 
     call[statusKey] = action;
-    call[noteKey] = normalizedNote || null;
+
+    if (action === "rejected") {
+        const validReason = ["Off-Topic Conversation", "Noisy"].includes(rejectionReason) ? rejectionReason : null;
+        call[reasonKey] = validReason;
+        if (validReason === "Noisy" || isNoisy) {
+            call[noisyKey] = true;
+        }
+
+        let defaultNote = "";
+        if (validReason === "Noisy") {
+            defaultNote = "Noisy Environment";
+        } else if (validReason === "Off-Topic Conversation") {
+            defaultNote = "Off Topic Conversation";
+        }
+
+        if (normalizedNote) {
+            call[noteKey] = normalizedNote;
+        } else {
+            call[noteKey] = defaultNote || null;
+        }
+    } else {
+        call[reasonKey] = null;
+        call[noteKey] = normalizedNote || null;
+        if (typeof isNoisy === "boolean") {
+            call[noisyKey] = isNoisy;
+        }
+    }
 
     if (action === "approved") {
         const durationMinutes = getRecordingDurationMinutes(call, side);
@@ -595,9 +726,115 @@ async function applyRecordingDecision(call, userId, action, reviewerId, note) {
         call[payoutKey] = 0;
     }
 
+    // Check QA 15-minute lock validity
+    const fifteenMinsAgo = new Date(Date.now() - 15 * 60 * 1000);
+    if (reviewerId) {
+        const isLockedByOther = call.qaLockedBy &&
+            call.qaLockedBy.toString() !== reviewerId.toString() &&
+            call.qaLockedAt &&
+            call.qaLockedAt > fifteenMinsAgo;
+
+        if (isLockedByOther) {
+            const error = new Error("This call is currently locked for review by another QA reviewer.");
+            error.statusCode = 409;
+            throw error;
+        }
+
+        if (call.qaLockedBy && call.qaLockedBy.toString() === reviewerId.toString()) {
+            if (call.qaLockedAt && call.qaLockedAt < fifteenMinsAgo) {
+                const error = new Error("Your 15-minute review window for this call has expired. Please re-open the call to lock it again.");
+                error.statusCode = 409;
+                throw error;
+            }
+        }
+    }
+
     call.callStatus = computeCallStatus(call.recordingAStatus, call.recordingBStatus);
     call.reviewedBy = reviewerId;
     call.reviewedAt = new Date();
+    
+    // Clear lock only when call is completely reviewed (both users decided)
+    if (call.callStatus !== "pending") {
+        call.qaLockedBy = null;
+        call.qaLockedAt = null;
+    }
+    // 2% Random Dual-QA Cross Audit & Ambiguity Mismatch Tracking for Calls
+    try {
+        if (call.needsSecondQaReview && call.firstQaReview && String(call.firstQaReview.qaId) !== String(reviewerId)) {
+            // This is QA 2 doing the blind cross-review!
+            const qa1StatusA = call.firstQaReview.recordingAStatus;
+            const qa1StatusB = call.firstQaReview.recordingBStatus;
+            const qa2StatusA = call.recordingAStatus;
+            const qa2StatusB = call.recordingBStatus;
+
+            const hasMismatch = (qa1StatusA !== qa2StatusA) || (qa1StatusB !== qa2StatusB);
+
+            if (hasMismatch) {
+                // Verdict Mismatch between QA 1 and QA 2! Route call to Ambiguity Tab
+                const firstQaUser = await User.findById(call.firstQaReview.qaId).lean();
+                const secondQaUser = reviewerId ? await User.findById(reviewerId).lean() : null;
+
+                await Ambiguity.create({
+                    type: "call",
+                    callId: call.callId,
+                    companyId: call.companyId,
+                    language: call.language,
+                    reason: "conflict",
+                    audioFileA: call.recordingAFile,
+                    audioFileB: call.recordingBFile,
+                    qaReviews: [
+                        {
+                            qaId: call.firstQaReview.qaId,
+                            qaName: firstQaUser ? `${firstQaUser.firstname || ""} ${firstQaUser.lastname || ""}`.trim() || firstQaUser.username : "QA 1 Reviewer",
+                            qaUsername: firstQaUser?.username || "",
+                            qaEmail: firstQaUser?.email || "",
+                            action: call.firstQaReview.action,
+                            recordingAAction: qa1StatusA,
+                            recordingBAction: qa1StatusB,
+                            recordingAReviewNote: call.firstQaReview.recordingAReviewNote || null,
+                            recordingBReviewNote: call.firstQaReview.recordingBReviewNote || null,
+                            recordingARejectionReason: call.firstQaReview.recordingARejectionReason || null,
+                            recordingBRejectionReason: call.firstQaReview.recordingBRejectionReason || null,
+                            reviewedAt: call.firstQaReview.reviewedAt
+                        },
+                        {
+                            qaId: reviewerId,
+                            qaName: secondQaUser ? `${secondQaUser.firstname || ""} ${secondQaUser.lastname || ""}`.trim() || secondQaUser.username : "QA 2 Reviewer",
+                            qaUsername: secondQaUser?.username || "",
+                            qaEmail: secondQaUser?.email || "",
+                            action: call.callStatus,
+                            recordingAAction: qa2StatusA,
+                            recordingBAction: qa2StatusB,
+                            recordingAReviewNote: call.recordingAReviewNote || null,
+                            recordingBReviewNote: call.recordingBReviewNote || null,
+                            recordingARejectionReason: call.recordingARejectionReason || null,
+                            recordingBRejectionReason: call.recordingBRejectionReason || null,
+                            reviewedAt: new Date()
+                        }
+                    ],
+                    status: "pending"
+                });
+            }
+            call.needsSecondQaReview = false;
+        } else if (!call.needsSecondQaReview && Math.random() < 0.02) {
+            // 2% chance to flag for Dual-QA Cross Audit
+            call.needsSecondQaReview = true;
+            call.firstQaReview = {
+                qaId: reviewerId,
+                action: call.callStatus,
+                recordingAStatus: call.recordingAStatus,
+                recordingBStatus: call.recordingBStatus,
+                recordingARejectionReason: call.recordingARejectionReason,
+                recordingBRejectionReason: call.recordingBRejectionReason,
+                recordingAReviewNote: call.recordingAReviewNote,
+                recordingBReviewNote: call.recordingBReviewNote,
+                reviewedAt: new Date()
+            };
+        }
+    } catch (ambErr) {
+        console.error("Call Ambiguity dual-audit tracking error:", ambErr);
+    }
+
     return side;
 }
 
@@ -610,7 +847,8 @@ qaCallRouter.patch("/calls/:callId/approve/:userId", async (req, res) => {
         if (!hasLanguageAccess(req.user, call.language)) {
             return res.status(403).json({ error: "Forbidden: language access required" });
         }
-        await applyRecordingDecision(call, userId, "approved", req.user._id, req.body?.note);
+        const isNoisy = req.body?.isNoisy !== undefined ? !!req.body.isNoisy : (req.body?.noisy !== undefined ? !!req.body.noisy : undefined);
+        await applyRecordingDecision(call, userId, "approved", req.user._id, req.body?.note, isNoisy);
         await call.save();
         await updateLimitAndBlacklist(userId, call.language, true);
 
@@ -624,18 +862,44 @@ qaCallRouter.patch("/calls/:callId/approve/:userId", async (req, res) => {
 qaCallRouter.patch("/calls/:callId/reject/:userId", async (req, res) => {
     try {
         const { callId, userId } = req.params;
+        const { note, rejectionReason, isNoisy } = req.body;
         const call = await CallSession.findOne({ callId });
         if (!call) return res.status(404).json({ error: "Call not found" });
         if (!hasLanguageAccess(req.user, call.language)) {
             return res.status(403).json({ error: "Forbidden: language access required" });
         }
-        await applyRecordingDecision(call, userId, "rejected", req.user._id, req.body?.note);
+        const noisyFlag = isNoisy !== undefined ? !!isNoisy : (rejectionReason === "Noisy");
+        await applyRecordingDecision(call, userId, "rejected", req.user._id, note, noisyFlag, rejectionReason);
         await call.save();
         await updateLimitAndBlacklist(userId, call.language, false);
 
         res.json({ message: "Recording rejected successfully", call });
     } catch (e) {
         res.status(e.statusCode || 500).json({ error: e.message });
+    }
+});
+
+// Toggle/update recording noisy status (accessible to QA & Admin)
+qaCallRouter.patch("/calls/:callId/noisy/:userId", async (req, res) => {
+    try {
+        const { callId, userId } = req.params;
+        const isNoisy = !!req.body.isNoisy;
+        const call = await CallSession.findOne({ callId });
+        if (!call) return res.status(404).json({ error: "Call not found" });
+        if (!hasLanguageAccess(req.user, call.language)) {
+            return res.status(403).json({ error: "Forbidden: language access required" });
+        }
+        if (call.userA.toString() === userId) {
+            call.recordingANoisy = isNoisy;
+        } else if (call.userB.toString() === userId) {
+            call.recordingBNoisy = isNoisy;
+        } else {
+            return res.status(404).json({ error: "User not part of this call" });
+        }
+        await call.save();
+        res.json({ message: "Noisy status updated successfully", call });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
     }
 });
 
@@ -944,6 +1208,353 @@ qaCallRouter.patch("/language-applications/:userId/:appId/approve", approveLangu
 qaCallRouter.patch("/language-applications/:userId/:appId/reject", rejectLanguageApplication);
 qaCallRouter.post("/language-applications/:userId/:appId/analyze", analyzeLanguageApplication);
 
+// Lock call for 15 minutes
+qaCallRouter.post("/calls/:callId/lock", async (req, res) => {
+    try {
+        const { callId } = req.params;
+        const call = await CallSession.findOne({ callId });
+        if (!call) return res.status(404).json({ error: "Call not found" });
+
+        const fifteenMinsAgo = new Date(Date.now() - 15 * 60 * 1000);
+        const isLockedByOther = call.qaLockedBy &&
+            call.qaLockedBy.toString() !== req.user._id.toString() &&
+            call.qaLockedAt &&
+            call.qaLockedAt > fifteenMinsAgo;
+
+        if (isLockedByOther) {
+            return res.status(409).json({
+                error: "This call is currently locked for review by another QA reviewer. Please pick another call.",
+                isLocked: true
+            });
+        }
+
+        call.qaLockedBy = req.user._id;
+        call.qaLockedAt = new Date();
+        await call.save();
+
+        res.json({
+            message: "Call locked for 15 minutes",
+            qaLockedBy: call.qaLockedBy,
+            qaLockedAt: call.qaLockedAt,
+            expiresInSeconds: 15 * 60,
+            success: true
+        });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// Unlock call when closing modal
+qaCallRouter.post("/calls/:callId/unlock", async (req, res) => {
+    try {
+        const { callId } = req.params;
+        const call = await CallSession.findOne({ callId });
+        if (!call) return res.status(404).json({ error: "Call not found" });
+
+        if (call.qaLockedBy && call.qaLockedBy.toString() === req.user._id.toString()) {
+            call.qaLockedBy = null;
+            call.qaLockedAt = null;
+            await call.save();
+        }
+
+        res.json({ message: "Call unlocked", success: true });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// QA Payments and Earnings Breakdown
+qaCallRouter.get("/payments-stats", async (req, res) => {
+    try {
+        const isUserAdmin = Boolean(req.user.isAdmin);
+        const targetUserId = req.query.qaUserId || (isUserAdmin ? null : req.user._id);
+
+        const getQaPhraseStats = async (qaUserId) => {
+            const userIdObj = new mongoose.Types.ObjectId(qaUserId);
+
+            const [approvedAgg, rejectedAgg] = await Promise.all([
+                Phrase.aggregate([
+                    { $match: { qaId: userIdObj, status: "approved" } },
+                    { $group: { _id: null, count: { $sum: 1 }, totalSecs: { $sum: "$duration" } } }
+                ]),
+                PhraseRejection.aggregate([
+                    { $match: { qaId: userIdObj } },
+                    { $group: { _id: null, count: { $sum: 1 }, totalSecs: { $sum: "$duration" } } }
+                ])
+            ]);
+
+            const approvedPhrasesCount = approvedAgg[0]?.count || 0;
+            const approvedSecs = approvedAgg[0]?.totalSecs || 0;
+            const rejectedPhrasesCount = rejectedAgg[0]?.count || 0;
+            const rejectedSecs = rejectedAgg[0]?.totalSecs || 0;
+
+            const phrasesReviewedCount = approvedPhrasesCount + rejectedPhrasesCount;
+            const totalPhraseSecs = Math.round((approvedSecs + rejectedSecs) * 100) / 100;
+            const phraseHours = totalPhraseSecs / 3600;
+
+            return {
+                phrasesReviewedCount,
+                approvedPhrasesCount,
+                rejectedPhrasesCount,
+                approvedSecs,
+                rejectedSecs,
+                totalPhraseSecs,
+                phraseHours
+            };
+        };
+
+        if (isUserAdmin && !req.query.qaUserId) {
+            // Admin summary across ALL QA Users
+            const qaUsers = await User.find({ isQA: true })
+                .select("firstname lastname username email upiId qaPerCallPayrateUsd qaHourlyPhrasePayrateUsd qaLanguageCodes qaLanguageCode createdAt")
+                .sort({ createdAt: -1 })
+                .lean();
+
+            const stats = await Promise.all(
+                qaUsers.map(async (qa) => {
+                    const [callsReviewed, phraseStats, payments] = await Promise.all([
+                        CallSession.countDocuments({ reviewedBy: qa._id, callStatus: { $in: ["approved", "rejected"] } }),
+                        getQaPhraseStats(qa._id),
+                        PayoutPayment.find({ userId: qa._id }).sort({ paidAt: -1, createdAt: -1 }).lean()
+                    ]);
+
+                    const perCallRate = Number(qa.qaPerCallPayrateUsd) || 0;
+                    const hourlyPhraseRate = Number(qa.qaHourlyPhrasePayrateUsd) || 0;
+
+                    const callEarningsUsd = Math.round(callsReviewed * perCallRate * 100) / 100;
+                    const phraseHoursFormatted = Math.round(phraseStats.phraseHours * 10000) / 10000;
+                    const phraseEarningsUsd = Math.round(phraseStats.phraseHours * hourlyPhraseRate * 100) / 100;
+                    const totalEarningsUsd = Math.round((callEarningsUsd + phraseEarningsUsd) * 100) / 100;
+
+                    const totalPaidOutUsd = Math.round(payments.reduce((sum, p) => sum + (Number(p.amountUsd) || 0), 0) * 100) / 100;
+                    const totalRemainingUsd = Math.max(0, Math.round((totalEarningsUsd - totalPaidOutUsd) * 100) / 100);
+
+                    return {
+                        qaUser: {
+                            _id: qa._id,
+                            username: qa.username,
+                            name: `${qa.firstname || ""} ${qa.lastname || ""}`.trim() || qa.username,
+                            email: qa.email,
+                            upiId: qa.upiId || "",
+                            qaPerCallPayrateUsd: perCallRate,
+                            qaHourlyPhrasePayrateUsd: hourlyPhraseRate,
+                        },
+                        callsReviewed,
+                        phrasesReviewed: phraseStats.phrasesReviewedCount,
+                        approvedPhrasesCount: phraseStats.approvedPhrasesCount,
+                        rejectedPhrasesCount: phraseStats.rejectedPhrasesCount,
+                        totalPhraseSecs: phraseStats.totalPhraseSecs,
+                        phraseHours: phraseHoursFormatted,
+                        callEarningsUsd,
+                        phraseEarningsUsd,
+                        totalEarningsUsd,
+                        totalPaidOutUsd,
+                        totalRemainingUsd,
+                        payoutHistory: payments.map(p => ({
+                            _id: p._id,
+                            amountUsd: p.amountUsd,
+                            note: p.note || "QA Workload Payout",
+                            paidAt: p.paidAt || p.createdAt,
+                            createdAt: p.createdAt
+                        }))
+                    };
+                })
+            );
+
+            const totalCompanyQaExpenseUsd = Math.round(stats.reduce((acc, s) => acc + s.totalEarningsUsd, 0) * 100) / 100;
+
+            return res.json({
+                isAdminView: true,
+                stats,
+                totalCompanyQaExpenseUsd
+            });
+        }
+
+        // Single QA user personal payment breakdown
+        const qaUser = targetUserId ? await User.findById(targetUserId).lean() : req.user;
+        if (!qaUser) return res.status(404).json({ error: "QA user not found" });
+
+        const [callsReviewedCount, approvedCallsCount, rejectedCallsCount, phraseStats, payments, recentCalls, recentApprovedPhrases, recentRejectedPhrases] = await Promise.all([
+            CallSession.countDocuments({ reviewedBy: qaUser._id, callStatus: { $in: ["approved", "rejected"] } }),
+            CallSession.countDocuments({ reviewedBy: qaUser._id, callStatus: "approved" }),
+            CallSession.countDocuments({ reviewedBy: qaUser._id, callStatus: "rejected" }),
+            getQaPhraseStats(qaUser._id),
+            PayoutPayment.find({ userId: qaUser._id }).sort({ paidAt: -1, createdAt: -1 }).lean(),
+            CallSession.find({ reviewedBy: qaUser._id, callStatus: { $in: ["approved", "rejected"] } })
+                .select("callId callStatus reviewedAt language topicId subtopicId")
+                .sort({ reviewedAt: -1 })
+                .limit(10)
+                .lean(),
+            Phrase.find({ qaId: qaUser._id, status: "approved" })
+                .select("phraseId status reviewedAt language text projectName duration")
+                .sort({ reviewedAt: -1 })
+                .limit(10)
+                .lean(),
+            PhraseRejection.find({ qaId: qaUser._id })
+                .select("phraseId language text duration rejectedAt comment")
+                .sort({ rejectedAt: -1 })
+                .limit(10)
+                .lean()
+        ]);
+
+        const perCallRate = Number(qaUser.qaPerCallPayrateUsd) || 0;
+        const hourlyPhraseRate = Number(qaUser.qaHourlyPhrasePayrateUsd) || 0;
+
+        const callEarningsUsd = Math.round(callsReviewedCount * perCallRate * 100) / 100;
+        const phraseHoursFormatted = Math.round(phraseStats.phraseHours * 10000) / 10000;
+        const phraseEarningsUsd = Math.round(phraseStats.phraseHours * hourlyPhraseRate * 100) / 100;
+        const totalEarningsUsd = Math.round((callEarningsUsd + phraseEarningsUsd) * 100) / 100;
+
+        const totalPaidOutUsd = Math.round(payments.reduce((sum, p) => sum + (Number(p.amountUsd) || 0), 0) * 100) / 100;
+        const totalRemainingUsd = Math.max(0, Math.round((totalEarningsUsd - totalPaidOutUsd) * 100) / 100);
+
+        // Combine recent approved & rejected phrases
+        const recentPhrases = [
+            ...recentApprovedPhrases.map(p => ({ ...p, status: "approved", actionTime: p.reviewedAt })),
+            ...recentRejectedPhrases.map(p => ({ ...p, status: "rejected", actionTime: p.rejectedAt }))
+        ].sort((a, b) => new Date(b.actionTime || 0) - new Date(a.actionTime || 0)).slice(0, 10);
+
+        return res.json({
+            isAdminView: false,
+            qaUser: {
+                _id: qaUser._id,
+                username: qaUser.username,
+                name: `${qaUser.firstname || ""} ${qaUser.lastname || ""}`.trim() || qaUser.username,
+                email: qaUser.email,
+                upiId: qaUser.upiId || "",
+                qaPerCallPayrateUsd: perCallRate,
+                qaHourlyPhrasePayrateUsd: hourlyPhraseRate,
+            },
+            callsReviewedCount,
+            approvedCallsCount,
+            rejectedCallsCount,
+            phrasesReviewedCount: phraseStats.phrasesReviewedCount,
+            approvedPhrasesCount: phraseStats.approvedPhrasesCount,
+            rejectedPhrasesCount: phraseStats.rejectedPhrasesCount,
+            totalPhraseSecs: phraseStats.totalPhraseSecs,
+            phraseHours: phraseHoursFormatted,
+            callEarningsUsd,
+            phraseEarningsUsd,
+            totalEarningsUsd,
+            totalPaidOutUsd,
+            totalRemainingUsd,
+            payoutHistory: payments.map(p => ({
+                _id: p._id,
+                amountUsd: p.amountUsd,
+                note: p.note || "QA Workload Payout",
+                paidAt: p.paidAt || p.createdAt,
+                createdAt: p.createdAt
+            })),
+            recentCalls,
+            recentPhrases
+        });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+const getLanguagesHandler = async (req, res) => {
+    try {
+        const langs = await Language.find().sort({ name: 1 });
+        res.json({ languages: langs });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+};
+
+qaCallRouter.get("/languages", getLanguagesHandler);
+
+// ===== SINGLE CALL DELETE HANDLER =====
+const deleteSingleCallHandler = async (req, res) => {
+    try {
+        const { callId } = req.params;
+        const call = await CallSession.findOne({ callId });
+        if (!call) return res.status(404).json({ error: "Call not found" });
+
+        const keysToDelete = [call.recordingAFile, call.recordingBFile, call.mixedRecordingFile].filter(Boolean);
+        for (const key of keysToDelete) {
+            try {
+                if (key.startsWith("local:")) {
+                    const localFileName = key.replace("local:", "");
+                    const localFilePath = path.join(process.cwd(), "recordings", localFileName);
+                    if (fs.existsSync(localFilePath)) {
+                        fs.unlinkSync(localFilePath);
+                    }
+                } else {
+                    await s3Client.send(new DeleteObjectCommand({
+                        Bucket: BUCKET_NAME,
+                        Key: key
+                    }));
+                }
+            } catch (err) {
+                console.error(`Failed to delete storage file: ${key} for call ${callId}`, err);
+            }
+        }
+
+        call.recordingAFile = null;
+        call.recordingBFile = null;
+        call.mixedRecordingFile = null;
+        call.adminDeleted = true;
+        await call.save();
+
+        res.json({ message: "Call audio deleted from S3 and hidden from Admin Panel", success: true });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+};
+
+// ===== BULK DELETE SELECTED CALLS FROM DATABASE AND S3 =====
+const bulkDeleteCallsHandler = async (req, res) => {
+    try {
+        const callIds = req.body?.callIds || req.body?.ids || (req.query?.ids ? req.query.ids.split(",") : []);
+        if (!Array.isArray(callIds) || callIds.length === 0) {
+            return res.status(400).json({ error: "No callIds provided for bulk deletion." });
+        }
+
+        const callsToDelete = await CallSession.find({ callId: { $in: callIds } });
+
+        for (const call of callsToDelete) {
+            const keysToDelete = [call.recordingAFile, call.recordingBFile, call.mixedRecordingFile].filter(Boolean);
+
+            for (const key of keysToDelete) {
+                try {
+                    if (key.startsWith("local:")) {
+                        const localFileName = key.replace("local:", "");
+                        const localFilePath = path.join(process.cwd(), "recordings", localFileName);
+                        if (fs.existsSync(localFilePath)) {
+                            fs.unlinkSync(localFilePath);
+                        }
+                    } else {
+                        await s3Client.send(new DeleteObjectCommand({
+                            Bucket: BUCKET_NAME,
+                            Key: key
+                        }));
+                    }
+                } catch (err) {
+                    console.error(`Failed to delete storage file: ${key} for call ${call.callId}`, err);
+                }
+            }
+
+            call.recordingAFile = null;
+            call.recordingBFile = null;
+            call.mixedRecordingFile = null;
+            call.adminDeleted = true;
+            await call.save();
+        }
+
+        res.json({
+            message: "Selected call audio deleted from S3 and hidden from Admin Panel",
+            deletedCount: callsToDelete.length,
+            success: true
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
+qaCallRouter.delete("/calls/bulk-delete", bulkDeleteCallsHandler);
+qaCallRouter.post("/calls/bulk-delete", bulkDeleteCallsHandler);
+qaCallRouter.delete("/calls/:callId", deleteSingleCallHandler);
 
 // Mount QA router BEFORE isAdmin — this must stay here
 router.use("/qa", qaCallRouter);
@@ -955,6 +1566,10 @@ sharedLanguageReviewRouter.get("/language-applications", listLanguageApplication
 sharedLanguageReviewRouter.patch("/language-applications/:userId/:appId/approve", approveLanguageApplication);
 sharedLanguageReviewRouter.patch("/language-applications/:userId/:appId/reject", rejectLanguageApplication);
 sharedLanguageReviewRouter.post("/language-applications/:userId/:appId/analyze", analyzeLanguageApplication);
+sharedLanguageReviewRouter.delete("/calls/bulk-delete", bulkDeleteCallsHandler);
+sharedLanguageReviewRouter.post("/calls/bulk-delete", bulkDeleteCallsHandler);
+sharedLanguageReviewRouter.delete("/calls/:callId", deleteSingleCallHandler);
+sharedLanguageReviewRouter.get("/languages", getLanguagesHandler);
 router.use("/", sharedLanguageReviewRouter);
 
 // All routes below this line require full admin access
@@ -1329,7 +1944,7 @@ router.get("/calls", async (req, res) => {
         const limit = parseInt(req.query.limit) || 20;
         const skip = (page - 1) * limit;
 
-        const query = {};
+        const query = { adminDeleted: { $ne: true } };
         if (req.query.status) {
             if (req.query.status === "logs" || req.query.status === "reviewed") {
                 query.callStatus = { $in: ["approved", "rejected"] };
@@ -1413,6 +2028,8 @@ router.post("/calls/purge-rejected", async (req, res) => {
         res.status(500).json({ error: error.message });
     }
 });
+
+
 
 // Get all approved calls that are NOT yet downloaded by the current admin
 router.get("/calls/exportable", async (req, res) => {
@@ -2187,22 +2804,25 @@ router.post("/users/:userId/resend-agreement", async (req, res) => {
             }
         }
 
+        const agreementDoc = req.body?.agreementDoc || "default";
+
         user.contributorAgreement = {
             signed: false,
             signedAt: null,
             s3Key: null,
             signerName: null,
             signerIp: null,
-            agreementVersion: null,
+            agreementVersion: agreementDoc === "datacatalyst-voice-dataset-consent-agreement" ? "v2.0-NoCloning" : null,
             pdfHash: null,
             adminReviewStatus: null,
             adminReviewedAt: null,
             adminReviewedBy: null,
-            adminReviewReason: null
+            adminReviewReason: null,
+            assignedAgreementDoc: agreementDoc
         };
 
         await user.save();
-        res.json({ message: "Agreement reset successfully. User will be required to re-sign on next login.", success: true });
+        res.json({ message: `Agreement reset successfully (${agreementDoc}). User will be required to re-sign on next login.`, success: true });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
@@ -2236,10 +2856,28 @@ qaRouter.post("/", async (req, res) => {
         if (exists) return res.status(409).json({ error: "Email already in use" });
         
         // Validate all requested languages
-        const existingLanguages = await Language.find({ code: { $in: qaLanguageCodes } }).select("code").lean();
-        if (existingLanguages.length !== qaLanguageCodes.length) {
-            return res.status(400).json({ error: "One or more selected languages are invalid" });
+        const allLangs = await Language.find().select("code name").lean();
+        const validCodes = new Set(allLangs.map(l => (l.code || l.name || "").toLowerCase()));
+        const fallbackCodes = ["english", "hindi", "marathi", "bengali", "tamil", "telugu", "gujarati", "kannada", "malayalam", "punjabi"];
+        const invalid = qaLanguageCodes.filter(c => !validCodes.has(c) && !fallbackCodes.includes(c));
+        if (invalid.length > 0) {
+            return res.status(400).json({ error: `Selected language (${invalid.join(", ")}) is not recognized.` });
         }
+        // Generate sequential QA ID: QA_01, QA_02, QA_03...
+        const existingQaUsers = await User.find({ isQA: true }).select("speaker_id").lean();
+        let maxNum = 0;
+        for (const u of existingQaUsers) {
+            if (u.speaker_id && u.speaker_id.startsWith("QA_")) {
+                const num = parseInt(u.speaker_id.replace("QA_", ""), 10);
+                if (!isNaN(num) && num > maxNum) maxNum = num;
+            }
+        }
+        const nextNum = maxNum + 1;
+        const qaSpeakerId = `QA_${String(nextNum).padStart(2, "0")}`;
+
+        const perCallPayrate = Math.max(0, Number(req.body.perCallPayrate) || 0);
+        const hourlyPhrasePayrate = Math.max(0, Number(req.body.hourlyPhrasePayrate) || 0);
+
         const username = email.split("@")[0] + "_qa_" + Date.now();
         const passwordHash = await bcrypt.hash(password, 10);
         const qaUser = await User.create({
@@ -2250,8 +2888,11 @@ qaRouter.post("/", async (req, res) => {
             passwordHash,
             isQA: true,
             isAdmin: false,
+            speaker_id: qaSpeakerId,
             qaLanguageCode: qaLanguageCodes[0], // Keep for legacy/fallback
             qaLanguageCodes,
+            perCallPayrate,
+            hourlyPhrasePayrate,
             // QA users don't need profile fields — skip required validation via minimal values
             gender: "other",
             regionalLanguage: "N/A",
@@ -2265,7 +2906,7 @@ qaRouter.post("/", async (req, res) => {
         });
         res.json({
             message: "QA user created",
-            user: { id: qaUser._id, firstname, lastname, email, username, qaLanguageCode }
+            user: { id: qaUser._id, firstname, lastname, email, username, speaker_id: qaSpeakerId, qaLanguageCodes, perCallPayrate, hourlyPhrasePayrate }
         });
     } catch (e) {
         res.status(500).json({ error: e.message });
@@ -2277,7 +2918,7 @@ qaRouter.get("/", async (req, res) => {
     if (!req.user.isAdmin) return res.status(403).json({ error: "Admin access required" });
     try {
         const users = await User.find({ isQA: true })
-            .select("firstname lastname email username qaLanguageCode qaLanguageCodes createdAt")
+            .select("firstname lastname email username speaker_id qaLanguageCode qaLanguageCodes perCallPayrate hourlyPhrasePayrate createdAt")
             .sort({ createdAt: -1 });
         res.json({ users });
     } catch (e) {
@@ -2297,7 +2938,40 @@ qaRouter.delete("/:id", async (req, res) => {
     }
 });
 
-// Update QA User Languages
+// Update QA User Details (Languages & Payrates)
+qaRouter.patch("/:id", async (req, res) => {
+    if (!req.user.isAdmin) return res.status(403).json({ error: "Admin access required" });
+    const updates = {};
+    if (req.body.qaLanguageCodes !== undefined) {
+        let qaLanguageCodes = req.body.qaLanguageCodes;
+        if (!Array.isArray(qaLanguageCodes) || qaLanguageCodes.length === 0) {
+            return res.status(400).json({ error: "At least one language must be assigned." });
+        }
+        qaLanguageCodes = qaLanguageCodes.map(c => String(c).trim().toLowerCase());
+        updates.qaLanguageCodes = qaLanguageCodes;
+        updates.qaLanguageCode = qaLanguageCodes[0];
+    }
+    if (req.body.perCallPayrate !== undefined) {
+        updates.perCallPayrate = Math.max(0, Number(req.body.perCallPayrate) || 0);
+    }
+    if (req.body.hourlyPhrasePayrate !== undefined) {
+        updates.hourlyPhrasePayrate = Math.max(0, Number(req.body.hourlyPhrasePayrate) || 0);
+    }
+
+    try {
+        const user = await User.findOneAndUpdate(
+            { _id: req.params.id, isQA: true },
+            { $set: updates },
+            { new: true }
+        ).select("firstname lastname email username speaker_id qaLanguageCode qaLanguageCodes perCallPayrate hourlyPhrasePayrate createdAt");
+        if (!user) return res.status(404).json({ error: "QA user not found" });
+        res.json({ message: "QA user details updated successfully", user });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// Update QA User Languages (Legacy alias)
 qaRouter.patch("/:id/languages", async (req, res) => {
     if (!req.user.isAdmin) return res.status(403).json({ error: "Admin access required" });
     let { qaLanguageCodes } = req.body;
@@ -4375,7 +5049,8 @@ router.post("/companies", requireAuth(JWT_SECRET), async (req, res) => {
             hourlyPayout: Number.isFinite(Number(hourlyPayout)) ? Number(hourlyPayout) : 0, 
             singlePhraseFrequency: Number.isInteger(Number(singlePhraseFrequency)) && Number(singlePhraseFrequency) >= 1 ? Number(singlePhraseFrequency) : 1,
             projectName: projectName && projectName.trim() ? projectName.trim() : cleanName,
-            namingPattern: namingPattern && namingPattern.trim() ? namingPattern.trim() : "{phraseId}"
+            namingPattern: namingPattern && namingPattern.trim() ? namingPattern.trim() : "{phraseId}",
+            allowPhraseTextEdit: Boolean(req.body.allowPhraseTextEdit)
         });
         res.status(201).json({ message: "Company created successfully", company });
     } catch (e) {
@@ -4386,7 +5061,7 @@ router.post("/companies", requireAuth(JWT_SECRET), async (req, res) => {
 
 router.patch("/companies/:id", async (req, res) => {
     try {
-        const { maxContributionMinutes, hourlyPayout, singlePhraseFrequency, projectName, namingPattern, userCustomizations, downloadCustomizations } = req.body;
+        const { maxContributionMinutes, hourlyPayout, singlePhraseFrequency, projectName, namingPattern, userCustomizations, downloadCustomizations, allowPhraseTextEdit } = req.body;
         const updateData = {};
         if (maxContributionMinutes !== undefined) updateData.maxContributionMinutes = Number(maxContributionMinutes);
         if (hourlyPayout !== undefined) updateData.hourlyPayout = Number(hourlyPayout);
@@ -4395,6 +5070,7 @@ router.patch("/companies/:id", async (req, res) => {
         if (namingPattern !== undefined) updateData.namingPattern = String(namingPattern).trim();
         if (userCustomizations !== undefined) updateData.userCustomizations = userCustomizations;
         if (downloadCustomizations !== undefined) updateData.downloadCustomizations = downloadCustomizations;
+        if (allowPhraseTextEdit !== undefined) updateData.allowPhraseTextEdit = Boolean(allowPhraseTextEdit);
         
         const company = await Company.findByIdAndUpdate(req.params.id, { $set: updateData }, { new: true });
         if (!company) return res.status(404).json({ error: "Company not found" });
@@ -4985,6 +5661,273 @@ router.post("/users/:userId/pan/reject", async (req, res) => {
     } catch (err) {
         console.error("[admin] PAN reject failed:", err);
         res.status(500).json({ error: err.message });
+    }
+});
+
+// ─── AMBIGUITY & AUDIT SAMPLING ROUTES ──────────────────────────────────────────
+
+// GET Ambiguity Stats (Pending counts)
+router.get("/ambiguity/stats", async (req, res) => {
+    try {
+        const [pendingCalls, pendingPhrases] = await Promise.all([
+            Ambiguity.countDocuments({ type: "call", status: "pending" }),
+            Ambiguity.countDocuments({ type: "phrase", status: "pending" })
+        ]);
+        res.json({ pendingCalls, pendingPhrases, totalPending: pendingCalls + pendingPhrases });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// GET QA Ambiguity Breakdown (Counts per QA user)
+router.get("/ambiguity/qa-breakdown", async (req, res) => {
+    try {
+        const qaUsers = await User.find({ isQA: true })
+            .select("firstname lastname username email qaLanguageCode qaLanguageCodes")
+            .sort({ firstname: 1, username: 1 })
+            .lean();
+
+        const allAmbiguities = await Ambiguity.find({}).lean();
+
+        const qaBreakdown = qaUsers.map((qa) => {
+            const qaIdStr = qa._id.toString();
+
+            let callAmbiguitiesCount = 0;
+            let phraseAmbiguitiesCount = 0;
+            let pendingCount = 0;
+            let resolvedCount = 0;
+
+            for (const amb of allAmbiguities) {
+                const isQaInvolved = Array.isArray(amb.qaReviews) && amb.qaReviews.some(
+                    r => r.qaId && r.qaId.toString() === qaIdStr
+                );
+
+                if (isQaInvolved) {
+                    if (amb.type === "call") {
+                        callAmbiguitiesCount++;
+                    } else if (amb.type === "phrase") {
+                        phraseAmbiguitiesCount++;
+                    }
+
+                    if (amb.status === "pending") {
+                        pendingCount++;
+                    } else if (amb.status === "resolved") {
+                        resolvedCount++;
+                    }
+                }
+            }
+
+            return {
+                qaUser: {
+                    _id: qa._id,
+                    name: `${qa.firstname || ""} ${qa.lastname || ""}`.trim() || qa.username,
+                    username: qa.username,
+                    email: qa.email
+                },
+                callAmbiguitiesCount,
+                phraseAmbiguitiesCount,
+                totalAmbiguitiesCount: callAmbiguitiesCount + phraseAmbiguitiesCount,
+                pendingCount,
+                resolvedCount
+            };
+        }).sort((a, b) => b.totalAmbiguitiesCount - a.totalAmbiguitiesCount);
+
+        res.json({ qaBreakdown });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// GET Ambiguity List (Calls / Phrases)
+router.get("/ambiguity", async (req, res) => {
+    try {
+        const type = req.query.type || "call"; // "call" | "phrase"
+        const status = req.query.status || "pending"; // "pending" | "resolved" | "all"
+        const page = parseInt(req.query.page, 10) || 1;
+        const limit = parseInt(req.query.limit, 10) || 20;
+        const skip = (page - 1) * limit;
+
+        const filter = { type };
+        if (status !== "all") {
+            filter.status = status;
+        }
+
+        const [ambiguities, total] = await Promise.all([
+            Ambiguity.find(filter)
+                .sort({ createdAt: -1 })
+                .skip(skip)
+                .limit(limit)
+                .lean(),
+            Ambiguity.countDocuments(filter)
+        ]);
+
+        // Enrich with call or phrase details
+        const enriched = await Promise.all(
+            ambiguities.map(async (item) => {
+                let callDoc = null;
+                let phraseDoc = null;
+                if (item.type === "call" && item.callId) {
+                    callDoc = await CallSession.findOne({ callId: item.callId })
+                        .populate("userA", "firstname lastname username email speaker_id")
+                        .populate("userB", "firstname lastname username email speaker_id")
+                        .populate("topicId", "title")
+                        .populate("subtopicId", "title instructions")
+                        .lean();
+                } else if (item.type === "phrase" && item.phraseId) {
+                    phraseDoc = await Phrase.findOne({ phraseId: item.phraseId })
+                        .populate("contributorId", "firstname lastname username email speaker_id")
+                        .lean();
+                }
+
+                return {
+                    ...item,
+                    callDetails: callDoc,
+                    phraseDetails: phraseDoc
+                };
+            })
+        );
+
+        res.json({ ambiguities: enriched, total, page, pages: Math.ceil(total / limit) });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// POST Admin Ambiguity Resolution
+router.post("/ambiguity/:id/resolve", async (req, res) => {
+    try {
+        const { decision, decisionA, decisionB, notes } = req.body;
+        const amb = await Ambiguity.findById(req.params.id);
+        if (!amb) return res.status(404).json({ error: "Ambiguity record not found" });
+
+        amb.status = "resolved";
+        amb.resolvedBy = req.user._id;
+        amb.adminNotes = notes || null;
+        amb.resolvedAt = new Date();
+
+        if (amb.type === "call") {
+            const decA = decisionA || decision || "approved";
+            const decB = decisionB || decision || "approved";
+            if (!["approved", "rejected"].includes(decA) || !["approved", "rejected"].includes(decB)) {
+                return res.status(400).json({ error: "decisionA and decisionB must be 'approved' or 'rejected'" });
+            }
+
+            amb.adminDecisionA = decA;
+            amb.adminDecisionB = decB;
+            amb.adminDecision = (decA === "approved" && decB === "approved") ? "approved" : (decA === "rejected" && decB === "rejected") ? "rejected" : "partial";
+            await amb.save();
+
+            const finalCallStatus = (decA === "approved" || decB === "approved") ? "approved" : "rejected";
+            await CallSession.updateOne(
+                { callId: amb.callId },
+                {
+                    $set: {
+                        recordingAStatus: decA,
+                        recordingBStatus: decB,
+                        callStatus: finalCallStatus,
+                        reviewedBy: req.user._id,
+                        reviewedAt: new Date()
+                    }
+                }
+            );
+
+            // Audit flags for QAs
+            if (Array.isArray(amb.qaReviews) && amb.qaReviews.length > 0) {
+                for (const rev of amb.qaReviews) {
+                    if (rev.qaId) {
+                        const isOverriddenA = rev.recordingAAction !== decA;
+                        const isOverriddenB = rev.recordingBAction !== decB;
+                        const isOverridden = isOverriddenA || isOverriddenB;
+                        const defaultNote = isOverridden
+                            ? `Admin rendered individual verdicts (Speaker A: ${decA.toUpperCase()}, Speaker B: ${decB.toUpperCase()}). Your review was overridden.`
+                            : `Admin confirmed your review (Speaker A: ${decA.toUpperCase()}, Speaker B: ${decB.toUpperCase()}).`;
+
+                        await QaFlag.create({
+                            qaId: rev.qaId,
+                            ambiguityId: amb._id,
+                            type: "call",
+                            itemId: amb.callId,
+                            qaVerdict: `SpkA:${rev.recordingAAction || "-"}, SpkB:${rev.recordingBAction || "-"}`,
+                            adminVerdict: `SpkA:${decA}, SpkB:${decB}`,
+                            qaVerdictA: rev.recordingAAction || "approved",
+                            qaVerdictB: rev.recordingBAction || "approved",
+                            adminVerdictA: decA,
+                            adminVerdictB: decB,
+                            isOverridden,
+                            note: notes || defaultNote,
+                            resolvedBy: req.user._id
+                        });
+                    }
+                }
+            }
+        } else {
+            // Phrase ambiguity resolution
+            if (!["approved", "rejected"].includes(decision)) {
+                return res.status(400).json({ error: "decision must be 'approved' or 'rejected'" });
+            }
+            amb.adminDecision = decision;
+            await amb.save();
+
+            await Phrase.updateOne(
+                { phraseId: amb.phraseId },
+                { $set: { status: decision, qaId: req.user._id, reviewedAt: new Date() } }
+            );
+
+            if (Array.isArray(amb.qaReviews) && amb.qaReviews.length > 0) {
+                for (const rev of amb.qaReviews) {
+                    if (rev.qaId) {
+                        const isOverridden = rev.action !== decision;
+                        const defaultNote = isOverridden
+                            ? `Admin overridden your ${rev.action} verdict to ${decision.toUpperCase()}.`
+                            : `Admin confirmed your ${rev.action} verdict.`;
+
+                        await QaFlag.create({
+                            qaId: rev.qaId,
+                            ambiguityId: amb._id,
+                            type: "phrase",
+                            itemId: amb.phraseId,
+                            qaVerdict: rev.action || "pending",
+                            adminVerdict: decision,
+                            isOverridden,
+                            note: notes || defaultNote,
+                            resolvedBy: req.user._id
+                        });
+                    }
+                }
+            }
+        }
+
+        res.json({ message: "Ambiguity resolved successfully", ambiguity: amb });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// GET QA Flags (for logged in QA user or Admin)
+qaCallRouter.get("/flags", async (req, res) => {
+    try {
+        const targetUserId = req.query.qaUserId || req.user._id;
+        const flags = await QaFlag.find({ qaId: targetUserId })
+            .sort({ createdAt: -1 })
+            .lean();
+        const unreadCount = flags.filter(f => !f.readAt).length;
+
+        res.json({ flags, unreadCount });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// PATCH Mark QA Flag as read
+qaCallRouter.patch("/flags/:id/read", async (req, res) => {
+    try {
+        await QaFlag.updateOne(
+            { _id: req.params.id, qaId: req.user._id },
+            { $set: { readAt: new Date() } }
+        );
+        res.json({ success: true });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
     }
 });
 

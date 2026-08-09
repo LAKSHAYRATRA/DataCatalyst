@@ -75,7 +75,7 @@ export default function AdminNav() {
     useEffect(() => {
         const path = location.pathname;
         setOpenMenus({
-            calls: ['/admin/calls', '/admin/topics', '/admin/qa', '/admin/languages', '/admin/call-apps'].includes(path),
+            calls: ['/admin/calls', '/admin/topics', '/admin/qa', '/admin/qa-payments', '/admin/languages', '/admin/call-apps'].includes(path),
             users: ['/admin/users', '/admin/payouts', '/admin/finances', '/admin/pan-verification', '/admin/agreements'].some(p => path.startsWith(p)),
             phrases: ['/admin/qaphrase', '/admin/phrases', '/admin/language-apps', '/admin/projects', '/admin/companies', '/admin/phrases/downloads'].includes(path)
         });
@@ -203,10 +203,12 @@ export default function AdminNav() {
                                                     <span>Call Languages</span>
                                                 </Link>
                                             )}
-                                            <Link to="/admin/call-apps" onClick={() => setIsMobileMenuOpen(false)}
-                                                className={`flex items-center px-3 py-2 rounded-lg text-xs font-semibold transition-all ${isActive('/admin/call-apps') ? 'bg-neutral-700 text-warning-400' : 'text-neutral-400 hover:text-white'}`}>
-                                                <span>Call Apps</span>
-                                            </Link>
+                                            {isAdmin && (
+                                                <Link to="/admin/call-apps" onClick={() => setIsMobileMenuOpen(false)}
+                                                    className={`flex items-center px-3 py-2 rounded-lg text-xs font-semibold transition-all ${isActive('/admin/call-apps') ? 'bg-neutral-700 text-warning-400' : 'text-neutral-400 hover:text-white'}`}>
+                                                    <span>Call Apps</span>
+                                                </Link>
+                                            )}
                                         </div>
                                     )}
                                 </div>
@@ -281,10 +283,12 @@ export default function AdminNav() {
                                                     <span>Phrase Workloads</span>
                                                 </Link>
                                             )}
-                                            <Link to="/admin/language-apps" onClick={() => setIsMobileMenuOpen(false)}
-                                                className={`flex items-center px-3 py-2 rounded-lg text-xs font-semibold transition-all ${isActive('/admin/language-apps') ? 'bg-neutral-700 text-warning-400' : 'text-neutral-400 hover:text-white'}`}>
-                                                <span>Phrase Apps</span>
-                                            </Link>
+                                            {isAdmin && (
+                                                <Link to="/admin/language-apps" onClick={() => setIsMobileMenuOpen(false)}
+                                                    className={`flex items-center px-3 py-2 rounded-lg text-xs font-semibold transition-all ${isActive('/admin/language-apps') ? 'bg-neutral-700 text-warning-400' : 'text-neutral-400 hover:text-white'}`}>
+                                                    <span>Phrase Apps</span>
+                                                </Link>
+                                            )}
 
                                             {isAdmin && (
                                                 <Link to="/admin/companies" onClick={() => setIsMobileMenuOpen(false)}
@@ -300,6 +304,57 @@ export default function AdminNav() {
                                             )}
                                         </div>
                                     )}
+                                </div>
+                            )}
+
+                            {/* Standalone QA Payments Tab (For QA accounts only) */}
+                            {(isQA && !isAdmin) && (
+                                <Link to="/admin/qa-payments" onClick={() => setIsMobileMenuOpen(false)}
+                                    className={`flex items-center space-x-3 px-4 py-3 rounded-lg text-sm font-semibold transition-all ${isActive('/admin/qa-payments') ? 'bg-neutral-700 text-warning-400 shadow-sm' : 'text-neutral-300 hover:bg-neutral-700/50 hover:text-white'}`}>
+                                    <svg className="w-5 h-5 text-warning-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                    </svg>
+                                    <span>QA Payments</span>
+                                </Link>
+                            )}
+
+                            {/* QA Flags / Audit Notes Tab (For QA accounts only) */}
+                            {(isQA && !isAdmin) && (
+                                <Link to="/admin/qa-flags" onClick={() => setIsMobileMenuOpen(false)}
+                                    className={`flex items-center space-x-3 px-4 py-3 rounded-lg text-sm font-semibold transition-all ${isActive('/admin/qa-flags') ? 'bg-neutral-700 text-warning-400 shadow-sm' : 'text-neutral-300 hover:bg-neutral-700/50 hover:text-white'}`}>
+                                    <svg className="w-5 h-5 text-rose-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 21v-4m0 0V5a2 2 0 012-2h6.5l1 1H21l-3 6 3 6h-8.5l-1-1H5a2 2 0 00-2 2zm9-13.5V9" />
+                                    </svg>
+                                    <span>Flags</span>
+                                </Link>
+                            )}
+
+                            {/* Ambiguity & Audit Sampling Tab (Admin only) */}
+                            {isAdmin && (
+                                <Link to="/admin/ambiguity" onClick={() => setIsMobileMenuOpen(false)}
+                                    className={`flex items-center space-x-3 px-4 py-3 rounded-lg text-sm font-semibold transition-all ${isActive('/admin/ambiguity') ? 'bg-neutral-700 text-warning-400 shadow-sm' : 'text-neutral-300 hover:bg-neutral-700/50 hover:text-white'}`}>
+                                    <svg className="w-5 h-5 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                    </svg>
+                                    <span>Ambiguity & Audits</span>
+                                </Link>
+                            )}
+
+                            {/* QA Payrate Display Box */}
+                            {isQA && (
+                                <div className="mt-3 p-3 bg-neutral-900/60 border border-neutral-700/70 rounded-xl space-y-2">
+                                    <div className="flex items-center gap-2 text-xs font-medium text-neutral-300">
+                                        <svg className="w-4 h-4 text-amber-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+                                        </svg>
+                                        <span>Per Call Payrate: <strong className="text-emerald-400 font-mono font-bold">{userInfo?.perCallPayrate !== undefined ? userInfo.perCallPayrate : 0} $</strong></span>
+                                    </div>
+                                    <div className="flex items-center gap-2 text-xs font-medium text-neutral-300">
+                                        <svg className="w-4 h-4 text-indigo-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 100-6 3 3 0 000 6z" />
+                                        </svg>
+                                        <span>Hourly Phrase Payrate: <strong className="text-emerald-400 font-mono font-bold">{userInfo?.hourlyPhrasePayrate !== undefined ? userInfo.hourlyPhrasePayrate : 0} $</strong></span>
+                                    </div>
                                 </div>
                             )}
 

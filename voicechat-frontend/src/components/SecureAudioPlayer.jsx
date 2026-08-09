@@ -3,13 +3,15 @@ import { Play, Pause, Loader2, DownloadCloud } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { fetchAndConvertToWav } from '../lib/audioToWav.js';
 
-export default function SecureAudioPlayer({ url }) {
+export default function SecureAudioPlayer({ url, requireFullListen = false, onFirstListenComplete }) {
   const audioRef = useRef(null);
+  const maxListenedTimeRef = useRef(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
   const [blobUrl, setBlobUrl] = useState(null);
   const [loading, setLoading] = useState(false);
   const [shouldAutoPlay, setShouldAutoPlay] = useState(false);
+  const [hasFinishedOnce, setHasFinishedOnce] = useState(false);
 
   // Cleanup object URL on unmount
   useEffect(() => {
@@ -84,7 +86,40 @@ export default function SecureAudioPlayer({ url }) {
     if (audioRef.current) {
       const current = audioRef.current.currentTime;
       const duration = audioRef.current.duration;
+
+      if (requireFullListen && !hasFinishedOnce) {
+        // Block forward seeking past furthest continuously listened point
+        if (current > maxListenedTimeRef.current + 1.2) {
+          audioRef.current.currentTime = maxListenedTimeRef.current;
+          return;
+        } else {
+          maxListenedTimeRef.current = Math.max(maxListenedTimeRef.current, current);
+        }
+
+        // Check if audio played to the end (within 0.3s)
+        if (duration > 0 && current >= duration - 0.3) {
+          setHasFinishedOnce(true);
+          if (onFirstListenComplete) onFirstListenComplete();
+        }
+      }
+
       setProgress((current / duration) * 100 || 0);
+    }
+  };
+
+  const handleEnded = () => {
+    setIsPlaying(false);
+    if (requireFullListen && !hasFinishedOnce) {
+      setHasFinishedOnce(true);
+      if (onFirstListenComplete) onFirstListenComplete();
+    }
+  };
+
+  const handleSeeking = () => {
+    if (audioRef.current && requireFullListen && !hasFinishedOnce) {
+      if (audioRef.current.currentTime > maxListenedTimeRef.current + 0.5) {
+        audioRef.current.currentTime = maxListenedTimeRef.current;
+      }
     }
   };
 
@@ -93,7 +128,15 @@ export default function SecureAudioPlayer({ url }) {
       const rect = e.currentTarget.getBoundingClientRect();
       const x = e.clientX - rect.left;
       const percentage = x / rect.width;
-      audioRef.current.currentTime = percentage * audioRef.current.duration;
+      const targetTime = percentage * audioRef.current.duration;
+
+      if (requireFullListen && !hasFinishedOnce) {
+        if (targetTime > maxListenedTimeRef.current + 0.5) {
+          audioRef.current.currentTime = maxListenedTimeRef.current;
+          return;
+        }
+      }
+      audioRef.current.currentTime = targetTime;
     }
   };
 
@@ -107,7 +150,8 @@ export default function SecureAudioPlayer({ url }) {
           ref={audioRef} 
           src={blobUrl} 
           onTimeUpdate={handleTimeUpdate}
-          onEnded={() => setIsPlaying(false)}
+          onSeeking={handleSeeking}
+          onEnded={handleEnded}
           className="hidden" // Hides native controls
         />
       )}

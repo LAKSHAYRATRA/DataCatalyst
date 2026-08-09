@@ -503,8 +503,8 @@ export async function sendIntroFinalDeletionEmail(to, firstName) {
 /**
  * Send an email confirming that the Contributor Agreement has been signed and is under review.
  */
-export async function sendAgreementSignedEmail(to, firstName) {
-    const subject = "Contributor Agreement received — Voclara";
+export async function sendAgreementSignedEmail(to, firstName, s3Key = null, pdfBuffer = null) {
+    const subject = "Signed Contributor Agreement Copy — Voclara / DataCatalyst";
     const html = `
 <!DOCTYPE html>
 <html>
@@ -523,8 +523,8 @@ export async function sendAgreementSignedEmail(to, firstName) {
               <div style="width:56px;height:56px;background:rgba(255,255,255,0.15);border-radius:14px;text-align:center;line-height:56px;margin:0 auto 12px auto;display:block;">
                 <span style="font-size:28px;line-height:56px;vertical-align:middle;">📝</span>
               </div>
-              <h1 style="margin:0;color:#fff;font-size:22px;font-weight:700;letter-spacing:-0.5px;">Voclara</h1>
-              <p style="margin:4px 0 0;color:rgba(255,255,255,0.75);font-size:13px;">Professional Audio Platform</p>
+              <h1 style="margin:0;color:#fff;font-size:22px;font-weight:700;letter-spacing:-0.5px;">Voclara / DataCatalyst</h1>
+              <p style="margin:4px 0 0;color:rgba(255,255,255,0.75);font-size:13px;">Professional Audio & Dataset Platform</p>
             </td>
           </tr>
           <!-- Body -->
@@ -532,10 +532,10 @@ export async function sendAgreementSignedEmail(to, firstName) {
             <td style="padding:36px 40px;">
               <h2 style="margin:0 0 16px;color:#f1f5f9;font-size:20px;font-weight:600;">Hi ${firstName},</h2>
               <p style="margin:0 0 16px;color:#e2e8f0;font-size:14px;line-height:1.6;">
-                We have received your signed Voclara Contributor Agreement.
+                Thank you for completing your signed Contributor Agreement. A official copy of your signed agreement PDF has been attached to this email for your records.
               </p>
               <p style="margin:0 0 28px;color:#94a3b8;font-size:14px;line-height:1.6;">
-                Our admin team will review it shortly. Once approved, you will be notified via email and can begin applying to active voice recording and calling projects.
+                Our admin team will review it shortly. Once approved, you can begin participating in active voice recording projects.
               </p>
               <!-- Button -->
               <div style="text-align:center;margin-bottom:28px;">
@@ -549,7 +549,7 @@ export async function sendAgreementSignedEmail(to, firstName) {
           <!-- Footer -->
           <tr>
             <td style="background:#0f172a;padding:16px 40px;text-align:center;">
-              <p style="margin:0;color:#475569;font-size:11px;">© 2026 Voclara. All rights reserved.</p>
+              <p style="margin:0;color:#475569;font-size:11px;">© 2026 Voclara / DataCatalyst.in. All rights reserved.</p>
             </td>
           </tr>
         </table>
@@ -559,11 +559,45 @@ export async function sendAgreementSignedEmail(to, firstName) {
 </body>
 </html>`;
 
+    const attachments = [];
+    if (pdfBuffer && Buffer.isBuffer(pdfBuffer)) {
+        attachments.push({
+            filename: "DataCatalyst-Signed-Contributor-Agreement.pdf",
+            content: pdfBuffer,
+            contentType: "application/pdf"
+        });
+    } else if (s3Key) {
+        if (s3Key.startsWith("local:")) {
+            const localFileName = s3Key.replace("local:", "");
+            const localFilePath = path.join(process.cwd(), "recordings", "agreements", localFileName);
+            if (fs.existsSync(localFilePath)) {
+                attachments.push({
+                    filename: "DataCatalyst-Signed-Contributor-Agreement.pdf",
+                    path: localFilePath,
+                    contentType: "application/pdf"
+                });
+            }
+        } else {
+            try {
+                const command = new GetObjectCommand({ Bucket: BUCKET_NAME, Key: s3Key });
+                const s3Doc = await s3Client.send(command);
+                attachments.push({
+                    filename: "DataCatalyst-Signed-Contributor-Agreement.pdf",
+                    content: s3Doc.Body,
+                    contentType: "application/pdf"
+                });
+            } catch (err) {
+                console.error("Failed to fetch agreement PDF from S3 for email attachment:", err.message);
+            }
+        }
+    }
+
     await transporter.sendMail({
-        from: `"Voclara" <${GMAIL_USER}>`,
+        from: `"Voclara DataCatalyst" <${GMAIL_USER}>`,
         to,
         subject,
         html,
+        attachments
     });
 }
 

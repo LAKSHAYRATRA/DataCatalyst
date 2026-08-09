@@ -486,27 +486,30 @@ export default function PhraseRecording() {
   async function startRecording() {
     try {
       if (window.voclaraRecorder?.isNative) {
-        // Native Electron path — 24-bit WASAPI exclusive, bypasses Windows audio engine.
-        // Release any active browser mic tracks first so Chromium stops holding the device
-        // in WASAPI shared mode. If another app holds it exclusively, audify would fail;
-        // releasing Chromium's hold is what lets exclusive mode succeed here.
-        if (streamRef.current) {
-          streamRef.current.getTracks().forEach(t => t.stop());
-          streamRef.current = null;
+        try {
+          // Native Electron path — 24-bit WASAPI exclusive/shared, bypasses Windows audio engine.
+          // Release any active browser mic tracks first so Chromium stops holding the device.
+          if (streamRef.current) {
+            streamRef.current.getTracks().forEach(t => t.stop());
+            streamRef.current = null;
+          }
+          if (audioCtxRef.current) {
+            audioCtxRef.current.close().catch(() => {});
+            audioCtxRef.current = null;
+          }
+          resetRecording();
+          await window.voclaraRecorder.startRecording(currentPhrase._id, { bitDepth: 24, sampleRate: 48000, channels: 1 });
+          isRecordingRef.current = true;
+          setIsRecording(true);
+          startTimeRef.current = Date.now();
+          timerRef.current = setInterval(() => {
+            setDuration(Math.floor((Date.now() - startTimeRef.current) / 1000));
+          }, 1000);
+          return;
+        } catch (nativeErr) {
+          console.warn("Native WASAPI recording failed, falling back to Web Audio recorder:", nativeErr);
+          // Fall through to browser recording path below
         }
-        if (audioCtxRef.current) {
-          audioCtxRef.current.close().catch(() => {});
-          audioCtxRef.current = null;
-        }
-        resetRecording();
-        await window.voclaraRecorder.startRecording(currentPhrase._id, { bitDepth: 24, sampleRate: 48000, channels: 1 });
-        isRecordingRef.current = true;
-        setIsRecording(true);
-        startTimeRef.current = Date.now();
-        timerRef.current = setInterval(() => {
-          setDuration(Math.floor((Date.now() - startTimeRef.current) / 1000));
-        }, 1000);
-        return;
       }
 
       // Browser fallback path

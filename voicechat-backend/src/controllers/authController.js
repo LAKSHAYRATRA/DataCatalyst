@@ -32,6 +32,8 @@ function formatUserResponse(user) {
     isQA: user.isQA || false,
     qaLanguageCode: user.qaLanguageCode || user.qaLanguageCodes?.[0] || null,
     qaLanguageCodes: user.qaLanguageCodes || [],
+    perCallPayrate: user.perCallPayrate !== undefined ? user.perCallPayrate : 0,
+    hourlyPhrasePayrate: user.hourlyPhrasePayrate !== undefined ? user.hourlyPhrasePayrate : 0,
     dailyCallLimit: user.dailyCallLimit,
     accountStatus: user.accountStatus || "pending_intro",
     accent: user.accent || null,
@@ -42,6 +44,7 @@ function formatUserResponse(user) {
       signedAt: ca.signedAt || null,
       adminReviewStatus: ca.adminReviewStatus || null,
       adminReviewReason: ca.adminReviewReason || null,
+      assignedAgreementDoc: ca.assignedAgreementDoc || "default",
     },
   };
 }
