@@ -1306,7 +1306,7 @@ qaCallRouter.get("/payments-stats", async (req, res) => {
         if (isUserAdmin && !req.query.qaUserId) {
             // Admin summary across ALL QA Users
             const qaUsers = await User.find({ isQA: true })
-                .select("firstname lastname username email upiId qaPerCallPayrateUsd qaHourlyPhrasePayrateUsd qaLanguageCodes qaLanguageCode createdAt")
+                .select("firstname lastname username email upiId qaPerCallPayrateUsd qaHourlyPhrasePayrateUsd perCallPayrate hourlyPhrasePayrate qaLanguageCodes qaLanguageCode createdAt")
                 .sort({ createdAt: -1 })
                 .lean();
 
@@ -1318,8 +1318,8 @@ qaCallRouter.get("/payments-stats", async (req, res) => {
                         PayoutPayment.find({ userId: qa._id }).sort({ paidAt: -1, createdAt: -1 }).lean()
                     ]);
 
-                    const perCallRate = Number(qa.qaPerCallPayrateUsd) || 0;
-                    const hourlyPhraseRate = Number(qa.qaHourlyPhrasePayrateUsd) || 0;
+                    const perCallRate = Number((qa.qaPerCallPayrateUsd !== undefined && qa.qaPerCallPayrateUsd !== null && qa.qaPerCallPayrateUsd > 0) ? qa.qaPerCallPayrateUsd : qa.perCallPayrate) || 0;
+                    const hourlyPhraseRate = Number((qa.qaHourlyPhrasePayrateUsd !== undefined && qa.qaHourlyPhrasePayrateUsd !== null && qa.qaHourlyPhrasePayrateUsd > 0) ? qa.qaHourlyPhrasePayrateUsd : qa.hourlyPhrasePayrate) || 0;
 
                     const callEarningsUsd = Math.round(callsReviewed * perCallRate * 100) / 100;
                     const phraseHoursFormatted = Math.round(phraseStats.phraseHours * 10000) / 10000;
@@ -1397,8 +1397,8 @@ qaCallRouter.get("/payments-stats", async (req, res) => {
                 .lean()
         ]);
 
-        const perCallRate = Number(qaUser.qaPerCallPayrateUsd) || 0;
-        const hourlyPhraseRate = Number(qaUser.qaHourlyPhrasePayrateUsd) || 0;
+        const perCallRate = Number((qaUser.qaPerCallPayrateUsd !== undefined && qaUser.qaPerCallPayrateUsd !== null && qaUser.qaPerCallPayrateUsd > 0) ? qaUser.qaPerCallPayrateUsd : qaUser.perCallPayrate) || 0;
+        const hourlyPhraseRate = Number((qaUser.qaHourlyPhrasePayrateUsd !== undefined && qaUser.qaHourlyPhrasePayrateUsd !== null && qaUser.qaHourlyPhrasePayrateUsd > 0) ? qaUser.qaHourlyPhrasePayrateUsd : qaUser.hourlyPhrasePayrate) || 0;
 
         const callEarningsUsd = Math.round(callsReviewedCount * perCallRate * 100) / 100;
         const phraseHoursFormatted = Math.round(phraseStats.phraseHours * 10000) / 10000;
@@ -2952,10 +2952,14 @@ qaRouter.patch("/:id", async (req, res) => {
         updates.qaLanguageCode = qaLanguageCodes[0];
     }
     if (req.body.perCallPayrate !== undefined) {
-        updates.perCallPayrate = Math.max(0, Number(req.body.perCallPayrate) || 0);
+        const val = Math.max(0, Number(req.body.perCallPayrate) || 0);
+        updates.perCallPayrate = val;
+        updates.qaPerCallPayrateUsd = val;
     }
     if (req.body.hourlyPhrasePayrate !== undefined) {
-        updates.hourlyPhrasePayrate = Math.max(0, Number(req.body.hourlyPhrasePayrate) || 0);
+        const val = Math.max(0, Number(req.body.hourlyPhrasePayrate) || 0);
+        updates.hourlyPhrasePayrate = val;
+        updates.qaHourlyPhrasePayrateUsd = val;
     }
 
     try {
