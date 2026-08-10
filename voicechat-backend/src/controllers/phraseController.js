@@ -557,6 +557,23 @@ export async function getAvailablePhrase(req, res) {
     for (const d of userRecordedDocs) addDoneItem(d.text, d.phraseId);
     for (const r of userRejectionDocs) addDoneItem(null, r.phraseId);
 
+    if (req.query.excludeBaseIds) {
+      const extraBaseIds = String(req.query.excludeBaseIds).split(',').map(id => id.trim().toLowerCase()).filter(Boolean);
+      for (const bId of extraBaseIds) {
+        userDoneBaseIds.add(bId);
+        const cleanBId = bId.replace(/_c\d+$/, "").trim();
+        if (cleanBId) userDoneBaseIds.add(cleanBId);
+      }
+    }
+
+    if (req.query.excludeTexts) {
+      const extraTexts = String(req.query.excludeTexts).split(',').map(t => t.trim()).filter(Boolean);
+      for (const txt of extraTexts) {
+        userDoneTexts.add(txt.toLowerCase());
+        userDoneTexts.add(txt);
+      }
+    }
+
     if (userDoneTexts.size > 0) {
       baseQuery.text = { $nin: Array.from(userDoneTexts) };
     }

@@ -533,8 +533,27 @@ export default function PhraseRecording() {
         url += `&refresh=true`;
       }
       const data = await apiGet(url);
-      const fetchedPhrases = data.phrases || (data.phrase ? [data.phrase] : []);
+      const rawFetchedPhrases = data.phrases || (data.phrase ? [data.phrase] : []);
       setUserCustomizations(data.userCustomizations || []);
+
+      // Client-side deduplication safety net
+      const seenBaseIds = new Set();
+      const seenTexts = new Set();
+      const fetchedPhrases = [];
+      for (const p of rawFetchedPhrases) {
+        if (!p) continue;
+        const pId = p.phraseId ? String(p.phraseId).trim().toLowerCase() : "";
+        const baseId = pId.replace(/_c\d+$/, "").trim();
+        const textNorm = p.text ? String(p.text).trim().toLowerCase() : "";
+
+        if ((baseId && seenBaseIds.has(baseId)) || (pId && seenBaseIds.has(pId)) || (textNorm && seenTexts.has(textNorm))) {
+          continue;
+        }
+        if (baseId) seenBaseIds.add(baseId);
+        if (pId) seenBaseIds.add(pId);
+        if (textNorm) seenTexts.add(textNorm);
+        fetchedPhrases.push(p);
+      }
 
       setSlots(prev => prev.map((s, idx) => ({
         ...s,
@@ -789,13 +808,34 @@ export default function PhraseRecording() {
       });
 
       // Fetch 1 replacement phrase for ONLY slotId!
-      const currentOtherIds = slots.filter(s => s.id !== slotId && s.phrase).map(s => s.phrase._id);
+      const otherSlots = slots.filter(s => s.id !== slotId && s.phrase);
+      const currentOtherIds = otherSlots.map(s => s.phrase._id);
+      const currentOtherBaseIds = otherSlots.map(s => String(s.phrase.phraseId || '').replace(/_c\d+$/, '').trim()).filter(Boolean);
+      const currentOtherTexts = otherSlots.map(s => String(s.phrase.text || '').trim()).filter(Boolean);
+
+      // Also exclude submitted phrase's base ID and text explicitly
+      if (slot.phrase) {
+        if (slot.phrase.phraseId) {
+          const subBaseId = String(slot.phrase.phraseId).replace(/_c\d+$/, '').trim();
+          if (subBaseId) currentOtherBaseIds.push(subBaseId);
+        }
+        if (slot.phrase.text) {
+          currentOtherTexts.push(String(slot.phrase.text).trim());
+        }
+      }
+
       let url = `/api/phrases/available?language=${encodeURIComponent(language)}`;
       if (projectName && projectName !== 'Any') {
         url += `&projectName=${encodeURIComponent(projectName)}`;
       }
       if (currentOtherIds.length > 0) {
         url += `&excludeIds=${currentOtherIds.join(',')}`;
+      }
+      if (currentOtherBaseIds.length > 0) {
+        url += `&excludeBaseIds=${encodeURIComponent(Array.from(new Set(currentOtherBaseIds)).join(','))}`;
+      }
+      if (currentOtherTexts.length > 0) {
+        url += `&excludeTexts=${encodeURIComponent(Array.from(new Set(currentOtherTexts)).join(','))}`;
       }
       if (slot.phrase && slot.phrase.emotion) {
         url += `&lastEmotion=${encodeURIComponent(slot.phrase.emotion)}`;
