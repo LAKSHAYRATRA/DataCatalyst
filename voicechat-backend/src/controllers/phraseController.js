@@ -524,56 +524,49 @@ export async function getAvailablePhrase(req, res) {
       }
     }
 
-    // Ensure the contributor is never assigned a phrase text or phrase copy they have already recorded, locked, or been rejected for
-    const [userPhraseDocs, userRejectionDocs] = await Promise.all([
-      Phrase.find({
-        $or: [
-          { contributorId: user._id },
-          { lockedBy: user._id }
-        ]
-      }).select("text phraseId").lean(),
-      PhraseRejection.find({
-        contributorId: user._id
-      }).select("phraseId").lean()
-    ]);
-
-    const userDoneTexts = new Set();
-    const userDoneBaseIds = new Set();
-
-    for (const d of userPhraseDocs) {
-      if (d.text) userDoneTexts.add(d.text.trim());
-      if (d.phraseId) {
-        const baseId = String(d.phraseId).replace(/_c\d+$/, "").trim();
-        if (baseId) userDoneBaseIds.add(baseId);
-        userDoneBaseIds.add(String(d.phraseId).trim());
-      }
-    }
-
-    for (const r of userRejectionDocs) {
-      if (r.phraseId) {
-        const baseId = String(r.phraseId).replace(/_c\d+$/, "").trim();
-        if (baseId) userDoneBaseIds.add(baseId);
-        userDoneBaseIds.add(String(r.phraseId).trim());
-      }
-    }
-
-    if (userDoneTexts.size > 0) {
-      baseQuery.text = { $nin: Array.from(userDoneTexts) };
-    }
-
-    if (userDoneBaseIds.size > 0) {
-      const baseIdPatterns = Array.from(userDoneBaseIds).map(id =>
-        new RegExp(`^${id.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')}(_c\\d+)?$`, "i")
-      );
-      baseQuery.phraseId = { $nin: baseIdPatterns };
-    }
-
     // If refresh requested, release all currently locked phrases for this user back to pending
     if (req.query.refresh === "true") {
       await Phrase.updateMany(
         { status: "locked", lockedBy: req.user._id },
         { $set: { status: "pending" }, $unset: { lockedBy: "", lockedAt: "" } }
       );
+    }
+
+    // Ensure the contributor is never assigned a phrase text or phrase copy they have already recorded, locked, or been rejected for
+    const [userRecordedDocs, userRejectionDocs] = await Promise.all([
+      Phrase.find({ contributorId: user._id }).select("text phraseId").lean(),
+      PhraseRejection.find({ contributorId: user._id }).select("phraseId").lean()
+    ]);
+
+    const userDoneTexts = new Set();
+    const userDoneBaseIds = new Set();
+
+    const addDoneItem = (textVal, pidVal) => {
+      if (textVal) {
+        userDoneTexts.add(String(textVal).trim().toLowerCase());
+        userDoneTexts.add(String(textVal).trim());
+      }
+      if (pidVal) {
+        const cleanPId = String(pidVal).trim().toLowerCase();
+        const baseId = cleanPId.replace(/_c\d+$/, "").trim();
+        if (baseId) userDoneBaseIds.add(baseId);
+        userDoneBaseIds.add(cleanPId);
+      }
+    };
+
+    for (const d of userRecordedDocs) addDoneItem(d.text, d.phraseId);
+    for (const r of userRejectionDocs) addDoneItem(null, r.phraseId);
+
+    if (userDoneTexts.size > 0) {
+      baseQuery.text = { $nin: Array.from(userDoneTexts) };
+    }
+
+    if (userDoneBaseIds.size > 0) {
+      const norConditions = Array.from(userDoneBaseIds).map(id => {
+        const escaped = id.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+        return { phraseId: new RegExp(`^${escaped}(_c\\d+)?$`, "i") };
+      });
+      baseQuery.$nor = norConditions;
     }
 
     // 1. Fetch any phrases already locked for this contributor that haven't expired
@@ -596,6 +589,24 @@ export async function getAvailablePhrase(req, res) {
         excludes.forEach(id => {
           if (mongoose.Types.ObjectId.isValid(id)) existingIds.push(new mongoose.Types.ObjectId(id));
         });
+      }
+
+      // Track batch base IDs and texts to ensure intra-queue deduplication
+      const batchBaseIds = new Set(userDoneBaseIds);
+      const batchTexts = new Set(userDoneTexts);
+
+      for (const lp of lockedPhrases) {
+        addDoneItem(lp.text, lp.phraseId);
+        if (lp.phraseId) {
+          const cleanPId = String(lp.phraseId).trim().toLowerCase();
+          const baseId = cleanPId.replace(/_c\d+$/, "").trim();
+          if (baseId) batchBaseIds.add(baseId);
+          batchBaseIds.add(cleanPId);
+        }
+        if (lp.text) {
+          batchTexts.add(String(lp.text).trim().toLowerCase());
+          batchTexts.add(String(lp.text).trim());
+        }
       }
 
       // Look up company's configured chronological tag (defaults to "emotion")
@@ -642,28 +653,65 @@ export async function getAvailablePhrase(req, res) {
       if (!matchBase._id) delete matchBase._id;
 
       let candidates = [];
+
+      const isCandidateValid = (cand) => {
+        if (!cand) return false;
+        const candText = cand.text ? String(cand.text).trim().toLowerCase() : "";
+        const candPId = cand.phraseId ? String(cand.phraseId).trim().toLowerCase() : "";
+        const candBaseId = candPId.replace(/_c\d+$/, "").trim();
+
+        if (candText && batchTexts.has(candText)) return false;
+        if (candBaseId && batchBaseIds.has(candBaseId)) return false;
+        if (candPId && batchBaseIds.has(candPId)) return false;
+
+        return true;
+      };
+
+      const addCandidate = (cand) => {
+        if (!isCandidateValid(cand)) return false;
+        const candText = cand.text ? String(cand.text).trim().toLowerCase() : "";
+        const candPId = cand.phraseId ? String(cand.phraseId).trim().toLowerCase() : "";
+        const candBaseId = candPId.replace(/_c\d+$/, "").trim();
+
+        if (candText) {
+          batchTexts.add(candText);
+          batchTexts.add(String(cand.text).trim());
+        }
+        if (candBaseId) batchBaseIds.add(candBaseId);
+        if (candPId) batchBaseIds.add(candPId);
+
+        candidates.push(cand);
+        return true;
+      };
+
       if (searchTagValues.length > 0) {
         for (const tagVal of searchTagValues) {
           if (candidates.length >= needed) break;
           const tagQuery = { ...matchBase, [chronoTag]: tagVal };
           const tagPhrases = await Phrase.find(tagQuery)
-            .limit(needed - candidates.length)
+            .limit(needed * 5)
             .lean();
-          candidates.push(...tagPhrases);
+          for (const p of tagPhrases) {
+            if (candidates.length >= needed) break;
+            addCandidate(p);
+          }
         }
       }
 
       // Fallback for phrases without tag or if candidates < needed
       if (candidates.length < needed) {
-        const foundIds = candidates.map(c => c._id);
+        const foundIds = [...existingIds, ...candidates.map(c => c._id)];
         const fallbackQuery = {
           ...matchBase,
-          _id: { $nin: [...existingIds, ...foundIds] }
+          _id: { $nin: foundIds }
         };
         const extraPhrases = await Phrase.find(fallbackQuery)
-          .limit(needed - candidates.length)
+          .limit(needed * 5)
           .lean();
-        candidates.push(...extraPhrases);
+        for (const p of extraPhrases) {
+          if (candidates.length >= needed) break;
+          addCandidate(p);
+        }
       }
 
       for (const p of candidates) {

@@ -167,13 +167,14 @@ const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 20000,
   message: { error: "Global Speed Limit exceeded. Please try again later." },
-  keyGenerator: (req) => req.ip
+  validate: { default: false }
 });
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, 
   max: 50,
   message: { error: "Security Lockout: Wait 15 minutes before sending another OTP." },
-  keyGenerator: (req) => req.body?.email || req.ip
+  keyGenerator: (req) => req.body?.email || req.ip,
+  validate: { default: false }
 });
 app.use("/api/", globalLimiter); // Protect generic /api hooks
 
