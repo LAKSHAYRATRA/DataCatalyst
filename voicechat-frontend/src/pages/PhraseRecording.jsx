@@ -347,6 +347,44 @@ export default function PhraseRecording() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
+  const getPhraseTagValue = (phraseObj, tagKey) => {
+    if (!phraseObj || typeof phraseObj !== 'object') return null;
+    const lowerKey = String(tagKey).trim().toLowerCase();
+    
+    // 1. Check top-level properties
+    for (const [k, v] of Object.entries(phraseObj)) {
+      if (k.toLowerCase() === lowerKey) {
+        if (v !== null && v !== undefined && String(v).trim() !== '' && typeof v !== 'object') {
+          return String(v);
+        }
+      }
+    }
+
+    // 2. Check nested phraseObj.tags if present (e.g. phrase.tags.domain)
+    if (phraseObj.tags && typeof phraseObj.tags === 'object') {
+      for (const [k, v] of Object.entries(phraseObj.tags)) {
+        if (k.toLowerCase() === lowerKey) {
+          if (v !== null && v !== undefined && String(v).trim() !== '' && typeof v !== 'object') {
+            return String(v);
+          }
+        }
+      }
+    }
+
+    // 3. Check nested phraseObj.metadata if present
+    if (phraseObj.metadata && typeof phraseObj.metadata === 'object') {
+      for (const [k, v] of Object.entries(phraseObj.metadata)) {
+        if (k.toLowerCase() === lowerKey) {
+          if (v !== null && v !== undefined && String(v).trim() !== '' && typeof v !== 'object') {
+            return String(v);
+          }
+        }
+      }
+    }
+
+    return null;
+  };
+
   const isTagVisible = (key) => {
     if (!key) return false;
     if (!userCustomizations || userCustomizations.length === 0) {
@@ -1143,53 +1181,50 @@ export default function PhraseRecording() {
 
                   {/* Metadata Tags */}
                   <div className="flex flex-wrap items-center gap-3 mb-6 bg-neutral-50/50 dark:bg-neutral-900/50 p-3.5 rounded-lg text-xs">
-                    {phrase.emotion && isTagVisible('emotion') && (
-                      <div className="bg-neutral-100 dark:bg-neutral-800 px-3 py-1.5 rounded-md">
-                        <span className="block opacity-60 mb-0.5 uppercase tracking-wider text-[10px]">Emotion</span>
-                        <span className="font-semibold text-neutral-800 dark:text-neutral-200">{phrase.emotion}</span>
-                      </div>
-                    )}
-                    {phrase.style && isTagVisible('style') && (
-                      <div className="bg-neutral-100 dark:bg-neutral-800 px-3 py-1.5 rounded-md">
-                        <span className="block opacity-60 mb-0.5 uppercase tracking-wider text-[10px]">Style</span>
-                        <span className="font-semibold text-neutral-800 dark:text-neutral-200">{phrase.style}</span>
-                      </div>
-                    )}
-                    {phrase.speed && isTagVisible('speed') && (
-                      <div className="bg-neutral-100 dark:bg-neutral-800 px-3 py-1.5 rounded-md">
-                        <span className="block opacity-60 mb-0.5 uppercase tracking-wider text-[10px]">Speed</span>
-                        <span className="font-semibold text-neutral-800 dark:text-neutral-200">{phrase.speed}</span>
-                      </div>
-                    )}
-                    {phrase.intent && isTagVisible('intent') && (
-                      <div className="bg-neutral-100 dark:bg-neutral-800 px-3 py-1.5 rounded-md">
-                        <span className="block opacity-60 mb-0.5 uppercase tracking-wider text-[10px]">Intent</span>
-                        <span className="font-semibold text-neutral-800 dark:text-neutral-200">{phrase.intent}</span>
-                      </div>
-                    )}
-                    {phrase.pitch && isTagVisible('pitch') && (
-                      <div className="bg-neutral-100 dark:bg-neutral-800 px-3 py-1.5 rounded-md">
-                        <span className="block opacity-60 mb-0.5 uppercase tracking-wider text-[10px]">Pitch</span>
-                        <span className="font-semibold text-neutral-800 dark:text-neutral-200">{phrase.pitch}</span>
-                      </div>
-                    )}
-                    {phrase.volume && isTagVisible('volume') && (
-                      <div className="bg-neutral-100 dark:bg-neutral-800 px-3 py-1.5 rounded-md">
-                        <span className="block opacity-60 mb-0.5 uppercase tracking-wider text-[10px]">Volume</span>
-                        <span className="font-semibold text-neutral-800 dark:text-neutral-200">{phrase.volume}</span>
-                      </div>
-                    )}
-                    {Object.entries(phrase).map(([key, val]) => {
-                      if (!val || typeof val === 'object') return null;
-                      if (['emotion','style','speed','intent','pitch','volume','text','_id','phraseId','companyId','projectName','language','status','createdAt','updatedAt','__v','lockedAt','lockedBy','isTestPhrase','isSample','needsSecondQaReview','isEdited'].includes(key)) return null;
-                      if (!isTagVisible(key)) return null;
-                      return (
-                        <div key={key} className="bg-neutral-100 dark:bg-neutral-800 px-3 py-1.5 rounded-md">
-                          <span className="block opacity-60 mb-0.5 uppercase tracking-wider text-[10px]">{key}</span>
-                          <span className="font-semibold text-neutral-800 dark:text-neutral-200">{String(val)}</span>
-                        </div>
+                    {(() => {
+                      const INTERNAL_KEYS = ['text', '_id', 'phraseid', 'companyid', 'projectname', 'language', 'status', 'createdat', 'updatedat', '__v', 'lockedat', 'lockedby', 'istestphrase', 'issample', 'needssecondqareview', 'isedited', 'originaltext', 'editedby', 'editedat', 'editedphrasestatus', 'audiofile', 'duration', 'lufs', 'recordedat', 'qaid', 'qacomment', 'reviewedat', 'qalockedby', 'qalockedat', 'qcresult', 'contributorid'];
+
+                      let visibleKeys = [];
+                      if (userCustomizations && userCustomizations.length > 0) {
+                        visibleKeys = userCustomizations;
+                      } else {
+                        visibleKeys = ['emotion', 'style', 'speed', 'intent', 'pitch', 'volume', 'instructions', 'script_type', 'speaker_id', 'freq', 'domain'];
+                      }
+
+                      const renderedBadges = [];
+
+                      for (const tagKey of visibleKeys) {
+                        if (INTERNAL_KEYS.includes(tagKey.toLowerCase())) continue;
+                        const val = getPhraseTagValue(phrase, tagKey);
+                        if (val !== null && val !== undefined) {
+                          renderedBadges.push(
+                            <div key={tagKey} className="bg-neutral-100 dark:bg-neutral-800 px-3 py-1.5 rounded-md border border-neutral-200/50 dark:border-neutral-700/50">
+                              <span className="block opacity-60 mb-0.5 uppercase tracking-wider text-[10px]">{tagKey}</span>
+                              <span className="font-semibold text-neutral-800 dark:text-neutral-200 capitalize">{val}</span>
+                            </div>
+                          );
+                        }
+                      }
+
+                      if (!userCustomizations || userCustomizations.length === 0) {
+                        for (const [k, v] of Object.entries(phrase)) {
+                          if (!v || typeof v === 'object') continue;
+                          if (INTERNAL_KEYS.includes(k.toLowerCase())) continue;
+                          if (!visibleKeys.some(vk => vk.toLowerCase() === k.toLowerCase())) {
+                            renderedBadges.push(
+                              <div key={k} className="bg-neutral-100 dark:bg-neutral-800 px-3 py-1.5 rounded-md border border-neutral-200/50 dark:border-neutral-700/50">
+                                <span className="block opacity-60 mb-0.5 uppercase tracking-wider text-[10px]">{k}</span>
+                                <span className="font-semibold text-neutral-800 dark:text-neutral-200 capitalize">{String(v)}</span>
+                              </div>
+                            );
+                          }
+                        }
+                      }
+
+                      return renderedBadges.length > 0 ? renderedBadges : (
+                        <span className="text-neutral-400 text-xs italic">No metadata tags configured for this phrase.</span>
                       );
-                    })}
+                    })()}
                   </div>
 
                   {/* Controls below Phrase Container */}
