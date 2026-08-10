@@ -3175,7 +3175,16 @@ function calculateDemographics(items) {
             state: u.address?.state || "N/A",
             status: item.appStatus || "pending",
             appliedAt: item.appliedAt || null,
-            noiseGateDb: item.noiseGateDb !== undefined ? item.noiseGateDb : (u.noiseGateDb || 0)
+            noiseGateDb: item.noiseGateDb !== undefined ? item.noiseGateDb : (u.noiseGateDb || 0),
+            approvedSeconds: item.approvedSeconds || 0,
+            rejectedSeconds: item.rejectedSeconds || 0,
+            pendingSeconds: item.pendingSeconds || 0,
+            totalSeconds: item.totalSeconds || 0,
+            approvedCount: item.approvedCount || 0,
+            rejectedCount: item.rejectedCount || 0,
+            pendingCount: item.pendingCount || 0,
+            approvalRate: item.approvalRate || 0,
+            rejectionRate: item.rejectionRate || 0
         };
 
         if (item.appStatus === "approved") {
@@ -3719,7 +3728,6 @@ router.get("/companies/:id/contributors-summary", async (req, res) => {
         const languagesList = [];
         for (const [langCode, langData] of languageMap.entries()) {
             const items = Array.from(langData.usersMap.values());
-            const summary = calculateDemographics(items);
 
             // Compute per-language & per-contributor durations and rates
             let langApprovedSeconds = 0;
@@ -3752,7 +3760,7 @@ router.get("/companies/:id/contributors-summary", async (req, res) => {
                     langApprovedSeconds += dur;
                     langApprovedCount++;
                     if (uStats) { uStats.approvedSecs += dur; uStats.approvedCnt++; }
-                } else if (p.status === "recorded") {
+                } else if (p.status === "recorded" || p.status === "pending_review") {
                     langPendingSeconds += dur;
                     langPendingCount++;
                     if (uStats) { uStats.pendingSecs += dur; uStats.pendingCnt++; }
@@ -3821,6 +3829,8 @@ router.get("/companies/:id/contributors-summary", async (req, res) => {
                 item.approvalRate = uEval > 0 ? Number(((uStats.approvedCnt / uEval) * 100).toFixed(1)) : 0;
                 item.rejectionRate = uEval > 0 ? Number(((uStats.rejectedCnt / uEval) * 100).toFixed(1)) : 0;
             }
+
+            const summary = calculateDemographics(items);
 
             summary.totalSeconds = langTotalSeconds;
             summary.approvedSeconds = langApprovedSeconds;

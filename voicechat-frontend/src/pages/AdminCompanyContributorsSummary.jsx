@@ -615,8 +615,8 @@ export default function AdminCompanyContributorsSummary() {
                                   <td className="px-4 py-2.5 text-white font-medium">{formatSecs(u.totalSeconds)}</td>
                                   <td className="px-4 py-2.5 text-red-400 font-medium">{formatSecs(u.rejectedSeconds)} <span className="text-[10px] text-red-500/80 font-normal">({u.rejectedCount || 0})</span></td>
                                   <td className="px-4 py-2.5 text-amber-400 font-medium">{formatSecs(u.pendingSeconds)} <span className="text-[10px] font-semibold text-amber-300">({u.pendingCount || 0} pending)</span></td>
-                                  <td className="px-4 py-2.5 font-medium">
-                                    <span className="text-emerald-400">{u.approvalRate}%</span> / <span className="text-red-400">{u.rejectionRate}%</span>
+                                  <td className="px-4 py-2.5 font-medium font-mono text-xs">
+                                    <span className="text-emerald-400">{Number(u.approvalRate || 0).toFixed(1)}%</span> / <span className="text-red-400">{Number(u.rejectionRate || 0).toFixed(1)}%</span>
                                   </td>
                                   <td className="px-4 py-2.5">
                                     {u.status === "approved" ? (
