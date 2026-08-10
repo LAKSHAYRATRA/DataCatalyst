@@ -5065,7 +5065,7 @@ router.post("/companies", requireAuth(JWT_SECRET), async (req, res) => {
 
 router.patch("/companies/:id", async (req, res) => {
     try {
-        const { maxContributionMinutes, hourlyPayout, singlePhraseFrequency, projectName, namingPattern, userCustomizations, downloadCustomizations, allowPhraseTextEdit } = req.body;
+        const { maxContributionMinutes, hourlyPayout, singlePhraseFrequency, projectName, namingPattern, userCustomizations, downloadCustomizations, chronologicalTag, allowPhraseTextEdit } = req.body;
         const updateData = {};
         if (maxContributionMinutes !== undefined) updateData.maxContributionMinutes = Number(maxContributionMinutes);
         if (hourlyPayout !== undefined) updateData.hourlyPayout = Number(hourlyPayout);
@@ -5074,6 +5074,7 @@ router.patch("/companies/:id", async (req, res) => {
         if (namingPattern !== undefined) updateData.namingPattern = String(namingPattern).trim();
         if (userCustomizations !== undefined) updateData.userCustomizations = userCustomizations;
         if (downloadCustomizations !== undefined) updateData.downloadCustomizations = downloadCustomizations;
+        if (chronologicalTag !== undefined) updateData.chronologicalTag = String(chronologicalTag).trim().toLowerCase();
         if (allowPhraseTextEdit !== undefined) updateData.allowPhraseTextEdit = Boolean(allowPhraseTextEdit);
         
         const company = await Company.findByIdAndUpdate(req.params.id, { $set: updateData }, { new: true });

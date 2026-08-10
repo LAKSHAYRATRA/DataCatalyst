@@ -11,6 +11,7 @@ const companySchema = new mongoose.Schema(
     namingPattern: { type: String, default: "{phraseId}" },
     userCustomizations: { type: [String], default: [] },
     downloadCustomizations: { type: [String], default: [] },
+    chronologicalTag: { type: String, default: "emotion" },
     allowPhraseTextEdit: { type: Boolean, default: false }
   },
   { timestamps: true }

@@ -126,16 +126,22 @@ export default function PhraseRecording() {
   const [availableLanguages, setAvailableLanguages] = useState([]);
 
   useEffect(() => {
-    const newLangs = Array.from(new Set(
+    let newLangs = Array.from(new Set(
       approvedApps
-        .filter(a => a.companyId === projectName)
+        .filter(a => !projectName || a.companyId === projectName)
         .map(a => a.languageCode)
-    ));
-    setAvailableLanguages(newLangs);
-    if (!newLangs.includes(language)) {
-      setLanguage(newLangs[0] || '');
+    )).filter(Boolean);
+
+    if (newLangs.length === 0) {
+      newLangs = (allLanguages || []).map(l => l.code).filter(Boolean);
+      if (newLangs.length === 0) newLangs = ['hindi', 'english'];
     }
-  }, [projectName, approvedApps]);
+
+    setAvailableLanguages(newLangs);
+    if (!language || !newLangs.includes(language)) {
+      setLanguage(newLangs[0] || 'hindi');
+    }
+  }, [projectName, approvedApps, allLanguages]);
 
   const activeApp = React.useMemo(() => {
     return approvedApps.find(a => {
@@ -196,7 +202,7 @@ export default function PhraseRecording() {
   const [lufsResult, setLufsResult] = useState(null);
 
   const runLufsTest = async () => {
-    if (isLufsTesting || isRecording) return;
+    if (isLufsTesting || activeSlotId !== null) return;
     setIsLufsTesting(true);
     setLufsCountdown(3);
     setLufsResult(null);
@@ -328,28 +334,59 @@ export default function PhraseRecording() {
     }
   }
 
-  const [currentPhrase, setCurrentPhrase] = useState(null);
+  const [slots, setSlots] = useState([
+    { id: 0, phrase: null, isRecording: false, audioBlob: null, audioUrl: null, duration: 0, recordedLufs: null, rawPcm: null, isSubmitting: false },
+    { id: 1, phrase: null, isRecording: false, audioBlob: null, audioUrl: null, duration: 0, recordedLufs: null, rawPcm: null, isSubmitting: false },
+    { id: 2, phrase: null, isRecording: false, audioBlob: null, audioUrl: null, duration: 0, recordedLufs: null, rawPcm: null, isSubmitting: false },
+    { id: 3, phrase: null, isRecording: false, audioBlob: null, audioUrl: null, duration: 0, recordedLufs: null, rawPcm: null, isSubmitting: false },
+    { id: 4, phrase: null, isRecording: false, audioBlob: null, audioUrl: null, duration: 0, recordedLufs: null, rawPcm: null, isSubmitting: false }
+  ]);
+
+  const [activeSlotId, setActiveSlotId] = useState(null);
   const [userCustomizations, setUserCustomizations] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  // Recording State
-  const [isRecording, setIsRecording] = useState(false);
-  const [audioBlob, setAudioBlob] = useState(null);
-  const [audioUrl, setAudioUrl] = useState(null);
-  const [duration, setDuration] = useState(0);
-  const mediaRecorderRef = useRef(null);
+  const isTagVisible = (key) => {
+    if (!key) return false;
+    if (!userCustomizations || userCustomizations.length === 0) {
+      return ['emotion', 'style', 'speed', 'intent', 'pitch', 'volume'].includes(key.toLowerCase());
+    }
+    return userCustomizations.some(uk => uk.toLowerCase() === key.toLowerCase());
+  };
+
+  // Recording State Refs
+  const streamRef = useRef(null);
+  const audioCtxRef = useRef(null);
+  const workletNodeRef = useRef(null);
   const audioChunksRef = useRef([]);
   const startTimeRef = useRef(null);
   const timerRef = useRef(null);
 
   useEffect(() => {
     fetchInitialData();
+
+    const handleBeforeUnload = () => {
+      const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:3001";
+      navigator.sendBeacon(`${BACKEND_URL}/api/phrases/unlock-my-phrases`);
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+
     return () => {
+      handleBeforeUnload();
+      window.removeEventListener("beforeunload", handleBeforeUnload);
       if (timerRef.current) clearInterval(timerRef.current);
-      if (audioUrl) URL.revokeObjectURL(audioUrl);
     };
   }, []);
+
+  useEffect(() => {
+    if (language) {
+      fetchFiveSlots();
+    } else {
+      setSlots(prev => prev.map(s => ({ ...s, phrase: null })));
+    }
+  }, [language, projectName]);
 
   async function fetchStats() {
     try {
@@ -382,13 +419,19 @@ export default function PhraseRecording() {
       
       setApprovedApps(approved);
       const uniqueCompanyIds = Array.from(new Set(approved.map(a => a.companyId).filter(Boolean)));
-      const companies = uniqueCompanyIds.map(id => {
+      let companies = uniqueCompanyIds.map(id => {
         const app = approved.find(a => a.companyId === id);
         return {
           id: id,
           label: app?.projectName || id
         };
       });
+
+      if (companies.length === 0) {
+        companies = (companiesData.companies || []).map(c => ({ id: c.name, label: c.projectName || c.name }));
+        if (companies.length === 0) companies = [{ id: 'General Phrases', label: 'General Phrases' }];
+      }
+
       setApprovedCompanies(companies);
       setProjectName(companies[0]?.id || '');
 
@@ -413,11 +456,9 @@ export default function PhraseRecording() {
     let rate = 0;
     if (!language) return 0;
 
-    // 1. Base language rate
     const baseLang = allLanguages.find(l => l.code && l.code.toLowerCase() === language.toLowerCase());
     if (baseLang) rate = Number(baseLang.hourlyPayout) || 0;
 
-    // 2. Specific project language rate
     if (projectName && projectName !== 'Any') {
       const proj = projects.find(p => p.name === projectName);
       if (proj && proj.languageRates) {
@@ -428,7 +469,6 @@ export default function PhraseRecording() {
       }
     }
 
-    // 3. Company phrase config rate overrides all other rates if set (> 0)
     if (projectName && projectName !== 'Any') {
       const coreCompanyId = String(projectName).replace("_downloaded", "").trim();
       const comp = allCompanies.find(c => 
@@ -443,76 +483,64 @@ export default function PhraseRecording() {
     return rate;
   }, [language, projectName, projects, allLanguages, allCompanies]);
 
-  async function fetchNextPhrase() {
+  async function fetchFiveSlots(isRefresh = false) {
+    setLoading(true);
+    setError(null);
     try {
-      setLoading(true);
-      setError(null);
-      resetRecording();
-      let url = `/api/phrases/available?language=${language}`;
-      if (projectName !== 'Any') {
+      let url = `/api/phrases/available?language=${encodeURIComponent(language)}`;
+      if (projectName && projectName !== 'Any') {
         url += `&projectName=${encodeURIComponent(projectName)}`;
       }
+      if (isRefresh === true) {
+        url += `&refresh=true`;
+      }
       const data = await apiGet(url);
-      if (data.phrase) {
-        setCurrentPhrase(data.phrase);
-        setUserCustomizations(data.userCustomizations || []);
-      } else {
-        setCurrentPhrase(null);
-        setUserCustomizations([]);
+      const fetchedPhrases = data.phrases || (data.phrase ? [data.phrase] : []);
+      setUserCustomizations(data.userCustomizations || []);
+
+      setSlots(prev => prev.map((s, idx) => ({
+        ...s,
+        phrase: fetchedPhrases[idx] || null,
+        isRecording: false,
+        audioBlob: null,
+        audioUrl: null,
+        duration: 0,
+        recordedLufs: null,
+        rawPcm: null,
+        isSubmitting: false
+      })));
+
+      if (fetchedPhrases.length === 0) {
         setError(data.message || 'No phrases available for this language right now.');
       }
     } catch (err) {
-      setError('Failed to fetch phrase.');
+      console.error('Failed to fetch 5 phrases', err);
+      setError('Failed to fetch phrases.');
     } finally {
       setLoading(false);
     }
   }
 
-  function resetRecording() {
-    if (audioUrl) URL.revokeObjectURL(audioUrl);
-    setAudioBlob(null);
-    setAudioUrl(null);
-    setDuration(0);
-    setRawPcm(null);
-    setRecordedLufs(null);
+  async function startRecordingSlot(slotId) {
+    if (activeSlotId !== null && activeSlotId !== slotId) {
+      stopRecordingSlot(activeSlotId);
+      await new Promise(r => setTimeout(r, 150));
+    }
+
+    setSlots(prev => prev.map(s => s.id === slotId ? {
+      ...s,
+      isRecording: true,
+      audioBlob: null,
+      audioUrl: null,
+      duration: 0,
+      recordedLufs: null,
+      rawPcm: null
+    } : s));
+
+    setActiveSlotId(slotId);
     audioChunksRef.current = [];
-  }
 
-  const isRecordingRef = useRef(false);
-  const audioCtxRef = useRef(null);
-  const workletNodeRef = useRef(null);
-  const streamRef = useRef(null);
-
-  async function startRecording() {
     try {
-      if (window.voclaraRecorder?.isNative) {
-        try {
-          // Native Electron path — 24-bit WASAPI exclusive/shared, bypasses Windows audio engine.
-          // Release any active browser mic tracks first so Chromium stops holding the device.
-          if (streamRef.current) {
-            streamRef.current.getTracks().forEach(t => t.stop());
-            streamRef.current = null;
-          }
-          if (audioCtxRef.current) {
-            audioCtxRef.current.close().catch(() => {});
-            audioCtxRef.current = null;
-          }
-          resetRecording();
-          await window.voclaraRecorder.startRecording(currentPhrase._id, { bitDepth: 24, sampleRate: 48000, channels: 1 });
-          isRecordingRef.current = true;
-          setIsRecording(true);
-          startTimeRef.current = Date.now();
-          timerRef.current = setInterval(() => {
-            setDuration(Math.floor((Date.now() - startTimeRef.current) / 1000));
-          }, 1000);
-          return;
-        } catch (nativeErr) {
-          console.warn("Native WASAPI recording failed, falling back to Web Audio recorder:", nativeErr);
-          // Fall through to browser recording path below
-        }
-      }
-
-      // Browser fallback path
       let stream;
       try {
         stream = await navigator.mediaDevices.getUserMedia({
@@ -520,59 +548,45 @@ export default function PhraseRecording() {
             echoCancellation: false,
             noiseSuppression: false,
             autoGainControl: false,
-            channelCount: { ideal: 2 },
             sampleRate: { ideal: 48000 }
           }
         });
-      } catch (err) {
-        try {
-          stream = await navigator.mediaDevices.getUserMedia({
-            audio: {
-              echoCancellation: false,
-              noiseSuppression: false,
-              autoGainControl: false
-            }
-          });
-        } catch (err2) {
-          stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        }
+      } catch (e1) {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       }
-      resetRecording();
+      streamRef.current = stream;
 
       const track = stream.getAudioTracks()[0];
       const settings = track ? track.getSettings() : {};
       const trackSampleRate = settings.sampleRate || 48000;
 
-      const AudioCtxClass = window.AudioContext || window.webkitAudioContext;
-      const audioCtx = new AudioCtxClass({ sampleRate: trackSampleRate });
-      if (audioCtx.state === "suspended") {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      const audioCtx = new AudioCtx({ sampleRate: trackSampleRate });
+      if (audioCtx.state === 'suspended') {
         await audioCtx.resume();
       }
+      audioCtxRef.current = audioCtx;
 
-      try {
-        await audioCtx.audioWorklet.addModule("/pcm-worklet.js");
-      } catch (wErr) {
-        console.warn("Worklet module load note:", wErr);
-      }
       const source = audioCtx.createMediaStreamSource(stream);
-      const workletNode = new AudioWorkletNode(audioCtx, "pcm-processor");
+      try {
+        await audioCtx.audioWorklet.addModule('/pcm-worklet.js');
+      } catch (wErr) {
+        console.warn('Worklet module note:', wErr);
+      }
 
-      // Pass assigned noise gate setting to worklet processor
-      const activeApp = approvedApps.find(a => {
-        const compMatch = !projectName || String(a.companyId || "").toLowerCase().trim() === String(projectName || "").toLowerCase().trim();
-        const langMatch = !language || String(a.languageCode || "").toLowerCase().trim() === String(language || "").toLowerCase().trim();
-        return compMatch && langMatch;
-      });
-      const assignedNoiseGateDb = activeApp?.noiseGateDb !== undefined ? activeApp.noiseGateDb : 0;
-      workletNode.port.postMessage({ type: "setNoiseGate", noiseGateDb: assignedNoiseGateDb });
-      workletNode.port.postMessage({ type: "setGainBoost", gainBoost: micGainMultiplier });
+      const mult = parseFloat((1.0 + ((parseInt(micGainPercent) || 0) / 100)).toFixed(2));
+      const workletNode = new AudioWorkletNode(audioCtx, 'pcm-processor');
+      workletNodeRef.current = workletNode;
+
+      workletNode.port.postMessage({ type: "setNoiseGate", noiseGateDb: activeNoiseGateDb });
+      workletNode.port.postMessage({ type: "setGainBoost", gainBoost: mult });
 
       const gain = audioCtx.createGain();
       gain.gain.value = 0;
 
-      workletNode.port.onmessage = (e) => {
-        if (isRecordingRef.current) {
-          audioChunksRef.current.push(new Float32Array(e.data));
+      workletNode.port.onmessage = (event) => {
+        if (event.data) {
+          audioChunksRef.current.push(new Float32Array(event.data));
         }
       };
 
@@ -580,92 +594,91 @@ export default function PhraseRecording() {
       workletNode.connect(gain);
       gain.connect(audioCtx.destination);
 
-      audioCtxRef.current = audioCtx;
-      workletNodeRef.current = workletNode;
-      streamRef.current = stream;
-      isRecordingRef.current = true;
-      setIsRecording(true);
       startTimeRef.current = Date.now();
-
       timerRef.current = setInterval(() => {
-        setDuration(Math.floor((Date.now() - startTimeRef.current) / 1000));
-      }, 1000);
-
+        const elapsed = Math.floor((Date.now() - startTimeRef.current) / 1000);
+        setSlots(prev => prev.map(s => s.id === slotId ? { ...s, duration: elapsed } : s));
+      }, 500);
     } catch (err) {
-      console.error(err);
-      alert(err.message || 'Microphone access denied or not available.');
+      console.error('Failed to start recording slot:', err);
+      setActiveSlotId(null);
+      setSlots(prev => prev.map(s => s.id === slotId ? { ...s, isRecording: false } : s));
+      Swal.fire({
+        icon: 'error',
+        title: 'Microphone Access Required',
+        text: 'Please allow microphone access to record phrases.',
+        background: '#171717',
+        color: '#ffffff'
+      });
     }
   }
 
-  async function stopRecording() {
-    if (!isRecordingRef.current) return;
-    isRecordingRef.current = false;
-    setIsRecording(false);
-    clearInterval(timerRef.current);
+  function stopRecordingSlot(slotId) {
+    const targetId = slotId !== undefined ? slotId : activeSlotId;
+    if (targetId === null) return;
 
-    if (window.voclaraRecorder?.isNative) {
-      try {
-        const { data, options } = await window.voclaraRecorder.stopRecordingRaw();
-        const binary = atob(data);
-        const bytes = new Uint8Array(binary.length);
-        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-        const wavBlob = new Blob([bytes], { type: 'audio/wav' });
-        setAudioBlob(wavBlob);
-        setAudioUrl(URL.createObjectURL(wavBlob));
-
-        // Decode WAV bytes into Float32Array PCM for LUFS validation and visualization
-        try {
-          const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-          const decoded = await audioCtx.decodeAudioData(bytes.buffer.slice(0));
-          const floatPcm = decoded.getChannelData(0);
-          setRawPcm(floatPcm);
-          if (floatPcm && floatPcm.length > 0) {
-            const score = calculateEbuR128Lufs(floatPcm, decoded.sampleRate || 48000);
-            setRecordedLufs(score);
-          }
-          await audioCtx.close();
-        } catch (decodeErr) {
-          console.warn('WAV decoding for native LUFS failed:', decodeErr);
-        }
-      } catch (err) {
-        console.error('Native stop failed:', err);
-        alert('Failed to stop recording.');
-      }
-      return;
+    if (timerRef.current) clearInterval(timerRef.current);
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(t => t.stop());
+    }
+    if (audioCtxRef.current) {
+      audioCtxRef.current.close().catch(() => {});
     }
 
-    // Browser fallback cleanup
-    if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
-    if (workletNodeRef.current) workletNodeRef.current.disconnect();
-    if (audioCtxRef.current) audioCtxRef.current.close();
+    let totalLen = 0;
+    for (const arr of audioChunksRef.current) totalLen += arr.length;
 
-    let totalLength = 0;
-    for (const arr of audioChunksRef.current) totalLength += arr.length;
-    const combined = new Float32Array(totalLength);
+    const combined = new Float32Array(totalLen);
     let offset = 0;
-    for (const arr of audioChunksRef.current) { combined.set(arr, offset); offset += arr.length; }
-
-    setRawPcm(combined);
-    if (combined && combined.length > 0) {
-      const score = calculateEbuR128Lufs(combined, audioCtxRef.current?.sampleRate || 48000);
-      setRecordedLufs(score);
+    for (const arr of audioChunksRef.current) {
+      combined.set(arr, offset);
+      offset += arr.length;
     }
-    const wavBlob = encodeWAV(combined, audioCtxRef.current?.sampleRate || 48000, 1);
-    setAudioBlob(wavBlob);
-    setAudioUrl(URL.createObjectURL(wavBlob));
+
+    let score = null;
+    let wavBlob = null;
+    let url = null;
+
+    if (combined && combined.length > 0) {
+      score = calculateEbuR128Lufs(combined, 48000);
+      wavBlob = encodeWAV(combined, 48000, 1);
+      url = URL.createObjectURL(wavBlob);
+    }
+
+    setSlots(prev => prev.map(s => s.id === targetId ? {
+      ...s,
+      isRecording: false,
+      audioBlob: wavBlob,
+      audioUrl: url,
+      recordedLufs: score,
+      rawPcm: combined
+    } : s));
+
+    setActiveSlotId(null);
   }
 
-  async function submitRecording() {
-    if (!audioBlob || !currentPhrase) return;
+  function resetSlot(slotId) {
+    setSlots(prev => prev.map(s => s.id === slotId ? {
+      ...s,
+      isRecording: false,
+      audioBlob: null,
+      audioUrl: null,
+      duration: 0,
+      recordedLufs: null,
+      rawPcm: null
+    } : s));
+  }
 
-    // Strict LUFS Check (-18.0 to -24.0 LUFS Target)
+  async function submitSlot(slotId) {
+    const slot = slots[slotId];
+    if (!slot || !slot.phrase || !slot.audioBlob) return;
+
     let lufsScore = null;
-    if (rawPcm && rawPcm.length > 0) {
-      lufsScore = calculateEbuR128Lufs(rawPcm, audioCtxRef.current?.sampleRate || 48000);
+    if (slot.rawPcm && slot.rawPcm.length > 0) {
+      lufsScore = calculateEbuR128Lufs(slot.rawPcm, 48000);
     }
 
     if (lufsScore === null) {
-      // No speech detected!
       Swal.fire({
         icon: "warning",
         title: "No Speech Found",
@@ -682,107 +695,99 @@ export default function PhraseRecording() {
       return;
     }
 
-    if (lufsScore !== null) {
-      if (lufsScore > -18.0) {
-        // LUFS > -18 (e.g. -17, -15) => Too loud! Decrease gain!
-        Swal.fire({
-          icon: "warning",
-          title: "Mic Calibration Required (Too Loud)",
-          background: "#171717",
-          color: "#ffffff",
-          html: `<div class="text-left space-y-2 text-sm text-neutral-300">
-            <p>Your phrase recording loudness is <b class="font-mono text-base text-rose-400">${lufsScore} LUFS</b> (Target range: <b class="text-white">-18.0 to -24.0 LUFS</b>).</p>
-            <p class="text-rose-400 font-bold">⚠️ Audio is too loud (over -18.0 LUFS)!</p>
-            <p>Please open <b>Mic Settings</b> and <b>decrease your mic gain</b> (try -10% or -20%) or speak slightly softer, then re-record this phrase.</p>
-          </div>`,
-          confirmButtonText: "Adjust Mic Settings",
-          confirmButtonColor: "#3b82f6"
-        });
-        setShowMicSettingsModal(true);
-        return;
-      }
-
-      if (lufsScore < -24.0) {
-        // LUFS < -24 (e.g. -25, -28) => Too quiet! Increase gain!
-        Swal.fire({
-          icon: "warning",
-          title: "Mic Calibration Required (Too Quiet)",
-          background: "#171717",
-          color: "#ffffff",
-          html: `<div class="text-left space-y-2 text-sm text-neutral-300">
-            <p>Your phrase recording loudness is <b class="font-mono text-base text-amber-400">${lufsScore} LUFS</b> (Target range: <b class="text-white">-18.0 to -24.0 LUFS</b>).</p>
-            <p class="text-amber-400 font-bold">⚠️ Audio is too quiet (under -24.0 LUFS)!</p>
-            <p>Please open <b>Mic Settings</b> and <b>increase your mic gain</b> (try +10% or +20%) or speak slightly louder, then re-record this phrase.</p>
-          </div>`,
-          confirmButtonText: "Adjust Mic Settings",
-          confirmButtonColor: "#3b82f6"
-        });
-        setShowMicSettingsModal(true);
-        return;
-      }
+    if (lufsScore > -18.0) {
+      Swal.fire({
+        icon: "warning",
+        title: "Mic Calibration Required (Too Loud)",
+        background: "#171717",
+        color: "#ffffff",
+        html: `<div class="text-left space-y-2 text-sm text-neutral-300">
+          <p>Your phrase recording loudness is <b class="font-mono text-base text-rose-400">${lufsScore} LUFS</b> (Target range: <b class="text-white">-18.0 to -24.0 LUFS</b>).</p>
+          <p class="text-rose-400 font-bold">⚠️ Audio is too loud (over -18.0 LUFS)!</p>
+          <p>Please open <b>Mic Settings</b> and <b>decrease your mic gain</b> (try -10% or -20%) or speak slightly softer, then re-record this phrase.</p>
+        </div>`,
+        confirmButtonText: "Adjust Mic Settings",
+        confirmButtonColor: "#3b82f6"
+      });
+      setShowMicSettingsModal(true);
+      return;
     }
-    
-    setLoading(true);
+
+    if (lufsScore < -24.0) {
+      Swal.fire({
+        icon: "warning",
+        title: "Mic Calibration Required (Too Quiet)",
+        background: "#171717",
+        color: "#ffffff",
+        html: `<div class="text-left space-y-2 text-sm text-neutral-300">
+          <p>Your phrase recording loudness is <b class="font-mono text-base text-amber-400">${lufsScore} LUFS</b> (Target range: <b class="text-white">-18.0 to -24.0 LUFS</b>).</p>
+          <p class="text-amber-400 font-bold">⚠️ Audio is too quiet (under -24.0 LUFS)!</p>
+          <p>Please open <b>Mic Settings</b> and <b>increase your mic gain</b> (try +10% or +20%) or speak slightly louder, then re-record this phrase.</p>
+        </div>`,
+        confirmButtonText: "Adjust Mic Settings",
+        confirmButtonColor: "#3b82f6"
+      });
+      setShowMicSettingsModal(true);
+      return;
+    }
+
+    // Mark ONLY this slot as submitting
+    setSlots(prev => prev.map(s => s.id === slotId ? { ...s, isSubmitting: true } : s));
+
     try {
       const formData = new FormData();
-      formData.append('phraseId', currentPhrase._id);
-      formData.append('recording', audioBlob, 'record.wav');
-      formData.append('duration', duration);
+      formData.append('phraseId', slot.phrase._id);
+      formData.append('recording', slot.audioBlob, 'record.wav');
+      formData.append('duration', slot.duration);
       if (lufsScore !== null && lufsScore !== undefined) {
         formData.append('lufs', lufsScore);
       }
 
-      const token = document.cookie.split(";").find(c => c.trim().startsWith("vc_token="))?.split("=")[1] || localStorage.getItem("vc_token");
-      
       const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:3001";
       const res = await fetch(BACKEND_URL + '/api/phrases/record', {
         method: 'POST',
-        credentials: 'include', // THIS is absolutely required to pass the HTTPOnly auth cookies payload!
+        credentials: 'include',
         body: formData
       });
 
-      if (!res.ok) {
-        let body = {};
-        try { body = await res.json(); } catch {}
-        // "Already recorded" means a previous submit went through but the response
-        // was lost in transit — treat it as success.
-        if (body.error === 'Phrase has already been successfully recorded.') {
-          resetRecording();
-          setCurrentPhrase(null);
-          await fetchStats().catch(() => {});
-          await fetchNextPhrase().catch(() => {});
-          return;
-        }
-        throw new Error(body.error || 'Upload failed');
+      // Fetch 1 replacement phrase for ONLY slotId!
+      const currentOtherIds = slots.filter(s => s.id !== slotId && s.phrase).map(s => s.phrase._id);
+      let url = `/api/phrases/available?language=${encodeURIComponent(language)}`;
+      if (projectName && projectName !== 'Any') {
+        url += `&projectName=${encodeURIComponent(projectName)}`;
+      }
+      if (currentOtherIds.length > 0) {
+        url += `&excludeIds=${currentOtherIds.join(',')}`;
+      }
+      if (slot.phrase && slot.phrase.emotion) {
+        url += `&lastEmotion=${encodeURIComponent(slot.phrase.emotion)}`;
       }
 
-      resetRecording();
-      setCurrentPhrase(null);
-      await fetchStats();
-      await fetchNextPhrase();
+      const repData = await apiGet(url).catch(() => null);
+      const newPhrase = repData?.phrase || repData?.phrases?.[0] || null;
+
+      // Replace ONLY slotId in-place! All other slots maintain their exact position & state!
+      setSlots(prev => prev.map(s => s.id === slotId ? {
+        id: slotId,
+        phrase: newPhrase,
+        isRecording: false,
+        audioBlob: null,
+        audioUrl: null,
+        duration: 0,
+        recordedLufs: null,
+        rawPcm: null,
+        isSubmitting: false
+      } : s));
+
+      fetchStats().catch(() => {});
     } catch (err) {
-      console.error('Submit error:', err);
-      try {
-        const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
-        const check = await fetch(`${BACKEND_URL}/api/phrases/${currentPhrase._id}/status`, {
-          credentials: 'include'
-        });
-        if (check.ok) {
-          const { status } = await check.json();
-          if (status !== 'recorded' && status !== 'approved') {
-            alert(err.message || 'Upload failed. Please try again.');
-            return;
-          }
-        }
-      } catch {}
-      resetRecording();
-      setCurrentPhrase(null);
-      await fetchStats().catch(() => {});
-      await fetchNextPhrase().catch(() => {});
-    } finally {
-      setLoading(false);
+      console.error('Submit slot error:', err);
+      setSlots(prev => prev.map(s => s.id === slotId ? { ...s, isSubmitting: false } : s));
+      fetchStats().catch(() => {});
     }
   }
+
+
 
   const formatTime = (secs) => {
     let m = Math.floor(secs / 60);
@@ -790,50 +795,7 @@ export default function PhraseRecording() {
     return `${m}:${s < 10 ? '0' : ''}${s}`;
   };
 
-  if (approvedPhraseApps.length === 0) {
-    return (
-      <div className="min-h-screen bg-neutral-50 dark:bg-neutral-950 text-neutral-900 dark:text-neutral-50 pt-16 md:pt-0 md:pl-72 transition-colors duration-300">
-        <Nav />
-        <div className="max-w-6xl mx-auto px-4 py-8 md:py-12">
-          <motion.div 
-            initial={{ y: -20, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            className="mb-8 flex flex-col md:flex-row justify-between md:items-end gap-4"
-          >
-            <div>
-              <button
-                onClick={() => navigate('/dashboard')}
-                className="inline-flex items-center gap-1.5 text-sm text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300 font-semibold mb-4 transition-colors"
-              >
-                ← Back to Dashboard
-              </button>
-              <h1 className="text-3xl font-bold mb-2">TTS Recording Studio</h1>
-              <p className="text-neutral-500 dark:text-neutral-400">Contribute your voice to high-quality AI training sets.</p>
-            </div>
-          </motion.div>
 
-          <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-indigo-900 via-primary-900 to-indigo-950 text-white shadow-2xl shadow-primary-900/20 border border-primary-800/50 p-8 md:p-12 max-w-xl mx-auto mt-12 text-center animate-fade-in flex flex-col items-center justify-center">
-            {/* Background Deco */}
-            <div className="absolute top-0 right-0 w-32 h-32 bg-primary-500 rounded-full blur-[60px] opacity-20 pointer-events-none transform translate-x-1/2 -translate-y-1/2"></div>
-            
-            <div className="w-20 h-20 bg-white/10 backdrop-blur-md rounded-full flex items-center justify-center mb-6 border-4 border-white/20 text-white shadow-inner">
-              <Mic className="w-10 h-10" />
-            </div>
-            <h2 className="text-2xl font-extrabold text-white mb-3">No Approved Phrase Projects</h2>
-            <p className="text-primary-100/80 max-w-sm leading-relaxed mb-8 text-center px-6">
-              You have not applied to any phrase projects yet. Apply for a project under Project Apply in the sidebar to start recording scripts.
-            </p>
-            <button 
-              onClick={() => navigate('/language-apply?type=phrase')}
-              className="bg-white text-primary-900 font-extrabold text-base px-8 py-3.5 rounded-xl shadow-[0_0_20px_rgba(255,255,255,0.25)] hover:shadow-[0_0_35px_rgba(255,255,255,0.4)] transition-all"
-            >
-              Project Apply
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen bg-neutral-50 dark:bg-neutral-950 text-neutral-900 dark:text-neutral-50 pt-16 md:pt-0 md:pl-72 transition-colors duration-300">
@@ -915,9 +877,8 @@ export default function PhraseRecording() {
                   value={projectName} 
                   onChange={(e) => {
                     setProjectName(e.target.value);
-                    setCurrentPhrase(null);
                   }}
-                  disabled={loading || isRecording}
+                  disabled={loading || activeSlotId !== null}
                 >
                   {approvedCompanies.map(c => (
                     <option key={c.id} value={c.id}>{c.label}</option>
@@ -934,9 +895,8 @@ export default function PhraseRecording() {
                   value={language} 
                   onChange={(e) => {
                     setLanguage(e.target.value);
-                    setCurrentPhrase(null);
                   }}
-                  disabled={loading || isRecording}
+                  disabled={loading || activeSlotId !== null}
                 >
                   {availableLanguages.map(lang => (
                     <option key={lang} value={lang}>{lang}</option>
@@ -948,7 +908,7 @@ export default function PhraseRecording() {
                 <button 
                   type="button"
                   onClick={() => setShowMicSettingsModal(true)}
-                  disabled={loading || isRecording}
+                  disabled={loading || activeSlotId !== null}
                   className="input w-full bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700 text-neutral-800 dark:text-neutral-200 font-semibold flex items-center justify-between transition-all"
                   title="Configure Noise Gate and Gain Control"
                 >
@@ -999,7 +959,7 @@ export default function PhraseRecording() {
                         className="input w-full font-semibold border-warning-500/40 text-warning-700 dark:text-warning-300" 
                         value={activeNoiseGateDb} 
                         onChange={(e) => handleNoiseGateChange(e.target.value)}
-                        disabled={loading || isRecording}
+                        disabled={loading || activeSlotId !== null}
                       >
                         <option value={0}>0 dB (RAW / Off)</option>
                         <option value={-6}>-6 dB (Light Attenuation)</option>
@@ -1028,7 +988,7 @@ export default function PhraseRecording() {
                         step="1"
                         value={micGainPercent}
                         onChange={(e) => handleMicGainPercentChange(e.target.value)}
-                        disabled={loading || isRecording}
+                        disabled={loading || activeSlotId !== null}
                         className="w-full h-2 bg-neutral-200 dark:bg-neutral-700 rounded-lg appearance-none cursor-pointer accent-success-500"
                       />
                       <div className="flex justify-between text-[11px] text-neutral-400 font-mono font-semibold px-0.5 mt-1">
@@ -1054,7 +1014,7 @@ export default function PhraseRecording() {
                       <button
                         type="button"
                         onClick={runLufsTest}
-                        disabled={isLufsTesting || isRecording || loading}
+                        disabled={isLufsTesting || activeSlotId !== null || loading}
                         className={`w-full py-3 px-4 rounded-xl font-bold text-xs transition-all flex items-center justify-center gap-2 shadow-md ${
                           isLufsTesting 
                             ? "bg-error-600 text-white animate-pulse" 
@@ -1134,10 +1094,10 @@ export default function PhraseRecording() {
             <div className="flex gap-4">
               <button 
                 className="btn btn-primary w-full"
-                onClick={fetchNextPhrase}
-                disabled={loading || isRecording || (stats.dailyPhraseLimit !== -1 && stats.phrasesRecordedToday >= stats.dailyPhraseLimit)}
+                onClick={() => fetchFiveSlots(true)}
+                disabled={loading || activeSlotId !== null || (stats.dailyPhraseLimit !== -1 && stats.phrasesRecordedToday >= stats.dailyPhraseLimit)}
               >
-                {loading && !currentPhrase ? 'Searching...' : 'Get Next Phrase'}
+                {loading ? 'Refreshing Phrases...' : 'Refresh 5 Phrases'}
               </button>
             </div>
             {error && <p className="text-error-500 mt-3 text-sm">{error}</p>}
@@ -1146,141 +1106,168 @@ export default function PhraseRecording() {
             )}
           </div>
 
-          <AnimatePresence mode="popLayout">
-            {currentPhrase && (
-              <motion.div 
-                key={currentPhrase._id}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.95 }}
-                className="card border-l-4 border-l-primary-500 relative overflow-hidden"
-              >
-                <div className="absolute top-0 right-0 bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 px-3 py-1 rounded-bl-xl text-xs font-bold uppercase tracking-wider">
-                  {currentPhrase.language}
-                </div>
-                
-                <h2 className="text-lg font-semibold mb-2 opacity-70">Read this text clearly:</h2>
-                <div className="bg-neutral-50 dark:bg-neutral-800/80 p-6 rounded-xl border border-neutral-200 dark:border-neutral-700 mb-6">
-                  <p className="text-2xl md:text-3xl leading-relaxed font-medium">"{currentPhrase.text}"</p>
-                </div>
+          {/* 5 Independent Stationary Phrase Containers */}
+          <div className="space-y-6">
+            {slots.map((slot, index) => {
+              const phrase = slot.phrase;
+              if (!phrase) return null;
 
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-8 bg-neutral-50/50 dark:bg-neutral-900/50 p-4 rounded-lg">
-                  {currentPhrase.emotion && (!userCustomizations || userCustomizations.length === 0 || userCustomizations.some(uk => uk.toLowerCase() === 'emotion')) && <div><span className="block text-xs uppercase opacity-60 mb-1">Emotion</span><span className="font-medium">{currentPhrase.emotion}</span></div>}
-                  {currentPhrase.style && (!userCustomizations || userCustomizations.length === 0 || userCustomizations.some(uk => uk.toLowerCase() === 'style')) && <div><span className="block text-xs uppercase opacity-60 mb-1">Style</span><span className="font-medium">{currentPhrase.style}</span></div>}
-                  {currentPhrase.speed && (!userCustomizations || userCustomizations.length === 0 || userCustomizations.some(uk => uk.toLowerCase() === 'speed')) && <div><span className="block text-xs uppercase opacity-60 mb-1">Speed</span><span className="font-medium">{currentPhrase.speed}</span></div>}
-                  {currentPhrase.intent && (!userCustomizations || userCustomizations.length === 0 || userCustomizations.some(uk => uk.toLowerCase() === 'intent')) && <div><span className="block text-xs uppercase opacity-60 mb-1">Intent</span><span className="font-medium">{currentPhrase.intent}</span></div>}
-                  {currentPhrase.pitch && (!userCustomizations || userCustomizations.length === 0 || userCustomizations.some(uk => uk.toLowerCase() === 'pitch')) && <div><span className="block text-xs uppercase opacity-60 mb-1">Pitch</span><span className="font-medium">{currentPhrase.pitch}</span></div>}
-                  {currentPhrase.volume && (!userCustomizations || userCustomizations.length === 0 || userCustomizations.some(uk => uk.toLowerCase() === 'volume')) && <div><span className="block text-xs uppercase opacity-60 mb-1">Volume</span><span className="font-medium">{currentPhrase.volume}</span></div>}
-                  {currentPhrase.tags && Object.entries(currentPhrase.tags)
-                    .filter(([key]) => {
-                      if (userCustomizations && userCustomizations.length > 0) {
-                        return userCustomizations.some(uk => uk.toLowerCase() === key.toLowerCase());
-                      }
-                      return true;
-                    })
-                    .map(([key, val]) => (
-                      <div key={key}>
-                        <span className="block text-xs uppercase opacity-60 mb-1">{key.replace(/_/g, ' ')}</span>
-                        <span className="font-medium">{val}</span>
-                      </div>
-                    ))
-                  }
-                  {currentPhrase.instructions && <div className="col-span-2 md:col-span-3 mt-2"><span className="block text-xs uppercase opacity-60 mb-1">Notes</span><p className="text-sm border-l-2 border-primary-300 pl-3">{currentPhrase.instructions}</p></div>}
-                </div>
-
-                <div className="flex flex-col md:flex-row items-center gap-6 border-t border-neutral-200 dark:border-neutral-700 pt-6">
-                  {/* Recorder */}
-                  {!isRecording && !audioUrl && (
-                    <button 
-                      onClick={startRecording}
-                      className="w-20 h-20 bg-error-100 hover:bg-error-200 dark:bg-error-900/40 dark:hover:bg-error-900/60 text-error-600 dark:text-error-400 rounded-full flex items-center justify-center transition-all group shadow-inner"
-                    >
-                      <div className="w-14 h-14 bg-error-500 rounded-full flex items-center justify-center text-white group-hover:scale-105 transition-transform shadow-md">
-                        <Mic className="w-6 h-6" />
-                      </div>
-                    </button>
-                  )}
-
-                  {isRecording && (
-                    <div className="flex items-center gap-6">
-                      <button 
-                        onClick={stopRecording}
-                        className="w-20 h-20 bg-neutral-200 hover:bg-neutral-300 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-neutral-800 dark:text-neutral-200 rounded-full flex items-center justify-center transition-all group"
-                      >
-                        <Square className="w-8 h-8 group-hover:scale-105 transition-transform" />
-                      </button>
-                      <div className="flex flex-col">
-                        <span className="text-error-500 flex items-center gap-2 font-medium tracking-widest pl-2">
-                          <span className="w-3 h-3 bg-error-500 rounded-full animate-pulse"></span>
-                          RECORDING
+              return (
+                <div
+                  key={`container_slot_${index}`}
+                  className="card border-l-4 border-l-primary-500 relative overflow-hidden transition-all duration-300"
+                >
+                  {/* Phrase Number & Language Badge */}
+                  <div className="flex items-center justify-between border-b border-neutral-200 dark:border-neutral-800 pb-3 mb-4">
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono font-extrabold text-xs text-primary-600 dark:text-primary-400 bg-primary-500/10 border border-primary-500/20 px-2.5 py-1 rounded-lg">
+                        Phrase #{index + 1}
+                      </span>
+                      {slot.isSubmitting && (
+                        <span className="text-xs text-emerald-400 font-bold flex items-center gap-1.5 animate-pulse">
+                          <div className="w-3.5 h-3.5 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin"></div>
+                          Submitting & Fetching Replacement...
                         </span>
-                        <span className="text-3xl font-mono mt-1">{formatTime(duration)}</span>
-                      </div>
+                      )}
                     </div>
-                  )}
 
-                  {audioUrl && !isRecording && (
-                    <div className="w-full">
-                      <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="bg-success-100 dark:bg-success-900/40 text-success-700 dark:text-success-400 px-3 py-1 rounded-full text-sm font-semibold flex items-center gap-2">
-                            <CheckCircle2 className="w-4 h-4" /> Recorded ({formatTime(duration)})
+                    <span className="bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider">
+                      {phrase.language}
+                    </span>
+                  </div>
+
+                  <h2 className="text-xs font-bold uppercase tracking-wider opacity-60 mb-2">Read this text clearly:</h2>
+                  <div className="bg-neutral-50 dark:bg-neutral-800/80 p-5 rounded-xl border border-neutral-200 dark:border-neutral-700 mb-4">
+                    <p className="text-xl md:text-2xl leading-relaxed font-medium">"{phrase.text}"</p>
+                  </div>
+
+                  {/* Metadata Tags */}
+                  <div className="flex flex-wrap items-center gap-3 mb-6 bg-neutral-50/50 dark:bg-neutral-900/50 p-3.5 rounded-lg text-xs">
+                    {phrase.emotion && isTagVisible('emotion') && (
+                      <div className="bg-neutral-100 dark:bg-neutral-800 px-3 py-1.5 rounded-md">
+                        <span className="block opacity-60 mb-0.5 uppercase tracking-wider text-[10px]">Emotion</span>
+                        <span className="font-semibold text-neutral-800 dark:text-neutral-200">{phrase.emotion}</span>
+                      </div>
+                    )}
+                    {phrase.style && isTagVisible('style') && (
+                      <div className="bg-neutral-100 dark:bg-neutral-800 px-3 py-1.5 rounded-md">
+                        <span className="block opacity-60 mb-0.5 uppercase tracking-wider text-[10px]">Style</span>
+                        <span className="font-semibold text-neutral-800 dark:text-neutral-200">{phrase.style}</span>
+                      </div>
+                    )}
+                    {phrase.speed && isTagVisible('speed') && (
+                      <div className="bg-neutral-100 dark:bg-neutral-800 px-3 py-1.5 rounded-md">
+                        <span className="block opacity-60 mb-0.5 uppercase tracking-wider text-[10px]">Speed</span>
+                        <span className="font-semibold text-neutral-800 dark:text-neutral-200">{phrase.speed}</span>
+                      </div>
+                    )}
+                    {phrase.intent && isTagVisible('intent') && (
+                      <div className="bg-neutral-100 dark:bg-neutral-800 px-3 py-1.5 rounded-md">
+                        <span className="block opacity-60 mb-0.5 uppercase tracking-wider text-[10px]">Intent</span>
+                        <span className="font-semibold text-neutral-800 dark:text-neutral-200">{phrase.intent}</span>
+                      </div>
+                    )}
+                    {phrase.pitch && isTagVisible('pitch') && (
+                      <div className="bg-neutral-100 dark:bg-neutral-800 px-3 py-1.5 rounded-md">
+                        <span className="block opacity-60 mb-0.5 uppercase tracking-wider text-[10px]">Pitch</span>
+                        <span className="font-semibold text-neutral-800 dark:text-neutral-200">{phrase.pitch}</span>
+                      </div>
+                    )}
+                    {phrase.volume && isTagVisible('volume') && (
+                      <div className="bg-neutral-100 dark:bg-neutral-800 px-3 py-1.5 rounded-md">
+                        <span className="block opacity-60 mb-0.5 uppercase tracking-wider text-[10px]">Volume</span>
+                        <span className="font-semibold text-neutral-800 dark:text-neutral-200">{phrase.volume}</span>
+                      </div>
+                    )}
+                    {Object.entries(phrase).map(([key, val]) => {
+                      if (!val || typeof val === 'object') return null;
+                      if (['emotion','style','speed','intent','pitch','volume','text','_id','phraseId','companyId','projectName','language','status','createdAt','updatedAt','__v','lockedAt','lockedBy','isTestPhrase','isSample','needsSecondQaReview','isEdited'].includes(key)) return null;
+                      if (!isTagVisible(key)) return null;
+                      return (
+                        <div key={key} className="bg-neutral-100 dark:bg-neutral-800 px-3 py-1.5 rounded-md">
+                          <span className="block opacity-60 mb-0.5 uppercase tracking-wider text-[10px]">{key}</span>
+                          <span className="font-semibold text-neutral-800 dark:text-neutral-200">{String(val)}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Controls below Phrase Container */}
+                  <div className="flex flex-col md:flex-row items-center gap-4 border-t border-neutral-200 dark:border-neutral-800 pt-4">
+                    {!slot.isRecording && !slot.audioUrl && (
+                      <button
+                        onClick={() => startRecordingSlot(slot.id)}
+                        disabled={slot.isSubmitting || (activeSlotId !== null && activeSlotId !== slot.id)}
+                        className="btn btn-primary flex items-center justify-center gap-2 py-3 px-6 text-sm font-bold w-full md:w-auto"
+                      >
+                        <Mic className="w-4 h-4" /> Record
+                      </button>
+                    )}
+
+                    {slot.isRecording && (
+                      <div className="flex flex-wrap items-center gap-4 w-full">
+                        <button
+                          onClick={() => stopRecordingSlot(slot.id)}
+                          className="py-3 px-6 bg-error-600 hover:bg-error-700 text-white rounded-xl font-bold text-sm flex items-center justify-center gap-2 shadow-lg shadow-error-500/20"
+                        >
+                          <Square className="w-4 h-4 fill-white" /> Stop Recording
+                        </button>
+                        <div className="flex items-center gap-3 bg-error-500/10 border border-error-500/20 py-2 px-4 rounded-xl">
+                          <span className="w-3 h-3 bg-error-500 rounded-full animate-pulse"></span>
+                          <span className="text-error-500 font-bold text-xs uppercase tracking-wider">Recording</span>
+                          <span className="font-mono text-lg font-bold ml-1 text-error-400">{formatTime(slot.duration)}</span>
+                        </div>
+                      </div>
+                    )}
+
+                    {slot.audioUrl && !slot.isRecording && (
+                      <div className="w-full space-y-3">
+                        <div className="flex items-center justify-between">
+                          <span className="bg-success-100 dark:bg-success-900/40 text-success-700 dark:text-success-400 px-3 py-1 rounded-full text-xs font-semibold flex items-center gap-1.5">
+                            <CheckCircle2 className="w-3.5 h-3.5" /> Recorded ({formatTime(slot.duration)})
                           </span>
 
-                          {recordedLufs !== undefined && (
-                            <span className={`px-3 py-1 rounded-full text-sm font-bold flex items-center gap-1.5 border font-mono shadow-sm ${
-                              recordedLufs === null
-                                ? "bg-neutral-800 text-neutral-300 border-neutral-700"
-                                : recordedLufs >= -24.0 && recordedLufs <= -18.0
+                          {slot.recordedLufs !== null && (
+                            <span className={`px-2.5 py-0.5 rounded-full text-xs font-mono font-bold border ${
+                              slot.recordedLufs >= -24.0 && slot.recordedLufs <= -18.0
                                 ? "bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border-emerald-500/40"
-                                : recordedLufs > -18.0
+                                : slot.recordedLufs > -18.0
                                 ? "bg-rose-500/20 text-rose-700 dark:text-rose-300 border-rose-500/40"
                                 : "bg-amber-500/20 text-amber-700 dark:text-amber-300 border-amber-500/40"
                             }`}>
-                              <Activity className="w-3.5 h-3.5" />
-                              {recordedLufs !== null ? `${recordedLufs} LUFS` : "No Speech"}
-                              <span className="text-[11px] font-sans font-bold ml-0.5">
-                                ({recordedLufs === null 
-                                  ? "⚠️ No speech found" 
-                                  : recordedLufs >= -24.0 && recordedLufs <= -18.0 
-                                  ? "✓ Perfect" 
-                                  : recordedLufs > -18.0 
-                                  ? "⚠️ Too Loud" 
-                                  : "⚠️ Too Quiet"})
-                              </span>
+                              {slot.recordedLufs} LUFS
                             </span>
                           )}
                         </div>
-                      </div>
-                      
-                      <div className="bg-neutral-100 dark:bg-neutral-800 rounded-xl p-2 mb-4">
-                        <audio src={audioUrl} controls controlsList="nodownload noplaybackrate" onContextMenu={(e) => e.preventDefault()} className="w-full h-12" />
-                      </div>
 
-                      <div className="flex gap-4">
-                        <button 
-                          onClick={resetRecording}
-                          disabled={loading}
-                          className="flex-1 py-3.5 px-4 border border-neutral-300 dark:border-neutral-700 text-neutral-700 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-xl font-semibold text-base transition-colors flex items-center justify-center gap-2"
-                        >
-                          <RotateCcw className="w-5 h-5" />
-                          Re-record
-                        </button>
-                        <button 
-                          onClick={submitRecording}
-                          disabled={loading}
-                          className="flex-1 btn btn-primary flex items-center justify-center gap-2 py-3.5 px-4 text-base font-semibold"
-                        >
-                          {loading ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <UploadCloud className="w-5 h-5" />}
-                          {loading ? 'Submitting...' : 'Submit'}
-                        </button>
+                        <div className="bg-neutral-100 dark:bg-neutral-800 rounded-xl p-2">
+                          <audio src={slot.audioUrl} controls controlsList="nodownload noplaybackrate" className="w-full h-10" />
+                        </div>
+
+                        <div className="flex gap-3">
+                          <button
+                            onClick={() => resetSlot(slot.id)}
+                            disabled={slot.isSubmitting}
+                            className="flex-1 py-2.5 px-4 border border-neutral-300 dark:border-neutral-700 hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-xl text-xs font-semibold text-neutral-700 dark:text-neutral-200 flex items-center justify-center gap-1.5 transition-colors"
+                          >
+                            <RotateCcw className="w-4 h-4" /> Re-record
+                          </button>
+                          <button
+                            onClick={() => submitSlot(slot.id)}
+                            disabled={slot.isSubmitting}
+                            className="flex-1 btn btn-primary flex items-center justify-center gap-1.5 py-2.5 px-4 text-xs font-semibold"
+                          >
+                            {slot.isSubmitting ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <UploadCloud className="w-4 h-4" />}
+                            {slot.isSubmitting ? 'Submitting...' : 'Submit Phrase'}
+                          </button>
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    )}
+                  </div>
                 </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
+              );
+            })}
+          </div>
         </motion.div>
 
         {/* Sidebar History */}

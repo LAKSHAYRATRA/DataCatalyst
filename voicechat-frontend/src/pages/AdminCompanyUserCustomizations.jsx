@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Eye, Save, Loader2, CheckCircle2, ChevronLeft, Plus, Trash2, CheckSquare, Square } from 'lucide-react';
+import { Eye, Save, Loader2, CheckCircle2, ChevronLeft, Plus, Trash2, CheckSquare, Square, SlidersHorizontal } from 'lucide-react';
 import { apiGet, apiPatchJson } from '../lib/api';
 import AdminNav from '../components/AdminNav.jsx';
 import Swal from 'sweetalert2';
@@ -16,6 +16,7 @@ export default function AdminCompanyUserCustomizations() {
   const [message, setMessage] = useState('');
   
   const [selectedKeys, setSelectedKeys] = useState([]);
+  const [chronologicalTag, setChronologicalTag] = useState('emotion');
   const [newKey, setNewKey] = useState('');
 
   useEffect(() => {
@@ -28,6 +29,7 @@ export default function AdminCompanyUserCustomizations() {
       if (res.company) {
         setCompany(res.company);
         setSelectedKeys(res.company.userCustomizations || []);
+        setChronologicalTag(res.company.chronologicalTag || 'emotion');
       }
     } catch (err) {
       console.error(err);
@@ -65,9 +67,10 @@ export default function AdminCompanyUserCustomizations() {
     setMessage('');
     try {
       await apiPatchJson(`/api/admin/companies/${id}`, {
-        userCustomizations: selectedKeys
+        userCustomizations: selectedKeys,
+        chronologicalTag: chronologicalTag
       });
-      setMessage('User display configurations updated successfully!');
+      setMessage('User display & chronological configurations updated successfully!');
       setTimeout(() => setMessage(''), 3000);
     } catch (err) {
       Swal.fire('Error', 'Failed to save configurations: ' + err.message, 'error');
@@ -101,8 +104,12 @@ export default function AdminCompanyUserCustomizations() {
     );
   }
 
-  // Combine already configured keys and automatically detected tags to list them all
+  // Standard metadata keys available across phrase datasets
+  const STANDARD_TAGS = ['emotion', 'style', 'speed', 'intent', 'pitch', 'volume', 'instructions', 'script_type', 'speaker_id', 'freq'];
+
+  // Combine standard keys, already configured keys, and automatically detected tags to list them all
   const allAvailableKeys = Array.from(new Set([
+    ...STANDARD_TAGS,
     ...(company.availableTags || []),
     ...selectedKeys
   ])).sort();
@@ -144,6 +151,25 @@ export default function AdminCompanyUserCustomizations() {
         <div className="grid gap-8 grid-cols-1 lg:grid-cols-3">
           {/* Main Select list */}
           <div className="lg:col-span-2 space-y-6">
+            {/* Chronological Order Selector */}
+            <div className="card">
+              <h2 className="text-lg font-bold mb-2 flex items-center gap-2">
+                <SlidersHorizontal className="w-5 h-5 text-primary-500" /> Chronological Order Tag
+              </h2>
+              <p className="text-xs text-neutral-500 dark:text-neutral-400 mb-4">
+                Choose which JSON metadata tag is used to group the 5 phrase containers and cycle through phrases chronologically.
+              </p>
+              <select
+                value={chronologicalTag}
+                onChange={(e) => setChronologicalTag(e.target.value)}
+                className="input w-full font-semibold capitalize border-primary-500/40"
+              >
+                {Array.from(new Set(['emotion', 'style', 'speed', 'intent', 'pitch', 'volume', ...selectedKeys])).map(tag => (
+                  <option key={tag} value={tag}>{tag}</option>
+                ))}
+              </select>
+            </div>
+
             <div className="card">
               <h2 className="text-lg font-bold mb-4">Select Visible Tag Keys</h2>
               <p className="text-xs text-neutral-500 dark:text-neutral-400 mb-6">
@@ -163,18 +189,18 @@ export default function AdminCompanyUserCustomizations() {
                       <button
                         key={key}
                         onClick={() => handleToggleKey(key)}
-                        className={`flex items-center gap-3 p-3.5 rounded-xl border text-left font-medium transition-all ${
+                        className={`flex items-center gap-3 p-3.5 rounded-xl border text-left font-semibold transition-all ${
                           isChecked 
-                            ? 'bg-primary-50 border-primary-200 dark:bg-primary-950/20 dark:border-primary-800 text-primary-900 dark:text-primary-100 ring-2 ring-primary-500/20' 
-                            : 'bg-white border-neutral-200 dark:bg-neutral-800 dark:border-neutral-700 hover:bg-neutral-50 dark:hover:bg-neutral-750'
+                            ? 'bg-blue-600 border-blue-600 text-white shadow-md ring-2 ring-blue-500/30 dark:bg-blue-600 dark:border-blue-500 dark:text-white' 
+                            : 'bg-white border-neutral-200 text-neutral-700 dark:bg-neutral-800 dark:border-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-750'
                         }`}
                       >
                         {isChecked ? (
-                          <CheckSquare className="w-5 h-5 text-primary-600 dark:text-primary-400 shrink-0" />
+                          <CheckSquare className="w-5 h-5 text-white fill-white/20 shrink-0" />
                         ) : (
                           <Square className="w-5 h-5 text-neutral-400 shrink-0" />
                         )}
-                        <span className="truncate">{key}</span>
+                        <span className="truncate capitalize">{key}</span>
                       </button>
                     );
                   })}

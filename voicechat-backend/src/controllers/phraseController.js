@@ -1,3 +1,4 @@
+import mongoose from "mongoose";
 import fs from "fs";
 import path from "path";
 import { spawn } from "child_process";
@@ -360,12 +361,28 @@ export async function getAvailablePhrase(req, res) {
     const { language, projectName } = req.query;
     const expiryTime = new Date(Date.now() - 5 * 60 * 1000); // 5 minutes ago
 
+    let resolvedProjectName = projectName;
+    if (projectName && projectName !== "Any") {
+      const compDoc = await Company.findOne({
+        $or: [
+          { name: projectName },
+          { projectName: projectName },
+          { name: { $regex: new RegExp(`^${projectName}$`, "i") } },
+          { projectName: { $regex: new RegExp(`^${projectName}$`, "i") } }
+        ]
+      }).select("name").lean();
+      if (compDoc) {
+        resolvedProjectName = compDoc.name;
+      }
+    }
+
     const baseQuery = {};
     if (language) {
       baseQuery.language = { $regex: new RegExp(`^${language}$`, "i") };
     }
-    if (projectName && projectName !== "Any") {
-      baseQuery.companyId = projectName;
+    if (resolvedProjectName && resolvedProjectName !== "Any") {
+      const coreComp = String(resolvedProjectName).replace(/_downloaded$/, "").trim();
+      baseQuery.companyId = { $in: [resolvedProjectName, coreComp, `${coreComp}_downloaded`] };
     }
 
     // Check Limits
@@ -473,30 +490,32 @@ export async function getAvailablePhrase(req, res) {
       { $match: { count: { $gte: 1 } } }
     ]);
     const activeNames = activeCompanies.map(c => c._id).filter(Boolean);
+    const activeNamesSet = new Set(activeNames.map(n => String(n).toLowerCase()));
 
-    if (projectName && projectName !== "Any" && !activeNames.includes(projectName)) {
+    const targetCompLower = String(resolvedProjectName || "").toLowerCase();
+    const coreCompLower = targetCompLower.replace(/_downloaded$/, "").trim();
+    const isProjectActive = activeNamesSet.has(targetCompLower) || activeNamesSet.has(coreCompLower) || activeNamesSet.has(`${coreCompLower}_downloaded`);
+
+    if (resolvedProjectName && resolvedProjectName !== "Any" && !isProjectActive) {
       return res.json({ phrase: null, message: "No phrases available (project is currently inactive)." });
     }
 
-    if (baseQuery.companyId && isAppRejected(baseQuery.companyId)) {
+    if (resolvedProjectName && isAppRejected(resolvedProjectName)) {
       return res.json({ phrase: null, message: "You are not approved for this company's phrases." });
     }
 
-    if (baseQuery.companyId && blockedCompanies.includes(baseQuery.companyId)) {
-      if (maxedOutCompanies.includes(baseQuery.companyId)) {
+    if (resolvedProjectName && blockedCompanies.includes(resolvedProjectName)) {
+      if (maxedOutCompanies.includes(resolvedProjectName)) {
         return res.json({ phrase: null, message: "Project/Language limit reached, try some other project/Language" });
-      } else if (rejectedCompanyIds.includes(String(baseQuery.companyId).toLowerCase())) {
+      } else if (rejectedCompanyIds.includes(String(resolvedProjectName).toLowerCase())) {
         return res.json({ phrase: null, message: "You are not approved for this company's phrases." });
       } else {
-        return res.json({ phrase: null, message: `Your test phrase for company ${baseQuery.companyId} is currently under review by QA. Please wait for approval before contributing further.` });
+        return res.json({ phrase: null, message: `Your test phrase for company ${resolvedProjectName} is currently under review by QA. Please wait for approval before contributing further.` });
       }
     } else {
-      if (baseQuery.companyId) {
-        if (Array.isArray(baseQuery.companyId.$nin)) {
-          baseQuery.companyId = { $in: activeNames, $nin: [...baseQuery.companyId.$nin, ...rejectedCompanyIds] };
-        } else {
-          baseQuery.companyId = { $in: activeNames };
-        }
+      if (resolvedProjectName && resolvedProjectName !== "Any") {
+        const coreComp = String(resolvedProjectName).replace(/_downloaded$/, "").trim();
+        baseQuery.companyId = { $in: [resolvedProjectName, coreComp, `${coreComp}_downloaded`] };
       } else {
         baseQuery.companyId = { $in: activeNames };
         if (blockedCompanies.length > 0) {
@@ -549,38 +568,113 @@ export async function getAvailablePhrase(req, res) {
       baseQuery.phraseId = { $nin: baseIdPatterns };
     }
 
-    // 1. First see if the user already has a locked phrase they haven't finished
-    let phrase = await Phrase.findOne({
-      ...baseQuery,
-      status: "locked",
-      lockedBy: req.user._id,
-      lockedAt: { $gte: expiryTime }
-    });
+    // If refresh requested, release all currently locked phrases for this user back to pending
+    if (req.query.refresh === "true") {
+      await Phrase.updateMany(
+        { status: "locked", lockedBy: req.user._id },
+        { $set: { status: "pending" }, $unset: { lockedBy: "", lockedAt: "" } }
+      );
+    }
 
-    // 2. If not, pick a random pending (or expired) phrase to prevent contention
-    if (!phrase) {
-      const randomPhrases = await Phrase.aggregate([
-        { 
-          $match: { 
-            ...baseQuery, 
-            $or: [
-              { status: "pending" },
-              { status: "locked", lockedAt: { $lt: expiryTime } }
-            ] 
-          } 
-        },
-        { $sample: { size: 5 } } // Pick a few to try locking
-      ]);
+    // 1. Fetch any phrases already locked for this contributor that haven't expired
+    let lockedPhrases = [];
+    if (req.query.refresh !== "true" && !req.query.lastEmotion) {
+      lockedPhrases = await Phrase.find({
+        ...baseQuery,
+        status: "locked",
+        lockedBy: req.user._id,
+        lockedAt: { $gte: expiryTime }
+      }).limit(5);
+    }
 
-      for (const p of randomPhrases) {
+    const needed = 5 - lockedPhrases.length;
+
+    if (needed > 0) {
+      const existingIds = lockedPhrases.map(p => p._id);
+      if (req.query.excludeIds) {
+        const excludes = String(req.query.excludeIds).split(',').map(id => id.trim()).filter(Boolean);
+        excludes.forEach(id => {
+          if (mongoose.Types.ObjectId.isValid(id)) existingIds.push(new mongoose.Types.ObjectId(id));
+        });
+      }
+
+      // Look up company's configured chronological tag (defaults to "emotion")
+      let targetCompany = projectName && projectName !== "Any" ? projectName : null;
+      if (!targetCompany && baseQuery.companyId && typeof baseQuery.companyId === 'string') {
+        targetCompany = baseQuery.companyId;
+      }
+      const companyDoc = targetCompany
+        ? await Company.findOne({ $or: [{ name: targetCompany }, { _id: mongoose.Types.ObjectId.isValid(targetCompany) ? targetCompany : null }] }).select("chronologicalTag").lean()
+        : null;
+
+      const chronoTag = (companyDoc?.chronologicalTag || "emotion").trim();
+
+      // Get distinct values for the configured chronological tag (e.g. emotion, style, speed)
+      const rawTagValues = await Phrase.distinct(chronoTag, {
+        ...baseQuery,
+        $or: [
+          { status: "pending" },
+          { status: "locked", lockedAt: { $lt: expiryTime } }
+        ]
+      });
+      const tagValuesList = rawTagValues.filter(e => e && String(e).trim().length > 0);
+
+      // Determine target tag value search priority
+      let searchTagValues = tagValuesList;
+      const lastTagVal = req.query.lastTagValue || req.query.lastEmotion;
+      if (lastTagVal && tagValuesList.length > 0) {
+        const lastIndex = tagValuesList.findIndex(e => String(e).toLowerCase() === String(lastTagVal).toLowerCase());
+        const nextIndex = lastIndex >= 0 ? (lastIndex + 1) % tagValuesList.length : 0;
+        searchTagValues = [
+          ...tagValuesList.slice(nextIndex),
+          ...tagValuesList.slice(0, nextIndex)
+        ];
+      }
+
+      const matchBase = {
+        ...baseQuery,
+        _id: existingIds.length > 0 ? { $nin: existingIds } : undefined,
+        $or: [
+          { status: "pending" },
+          { status: "locked", lockedAt: { $lt: expiryTime } }
+        ]
+      };
+      if (!matchBase._id) delete matchBase._id;
+
+      let candidates = [];
+      if (searchTagValues.length > 0) {
+        for (const tagVal of searchTagValues) {
+          if (candidates.length >= needed) break;
+          const tagQuery = { ...matchBase, [chronoTag]: tagVal };
+          const tagPhrases = await Phrase.find(tagQuery)
+            .limit(needed - candidates.length)
+            .lean();
+          candidates.push(...tagPhrases);
+        }
+      }
+
+      // Fallback for phrases without tag or if candidates < needed
+      if (candidates.length < needed) {
+        const foundIds = candidates.map(c => c._id);
+        const fallbackQuery = {
+          ...matchBase,
+          _id: { $nin: [...existingIds, ...foundIds] }
+        };
+        const extraPhrases = await Phrase.find(fallbackQuery)
+          .limit(needed - candidates.length)
+          .lean();
+        candidates.push(...extraPhrases);
+      }
+
+      for (const p of candidates) {
+        if (lockedPhrases.length >= 5) break;
+
         const query = { _id: p._id, status: p.status };
-        // CRITICAL: Prevent lock stealing for expired locks. If it was locked, we must ensure
-        // no one else updated the lock timestamp since we read it from the aggregation pipeline.
         if (p.status === "locked") {
           query.lockedAt = p.lockedAt;
         }
 
-        phrase = await Phrase.findOneAndUpdate(
+        const newlyLocked = await Phrase.findOneAndUpdate(
           query,
           {
             $set: {
@@ -591,20 +685,42 @@ export async function getAvailablePhrase(req, res) {
           },
           { new: true }
         );
-        if (phrase) break; // Successfully locked one
+
+        if (newlyLocked) {
+          lockedPhrases.push(newlyLocked);
+        }
       }
     }
 
-    if (!phrase) {
-      return res.json({ phrase: null, message: "No phrases available" });
+    if (lockedPhrases.length === 0) {
+      return res.json({ phrase: null, phrases: [], message: "No phrases available" });
     }
 
-    const companyDoc = await Company.findOne({ name: phrase.companyId }).select("userCustomizations").lean();
-    const userCustomizations = companyDoc ? companyDoc.userCustomizations : [];
+    const firstPhrase = lockedPhrases[0];
+    const companyDoc = firstPhrase?.companyId
+      ? await Company.findOne({ $or: [{ name: firstPhrase.companyId }, { _id: mongoose.Types.ObjectId.isValid(firstPhrase.companyId) ? firstPhrase.companyId : null }] }).select("userCustomizations").lean()
+      : null;
+    const userCustomizations = companyDoc ? (companyDoc.userCustomizations || []) : [];
 
-    res.json({ phrase, userCustomizations });
+    res.json({ phrase: firstPhrase, phrases: lockedPhrases, userCustomizations });
   } catch (error) {
     console.error("getAvailablePhrase error:", error);
+    res.status(500).json({ error: "Server error" });
+  }
+}
+
+export async function unlockMyPhrases(req, res) {
+  try {
+    if (!req.user || !req.user._id) return res.status(401).json({ error: "Unauthorized" });
+
+    const result = await Phrase.updateMany(
+      { status: "locked", lockedBy: req.user._id },
+      { $set: { status: "pending" }, $unset: { lockedBy: "", lockedAt: "" } }
+    );
+
+    res.json({ success: true, unlockedCount: result.modifiedCount });
+  } catch (error) {
+    console.error("unlockMyPhrases error:", error);
     res.status(500).json({ error: "Server error" });
   }
 }

@@ -9,6 +9,7 @@ import { requireAuth } from "../auth.js";
 import {
   uploadPhrases,
   getAvailablePhrase,
+  unlockMyPhrases,
   submitPhraseRecording,
   getPhraseStatus,
   getQaQueue,
@@ -94,6 +95,7 @@ router.patch("/qa/text/:phraseId", requireAuth(JWT_SECRET), requireQAOrAdmin, up
 /*                              Contributor Routes                            */
 /* -------------------------------------------------------------------------- */
 router.get("/available", requireAuth(JWT_SECRET), getAvailablePhrase);
+router.post("/unlock-my-phrases", requireAuth(JWT_SECRET), unlockMyPhrases);
 router.get("/sample", requireAuth(JWT_SECRET), getSamplePhrase);
 router.post("/record", requireAuth(JWT_SECRET), phraseUpload.single("recording"), submitPhraseRecording);
 router.get("/my-stats", requireAuth(JWT_SECRET), getContributorStats);
