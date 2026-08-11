@@ -254,9 +254,30 @@ async function approveLanguageApplication(req, res) {
         if (!hasLanguageAccess(req.user, languageCode)) {
             return res.status(403).json({ error: "Forbidden: language access required" });
         }
-        app.status = "approved";
-        app.reviewedBy = req.user._id;
-        app.reviewedAt = new Date();
+        const appType = app.applicationType || "phrase";
+        const appComp = String(app.companyId || "").trim().toLowerCase();
+
+        // Mark this application and any matching duplicate application entries as approved
+        user.languageApplications.forEach((a) => {
+            const aLang = String(a.languageCode || "").trim().toLowerCase();
+            const aType = a.applicationType || "phrase";
+            const aComp = String(a.companyId || "").trim().toLowerCase();
+
+            if (aLang === languageCode && aType === appType) {
+                if (appType === "phrase") {
+                    if (!appComp || aComp === appComp) {
+                        a.status = "approved";
+                        a.reviewedBy = req.user._id;
+                        a.reviewedAt = new Date();
+                    }
+                } else {
+                    a.status = "approved";
+                    a.reviewedBy = req.user._id;
+                    a.reviewedAt = new Date();
+                }
+            }
+        });
+
         await user.save();
 
         // Send project approved email
@@ -5257,8 +5278,8 @@ router.get("/companies/:id/phrase-workloads/:language", async (req, res) => {
         }
 
         const page = Math.max(1, parseInt(req.query.page) || 1);
-        const limit = Math.max(1, parseInt(req.query.limit) || 50);
-        const skip = (page - 1) * limit;
+        const limit = req.query.limit === "all" ? 100000 : Math.max(1, parseInt(req.query.limit) || 50);
+        const skip = req.query.limit === "all" ? 0 : (page - 1) * limit;
 
         const totalPhrases = await Phrase.countDocuments(filter);
         const phrases = await Phrase.find(filter)

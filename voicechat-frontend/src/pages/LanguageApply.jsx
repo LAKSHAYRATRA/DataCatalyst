@@ -261,7 +261,7 @@ export default function LanguageApply() {
         const targetCode = String(code).trim().toLowerCase();
         const targetCompany = companyId ? String(companyId).trim().toLowerCase() : "";
 
-        return myApps.find(a => {
+        const matching = myApps.filter(a => {
             const appLang = String(a.languageCode || "").trim().toLowerCase();
             const appType = a.applicationType || 'phrase';
             if (appLang !== targetCode) return false;
@@ -269,10 +269,16 @@ export default function LanguageApply() {
             if (type === 'phrase') {
                 const appComp = String(a.companyId || "").trim().toLowerCase();
                 const appProj = String(a.projectName || "").trim().toLowerCase();
-                return appComp === targetCompany || appProj === targetCompany;
+                return !targetCompany || appComp === targetCompany || appProj === targetCompany;
             }
             return true;
-        })?.status || null;
+        });
+
+        if (matching.length === 0) return null;
+        if (matching.some(a => a.status === 'approved')) return 'approved';
+        if (matching.some(a => a.status === 'blacklisted')) return 'blacklisted';
+        if (matching.some(a => a.status === 'pending')) return 'pending';
+        return matching[0].status || null;
     }
 
     function isCompanyRemovedOrRejected(companyName) {

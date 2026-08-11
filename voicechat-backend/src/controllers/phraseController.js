@@ -1838,6 +1838,207 @@ export async function checkPhraseLufs(req, res) {
 }
 
 /**
+ * POST /api/phrases/qa/trim/:phraseId
+ * QA or Admins can trim long start and long end non-speech silences.
+ */
+export async function trimPhraseAudio(req, res) {
+  let tempOutPath = null;
+  try {
+    const { phraseId } = req.params;
+    const { startTrimSec = 0, endTrimSec } = req.body;
+
+    const phrase = await Phrase.findById(phraseId);
+    if (!phrase) return res.status(404).json({ error: "Phrase not found" });
+    if (!phrase.audioFile) return res.status(400).json({ error: "No audio file recorded for this phrase." });
+
+    const startSec = Math.max(0, Number(startTrimSec) || 0);
+    const endSec = Number(endTrimSec);
+
+    if (isNaN(endSec) || endSec <= startSec) {
+      return res.status(400).json({ error: "Invalid trim range: endTrimSec must be greater than startTrimSec." });
+    }
+
+    const cleanKey = String(phrase.audioFile || "").replace(/^phrases\//, "");
+    const possiblePaths = [
+      path.join(process.cwd(), "uploads", phrase.audioFile),
+      path.join(process.cwd(), "uploads", "phrases", cleanKey),
+      path.join(process.cwd(), "recordings", phrase.audioFile),
+      path.join(process.cwd(), "recordings", "phrases", cleanKey),
+      path.join(process.cwd(), phrase.audioFile)
+    ];
+    let localAudio = possiblePaths.find(p => fs.existsSync(p));
+
+    if (!localAudio) {
+      const tempDownloadPath = path.join(os.tmpdir(), `phrase_trim_dl_${Date.now()}_${phraseId}.wav`);
+      try {
+        const s3Resp = await s3Client.send(new GetObjectCommand({ Bucket: BUCKET_NAME, Key: phrase.audioFile }));
+        const fileStream = fs.createWriteStream(tempDownloadPath);
+        await new Promise((resolve, reject) => {
+          s3Resp.Body.pipe(fileStream);
+          s3Resp.Body.on("error", reject);
+          fileStream.on("finish", resolve);
+          fileStream.on("error", reject);
+        });
+        localAudio = tempDownloadPath;
+      } catch (s3err) {
+        return res.status(404).json({ error: "Audio file not found on local disk or S3." });
+      }
+    }
+
+    // 1. Backup original audio file and metrics if not backed up yet
+    if (!phrase.originalAudioFile && phrase.audioFile) {
+      const companyFolder = phrase.companyId ? String(phrase.companyId).replace(/[^a-zA-Z0-9_\-\ ]/g, "").trim() : "No_Company";
+      const origKey = `phrases/${companyFolder}/orig_${path.basename(phrase.audioFile)}`;
+      const origLocalDir = path.join(process.cwd(), "uploads", "phrases", companyFolder);
+      if (!fs.existsSync(origLocalDir)) fs.mkdirSync(origLocalDir, { recursive: true });
+      const origLocalPath = path.join(process.cwd(), "uploads", origKey);
+      
+      try {
+        fs.copyFileSync(localAudio, origLocalPath);
+        phrase.originalAudioFile = origKey;
+        phrase.originalDuration = phrase.duration || trimDuration;
+        phrase.originalLufs = phrase.lufs;
+        phrase.wasAudioTrimmed = true;
+      } catch (bkErr) {
+        console.warn("Failed to create local original audio backup:", bkErr.message);
+      }
+    }
+
+    // Always cut from original raw untrimmed audio if available
+    let sourceAudio = localAudio;
+    if (phrase.originalAudioFile) {
+      const origPath = path.join(process.cwd(), "uploads", phrase.originalAudioFile);
+      if (fs.existsSync(origPath)) sourceAudio = origPath;
+    }
+
+    const trimDuration = parseFloat((endSec - startSec).toFixed(2));
+    tempOutPath = path.join(os.tmpdir(), `trimmed_${Date.now()}_${phraseId}.wav`);
+
+    await new Promise((resolve, reject) => {
+      ffmpeg(sourceAudio)
+        .setStartTime(startSec)
+        .setDuration(trimDuration)
+        .audioCodec("pcm_s16le")
+        .audioFrequency(48000)
+        .audioChannels(1)
+        .output(tempOutPath)
+        .on("end", resolve)
+        .on("error", (err) => reject(new Error("FFmpeg trim failed: " + err.message)))
+        .run();
+    });
+
+    fs.copyFileSync(tempOutPath, localAudio);
+
+    if (phrase.audioFile && !fs.existsSync(path.join(process.cwd(), "uploads", phrase.audioFile))) {
+      try {
+        const fileStream = fs.createReadStream(localAudio);
+        const upload = new Upload({
+          client: s3Client,
+          params: {
+            Bucket: BUCKET_NAME,
+            Key: phrase.audioFile,
+            Body: fileStream,
+            ContentType: "audio/wav",
+          },
+        });
+        await upload.done();
+      } catch (s3UpErr) {
+        console.error("Failed to re-upload trimmed file to S3:", s3UpErr);
+      }
+    }
+
+    const newLufs = await calculateLufsFromAudioFile(localAudio);
+
+    phrase.duration = trimDuration;
+    phrase.lufs = newLufs;
+    phrase.wasAudioTrimmed = true;
+
+    const { verdict } = req.body;
+    const isQAOnly = req.user.isQA && !req.user.isAdmin;
+    const isAdmin = Boolean(req.user.isAdmin);
+
+    if (verdict === "approved" || verdict === "rejected") {
+      phrase.status = verdict;
+      phrase.reviewerId = req.user._id;
+      phrase.reviewedAt = new Date();
+      phrase.wasEdited = true;
+    } else if (isQAOnly) {
+      phrase.status = "edited";
+      phrase.wasEdited = true;
+      phrase.editedBy = req.user._id;
+      phrase.editedAt = new Date();
+    }
+
+    if (phrase.qcResult) {
+      phrase.qcResult.freq = phrase.qcResult.freq || {};
+      phrase.qcResult.freq.lufs = newLufs;
+      phrase.qcResult.duration = trimDuration;
+      phrase.markModified("qcResult");
+    }
+    await phrase.save();
+
+    res.json({
+      message: "Phrase audio trimmed successfully",
+      phraseId: phrase._id,
+      duration: trimDuration,
+      lufs: newLufs,
+      phrase
+    });
+  } catch (err) {
+    console.error("trimPhraseAudio error:", err);
+    res.status(500).json({ error: err.message || "Failed to trim phrase audio." });
+  } finally {
+    if (tempOutPath && fs.existsSync(tempOutPath)) try { fs.unlinkSync(tempOutPath); } catch {}
+  }
+}
+
+/**
+ * POST /api/phrases/qa/revert-trim/:phraseId
+ * Reverts a trimmed audio phrase back to its original untrimmed recording file & metrics.
+ */
+export async function revertTrimAudio(req, res) {
+  try {
+    const { phraseId } = req.params;
+    const phrase = await Phrase.findById(phraseId);
+    if (!phrase) return res.status(404).json({ error: "Phrase not found" });
+
+    if (!phrase.wasAudioTrimmed || !phrase.originalAudioFile) {
+      return res.status(400).json({ error: "This phrase has not been trimmed or has no original backup." });
+    }
+
+    const origLocalPath = path.join(process.cwd(), "uploads", phrase.originalAudioFile);
+    const activeLocalPath = path.join(process.cwd(), "uploads", phrase.audioFile);
+
+    if (fs.existsSync(origLocalPath) && fs.existsSync(activeLocalPath)) {
+      fs.copyFileSync(origLocalPath, activeLocalPath);
+    }
+
+    phrase.duration = phrase.originalDuration || phrase.duration;
+    phrase.lufs = phrase.originalLufs !== null ? phrase.originalLufs : phrase.lufs;
+    phrase.wasAudioTrimmed = false;
+
+    if (phrase.qcResult) {
+      phrase.qcResult.freq = phrase.qcResult.freq || {};
+      phrase.qcResult.freq.lufs = phrase.lufs;
+      phrase.qcResult.duration = phrase.duration;
+      phrase.markModified("qcResult");
+    }
+
+    await phrase.save();
+
+    res.json({
+      message: "Phrase audio reverted to original raw recording",
+      duration: phrase.duration,
+      lufs: phrase.lufs,
+      phrase
+    });
+  } catch (err) {
+    console.error("revertTrimAudio error:", err);
+    res.status(500).json({ error: err.message || "Failed to revert phrase audio." });
+  }
+}
+
+/**
  * POST /api/phrases/qa/analyze/:phraseId
  * Run Freq2 audio analysis on a phrase recording.
  */

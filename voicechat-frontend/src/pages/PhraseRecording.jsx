@@ -1376,6 +1376,8 @@ export default function PhraseRecording() {
                 </div>
               );
             })}
+
+
           </div>
         </motion.div>
 

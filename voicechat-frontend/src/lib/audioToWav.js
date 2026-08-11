@@ -7,6 +7,30 @@
  * @param {string} url  Fetch URL (credentials: "include" is used automatically)
  * @returns {Promise<Blob>}  WAV Blob ready for download
  */
+export async function fetchAudioAndDecode(url) {
+    let token = null;
+    const cookies = document.cookie.split(";").map((c) => c.trim());
+    const vcCookie = cookies.find((c) => c.startsWith("vc_token="));
+    if (vcCookie) token = vcCookie.split("=")[1];
+    else token = localStorage.getItem("vc_token");
+
+    const res = await fetch(url, { 
+        credentials: "include",
+        headers: token ? { Authorization: `Bearer ${token}` } : {}
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const arrayBuffer = await res.arrayBuffer();
+
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    const audioCtx = new AudioCtx();
+    try {
+        const decoded = await audioCtx.decodeAudioData(arrayBuffer);
+        return decoded;
+    } finally {
+        try { audioCtx.close(); } catch {}
+    }
+}
+
 export async function fetchAndConvertToWav(url) {
     let token = null;
     const cookies = document.cookie.split(";").map((c) => c.trim());
@@ -22,12 +46,13 @@ export async function fetchAndConvertToWav(url) {
     const arrayBuffer = await res.arrayBuffer();
 
     // 2. Decode to PCM using Web Audio API
-    const audioCtx = new AudioContext();
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    const audioCtx = new AudioCtx();
     let audioBuffer;
     try {
         audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
     } finally {
-        audioCtx.close();
+        try { audioCtx.close(); } catch {}
     }
 
     // 3. Build 32-bit IEEE float WAV (format 3) — preserves the full dynamic

@@ -23,7 +23,7 @@ const phraseSchema = new mongoose.Schema(
     // State Tracking
     status: {
       type: String,
-      enum: ["pending", "locked", "recorded", "approved", "rejected"],
+      enum: ["pending", "locked", "recorded", "approved", "rejected", "edited"],
       default: "pending",
     },
     lockedAt: { type: Date, default: null },
@@ -35,6 +35,12 @@ const phraseSchema = new mongoose.Schema(
     duration: { type: Number, default: 0 }, // audio duration in seconds
     lufs: { type: Number, default: null }, // BS.1770-4 gated LUFS score
     recordedAt: { type: Date, default: null },
+
+    // Audio Trimming & Backup Info
+    wasAudioTrimmed: { type: Boolean, default: false },
+    originalAudioFile: { type: String, default: null },
+    originalDuration: { type: Number, default: null },
+    originalLufs: { type: Number, default: null },
 
     // QA Info & 15-min review lock
     qaId: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
@@ -55,7 +61,7 @@ const phraseSchema = new mongoose.Schema(
       reviewedAt: { type: Date }
     },
 
-    // Phrase Text Editing Tracking
+    // Phrase Text & Audio Editing Tracking
     isEdited: { type: Boolean, default: false },
     originalText: { type: String, default: null },
     editedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },

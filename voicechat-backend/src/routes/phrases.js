@@ -21,6 +21,8 @@ import {
   approveRejectedPhrase,
   analyzePhrase,
   checkPhraseLufs,
+  trimPhraseAudio,
+  revertTrimAudio,
   updatePhraseText,
   reviewEditedPhrase,
   downloadSinglePhraseZip,
@@ -89,6 +91,8 @@ router.get("/qa/queue", requireAuth(JWT_SECRET), requireQAOrAdmin, getQaQueue);
 router.post("/qa/review/:phraseId", requireAuth(JWT_SECRET), requireQAOrAdmin, reviewPhrase);
 router.post("/qa/analyze/:phraseId", requireAuth(JWT_SECRET), requireQAOrAdmin, analyzePhrase);
 router.post("/qa/lufs/:phraseId", requireAuth(JWT_SECRET), requireQAOrAdmin, checkPhraseLufs);
+router.post("/qa/trim/:phraseId", requireAuth(JWT_SECRET), requireQAOrAdmin, trimPhraseAudio);
+router.post("/qa/revert-trim/:phraseId", requireAuth(JWT_SECRET), requireQAOrAdmin, revertTrimAudio);
 router.patch("/qa/text/:phraseId", requireAuth(JWT_SECRET), requireQAOrAdmin, updatePhraseText);
 
 /* -------------------------------------------------------------------------- */

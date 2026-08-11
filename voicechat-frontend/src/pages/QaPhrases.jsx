@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Check, X, AlertCircle, Download, Trash2, Clock, CheckCircle2, Volume2 } from 'lucide-react';
 import Swal from 'sweetalert2';
@@ -6,6 +6,7 @@ import { apiGet, apiPostJson, apiPatchJson } from '../lib/api';
 import { getUserInfo } from '../lib/auth';
 import SecureAudioPlayer from '../components/SecureAudioPlayer';
 import AdminNav from '../components/AdminNav.jsx';
+import InteractiveWaveformTrimmer from '../components/InteractiveWaveformTrimmer.jsx';
 
 export default function QaPhrases() {
   const userInfo = getUserInfo();
@@ -33,6 +34,132 @@ export default function QaPhrases() {
   const [errorQc, setErrorQc] = useState({});
   const [loadingLufs, setLoadingLufs] = useState({});
   const [lightboxSrc, setLightboxSrc] = useState(null);
+
+  // Audio Trimming States
+  const [showTrimModal, setShowTrimModal] = useState(false);
+  const [trimmingPhrase, setTrimmingPhrase] = useState(null);
+  const [startTrimSec, setStartTrimSec] = useState(0);
+  const [endTrimSec, setEndTrimSec] = useState(0);
+  const [trimSaving, setTrimSaving] = useState(false);
+  const [trimAudioUrl, setTrimAudioUrl] = useState(null);
+  const trimAudioRef = useRef(null);
+
+  const openTrimModal = (p) => {
+    setTrimmingPhrase(p);
+    const fullDur = p.originalDuration || p.duration || 5;
+    setStartTrimSec(0);
+    setEndTrimSec(p.duration || fullDur);
+    setTrimAudioUrl(`${import.meta.env.VITE_BACKEND_URL || "http://localhost:3001"}/api/phrases/${p._id}/audio?t=${Date.now()}`);
+    setShowTrimModal(true);
+  };
+
+  const handlePreviewTrim = () => {
+    if (!trimAudioRef.current) return;
+    const audio = trimAudioRef.current;
+    audio.currentTime = startTrimSec;
+    audio.play();
+
+    const checkStop = () => {
+      if (audio.currentTime >= endTrimSec) {
+        audio.pause();
+        audio.removeEventListener("timeupdate", checkStop);
+      }
+    };
+    audio.addEventListener("timeupdate", checkStop);
+  };
+
+  const handleSaveTrim = async (verdict = null) => {
+    if (!trimmingPhrase) return;
+    if (endTrimSec <= startTrimSec) {
+      Swal.fire({ icon: "warning", title: "Invalid Trim Range", text: "End time must be greater than start time.", background: "#171717", color: "#ffffff" });
+      return;
+    }
+
+    setTrimSaving(true);
+    try {
+      const res = await apiPostJson(`/api/phrases/qa/trim/${trimmingPhrase._id}`, {
+        startTrimSec: Number(startTrimSec),
+        endTrimSec: Number(endTrimSec),
+        verdict
+      });
+      if (res && res.phrase) {
+        const newStatus = res.phrase.status;
+
+        // If QA trimmed it or Admin approved/rejected, filter out of current view queue
+        if (!isAdmin || verdict === 'approved' || verdict === 'rejected') {
+          setQueue(prev => prev.filter(q => q._id !== trimmingPhrase._id));
+        } else {
+          setQueue(prev => prev.map(q => q._id === trimmingPhrase._id ? {
+            ...q,
+            duration: res.duration,
+            lufs: res.lufs,
+            audioFile: res.phrase.audioFile,
+            status: newStatus
+          } : q));
+        }
+
+        setShowTrimModal(false);
+        setTrimmingPhrase(null);
+
+        let msg = `Phrase audio trimmed to ${res.duration}s! (LUFS: ${res.lufs})`;
+        if (!isAdmin) {
+          msg = `Phrase trimmed & moved to Edited Phrases for Admin audit! (${res.duration}s, LUFS: ${res.lufs})`;
+        } else if (verdict === 'approved') {
+          msg = `Phrase trimmed & APPROVED! (${res.duration}s, LUFS: ${res.lufs})`;
+        } else if (verdict === 'rejected') {
+          msg = `Phrase trimmed & REJECTED! (${res.duration}s)`;
+        }
+
+        Swal.fire({
+          icon: "success",
+          title: "Audio Trimmed!",
+          text: msg,
+          timer: 2200,
+          showConfirmButton: false,
+          background: "#171717",
+          color: "#ffffff"
+        });
+      }
+    } catch (err) {
+      console.error("Failed to trim phrase audio:", err);
+      Swal.fire({
+        icon: "error",
+        title: "Trim Failed",
+        text: err.message || "Failed to trim phrase audio.",
+        background: "#171717",
+        color: "#ffffff"
+      });
+    } finally {
+      setTrimSaving(false);
+    }
+  };
+
+  const handleRevertTrim = async (phraseId) => {
+    try {
+      const res = await apiPostJson(`/api/phrases/qa/revert-trim/${phraseId}`, {});
+      if (res && res.phrase) {
+        setQueue(prev => prev.map(q => q._id === phraseId ? {
+          ...q,
+          duration: res.duration,
+          lufs: res.lufs,
+          wasAudioTrimmed: false,
+          originalAudioFile: null
+        } : q));
+        Swal.fire({
+          icon: "success",
+          title: "Trim Reverted!",
+          text: `Phrase audio restored to original recording! (${res.duration}s)`,
+          timer: 2000,
+          showConfirmButton: false,
+          background: "#171717",
+          color: "#ffffff"
+        });
+      }
+    } catch (err) {
+      console.error("Failed to revert audio trim:", err);
+      Swal.fire({ icon: "error", title: "Revert Failed", text: err.message, background: "#171717", color: "#ffffff" });
+    }
+  };
 
   const handleCheckLufs = async (phraseId) => {
     setLoadingLufs(prev => ({ ...prev, [phraseId]: true }));
@@ -620,6 +747,45 @@ export default function QaPhrases() {
                             )}
                           </button>
 
+                          {p.audioFile && (
+                            <button
+                              type="button"
+                              onClick={() => openTrimModal(p)}
+                              className="w-full py-2 px-3 bg-purple-600/90 hover:bg-purple-600 text-white text-xs font-bold rounded-lg transition-colors flex items-center justify-center gap-2 shadow-sm"
+                              title="Trim long non-speech start and end silences"
+                            >
+                              ✂️ Trim Start/End Audio
+                            </button>
+                          )}
+
+                          {p.wasAudioTrimmed && p.originalAudioFile && (
+                            <div className="p-3 bg-neutral-900/90 rounded-xl border border-purple-500/40 space-y-2 text-left my-2">
+                              <div className="flex items-center justify-between text-xs font-bold text-purple-400">
+                                <span>✂️ Audio Trim Comparison</span>
+                                <button
+                                  type="button"
+                                  onClick={() => handleRevertTrim(p._id)}
+                                  className="px-2 py-1 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 rounded text-[11px] font-bold transition-all flex items-center gap-1 shadow-sm"
+                                  title="Undo trim and restore original untrimmed audio"
+                                >
+                                  ↺ Revert to Original
+                                </button>
+                              </div>
+                              <div className="grid grid-cols-2 gap-2 text-[11px]">
+                                <div className="bg-neutral-950 p-2 rounded border border-neutral-800">
+                                  <span className="block text-neutral-400 font-bold mb-1">🔊 Untrimmed Original</span>
+                                  <span className="font-mono text-emerald-400 font-bold">{p.originalDuration ? `${p.originalDuration}s` : '—'}</span>
+                                  {p.originalLufs !== null && <span className="block font-mono text-neutral-400 text-[10px]">{p.originalLufs} LUFS</span>}
+                                </div>
+                                <div className="bg-neutral-950 p-2 rounded border border-purple-800/60">
+                                  <span className="block text-purple-400 font-bold mb-1">✂️ Trimmed Speech</span>
+                                  <span className="font-mono text-purple-300 font-bold">{p.duration}s</span>
+                                  {p.lufs !== null && <span className="block font-mono text-purple-400 text-[10px]">{p.lufs} LUFS</span>}
+                                </div>
+                              </div>
+                            </div>
+                          )}
+
                           {isAdmin && p.audioFile && (
                             <button
                               type="button"
@@ -855,6 +1021,148 @@ export default function QaPhrases() {
             </div>
           </div>
         )}
+
+        {/* Trim Audio Modal */}
+        <AnimatePresence>
+          {showTrimModal && trimmingPhrase && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.95 }}
+                className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 w-full max-w-lg shadow-2xl relative text-left text-white"
+              >
+                <div className="flex items-center justify-between border-b border-neutral-800 pb-4 mb-5">
+                  <div className="flex items-center gap-3">
+                    <div className="bg-purple-500/10 text-purple-400 p-2.5 rounded-xl border border-purple-500/20 text-lg">
+                      ✂️
+                    </div>
+                    <div>
+                      <h3 className="font-bold text-lg text-white">Trim Phrase Silence</h3>
+                      <p className="text-xs text-neutral-400 font-mono">ID: {trimmingPhrase.phraseId}</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => { setShowTrimModal(false); setTrimmingPhrase(null); }}
+                    className="p-2 text-neutral-400 hover:text-white rounded-lg transition-colors"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                <div className="bg-neutral-950 p-4 rounded-xl border border-neutral-800 mb-6">
+                  <p className="text-sm font-medium text-neutral-300 italic mb-2">"{trimmingPhrase.text}"</p>
+                  <div className="flex items-center justify-between text-xs text-neutral-400 font-mono">
+                    <span>Original Duration: <b>{trimmingPhrase.duration ? `${trimmingPhrase.duration}s` : "Unknown"}</b></span>
+                    <span>Trimmed Duration: <b className="text-emerald-400">{(Math.max(0, endTrimSec - startTrimSec)).toFixed(2)}s</b></span>
+                  </div>
+                </div>
+
+                {/* Visual Audio Waveform Canvas with Draggable Handles */}
+                <div className="mb-4">
+                  <InteractiveWaveformTrimmer
+                    audioUrl={trimAudioUrl}
+                    duration={trimmingPhrase.duration || 5}
+                    startTrimSec={startTrimSec}
+                    endTrimSec={endTrimSec}
+                    onTrimChange={(newStart, newEnd) => {
+                      setStartTrimSec(newStart);
+                      setEndTrimSec(newEnd);
+                    }}
+                  />
+                </div>
+
+                {/* Precise Numeric Time Inputs */}
+                <div className="grid grid-cols-2 gap-4 mb-6">
+                  <div>
+                    <label className="block text-[11px] font-bold text-emerald-400 uppercase tracking-wider mb-1">
+                      Start Cut (Seconds):
+                    </label>
+                    <input
+                      type="number"
+                      step="0.05"
+                      min="0"
+                      max={Math.max(0, endTrimSec - 0.1)}
+                      value={startTrimSec}
+                      onChange={(e) => {
+                        const val = parseFloat(e.target.value) || 0;
+                        setStartTrimSec(Math.max(0, Math.min(val, endTrimSec - 0.1)));
+                      }}
+                      className="w-full bg-neutral-950 border border-neutral-800 text-emerald-400 font-mono font-bold text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-rose-400 uppercase tracking-wider mb-1">
+                      End Cut (Seconds):
+                    </label>
+                    <input
+                      type="number"
+                      step="0.05"
+                      min={startTrimSec + 0.1}
+                      max={trimmingPhrase.duration || 100}
+                      value={endTrimSec}
+                      onChange={(e) => {
+                        const val = parseFloat(e.target.value) || (startTrimSec + 0.1);
+                        setEndTrimSec(Math.min(trimmingPhrase.duration || 100, Math.max(val, startTrimSec + 0.1)));
+                      }}
+                      className="w-full bg-neutral-950 border border-neutral-800 text-rose-400 font-mono font-bold text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-rose-500"
+                    />
+                  </div>
+                </div>
+
+                {/* Save Action Buttons for QA vs Admin */}
+                <div className="flex flex-wrap gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => { setShowTrimModal(false); setTrimmingPhrase(null); }}
+                    className="py-2.5 px-4 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 rounded-xl text-xs font-bold transition-colors"
+                  >
+                    Cancel
+                  </button>
+
+                  {!isAdmin ? (
+                    <button
+                      type="button"
+                      onClick={() => handleSaveTrim()}
+                      disabled={trimSaving}
+                      className="flex-1 py-2.5 px-4 bg-purple-600 hover:bg-purple-500 text-white rounded-xl text-xs font-bold transition-colors flex items-center justify-center gap-2 disabled:opacity-50 shadow-md shadow-purple-600/20 active:scale-95"
+                    >
+                      {trimSaving ? "Trimming..." : "✂️ Save Trim & Move to Edited"}
+                    </button>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => handleSaveTrim('approved')}
+                        disabled={trimSaving}
+                        className="flex-1 py-2.5 px-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition-colors flex items-center justify-center gap-1 disabled:opacity-50 shadow-md shadow-emerald-600/20 active:scale-95"
+                      >
+                        <Check className="w-3.5 h-3.5" /> {trimSaving ? "Saving..." : "Trim & Approve"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleSaveTrim('rejected')}
+                        disabled={trimSaving}
+                        className="flex-1 py-2.5 px-3 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold transition-colors flex items-center justify-center gap-1 disabled:opacity-50 shadow-md shadow-rose-600/20 active:scale-95"
+                      >
+                        <X className="w-3.5 h-3.5" /> {trimSaving ? "Saving..." : "Trim & Reject"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleSaveTrim()}
+                        disabled={trimSaving}
+                        className="py-2.5 px-3 bg-purple-600 hover:bg-purple-500 text-white rounded-xl text-xs font-bold transition-colors flex items-center justify-center gap-1 disabled:opacity-50 shadow-md shadow-purple-600/20 active:scale-95"
+                        title="Save trimmed audio while preserving current status"
+                      >
+                        {trimSaving ? "Saving..." : "Trim Only"}
+                      </button>
+                    </>
+                  )}
+                </div>
+              </motion.div>
+            </div>
+          )}
+        </AnimatePresence>
       </main>
     </div>
   );

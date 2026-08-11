@@ -191,6 +191,7 @@ export async function getMyLanguageApplications(req, res) {
       const activeNames = activeCompanies.map(c => String(c._id).trim()).filter(Boolean);
 
       applications = applications.filter(app => {
+        if (app.status === "approved") return true; // Always retain approved applications
         if (app.applicationType === "phrase" || !app.applicationType) {
           const appCompany = String(app.companyId || "").trim();
           return activeNames.includes(appCompany);
