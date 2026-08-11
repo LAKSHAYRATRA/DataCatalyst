@@ -39,7 +39,7 @@ export default function LanguageSelection({ onLanguageSelect, callCount, callLim
     }, []);
 
     function getStatus(code) {
-        return myApps.find(a => a.languageCode === code)?.status || null;
+        return myApps.find(a => a.languageCode === code && (a.applicationType === 'call' || !a.applicationType))?.status || null;
     }
 
     const approvedLangs = languages.filter(l => getStatus(l.code) === 'approved');

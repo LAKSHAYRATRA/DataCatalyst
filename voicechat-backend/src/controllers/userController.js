@@ -28,6 +28,7 @@ export function getUserStatus(req, res) {
   res.json({
     accountStatus: req.user.accountStatus || "pending_intro",
     rejectionReason: req.user.rejectionReason || null,
+    isDisabled: !!req.user.isDisabled,
   });
 }
 
@@ -213,7 +214,7 @@ export async function getMyLanguageApplications(req, res) {
       };
     });
 
-    res.json({ applications });
+    res.json({ applications, isAdmin: !!req.user.isAdmin, isQA: !!req.user.isQA });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }

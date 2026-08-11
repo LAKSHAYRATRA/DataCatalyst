@@ -1,0 +1,5 @@
+customHeaders: []
+redirects:
+  - status: '200'
+    source: '/<*>'
+    target: '/index.html'

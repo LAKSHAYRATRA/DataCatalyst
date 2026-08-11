@@ -1057,8 +1057,9 @@ io.on("connection", (socket) => {
       const freshUser = await User.findById(socket.data.userId)
         .select("languageApplications")
         .lean();
+      const reqLang = String(userLanguage).trim().toLowerCase();
       const langApp = freshUser?.languageApplications?.find(
-        (a) => a.languageCode === userLanguage && a.status === "approved" && (!a.applicationType || a.applicationType === 'call')
+        (a) => String(a.languageCode || "").trim().toLowerCase() === reqLang && a.status === "approved" && (!a.applicationType || a.applicationType === 'call')
       );
       if (!langApp) {
         socket.emit("error_message", {

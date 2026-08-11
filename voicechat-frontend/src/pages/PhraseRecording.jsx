@@ -108,6 +108,7 @@ export default function PhraseRecording() {
   // These will be populated from the API
   const [approvedApps, setApprovedApps] = useState([]);
   const [approvedCompanies, setApprovedCompanies] = useState([]);
+  const [serverUserRoles, setServerUserRoles] = useState({ isAdmin: false, isQA: false, loaded: false });
   const approvedPhraseApps = approvedApps.filter(app => app.applicationType === 'phrase');
 
   const [stats, setStats] = useState({ 
@@ -128,20 +129,20 @@ export default function PhraseRecording() {
   useEffect(() => {
     let newLangs = Array.from(new Set(
       approvedApps
-        .filter(a => !projectName || a.companyId === projectName)
-        .map(a => a.languageCode)
+        .filter(a => a.status === 'approved' && (a.applicationType === 'phrase' || !a.applicationType) && (!projectName || String(a.companyId || "").toLowerCase().trim() === String(projectName || "").toLowerCase().trim()))
+        .map(a => String(a.languageCode || "").toLowerCase().trim())
     )).filter(Boolean);
 
-    if (newLangs.length === 0) {
+    if (newLangs.length === 0 && (userInfo?.isAdmin || userInfo?.isQA)) {
       newLangs = (allLanguages || []).map(l => l.code).filter(Boolean);
       if (newLangs.length === 0) newLangs = ['hindi', 'english'];
     }
 
     setAvailableLanguages(newLangs);
     if (!language || !newLangs.includes(language)) {
-      setLanguage(newLangs[0] || 'hindi');
+      setLanguage(newLangs[0] || '');
     }
-  }, [projectName, approvedApps, allLanguages]);
+  }, [projectName, approvedApps, allLanguages, userInfo]);
 
   const activeApp = React.useMemo(() => {
     return approvedApps.find(a => {
@@ -453,9 +454,18 @@ export default function PhraseRecording() {
       ]);
 
       const myApps = appsData.applications || [];
-      const approved = myApps.filter(app => app.status === 'approved');
-      
+      const isUserAdmin = appsData.isAdmin === true;
+      const isUserQA = appsData.isQA === true;
+      setServerUserRoles({ isAdmin: isUserAdmin, isQA: isUserQA, loaded: true });
+
+      const approved = myApps.filter(app => app.status === 'approved' && (app.applicationType === 'phrase' || !app.applicationType));
       setApprovedApps(approved);
+
+      if (approved.length === 0 && !isUserAdmin && !isUserQA) {
+        navigate('/language-apply', { replace: true });
+        return;
+      }
+
       const uniqueCompanyIds = Array.from(new Set(approved.map(a => a.companyId).filter(Boolean)));
       let companies = uniqueCompanyIds.map(id => {
         const app = approved.find(a => a.companyId === id);
@@ -465,7 +475,7 @@ export default function PhraseRecording() {
         };
       });
 
-      if (companies.length === 0) {
+      if (companies.length === 0 && (isUserAdmin || isUserQA)) {
         companies = (companiesData.companies || []).map(c => ({ id: c.name, label: c.projectName || c.name }));
         if (companies.length === 0) companies = [{ id: 'General Phrases', label: 'General Phrases' }];
       }
@@ -522,6 +532,26 @@ export default function PhraseRecording() {
   }, [language, projectName, projects, allLanguages, allCompanies]);
 
   async function fetchFiveSlots(isRefresh = false) {
+    if (!language) return;
+    const isAdminOrQA = serverUserRoles.loaded ? (serverUserRoles.isAdmin || serverUserRoles.isQA) : (userInfo?.isAdmin || userInfo?.isQA);
+    if (!isAdminOrQA) {
+      if (!approvedApps || approvedApps.length === 0) {
+        navigate('/language-apply', { replace: true });
+        return;
+      }
+      const isApprovedForSelection = approvedApps.some(a => 
+        a.status === 'approved' && 
+        (a.applicationType === 'phrase' || !a.applicationType) &&
+        (!projectName || String(a.companyId || "").toLowerCase().trim() === String(projectName || "").toLowerCase().trim()) &&
+        String(a.languageCode || "").toLowerCase().trim() === String(language || "").toLowerCase().trim()
+      );
+      if (!isApprovedForSelection) {
+        setError("You are not approved for this project and language.");
+        setSlots(prev => prev.map(s => ({ ...s, phrase: null })));
+        return;
+      }
+    }
+
     setLoading(true);
     setError(null);
     try {
@@ -533,6 +563,10 @@ export default function PhraseRecording() {
         url += `&refresh=true`;
       }
       const data = await apiGet(url);
+      if (data.redirect && !userInfo?.isAdmin && !userInfo?.isQA) {
+        navigate(data.redirect, { replace: true });
+        return;
+      }
       const rawFetchedPhrases = data.phrases || (data.phrase ? [data.phrase] : []);
       setUserCustomizations(data.userCustomizations || []);
 
@@ -891,7 +925,7 @@ export default function PhraseRecording() {
           >
             ← Back to Dashboard
           </button>
-          <h1 className="text-3xl font-bold mb-2">TTS Recording Studio</h1>
+          <h1 className="text-3xl font-bold mb-2">Phrase Recording Studio</h1>
           <p className="text-neutral-500 dark:text-neutral-400">Contribute your voice to high-quality AI training sets.</p>
         </div>
         <div className="bg-success-100 dark:bg-success-900/30 border border-success-200 dark:border-success-800 p-4 rounded-xl flex items-center gap-4">

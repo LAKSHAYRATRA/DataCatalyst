@@ -51,6 +51,13 @@ import About from "./pages/About.jsx";
 import Terms from "./pages/Terms.jsx";
 import Privacy from "./pages/Privacy.jsx";
 import RainbowCursor from "./components/RainbowCursor.jsx";
+import DisabledUser from "./pages/DisabledUser.jsx";
+
+function isUserDisabled(userInfo) {
+  if (!userInfo) return false;
+  if (userInfo.isAdmin) return false;
+  return !!userInfo.isDisabled;
+}
 
 function needsAgreementSigning(userInfo) {
   if (!userInfo) return false;
@@ -71,6 +78,7 @@ function awaitingAgreementReview(userInfo) {
 function RedirectIfAuthenticated({ children }) {
   const userInfo = getUserInfo();
   if (!userInfo) return children;
+  if (isUserDisabled(userInfo)) return <DisabledUser />;
   // QA users go straight to the QA review page
   if (userInfo.isQA && !userInfo.isAdmin) return <Navigate to="/admin/qa" replace />;
   if (userInfo.isAdmin) return <Navigate to="/admin/dashboard" replace />;
@@ -86,6 +94,7 @@ function RedirectIfAuthenticated({ children }) {
 function RequireAuth({ children }) {
   const userInfo = getUserInfo();
   if (!userInfo) return <Navigate to="/login" replace />;
+  if (isUserDisabled(userInfo)) return <DisabledUser />;
   // QA-only and admin users don't belong on user-facing pages
   if (userInfo.isQA && !userInfo.isAdmin) return <Navigate to="/admin/qa" replace />;
   if (userInfo.isAdmin) return <Navigate to="/admin/dashboard" replace />;
@@ -97,10 +106,36 @@ function RequireAuth({ children }) {
   return children;
 }
 
+// Guard Phrase Studio — requires at least 1 approved phrase application (unless Admin/QA)
+function RequirePhraseAccess({ children }) {
+  const userInfo = getUserInfo();
+  if (!userInfo) return <Navigate to="/login" replace />;
+  if (isUserDisabled(userInfo)) return <DisabledUser />;
+  if (userInfo.isAdmin || userInfo.isQA) return children;
+
+  const s = userInfo.accountStatus;
+  if (s === "pending_intro" || s === "rejected") return <Navigate to="/intro-recording" replace />;
+  if (s === "pending_approval") return <Navigate to="/pending-approval" replace />;
+  if (needsAgreementSigning(userInfo)) return <Navigate to="/contributor-agreement" replace />;
+  if (awaitingAgreementReview(userInfo)) return <Navigate to="/dashboard" replace />;
+
+  const myApps = userInfo.languageApplications || [];
+  const hasApprovedPhraseApp = myApps.some(app => 
+    app.status === "approved" && (app.applicationType === "phrase" || !app.applicationType)
+  );
+
+  if (!hasApprovedPhraseApp) {
+    return <Navigate to="/language-apply" replace />;
+  }
+
+  return children;
+}
+
 // Guard for Dashboard — allows awaiting-review users too (Dashboard shows the banner)
 function RequireDashboardAccess({ children }) {
   const userInfo = getUserInfo();
   if (!userInfo) return <Navigate to="/login" replace />;
+  if (isUserDisabled(userInfo)) return <DisabledUser />;
   if (userInfo.isQA && !userInfo.isAdmin) return <Navigate to="/admin/qa" replace />;
   if (userInfo.isAdmin) return <Navigate to="/admin/dashboard" replace />;
   const s = userInfo.accountStatus;
@@ -115,6 +150,7 @@ function RequireDashboardAccess({ children }) {
 function RequireAgreementAccess({ children }) {
   const userInfo = getUserInfo();
   if (!userInfo) return <Navigate to="/login" replace />;
+  if (isUserDisabled(userInfo)) return <DisabledUser />;
   if (userInfo.isQA && !userInfo.isAdmin) return <Navigate to="/admin/qa" replace />;
   if (userInfo.isAdmin) return <Navigate to="/admin/dashboard" replace />;
   const s = userInfo.accountStatus;
@@ -129,6 +165,7 @@ function RequireAgreementAccess({ children }) {
 function RequireIntroAccess({ children }) {
   const userInfo = getUserInfo();
   if (!userInfo) return <Navigate to="/login" replace />;
+  if (isUserDisabled(userInfo)) return <DisabledUser />;
   if (userInfo.isQA && !userInfo.isAdmin) return <Navigate to="/admin/qa" replace />;
   if (userInfo.isAdmin) return <Navigate to="/admin/dashboard" replace />;
   if (userInfo.accountStatus === "approved") return <Navigate to="/call" replace />;
@@ -140,6 +177,7 @@ function RequireIntroAccess({ children }) {
 function RequirePendingAccess({ children }) {
   const userInfo = getUserInfo();
   if (!userInfo) return <Navigate to="/login" replace />;
+  if (isUserDisabled(userInfo)) return <DisabledUser />;
   if (userInfo.isQA && !userInfo.isAdmin) return <Navigate to="/admin/qa" replace />;
   if (userInfo.isAdmin) return <Navigate to="/admin/dashboard" replace />;
   if (userInfo.accountStatus === "approved") return <Navigate to="/call" replace />;
@@ -355,7 +393,7 @@ export default function App() {
         <Route path="/admin/ambiguity" element={<RequireAdmin><AdminAmbiguity /></RequireAdmin>} />
         <Route path="/admin/media" element={<RequireAdmin><AdminMedia /></RequireAdmin>} />
         <Route path="/language-apply" element={<RequireAuth><RequireProfileFields><LanguageApply /></RequireProfileFields></RequireAuth>} />
-        <Route path="/phrases" element={<RequireAuth><RequireProfileFields><PhraseRecording /></RequireProfileFields></RequireAuth>} />
+        <Route path="/phrases" element={<RequirePhraseAccess><RequireProfileFields><PhraseRecording /></RequireProfileFields></RequirePhraseAccess>} />
 
         <Route path="/admin" element={<Navigate to="/admin/dashboard" replace />} />
         <Route path="/admin/login" element={<Navigate to="/login" replace />} />

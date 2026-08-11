@@ -191,7 +191,7 @@ export default function AdminPhrases() {
         animate={{ y: 0, opacity: 1 }}
         className="mb-8"
       >
-        <h1 className="text-3xl font-bold mb-2">TTS Phrases Admin</h1>
+        <h1 className="text-3xl font-bold mb-2">Phrases Admin</h1>
         <p className="text-neutral-500 dark:text-neutral-400">Upload JSON manifests and track script recording progress.</p>
       </motion.div>
 
@@ -335,7 +335,7 @@ export default function AdminPhrases() {
             <label className="block text-sm font-medium mb-2 opacity-80">Method 2: Paste Raw JSON Array</label>
             <textarea
               className="w-full h-48 bg-neutral-100 dark:bg-neutral-900 border border-neutral-300 dark:border-neutral-700 rounded-lg p-3 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary-500 custom-scrollbar resize-none"
-              placeholder={'[\n  {\n    "id": "tts_en_001",\n    "text": "Hello world"\n  }\n]'}
+              placeholder={'[\n  {\n    "id": "phrase_en_001",\n    "text": "Hello world"\n  }\n]'}
               value={pastedJson}
               onChange={(e) => setPastedJson(e.target.value)}
               disabled={!!file}

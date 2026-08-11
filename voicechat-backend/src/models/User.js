@@ -129,6 +129,10 @@ const userSchema = new mongoose.Schema(
     // Reset Password
     resetPasswordToken: { type: String, default: null },
     resetPasswordExpires: { type: Date, default: null },
+
+    // Account disable and deletion state
+    isDisabled: { type: Boolean, default: false },
+    isDeleted: { type: Boolean, default: false },
   },
   { timestamps: true }
 );

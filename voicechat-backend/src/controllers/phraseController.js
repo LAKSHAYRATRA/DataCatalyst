@@ -496,12 +496,20 @@ export async function getAvailablePhrase(req, res) {
     const coreCompLower = targetCompLower.replace(/_downloaded$/, "").trim();
     const isProjectActive = activeNamesSet.has(targetCompLower) || activeNamesSet.has(coreCompLower) || activeNamesSet.has(`${coreCompLower}_downloaded`);
 
-    if (resolvedProjectName && resolvedProjectName !== "Any" && !isProjectActive) {
-      return res.json({ phrase: null, message: "No phrases available (project is currently inactive)." });
+    if (!user.isAdmin && !user.isQA) {
+      const userApprovedApps = (user.languageApplications || []).filter(a =>
+        (a.applicationType === "phrase" || !a.applicationType) && a.status === "approved"
+      );
+      if (userApprovedApps.length === 0) {
+        return res.json({ phrase: null, message: "You are not approved for any phrase projects yet. Please apply on the project application page first.", redirect: "/language-apply" });
+      }
+      if (resolvedProjectName && resolvedProjectName !== "Any" && !isAppApproved(resolvedProjectName)) {
+        return res.json({ phrase: null, message: "You are not approved for this project and language. Please apply on the project application page first." });
+      }
     }
 
-    if (resolvedProjectName && isAppRejected(resolvedProjectName)) {
-      return res.json({ phrase: null, message: "You are not approved for this company's phrases." });
+    if (resolvedProjectName && resolvedProjectName !== "Any" && !isProjectActive) {
+      return res.json({ phrase: null, message: "No phrases available (project is currently inactive)." });
     }
 
     if (resolvedProjectName && blockedCompanies.includes(resolvedProjectName)) {
@@ -517,7 +525,16 @@ export async function getAvailablePhrase(req, res) {
         const coreComp = String(resolvedProjectName).replace(/_downloaded$/, "").trim();
         baseQuery.companyId = { $in: [resolvedProjectName, coreComp, `${coreComp}_downloaded`] };
       } else {
-        baseQuery.companyId = { $in: activeNames };
+        // If user is not admin/QA, restrict "Any" query strictly to companies & languages they are approved for
+        if (!user.isAdmin && !user.isQA) {
+          const userApprovedApps = (user.languageApplications || []).filter(a =>
+            (a.applicationType === "phrase" || !a.applicationType) && a.status === "approved"
+          );
+          const approvedCompNames = [...new Set(userApprovedApps.map(a => a.companyId).filter(Boolean))];
+          baseQuery.companyId = { $in: approvedCompNames };
+        } else {
+          baseQuery.companyId = { $in: activeNames };
+        }
         if (blockedCompanies.length > 0) {
           baseQuery.companyId.$nin = blockedCompanies;
         }

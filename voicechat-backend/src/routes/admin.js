@@ -2474,7 +2474,7 @@ router.get("/users", async (req, res) => {
         const limit = parseInt(req.query.limit) || 20;
         const skip = (page - 1) * limit;
 
-        const filter = { isAdmin: false };
+        const filter = { isAdmin: false, isDeleted: { $ne: true } };
         if (req.query.accountStatus) filter.accountStatus = req.query.accountStatus;
         if (req.query.search) {
             const searchRegex = new RegExp(req.query.search.trim(), "i");
@@ -2488,7 +2488,7 @@ router.get("/users", async (req, res) => {
 
         const total = await User.countDocuments(filter);
         const users = await User.find(filter)
-            .select('username email firstname lastname dailyCallLimit overallCallLimit dailyPhraseLimit overallPhraseLimit accountStatus createdAt')
+            .select('username email firstname lastname dailyCallLimit overallCallLimit dailyPhraseLimit overallPhraseLimit accountStatus isDisabled createdAt')
             .sort({ createdAt: -1 })
             .skip(skip)
             .limit(limit);
@@ -2510,7 +2510,7 @@ router.get("/users", async (req, res) => {
 // List users pending admin approval
 router.get("/users/pending", async (req, res) => {
     try {
-        const filter = { isAdmin: false, accountStatus: "pending_approval" };
+        const filter = { isAdmin: false, isDeleted: { $ne: true }, accountStatus: "pending_approval" };
         if (req.query.search) {
             const searchRegex = new RegExp(req.query.search.trim(), "i");
             filter.$or = [
@@ -2604,6 +2604,25 @@ router.patch("/users/:userId/approve", async (req, res) => {
     }
 });
 
+// Toggle disable status for a user
+router.patch("/users/:userId/toggle-disable", async (req, res) => {
+    try {
+        const user = await User.findById(req.params.userId);
+        if (!user) return res.status(404).json({ error: "User not found" });
+
+        user.isDisabled = !user.isDisabled;
+        await user.save();
+
+        res.json({
+            message: user.isDisabled ? "User disabled successfully" : "User enabled successfully",
+            isDisabled: user.isDisabled,
+            user: { _id: user._id, username: user.username, isDisabled: user.isDisabled }
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // Update user limits
 router.patch("/users/:userId/limits", async (req, res) => {
     try {
@@ -2667,7 +2686,7 @@ router.patch("/users/:userId/raw", async (req, res) => {
     }
 });
 
-// Delete a user from Admin Metadata Editor
+// Soft-delete a user while preserving demographic metadata for phrase dataset exports
 router.delete("/users/:userId", async (req, res) => {
     try {
         const user = await User.findById(req.params.userId);
@@ -2688,9 +2707,17 @@ router.delete("/users/:userId", async (req, res) => {
             } catch (cleanupErr) {
                 console.error("Failed to cleanup intro recording for deleted user:", cleanupErr.message);
             }
+            user.introRecordingFile = null;
         }
 
-        await User.findByIdAndDelete(req.params.userId);
+        const timestamp = Date.now();
+        user.email = `deleted_${timestamp}_${user.email}`;
+        user.username = `deleted_${timestamp}_${user.username}`;
+        user.isDeleted = true;
+        user.isDisabled = true;
+        user.tokenVersion = (user.tokenVersion || 0) + 1; // Revoke existing tokens
+
+        await user.save();
         res.json({ message: "User deleted successfully", success: true });
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -5335,6 +5362,7 @@ router.get("/contributor-agreements/approved-users", async (req, res) => {
     try {
         const filter = {
             accountStatus: "approved",
+            isDeleted: { $ne: true },
             "contributorAgreement.signed": true,
             "contributorAgreement.adminReviewStatus": "approved",
         };
@@ -5348,7 +5376,7 @@ router.get("/contributor-agreements/approved-users", async (req, res) => {
             ];
         }
         const users = await User.find(filter)
-            .select("firstname lastname email username speaker_id dailyCallLimit overallCallLimit dailyPhraseLimit overallPhraseLimit contributorAgreement.signedAt contributorAgreement.adminReviewedAt contributorAgreement.agreementVersion contributorAgreement.s3Key")
+            .select("firstname lastname email username speaker_id dailyCallLimit overallCallLimit dailyPhraseLimit overallPhraseLimit isDisabled contributorAgreement.signedAt contributorAgreement.adminReviewedAt contributorAgreement.agreementVersion contributorAgreement.s3Key")
             .sort({ "contributorAgreement.adminReviewedAt": -1 })
             .lean();
         res.json({
@@ -5363,6 +5391,7 @@ router.get("/contributor-agreements/approved-users", async (req, res) => {
                 overallCallLimit: u.overallCallLimit,
                 dailyPhraseLimit: u.dailyPhraseLimit,
                 overallPhraseLimit: u.overallPhraseLimit,
+                isDisabled: !!u.isDisabled,
                 signedAt: u.contributorAgreement?.signedAt || null,
                 approvedAt: u.contributorAgreement?.adminReviewedAt || null,
                 agreementVersion: u.contributorAgreement?.agreementVersion || null,

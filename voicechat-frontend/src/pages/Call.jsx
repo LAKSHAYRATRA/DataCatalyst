@@ -678,7 +678,7 @@ export default function Call() {
 
       const passed =
         localStorage.getItem("systemCheckPassed") === "true" || systemCheckPassed;
-      socket.emit("system_check_status", { passed });
+      socket.emit("system_check_status", { passed, language: selectedLanguage || 'english' });
 
       if (socket.recovered) {
         // Resend pending chunks

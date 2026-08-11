@@ -128,6 +128,7 @@ export default function LanguageApply() {
     const [success, setSuccess] = useState("");
     const [userInfo, setUserInfo] = useState(null);
     const [rawPcm, setRawPcm] = useState(null);
+    const [recordedLufs, setRecordedLufs] = useState(null);
 
     const [showMicSettingsModal, setShowMicSettingsModal] = useState(false);
     const [activeNoiseGateDb, setActiveNoiseGateDb] = useState(0);
@@ -415,6 +416,11 @@ export default function LanguageApply() {
             offset += arr.length;
         }
         setRawPcm(combined);
+        let lufs = null;
+        if (combined.length > 0) {
+            lufs = calculateEbuR128Lufs(combined, 48000);
+        }
+        setRecordedLufs(lufs);
         const blob = encodeWAV(combined, 48000, 1);
         setAudioBlob(blob);
         setAudioUrl(URL.createObjectURL(blob));
@@ -427,9 +433,9 @@ export default function LanguageApply() {
 
         // Strict LUFS Verification for Phrase Studio Applications (-18.0 to -24.0 LUFS)
         if (applicationType === 'phrase') {
-            let lufsScore = null;
-            if (rawPcm && rawPcm.length > 0) {
-                lufsScore = calculateEbuR128Lufs(rawPcm);
+            let lufsScore = recordedLufs;
+            if (lufsScore === null && rawPcm && rawPcm.length > 0) {
+                lufsScore = calculateEbuR128Lufs(rawPcm, 48000);
             }
 
             if (lufsScore !== null) {
@@ -615,7 +621,7 @@ export default function LanguageApply() {
                                     </div>
                                 </div>
                                 <p className="text-xs text-neutral-500 dark:text-neutral-400 leading-relaxed">
-                                    Apply for single phrase recording projects, script reading, and individual TTS datasets.
+                                    Apply for single phrase recording projects and script reading.
                                 </p>
                             </button>
                         </div>
@@ -991,9 +997,32 @@ export default function LanguageApply() {
                             {audioBlob && (
                                 <>
                                     <audio src={audioUrl} controls className="w-full rounded-lg" controlsList="nodownload noplaybackrate" onContextMenu={(e) => e.preventDefault()} />
+                                    
+                                    {applicationType === 'phrase' && recordedLufs !== null && (
+                                        <div className={`w-full p-3.5 rounded-xl border flex items-center justify-between text-xs font-bold shadow-sm ${
+                                            recordedLufs >= -24.0 && recordedLufs <= -18.0
+                                                ? "bg-emerald-500/15 border-emerald-500/40 text-emerald-700 dark:text-emerald-300"
+                                                : recordedLufs > -18.0
+                                                ? "bg-rose-500/15 border-rose-500/40 text-rose-700 dark:text-rose-300"
+                                                : "bg-amber-500/15 border-amber-500/40 text-amber-700 dark:text-amber-300"
+                                        }`}>
+                                            <span className="flex items-center gap-1.5 font-semibold">
+                                                {recordedLufs >= -24.0 && recordedLufs <= -18.0
+                                                    ? "✓ Loudness Calibration Passed (-18 to -24 LUFS)"
+                                                    : recordedLufs > -18.0
+                                                    ? "⚠️ Loudness Too High (Reduce Mic Gain & Re-record)"
+                                                    : "⚠️ Loudness Too Low (Increase Mic Gain & Re-record)"
+                                                }
+                                            </span>
+                                            <span className="font-mono text-sm font-black px-2.5 py-0.5 rounded bg-neutral-900 text-white">
+                                                {recordedLufs} LUFS
+                                            </span>
+                                        </div>
+                                    )}
+
                                     <div className="flex gap-3 w-full">
                                         <button
-                                            onClick={() => { setAudioBlob(null); setAudioUrl(null); }}
+                                            onClick={() => { setAudioBlob(null); setAudioUrl(null); setRecordedLufs(null); setRawPcm(null); }}
                                             className="flex-1 py-2.5 border border-neutral-300 dark:border-neutral-700 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-800 rounded-xl text-sm font-semibold transition-colors"
                                         >
                                             Re-record

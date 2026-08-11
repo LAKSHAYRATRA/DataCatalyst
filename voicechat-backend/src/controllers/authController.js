@@ -36,8 +36,15 @@ function formatUserResponse(user) {
     hourlyPhrasePayrate: user.hourlyPhrasePayrate !== undefined ? user.hourlyPhrasePayrate : 0,
     dailyCallLimit: user.dailyCallLimit,
     accountStatus: user.accountStatus || "pending_intro",
+    isDisabled: !!user.isDisabled,
     accent: user.accent || null,
     dialect: user.dialect || null,
+    languageApplications: (user.languageApplications || []).map(a => ({
+      companyId: a.companyId,
+      languageCode: a.languageCode,
+      applicationType: a.applicationType || "call",
+      status: a.status
+    })),
     contributorAgreement: {
       signed: !!ca.signed,
       agreementVersion: ca.agreementVersion || null,

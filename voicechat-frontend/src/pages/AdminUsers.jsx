@@ -203,6 +203,69 @@ export default function AdminUsers() {
         }
     }
 
+    async function toggleDisableUser(userId, username, currentIsDisabled) {
+        const actionLabel = currentIsDisabled ? "Enable" : "Disable";
+        const confirmResult = await Swal.fire({
+            title: `${actionLabel} User?`,
+            text: currentIsDisabled
+                ? `Enable user @${username}? This will make the website accessible for them again.`
+                : `Disable user @${username}? They will see "No projects available as of now" on their screen.`,
+            icon: "warning",
+            showCancelButton: true,
+            confirmButtonColor: currentIsDisabled ? "#10b981" : "#f59e0b",
+            confirmButtonText: `Yes, ${actionLabel} User`
+        });
+
+        if (!confirmResult.isConfirmed) return;
+
+        try {
+            const res = await apiPatchJson(`/api/admin/users/${userId}/toggle-disable`);
+            Swal.fire({
+                title: res.isDisabled ? "User Disabled" : "User Enabled",
+                text: res.message || `User @${username} status updated.`,
+                icon: "success",
+                timer: 2000,
+                showConfirmButton: false
+            });
+            if (tab === "all") await loadUsers();
+            if (tab === "approved") await loadApprovedUsers();
+            if (tab === "pending") await loadPending();
+        } catch (err) {
+            Swal.fire("Error", err.message || "Failed to update user status", "error");
+        }
+    }
+
+    async function deleteUserDirectly(userId, username) {
+        const confirmResult = await Swal.fire({
+            title: "Delete User Account?",
+            text: `Are you sure you want to permanently delete account @${username}? They will be able to create a new account.`,
+            icon: "warning",
+            showCancelButton: true,
+            confirmButtonColor: "#ef4444",
+            cancelButtonColor: "#6b7280",
+            confirmButtonText: "Yes, Delete Account"
+        });
+
+        if (!confirmResult.isConfirmed) return;
+
+        try {
+            await apiDeleteJson(`/api/admin/users/${userId}`);
+            Swal.fire({
+                title: "User Deleted",
+                text: `User account @${username} deleted permanently. They can now create a new account.`,
+                icon: "success",
+                timer: 2000,
+                showConfirmButton: false
+            });
+
+            if (tab === "pending") await loadPending();
+            if (tab === "all") await loadUsers();
+            if (tab === "approved") await loadApprovedUsers();
+        } catch (err) {
+            Swal.fire("Error", err.message || "Failed to delete user", "error");
+        }
+    }
+
     useEffect(() => {
         if (tab === "pending") loadPending(pendingSearch);
         if (tab === "all") loadUsers(searchQuery);
@@ -606,10 +669,17 @@ export default function AdminUsers() {
                                                 </td>
                                                 <td className="hidden md:table-cell px-4 py-4 text-sm text-neutral-300">{user.email}</td>
                                                 <td className="px-4 py-4">
-                                                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${STATUS_BADGE[user.accountStatus] || STATUS_BADGE.pending_intro}`}>
-                                                        {STATUS_LABEL[user.accountStatus] || "-"}
-                                                    </span>
-                                                </td>
+                                                     <div className="flex flex-col gap-1 items-start">
+                                                         <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${STATUS_BADGE[user.accountStatus] || STATUS_BADGE.pending_intro}`}>
+                                                             {STATUS_LABEL[user.accountStatus] || "-"}
+                                                         </span>
+                                                         {user.isDisabled && (
+                                                             <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-950 text-red-300 border border-red-800">
+                                                                 🚫 Disabled
+                                                             </span>
+                                                         )}
+                                                     </div>
+                                                 </td>
                                                 <td className="px-4 py-4">
                                                     <div className="flex flex-col gap-1 text-sm text-neutral-300">
                                                         <div><span className="text-neutral-500 w-16 inline-block">Phrases:</span> 
@@ -623,7 +693,24 @@ export default function AdminUsers() {
                                                     </div>
                                                 </td>
                                                 <td className="px-4 py-4 text-xs">
-                                                    <div className="flex flex-wrap gap-2">
+                                                     <div className="flex flex-wrap gap-2">
+                                                         <button
+                                                             onClick={() => toggleDisableUser(user._id, user.username, user.isDisabled)}
+                                                             className={`font-medium px-3 py-1.5 rounded transition-colors flex items-center gap-1 ${user.isDisabled
+                                                                 ? "bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 border border-emerald-500/30"
+                                                                 : "bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 border border-amber-500/30"
+                                                             }`}
+                                                             title={user.isDisabled ? "Enable user to access website" : "Disable user (shows No projects available as of now screen)"}
+                                                         >
+                                                             {user.isDisabled ? "✓ Enable User" : "🚫 Disable User"}
+                                                         </button>
+                                                         <button
+                                                             onClick={() => deleteUserDirectly(user._id, user.username)}
+                                                             className="text-red-400 hover:text-red-300 font-medium bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 px-3 py-1.5 rounded transition-colors flex items-center gap-1"
+                                                             title="Permanently delete user account so they can create a new account"
+                                                         >
+                                                             🗑 Delete User
+                                                         </button>
                                                         <button
                                                             onClick={() => { 
                                                                 setLimitModalUser(user); 
@@ -739,6 +826,23 @@ export default function AdminUsers() {
                                                     <td className="px-4 py-3 text-neutral-400 text-xs">{u.agreementVersion || "—"}</td>
                                                     <td className="px-4 py-3">
                                                         <div className="flex flex-wrap gap-2">
+                                                            <button
+                                                                onClick={() => toggleDisableUser(u.userId, u.username, u.isDisabled)}
+                                                                className={`px-3 py-1.5 rounded-md font-medium text-xs border transition-colors flex items-center gap-1 ${u.isDisabled
+                                                                    ? "bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 border-emerald-500/30"
+                                                                    : "bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 border-amber-500/30"
+                                                                }`}
+                                                                title={u.isDisabled ? "Enable user to access website" : "Disable user (shows No projects available as of now screen)"}
+                                                            >
+                                                                {u.isDisabled ? "✓ Enable User" : "🚫 Disable User"}
+                                                            </button>
+                                                            <button
+                                                                onClick={() => deleteUserDirectly(u.userId, u.username)}
+                                                                className="px-3 py-1.5 rounded-md bg-red-500/10 text-red-400 hover:bg-red-500/20 border border-red-500/30 text-xs font-medium flex items-center gap-1"
+                                                                title="Permanently delete user account so they can create a new account"
+                                                            >
+                                                                🗑 Delete User
+                                                            </button>
                                                             <button
                                                                 onClick={() => {
                                                                     setLimitModalUser({ _id: u.userId, username: u.username });
