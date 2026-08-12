@@ -75,6 +75,7 @@ const callSessionSchema = new mongoose.Schema(
     reviewedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
     reviewedAt: { type: Date, default: null },
     reviewNotes: { type: String, default: null },
+    qaCallPayoutUsd: { type: Number, default: null },
     qaLockedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
     qaLockedAt: { type: Date, default: null },
     downloadLogs: [
@@ -100,6 +101,7 @@ const callSessionSchema = new mongoose.Schema(
       recordingBRejectionReason: { type: String },
       recordingAReviewNote: { type: String },
       recordingBReviewNote: { type: String },
+      qaCallPayoutUsd: { type: Number, default: null },
       reviewedAt: { type: Date }
     },
 

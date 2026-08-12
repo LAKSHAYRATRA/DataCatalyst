@@ -231,28 +231,86 @@ async function loadQaEarningsForUsers(userIds, userMap) {
       if (!user) return;
 
       const userIdObj = new mongoose.Types.ObjectId(uIdStr);
-
-      const [callsReviewed, approvedAgg, rejectedAgg] = await Promise.all([
-        CallSession.countDocuments({ reviewedBy: userIdObj, callStatus: { $in: ["approved", "rejected"] } }),
-        Phrase.aggregate([
-          { $match: { qaId: userIdObj, status: "approved" } },
-          { $group: { _id: null, totalSecs: { $sum: "$duration" } } }
-        ]),
-        PhraseRejection.aggregate([
-          { $match: { qaId: userIdObj } },
-          { $group: { _id: null, totalSecs: { $sum: "$duration" } } }
-        ])
-      ]);
-
       const perCallRate = Number((user.qaPerCallPayrateUsd !== undefined && user.qaPerCallPayrateUsd !== null && user.qaPerCallPayrateUsd > 0) ? user.qaPerCallPayrateUsd : user.perCallPayrate) || 0;
       const hourlyPhraseRate = Number((user.qaHourlyPhrasePayrateUsd !== undefined && user.qaHourlyPhrasePayrateUsd !== null && user.qaHourlyPhrasePayrateUsd > 0) ? user.qaHourlyPhrasePayrateUsd : user.hourlyPhraseRate) || 0;
 
-      const callEarnings = callsReviewed * perCallRate;
-      const totalPhraseSecs = (approvedAgg[0]?.totalSecs || 0) + (rejectedAgg[0]?.totalSecs || 0);
-      const phraseHours = totalPhraseSecs / 3600;
-      const phraseEarnings = phraseHours * hourlyPhraseRate;
+      const [callsAgg, approvedAgg, rejectedAgg] = await Promise.all([
+        CallSession.aggregate([
+          {
+            $match: {
+              $or: [
+                { reviewedBy: { $in: [userIdObj, uIdStr] } },
+                { "firstQaReview.qaId": { $in: [userIdObj, uIdStr] } }
+              ],
+              callStatus: { $in: ["approved", "rejected"] }
+            }
+          },
+          {
+            $project: {
+              payout: {
+                $cond: [
+                  { $and: [{ $ne: ["$qaCallPayoutUsd", null] }, { $gt: ["$qaCallPayoutUsd", 0] }] },
+                  "$qaCallPayoutUsd",
+                  perCallRate
+                ]
+              }
+            }
+          },
+          { $group: { _id: null, total: { $sum: "$payout" } } }
+        ]),
+        Phrase.aggregate([
+          {
+            $match: {
+              status: "approved",
+              $or: [
+                { qaId: { $in: [userIdObj, uIdStr] } },
+                { "firstQaReview.qaId": { $in: [userIdObj, uIdStr] } },
+                { editedBy: { $in: [userIdObj, uIdStr] } }
+              ]
+            }
+          },
+          {
+            $project: {
+              payout: {
+                $cond: [
+                  { $and: [{ $ne: ["$qaPhrasePayoutUsd", null] }, { $gt: ["$qaPhrasePayoutUsd", 0] }] },
+                  "$qaPhrasePayoutUsd",
+                  { $multiply: [{ $divide: [{ $ifNull: ["$duration", 0] }, 3600] }, hourlyPhraseRate] }
+                ]
+              }
+            }
+          },
+          { $group: { _id: null, total: { $sum: "$payout" } } }
+        ]),
+        PhraseRejection.aggregate([
+          {
+            $match: {
+              $or: [
+                { qaId: { $in: [userIdObj, uIdStr] } },
+                { "firstQaReview.qaId": { $in: [userIdObj, uIdStr] } }
+              ]
+            }
+          },
+          {
+            $project: {
+              payout: {
+                $cond: [
+                  { $and: [{ $ne: ["$qaPhrasePayoutUsd", null] }, { $gt: ["$qaPhrasePayoutUsd", 0] }] },
+                  "$qaPhrasePayoutUsd",
+                  { $multiply: [{ $divide: [{ $ifNull: ["$duration", 0] }, 3600] }, hourlyPhraseRate] }
+                ]
+              }
+            }
+          },
+          { $group: { _id: null, total: { $sum: "$payout" } } }
+        ])
+      ]);
 
-      qaEarningsByUserId[uIdStr] = roundCurrency(callEarnings + phraseEarnings);
+      const callEarnings = callsAgg[0]?.total || 0;
+      const approvedEarnings = approvedAgg[0]?.total || 0;
+      const rejectedEarnings = rejectedAgg[0]?.total || 0;
+
+      qaEarningsByUserId[uIdStr] = roundCurrency(callEarnings + approvedEarnings + rejectedEarnings);
     })
   );
 

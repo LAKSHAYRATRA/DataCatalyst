@@ -1291,10 +1291,15 @@ export async function reviewPhrase(req, res) {
       }
     }
 
+    const qaUser = req.user ? await User.findById(req.user._id).select("qaHourlyPhrasePayrateUsd hourlyPhrasePayrate").lean() : null;
+    const hourlyPhraseRate = Number((qaUser?.qaHourlyPhrasePayrateUsd !== undefined && qaUser?.qaHourlyPhrasePayrateUsd !== null && qaUser?.qaHourlyPhrasePayrateUsd > 0) ? qaUser.qaHourlyPhrasePayrateUsd : qaUser?.hourlyPhrasePayrate) || 0;
+    const calcPhrasePayout = Math.round(((phrase.duration || 0) / 3600) * hourlyPhraseRate * 100) / 100;
+
     if (action === "approve") {
       phrase.status = "approved";
       phrase.qaId = req.user._id;
       phrase.qaComment = comment || null;
+      phrase.qaPhrasePayoutUsd = calcPhrasePayout;
       phrase.reviewedAt = new Date();
       phrase.qaLockedBy = null;
       phrase.qaLockedAt = null;
@@ -1324,6 +1329,7 @@ export async function reviewPhrase(req, res) {
             language: phrase.language,
             contributorId: phrase.contributorId,
             qaId: req.user ? req.user._id : null,
+            qaPhrasePayoutUsd: calcPhrasePayout,
             duration: phrase.duration || 0,
             comment: comment || null,
             text: phrase.text,

@@ -773,6 +773,12 @@ async function applyRecordingDecision(call, userId, action, reviewerId, note, is
     call.callStatus = computeCallStatus(call.recordingAStatus, call.recordingBStatus);
     call.reviewedBy = reviewerId;
     call.reviewedAt = new Date();
+
+    if (reviewerId) {
+        const qaUser = await User.findById(reviewerId).select("qaPerCallPayrateUsd perCallPayrate").lean();
+        const perCallRate = Number((qaUser?.qaPerCallPayrateUsd !== undefined && qaUser?.qaPerCallPayrateUsd !== null && qaUser?.qaPerCallPayrateUsd > 0) ? qaUser.qaPerCallPayrateUsd : qaUser?.perCallPayrate) || 0;
+        call.qaCallPayoutUsd = perCallRate;
+    }
     
     // Clear lock only when call is completely reviewed (both users decided)
     if (call.callStatus !== "pending") {
@@ -840,6 +846,8 @@ async function applyRecordingDecision(call, userId, action, reviewerId, note, is
         } else if (!call.needsSecondQaReview && Math.random() < 0.02) {
             // 2% chance to flag for Dual-QA Cross Audit
             call.needsSecondQaReview = true;
+            const qaUser = reviewerId ? await User.findById(reviewerId).select("qaPerCallPayrateUsd perCallPayrate").lean() : null;
+            const perCallRate = Number((qaUser?.qaPerCallPayrateUsd !== undefined && qaUser?.qaPerCallPayrateUsd !== null && qaUser?.qaPerCallPayrateUsd > 0) ? qaUser.qaPerCallPayrateUsd : qaUser?.perCallPayrate) || 0;
             call.firstQaReview = {
                 qaId: reviewerId,
                 action: call.callStatus,
@@ -849,6 +857,7 @@ async function applyRecordingDecision(call, userId, action, reviewerId, note, is
                 recordingBRejectionReason: call.recordingBRejectionReason,
                 recordingAReviewNote: call.recordingAReviewNote,
                 recordingBReviewNote: call.recordingBReviewNote,
+                qaCallPayoutUsd: perCallRate,
                 reviewedAt: new Date()
             };
         }
@@ -1290,28 +1299,72 @@ qaCallRouter.get("/payments-stats", async (req, res) => {
         const isUserAdmin = Boolean(req.user.isAdmin);
         const targetUserId = req.query.qaUserId || (isUserAdmin ? null : req.user._id);
 
-        const getQaPhraseStats = async (qaUserId) => {
-            const userIdObj = new mongoose.Types.ObjectId(qaUserId);
+        const getQaPhraseStats = async (qaUserId, hourlyPhraseRate = 0) => {
+            const uIdStr = String(qaUserId);
+            const userIdObj = new mongoose.Types.ObjectId(uIdStr);
 
             const [approvedAgg, rejectedAgg] = await Promise.all([
                 Phrase.aggregate([
-                    { $match: { qaId: userIdObj, status: "approved" } },
-                    { $group: { _id: null, count: { $sum: 1 }, totalSecs: { $sum: "$duration" } } }
+                    {
+                        $match: {
+                            status: "approved",
+                            $or: [
+                                { qaId: { $in: [userIdObj, uIdStr] } },
+                                { "firstQaReview.qaId": { $in: [userIdObj, uIdStr] } },
+                                { editedBy: { $in: [userIdObj, uIdStr] } }
+                            ]
+                        }
+                    },
+                    {
+                        $project: {
+                            duration: 1,
+                            payout: {
+                                $cond: [
+                                    { $and: [{ $ne: ["$qaPhrasePayoutUsd", null] }, { $gt: ["$qaPhrasePayoutUsd", 0] }] },
+                                    "$qaPhrasePayoutUsd",
+                                    { $multiply: [{ $divide: [{ $ifNull: ["$duration", 0] }, 3600] }, hourlyPhraseRate] }
+                                ]
+                            }
+                        }
+                    },
+                    { $group: { _id: null, count: { $sum: 1 }, totalSecs: { $sum: "$duration" }, totalPayout: { $sum: "$payout" } } }
                 ]),
                 PhraseRejection.aggregate([
-                    { $match: { qaId: userIdObj } },
-                    { $group: { _id: null, count: { $sum: 1 }, totalSecs: { $sum: "$duration" } } }
+                    {
+                        $match: {
+                            $or: [
+                                { qaId: { $in: [userIdObj, uIdStr] } },
+                                { "firstQaReview.qaId": { $in: [userIdObj, uIdStr] } }
+                            ]
+                        }
+                    },
+                    {
+                        $project: {
+                            duration: 1,
+                            payout: {
+                                $cond: [
+                                    { $and: [{ $ne: ["$qaPhrasePayoutUsd", null] }, { $gt: ["$qaPhrasePayoutUsd", 0] }] },
+                                    "$qaPhrasePayoutUsd",
+                                    { $multiply: [{ $divide: [{ $ifNull: ["$duration", 0] }, 3600] }, hourlyPhraseRate] }
+                                ]
+                            }
+                        }
+                    },
+                    { $group: { _id: null, count: { $sum: 1 }, totalSecs: { $sum: "$duration" }, totalPayout: { $sum: "$payout" } } }
                 ])
             ]);
 
             const approvedPhrasesCount = approvedAgg[0]?.count || 0;
             const approvedSecs = approvedAgg[0]?.totalSecs || 0;
+            const approvedPayout = approvedAgg[0]?.totalPayout || 0;
             const rejectedPhrasesCount = rejectedAgg[0]?.count || 0;
             const rejectedSecs = rejectedAgg[0]?.totalSecs || 0;
+            const rejectedPayout = rejectedAgg[0]?.totalPayout || 0;
 
             const phrasesReviewedCount = approvedPhrasesCount + rejectedPhrasesCount;
             const totalPhraseSecs = Math.round((approvedSecs + rejectedSecs) * 100) / 100;
             const phraseHours = totalPhraseSecs / 3600;
+            const phraseEarningsUsd = Math.round((approvedPayout + rejectedPayout) * 100) / 100;
 
             return {
                 phrasesReviewedCount,
@@ -1320,7 +1373,8 @@ qaCallRouter.get("/payments-stats", async (req, res) => {
                 approvedSecs,
                 rejectedSecs,
                 totalPhraseSecs,
-                phraseHours
+                phraseHours,
+                phraseEarningsUsd
             };
         };
 
@@ -1333,18 +1387,41 @@ qaCallRouter.get("/payments-stats", async (req, res) => {
 
             const stats = await Promise.all(
                 qaUsers.map(async (qa) => {
-                    const [callsReviewed, phraseStats, payments] = await Promise.all([
-                        CallSession.countDocuments({ reviewedBy: qa._id, callStatus: { $in: ["approved", "rejected"] } }),
-                        getQaPhraseStats(qa._id),
-                        PayoutPayment.find({ userId: qa._id }).sort({ paidAt: -1, createdAt: -1 }).lean()
-                    ]);
-
                     const perCallRate = Number((qa.qaPerCallPayrateUsd !== undefined && qa.qaPerCallPayrateUsd !== null && qa.qaPerCallPayrateUsd > 0) ? qa.qaPerCallPayrateUsd : qa.perCallPayrate) || 0;
                     const hourlyPhraseRate = Number((qa.qaHourlyPhrasePayrateUsd !== undefined && qa.qaHourlyPhrasePayrateUsd !== null && qa.qaHourlyPhrasePayrateUsd > 0) ? qa.qaHourlyPhrasePayrateUsd : qa.hourlyPhrasePayrate) || 0;
 
-                    const callEarningsUsd = Math.round(callsReviewed * perCallRate * 100) / 100;
+                    const [callsAgg, phraseStats, payments] = await Promise.all([
+                        CallSession.aggregate([
+                            {
+                                $match: {
+                                    $or: [
+                                        { reviewedBy: { $in: [qa._id, String(qa._id)] } },
+                                        { "firstQaReview.qaId": { $in: [qa._id, String(qa._id)] } }
+                                    ],
+                                    callStatus: { $in: ["approved", "rejected"] }
+                                }
+                            },
+                            {
+                                $project: {
+                                    payout: {
+                                        $cond: [
+                                            { $and: [{ $ne: ["$qaCallPayoutUsd", null] }, { $gt: ["$qaCallPayoutUsd", 0] }] },
+                                            "$qaCallPayoutUsd",
+                                            perCallRate
+                                        ]
+                                    }
+                                }
+                            },
+                            { $group: { _id: null, count: { $sum: 1 }, totalPayout: { $sum: "$payout" } } }
+                        ]),
+                        getQaPhraseStats(qa._id, hourlyPhraseRate),
+                        PayoutPayment.find({ userId: qa._id }).sort({ paidAt: -1, createdAt: -1 }).lean()
+                    ]);
+
+                    const callsReviewed = callsAgg[0]?.count || 0;
+                    const callEarningsUsd = Math.round((callsAgg[0]?.totalPayout || 0) * 100) / 100;
                     const phraseHoursFormatted = Math.round(phraseStats.phraseHours * 10000) / 10000;
-                    const phraseEarningsUsd = Math.round(phraseStats.phraseHours * hourlyPhraseRate * 100) / 100;
+                    const phraseEarningsUsd = phraseStats.phraseEarningsUsd;
                     const totalEarningsUsd = Math.round((callEarningsUsd + phraseEarningsUsd) * 100) / 100;
 
                     const totalPaidOutUsd = Math.round(payments.reduce((sum, p) => sum + (Number(p.amountUsd) || 0), 0) * 100) / 100;
@@ -1395,11 +1472,36 @@ qaCallRouter.get("/payments-stats", async (req, res) => {
         const qaUser = targetUserId ? await User.findById(targetUserId).lean() : req.user;
         if (!qaUser) return res.status(404).json({ error: "QA user not found" });
 
-        const [callsReviewedCount, approvedCallsCount, rejectedCallsCount, phraseStats, payments, recentCalls, recentApprovedPhrases, recentRejectedPhrases] = await Promise.all([
-            CallSession.countDocuments({ reviewedBy: qaUser._id, callStatus: { $in: ["approved", "rejected"] } }),
+        const perCallRate = Number((qaUser.qaPerCallPayrateUsd !== undefined && qaUser.qaPerCallPayrateUsd !== null && qaUser.qaPerCallPayrateUsd > 0) ? qaUser.qaPerCallPayrateUsd : qaUser.perCallPayrate) || 0;
+        const hourlyPhraseRate = Number((qaUser.qaHourlyPhrasePayrateUsd !== undefined && qaUser.qaHourlyPhrasePayrateUsd !== null && qaUser.qaHourlyPhrasePayrateUsd > 0) ? qaUser.qaHourlyPhrasePayrateUsd : qaUser.hourlyPhrasePayrate) || 0;
+
+        const [callsAgg, approvedCallsCount, rejectedCallsCount, phraseStats, payments, recentCalls, recentApprovedPhrases, recentRejectedPhrases] = await Promise.all([
+            CallSession.aggregate([
+                {
+                    $match: {
+                        $or: [
+                            { reviewedBy: { $in: [qaUser._id, String(qaUser._id)] } },
+                            { "firstQaReview.qaId": { $in: [qaUser._id, String(qaUser._id)] } }
+                        ],
+                        callStatus: { $in: ["approved", "rejected"] }
+                    }
+                },
+                {
+                    $project: {
+                        payout: {
+                            $cond: [
+                                { $and: [{ $ne: ["$qaCallPayoutUsd", null] }, { $gt: ["$qaCallPayoutUsd", 0] }] },
+                                "$qaCallPayoutUsd",
+                                perCallRate
+                            ]
+                        }
+                    }
+                },
+                { $group: { _id: null, count: { $sum: 1 }, totalPayout: { $sum: "$payout" } } }
+            ]),
             CallSession.countDocuments({ reviewedBy: qaUser._id, callStatus: "approved" }),
             CallSession.countDocuments({ reviewedBy: qaUser._id, callStatus: "rejected" }),
-            getQaPhraseStats(qaUser._id),
+            getQaPhraseStats(qaUser._id, hourlyPhraseRate),
             PayoutPayment.find({ userId: qaUser._id }).sort({ paidAt: -1, createdAt: -1 }).lean(),
             CallSession.find({ reviewedBy: qaUser._id, callStatus: { $in: ["approved", "rejected"] } })
                 .select("callId callStatus reviewedAt language topicId subtopicId")
@@ -1418,12 +1520,10 @@ qaCallRouter.get("/payments-stats", async (req, res) => {
                 .lean()
         ]);
 
-        const perCallRate = Number((qaUser.qaPerCallPayrateUsd !== undefined && qaUser.qaPerCallPayrateUsd !== null && qaUser.qaPerCallPayrateUsd > 0) ? qaUser.qaPerCallPayrateUsd : qaUser.perCallPayrate) || 0;
-        const hourlyPhraseRate = Number((qaUser.qaHourlyPhrasePayrateUsd !== undefined && qaUser.qaHourlyPhrasePayrateUsd !== null && qaUser.qaHourlyPhrasePayrateUsd > 0) ? qaUser.qaHourlyPhrasePayrateUsd : qaUser.hourlyPhrasePayrate) || 0;
-
-        const callEarningsUsd = Math.round(callsReviewedCount * perCallRate * 100) / 100;
+        const callsReviewedCount = callsAgg[0]?.count || 0;
+        const callEarningsUsd = Math.round((callsAgg[0]?.totalPayout || 0) * 100) / 100;
         const phraseHoursFormatted = Math.round(phraseStats.phraseHours * 10000) / 10000;
-        const phraseEarningsUsd = Math.round(phraseStats.phraseHours * hourlyPhraseRate * 100) / 100;
+        const phraseEarningsUsd = phraseStats.phraseEarningsUsd;
         const totalEarningsUsd = Math.round((callEarningsUsd + phraseEarningsUsd) * 100) / 100;
 
         const totalPaidOutUsd = Math.round(payments.reduce((sum, p) => sum + (Number(p.amountUsd) || 0), 0) * 100) / 100;
@@ -1852,9 +1952,11 @@ router.post("/payouts/users/:userId/payments", async (req, res) => {
             return res.status(400).json({ error: "A valid payout amount is required" });
         }
 
+        const targetUser = await User.findById(req.params.userId).select("isAdmin isQA").lean();
+        if (!targetUser) return res.status(404).json({ error: "User not found" });
+
         const payout = await getSingleUserPayout(req.params.userId);
-        if (!payout) return res.status(404).json({ error: "User not found" });
-        if (amountUsd > payout.summary.totalRemainingPayoutUsd + 0.01) {
+        if (!targetUser.isQA && (!payout || amountUsd > payout.summary.totalRemainingPayoutUsd + 0.01)) {
             return res.status(400).json({ error: "Amount exceeds remaining payout" });
         }
 

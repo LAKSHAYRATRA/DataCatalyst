@@ -7,6 +7,7 @@ const phraseRejectionSchema = new mongoose.Schema(
     language: { type: String, required: true },
     contributorId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
     qaId: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+    qaPhrasePayoutUsd: { type: Number, default: null },
     duration: { type: Number, default: 0 },
     comment: { type: String, default: null },
     rejectedAt: { type: Date, default: Date.now },

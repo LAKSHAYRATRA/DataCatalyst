@@ -45,6 +45,7 @@ const phraseSchema = new mongoose.Schema(
     // QA Info & 15-min review lock
     qaId: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
     qaComment: { type: String, default: null },
+    qaPhrasePayoutUsd: { type: Number, default: null },
     reviewedAt: { type: Date, default: null },
     qaLockedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
     qaLockedAt: { type: Date, default: null },
@@ -58,6 +59,7 @@ const phraseSchema = new mongoose.Schema(
       qaId: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
       action: { type: String },
       comment: { type: String },
+      qaPhrasePayoutUsd: { type: Number, default: null },
       reviewedAt: { type: Date }
     },
 

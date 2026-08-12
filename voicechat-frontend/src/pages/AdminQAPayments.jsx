@@ -150,42 +150,46 @@ export default function AdminQAPayments() {
                                             <th className="px-4 py-3 text-left">Hourly Phrase Rate</th>
                                             <th className="px-4 py-3 text-center">Calls Reviewed</th>
                                             <th className="px-4 py-3 text-center">Phrases Reviewed (Est. Hrs)</th>
-                                            <th className="px-4 py-3 text-right">Call Payout</th>
-                                            <th className="px-4 py-3 text-right">Phrase Payout</th>
-                                            <th className="px-4 py-3 text-right font-bold text-warning-400">Total Payout</th>
+                                            <th className="px-4 py-3 text-right">Total Earned</th>
+                                            <th className="px-4 py-3 text-right">Paid Out</th>
+                                            <th className="px-4 py-3 text-right font-bold text-warning-400">Remaining Owed</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-neutral-700/60">
-                                        {data.stats.map((item) => (
-                                            <tr key={item.qaUser._id} className="hover:bg-neutral-700/40 transition-colors">
-                                                <td className="px-4 py-3.5 whitespace-nowrap">
-                                                    <div className="font-semibold text-white">{item.qaUser.name}</div>
-                                                    <div className="text-xs text-neutral-400">{item.qaUser.email}</div>
-                                                </td>
-                                                <td className="px-4 py-3.5 whitespace-nowrap font-mono text-neutral-200">
-                                                    ${item.qaUser.qaPerCallPayrateUsd?.toFixed(2) || "0.00"}
-                                                </td>
-                                                <td className="px-4 py-3.5 whitespace-nowrap font-mono text-neutral-200">
-                                                    ${item.qaUser.qaHourlyPhrasePayrateUsd?.toFixed(2) || "0.00"}
-                                                </td>
-                                                <td className="px-4 py-3.5 text-center font-bold text-white">
-                                                    {item.callsReviewed}
-                                                </td>
-                                                <td className="px-4 py-3.5 text-center">
-                                                     <span className="font-bold text-white">{item.phrasesReviewed} phrases</span>
-                                                     <span className="text-xs text-neutral-400 block">({item.totalPhraseSecs || 0}s / {item.phraseHours}h)</span>
-                                                 </td>
-                                                <td className="px-4 py-3.5 text-right font-mono text-neutral-300">
-                                                    ${item.callEarningsUsd?.toFixed(2) || "0.00"}
-                                                </td>
-                                                <td className="px-4 py-3.5 text-right font-mono text-neutral-300">
-                                                    ${item.phraseEarningsUsd?.toFixed(2) || "0.00"}
-                                                </td>
-                                                <td className="px-4 py-3.5 text-right font-mono font-bold text-warning-400 text-base">
-                                                    ${item.totalEarningsUsd?.toFixed(2) || "0.00"}
-                                                </td>
-                                            </tr>
-                                        ))}
+                                        {data.stats.map((item) => {
+                                            const remainingUsd = item.totalRemainingUsd !== undefined ? item.totalRemainingUsd : item.totalEarningsUsd;
+                                            const paidOutUsd = item.totalPaidOutUsd !== undefined ? item.totalPaidOutUsd : 0;
+                                            return (
+                                                <tr key={item.qaUser._id} className="hover:bg-neutral-700/40 transition-colors">
+                                                    <td className="px-4 py-3.5 whitespace-nowrap">
+                                                        <div className="font-semibold text-white">{item.qaUser.name}</div>
+                                                        <div className="text-xs text-neutral-400">{item.qaUser.email}</div>
+                                                    </td>
+                                                    <td className="px-4 py-3.5 whitespace-nowrap font-mono text-neutral-200">
+                                                        ${item.qaUser.qaPerCallPayrateUsd?.toFixed(2) || "0.00"}
+                                                    </td>
+                                                    <td className="px-4 py-3.5 whitespace-nowrap font-mono text-neutral-200">
+                                                        ${item.qaUser.qaHourlyPhrasePayrateUsd?.toFixed(2) || "0.00"}
+                                                    </td>
+                                                    <td className="px-4 py-3.5 text-center font-bold text-white">
+                                                        {item.callsReviewed}
+                                                    </td>
+                                                    <td className="px-4 py-3.5 text-center">
+                                                         <span className="font-bold text-white">{item.phrasesReviewed} phrases</span>
+                                                         <span className="text-xs text-neutral-400 block">({item.totalPhraseSecs || 0}s / {item.phraseHours}h)</span>
+                                                     </td>
+                                                    <td className="px-4 py-3.5 text-right font-mono text-neutral-300">
+                                                        ${item.totalEarningsUsd?.toFixed(2) || "0.00"}
+                                                    </td>
+                                                    <td className="px-4 py-3.5 text-right font-mono text-emerald-400 font-semibold">
+                                                        ${paidOutUsd.toFixed(2)}
+                                                    </td>
+                                                    <td className="px-4 py-3.5 text-right font-mono font-bold text-warning-400 text-base">
+                                                        ${remainingUsd.toFixed(2)}
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
                                     </tbody>
                                 </table>
                             </div>
