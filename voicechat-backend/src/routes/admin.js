@@ -5492,6 +5492,32 @@ router.delete("/phrases/:phraseId", async (req, res) => {
     }
 });
 
+router.post("/companies/:id/phrase-workloads/:language/delete-pending", async (req, res) => {
+    try {
+        const company = await Company.findById(req.params.id);
+        if (!company) return res.status(404).json({ error: "Company not found" });
+
+        const companyFolder = company.name.replace(/[^a-zA-Z0-9_\-\ ]/g, "").trim();
+        const companyRegex = new RegExp(`^${companyFolder}(_downloaded)?$`, "i");
+        const language = String(req.params.language).trim().toLowerCase();
+
+        const filter = {
+            companyId: { $regex: companyRegex },
+            language: { $regex: new RegExp(`^${language}$`, "i") },
+            status: "pending"
+        };
+
+        const result = await Phrase.deleteMany(filter);
+        res.json({
+            success: true,
+            deletedCount: result.deletedCount,
+            message: `Deleted ${result.deletedCount} pending phrases for ${company.name} (${language.toUpperCase()}).`
+        });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 // ===== CONTRIBUTOR AGREEMENTS =====
 
 // List agreements pending admin review

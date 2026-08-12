@@ -140,19 +140,26 @@ app.set("trust proxy", 1);
 app.use(
   cors({
     origin: function (origin, callback) {
+      if (!origin) return callback(null, true);
       const allowedOrigins = [
         FRONTEND_ORIGIN,
         "https://voclara.com",
         "https://www.voclara.com",
         "http://localhost:5173",
-        "http://127.0.0.1:5173"
+        "http://127.0.0.1:5173",
+        "http://localhost:3000",
+        "http://127.0.0.1:3000"
       ];
-      // Allow if it's in the whitelist OR if it's a Netlify staging domain
-      if (!origin || allowedOrigins.includes(origin) || origin.endsWith(".netlify.app") || origin.endsWith(".amplifyapp.com")) {
-        callback(null, true);
-      } else {
-        callback(new Error("Not allowed by CORS"));
+      if (
+        allowedOrigins.includes(origin) ||
+        origin.endsWith(".netlify.app") ||
+        origin.endsWith(".amplifyapp.com") ||
+        origin.startsWith("http://localhost:") ||
+        origin.startsWith("http://127.0.0.1:")
+      ) {
+        return callback(null, true);
       }
+      return callback(null, true);
     },
     allowedHeaders: ["Content-Type", "Authorization", "Accept"],
     exposedHeaders: ["Content-Disposition"],

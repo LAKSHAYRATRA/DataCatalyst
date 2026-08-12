@@ -301,6 +301,38 @@ export default function AdminCompanyLanguagePhrases() {
     }
   };
 
+  const handleDeletePending = async () => {
+    const confirm = await Swal.fire({
+      title: "Delete Pending Phrases?",
+      text: `Are you sure you want to delete all PENDING (unrecorded) phrases for ${company ? company.name : "this company"} (${language.toUpperCase()})? Recorded, approved, locked, and edited phrases will NOT be deleted.`,
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonText: "Yes, Delete Pending Phrases",
+      confirmButtonColor: "#dc2626",
+      cancelButtonColor: "#404040"
+    });
+
+    if (!confirm.isConfirmed) return;
+
+    try {
+      const res = await apiPostJson(`/api/admin/companies/${id}/phrase-workloads/${encodeURIComponent(language)}/delete-pending`, {});
+      Swal.fire({
+        icon: "success",
+        title: "Pending Phrases Deleted!",
+        text: res.message || `Deleted ${res.deletedCount} pending phrases.`,
+        timer: 3000
+      });
+      fetchPhrases(1, search);
+    } catch (err) {
+      Swal.fire({
+        icon: "error",
+        title: "Deletion Failed",
+        text: err.message,
+        confirmButtonColor: "#ea580c"
+      });
+    }
+  };
+
   const renderTags = (tags) => {
     if (!tags) return null;
     let tagList = [];
@@ -377,6 +409,13 @@ export default function AdminCompanyLanguagePhrases() {
               title="Remove duplicate phrases for this company"
             >
               🧹 Remove Duplicates
+            </button>
+            <button
+              onClick={handleDeletePending}
+              className="px-3.5 py-1.5 bg-red-600 hover:bg-red-700 text-white font-medium text-xs rounded-lg transition-colors flex items-center gap-1.5 shadow-md"
+              title="Delete all pending unrecorded phrases for this language"
+            >
+              <Trash2 className="w-3.5 h-3.5" /> Delete Pending Phrases
             </button>
             <div className="text-sm font-medium text-neutral-400">
               Total Phrases for <span className="font-bold text-white">{language.toUpperCase()}</span>: {totalPhrases}
