@@ -248,11 +248,7 @@ async function loadQaEarningsForUsers(userIds, userMap) {
           {
             $project: {
               payout: {
-                $cond: [
-                  { $and: [{ $ne: ["$qaCallPayoutUsd", null] }, { $gt: ["$qaCallPayoutUsd", 0] }] },
-                  "$qaCallPayoutUsd",
-                  perCallRate
-                ]
+                $ifNull: ["$qaCallPayoutUsd", perCallRate]
               }
             }
           },
@@ -272,8 +268,7 @@ async function loadQaEarningsForUsers(userIds, userMap) {
           {
             $project: {
               payout: {
-                $cond: [
-                  { $and: [{ $ne: ["$qaPhrasePayoutUsd", null] }, { $gt: ["$qaPhrasePayoutUsd", 0] }] },
+                $ifNull: [
                   "$qaPhrasePayoutUsd",
                   { $multiply: [{ $divide: [{ $ifNull: ["$duration", 0] }, 3600] }, hourlyPhraseRate] }
                 ]
@@ -294,8 +289,7 @@ async function loadQaEarningsForUsers(userIds, userMap) {
           {
             $project: {
               payout: {
-                $cond: [
-                  { $and: [{ $ne: ["$qaPhrasePayoutUsd", null] }, { $gt: ["$qaPhrasePayoutUsd", 0] }] },
+                $ifNull: [
                   "$qaPhrasePayoutUsd",
                   { $multiply: [{ $divide: [{ $ifNull: ["$duration", 0] }, 3600] }, hourlyPhraseRate] }
                 ]

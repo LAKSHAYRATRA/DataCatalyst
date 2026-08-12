@@ -95,7 +95,11 @@ export default function AdminPayouts() {
 
   async function handleQaPayNow(item) {
     const upiId = item.qaUser.upiId || "Not Provided";
-    const remaining = item.totalRemainingUsd !== undefined ? item.totalRemainingUsd : item.totalEarningsUsd;
+    const remaining = Math.max(0, Number(
+      item.totalRemainingUsd !== undefined ? item.totalRemainingUsd :
+      item.totalRemainingPayoutUsd !== undefined ? item.totalRemainingPayoutUsd :
+      (item.totalEarningsUsd || 0) - (item.totalPaidOutUsd || 0)
+    ) || 0);
     const result = await Swal.fire({
       title: "Confirm QA Payout",
       html: `
@@ -378,7 +382,11 @@ export default function AdminPayouts() {
                   </thead>
                   <tbody className="divide-y divide-neutral-700/60">
                     {(qaData?.stats || []).map((item) => {
-                      const remainingUsd = item.totalRemainingUsd !== undefined ? item.totalRemainingUsd : item.totalEarningsUsd;
+                      const remainingUsd = Math.max(0, Number(
+                        item.totalRemainingUsd !== undefined ? item.totalRemainingUsd :
+                        item.totalRemainingPayoutUsd !== undefined ? item.totalRemainingPayoutUsd :
+                        (item.totalEarningsUsd || 0) - (item.totalPaidOutUsd || 0)
+                      ) || 0);
                       const paidOutUsd = item.totalPaidOutUsd !== undefined ? item.totalPaidOutUsd : 0;
                       return (
                         <tr key={item.qaUser._id} className="hover:bg-neutral-700/40 transition-colors">

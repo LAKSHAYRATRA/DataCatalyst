@@ -1319,8 +1319,7 @@ qaCallRouter.get("/payments-stats", async (req, res) => {
                         $project: {
                             duration: 1,
                             payout: {
-                                $cond: [
-                                    { $and: [{ $ne: ["$qaPhrasePayoutUsd", null] }, { $gt: ["$qaPhrasePayoutUsd", 0] }] },
+                                $ifNull: [
                                     "$qaPhrasePayoutUsd",
                                     { $multiply: [{ $divide: [{ $ifNull: ["$duration", 0] }, 3600] }, hourlyPhraseRate] }
                                 ]
@@ -1342,8 +1341,7 @@ qaCallRouter.get("/payments-stats", async (req, res) => {
                         $project: {
                             duration: 1,
                             payout: {
-                                $cond: [
-                                    { $and: [{ $ne: ["$qaPhrasePayoutUsd", null] }, { $gt: ["$qaPhrasePayoutUsd", 0] }] },
+                                $ifNull: [
                                     "$qaPhrasePayoutUsd",
                                     { $multiply: [{ $divide: [{ $ifNull: ["$duration", 0] }, 3600] }, hourlyPhraseRate] }
                                 ]
@@ -1388,7 +1386,7 @@ qaCallRouter.get("/payments-stats", async (req, res) => {
             const stats = await Promise.all(
                 qaUsers.map(async (qa) => {
                     const perCallRate = Number((qa.qaPerCallPayrateUsd !== undefined && qa.qaPerCallPayrateUsd !== null && qa.qaPerCallPayrateUsd > 0) ? qa.qaPerCallPayrateUsd : qa.perCallPayrate) || 0;
-                    const hourlyPhraseRate = Number((qa.qaHourlyPhrasePayrateUsd !== undefined && qa.qaHourlyPhrasePayrateUsd !== null && qa.qaHourlyPhrasePayrateUsd > 0) ? qa.qaHourlyPhrasePayrateUsd : qa.hourlyPhrasePayrate) || 0;
+                    const hourlyPhraseRate = Number((qa.qaHourlyPhrasePayrateUsd !== undefined && qa.qaHourlyPhrasePayrateUsd !== null && qa.qaHourlyPhrasePayrateUsd > 0) ? qa.qaHourlyPhrasePayrateUsd : qa.hourlyPhraseRate) || 0;
 
                     const [callsAgg, phraseStats, payments] = await Promise.all([
                         CallSession.aggregate([
@@ -1404,11 +1402,7 @@ qaCallRouter.get("/payments-stats", async (req, res) => {
                             {
                                 $project: {
                                     payout: {
-                                        $cond: [
-                                            { $and: [{ $ne: ["$qaCallPayoutUsd", null] }, { $gt: ["$qaCallPayoutUsd", 0] }] },
-                                            "$qaCallPayoutUsd",
-                                            perCallRate
-                                        ]
+                                        $ifNull: ["$qaCallPayoutUsd", perCallRate]
                                     }
                                 }
                             },
@@ -1448,6 +1442,7 @@ qaCallRouter.get("/payments-stats", async (req, res) => {
                         totalEarningsUsd,
                         totalPaidOutUsd,
                         totalRemainingUsd,
+                        totalRemainingPayoutUsd: totalRemainingUsd,
                         payoutHistory: payments.map(p => ({
                             _id: p._id,
                             amountUsd: p.amountUsd,
@@ -1489,11 +1484,7 @@ qaCallRouter.get("/payments-stats", async (req, res) => {
                 {
                     $project: {
                         payout: {
-                            $cond: [
-                                { $and: [{ $ne: ["$qaCallPayoutUsd", null] }, { $gt: ["$qaCallPayoutUsd", 0] }] },
-                                "$qaCallPayoutUsd",
-                                perCallRate
-                            ]
+                            $ifNull: ["$qaCallPayoutUsd", perCallRate]
                         }
                     }
                 },
@@ -1559,6 +1550,7 @@ qaCallRouter.get("/payments-stats", async (req, res) => {
             totalEarningsUsd,
             totalPaidOutUsd,
             totalRemainingUsd,
+            totalRemainingPayoutUsd: totalRemainingUsd,
             payoutHistory: payments.map(p => ({
                 _id: p._id,
                 amountUsd: p.amountUsd,
@@ -3091,34 +3083,97 @@ qaRouter.delete("/:id", async (req, res) => {
 // Update QA User Details (Languages & Payrates)
 qaRouter.patch("/:id", async (req, res) => {
     if (!req.user.isAdmin) return res.status(403).json({ error: "Admin access required" });
-    const updates = {};
-    if (req.body.qaLanguageCodes !== undefined) {
-        let qaLanguageCodes = req.body.qaLanguageCodes;
-        if (!Array.isArray(qaLanguageCodes) || qaLanguageCodes.length === 0) {
-            return res.status(400).json({ error: "At least one language must be assigned." });
-        }
-        qaLanguageCodes = qaLanguageCodes.map(c => String(c).trim().toLowerCase());
-        updates.qaLanguageCodes = qaLanguageCodes;
-        updates.qaLanguageCode = qaLanguageCodes[0];
-    }
-    if (req.body.perCallPayrate !== undefined) {
-        const val = Math.max(0, Number(req.body.perCallPayrate) || 0);
-        updates.perCallPayrate = val;
-        updates.qaPerCallPayrateUsd = val;
-    }
-    if (req.body.hourlyPhrasePayrate !== undefined) {
-        const val = Math.max(0, Number(req.body.hourlyPhrasePayrate) || 0);
-        updates.hourlyPhrasePayrate = val;
-        updates.qaHourlyPhrasePayrateUsd = val;
-    }
 
     try {
+        const existingUser = await User.findOne({ _id: req.params.id, isQA: true }).lean();
+        if (!existingUser) return res.status(404).json({ error: "QA user not found" });
+
+        const oldPerCallRate = Number((existingUser.qaPerCallPayrateUsd !== undefined && existingUser.qaPerCallPayrateUsd !== null && existingUser.qaPerCallPayrateUsd > 0) ? existingUser.qaPerCallPayrateUsd : existingUser.perCallPayrate) || 0;
+        const oldHourlyPhraseRate = Number((existingUser.qaHourlyPhrasePayrateUsd !== undefined && existingUser.qaHourlyPhrasePayrateUsd !== null && existingUser.qaHourlyPhrasePayrateUsd > 0) ? existingUser.qaHourlyPhrasePayrateUsd : existingUser.hourlyPhraseRate) || 0;
+
+        const updates = {};
+        if (req.body.qaLanguageCodes !== undefined) {
+            let qaLanguageCodes = req.body.qaLanguageCodes;
+            if (!Array.isArray(qaLanguageCodes) || qaLanguageCodes.length === 0) {
+                return res.status(400).json({ error: "At least one language must be assigned." });
+            }
+            qaLanguageCodes = qaLanguageCodes.map(c => String(c).trim().toLowerCase());
+            updates.qaLanguageCodes = qaLanguageCodes;
+            updates.qaLanguageCode = qaLanguageCodes[0];
+        }
+
+        let isRateChanged = false;
+
+        if (req.body.perCallPayrate !== undefined) {
+            const val = Math.max(0, Number(req.body.perCallPayrate) || 0);
+            if (val !== oldPerCallRate) isRateChanged = true;
+            updates.perCallPayrate = val;
+            updates.qaPerCallPayrateUsd = val;
+        }
+        if (req.body.hourlyPhrasePayrate !== undefined) {
+            const val = Math.max(0, Number(req.body.hourlyPhrasePayrate) || 0);
+            if (val !== oldHourlyPhraseRate) isRateChanged = true;
+            updates.hourlyPhrasePayrate = val;
+            updates.qaHourlyPhrasePayrateUsd = val;
+        }
+
+        // Lock in all past work performed under the OLD rates before saving new rates!
+        if (isRateChanged) {
+            const userIdObj = new mongoose.Types.ObjectId(req.params.id);
+            const uIdStr = String(req.params.id);
+
+            // 1. Lock un-snapshotted Call Sessions
+            await CallSession.updateMany(
+                {
+                    $or: [
+                        { reviewedBy: { $in: [userIdObj, uIdStr] } },
+                        { "firstQaReview.qaId": { $in: [userIdObj, uIdStr] } }
+                    ],
+                    callStatus: { $in: ["approved", "rejected"] },
+                    $or: [{ qaCallPayoutUsd: null }, { qaCallPayoutUsd: { $exists: false } }]
+                },
+                { $set: { qaCallPayoutUsd: oldPerCallRate } }
+            );
+
+            // 2. Lock un-snapshotted Approved Phrases
+            const unSnapshottedPhrases = await Phrase.find({
+                status: "approved",
+                $or: [
+                    { qaId: { $in: [userIdObj, uIdStr] } },
+                    { "firstQaReview.qaId": { $in: [userIdObj, uIdStr] } },
+                    { editedBy: { $in: [userIdObj, uIdStr] } }
+                ],
+                $or: [{ qaPhrasePayoutUsd: null }, { qaPhrasePayoutUsd: { $exists: false } }]
+            });
+
+            for (const p of unSnapshottedPhrases) {
+                const payout = Math.round(((p.duration || 0) / 3600) * oldHourlyPhraseRate * 100) / 100;
+                p.qaPhrasePayoutUsd = payout;
+                await p.save();
+            }
+
+            // 3. Lock un-snapshotted Phrase Rejections
+            const unSnapshottedRejections = await PhraseRejection.find({
+                $or: [
+                    { qaId: { $in: [userIdObj, uIdStr] } },
+                    { "firstQaReview.qaId": { $in: [userIdObj, uIdStr] } }
+                ],
+                $or: [{ qaPhrasePayoutUsd: null }, { qaPhrasePayoutUsd: { $exists: false } }]
+            });
+
+            for (const r of unSnapshottedRejections) {
+                const payout = Math.round(((r.duration || 0) / 3600) * oldHourlyPhraseRate * 100) / 100;
+                r.qaPhrasePayoutUsd = payout;
+                await r.save();
+            }
+        }
+
         const user = await User.findOneAndUpdate(
             { _id: req.params.id, isQA: true },
             { $set: updates },
             { new: true }
         ).select("firstname lastname email username speaker_id qaLanguageCode qaLanguageCodes perCallPayrate hourlyPhrasePayrate createdAt");
-        if (!user) return res.status(404).json({ error: "QA user not found" });
+
         res.json({ message: "QA user details updated successfully", user });
     } catch (e) {
         res.status(500).json({ error: e.message });

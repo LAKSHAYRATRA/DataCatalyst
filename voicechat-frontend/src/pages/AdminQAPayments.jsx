@@ -1,16 +1,8 @@
 import React, { useEffect, useState } from "react";
 import AdminNav from "../components/AdminNav.jsx";
 import { getUserInfo } from "../lib/auth.js";
+import { apiGet, apiPostJson } from "../lib/api.js";
 import { DollarSign, Phone, FileText, CheckCircle, XCircle, Clock, Award, ShieldAlert, CreditCard, Edit3, Check } from "lucide-react";
-
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:3001";
-
-async function apiFetch(path, opts = {}) {
-    const res = await fetch(`${BACKEND_URL}${path}`, { credentials: "include", ...opts });
-    const json = await res.json().catch(() => ({ error: "Request failed" }));
-    if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
-    return json;
-}
 
 export default function AdminQAPayments() {
     const userInfo = getUserInfo();
@@ -33,7 +25,7 @@ export default function AdminQAPayments() {
         setLoading(true);
         setError("");
         try {
-            const res = await apiFetch("/api/admin/qa/payments-stats");
+            const res = await apiGet("/api/admin/qa/payments-stats");
             setData(res);
         } catch (err) {
             setError(err.message || "Failed to load payment details.");
@@ -53,11 +45,7 @@ export default function AdminQAPayments() {
         }
         try {
             setSavingUpi(true);
-            const res = await apiFetch("/api/user/upi", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ upiId: val })
-            });
+            const res = await apiPostJson("/api/user/upi", { upiId: val });
             setSavingUpi(false);
             setIsEditingUpi(false);
             setUpiSuccess("UPI ID updated successfully!");
@@ -157,7 +145,11 @@ export default function AdminQAPayments() {
                                     </thead>
                                     <tbody className="divide-y divide-neutral-700/60">
                                         {data.stats.map((item) => {
-                                            const remainingUsd = item.totalRemainingUsd !== undefined ? item.totalRemainingUsd : item.totalEarningsUsd;
+                                            const remainingUsd = Math.max(0, Number(
+                                                item.totalRemainingUsd !== undefined ? item.totalRemainingUsd :
+                                                item.totalRemainingPayoutUsd !== undefined ? item.totalRemainingPayoutUsd :
+                                                (item.totalEarningsUsd || 0) - (item.totalPaidOutUsd || 0)
+                                            ) || 0);
                                             const paidOutUsd = item.totalPaidOutUsd !== undefined ? item.totalPaidOutUsd : 0;
                                             return (
                                                 <tr key={item.qaUser._id} className="hover:bg-neutral-700/40 transition-colors">
@@ -314,8 +306,8 @@ export default function AdminQAPayments() {
                                     ${data?.totalPaidOutUsd?.toFixed(2) || "0.00"} USD
                                 </div>
                                 <div className="text-[11px] text-emerald-200 mt-1 flex items-center justify-between">
-                                    <span>Remaining: <strong>${data?.totalRemainingUsd?.toFixed(2) || "0.00"}</strong></span>
-                                    {data?.totalRemainingUsd === 0 && <span className="bg-emerald-900/80 text-emerald-300 text-[10px] font-bold px-1.5 py-0.5 rounded">✓ Paid in Full</span>}
+                                    <span>Remaining: <strong>${(data?.totalRemainingUsd !== undefined ? data.totalRemainingUsd : data?.totalRemainingPayoutUsd !== undefined ? data.totalRemainingPayoutUsd : Math.max(0, (data?.totalEarningsUsd || 0) - (data?.totalPaidOutUsd || 0)))?.toFixed(2) || "0.00"}</strong></span>
+                                    {(data?.totalRemainingUsd === 0 || data?.totalRemainingPayoutUsd === 0 || Math.max(0, (data?.totalEarningsUsd || 0) - (data?.totalPaidOutUsd || 0)) === 0) && <span className="bg-emerald-900/80 text-emerald-300 text-[10px] font-bold px-1.5 py-0.5 rounded">✓ Paid in Full</span>}
                                 </div>
                             </div>
                         </div>
