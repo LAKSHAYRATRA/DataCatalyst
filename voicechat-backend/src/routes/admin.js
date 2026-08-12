@@ -1854,7 +1854,7 @@ router.post("/payouts/users/:userId/payments", async (req, res) => {
 
         const payout = await getSingleUserPayout(req.params.userId);
         if (!payout) return res.status(404).json({ error: "User not found" });
-        if (amountUsd > payout.summary.totalRemainingPayoutUsd) {
+        if (amountUsd > payout.summary.totalRemainingPayoutUsd + 0.01) {
             return res.status(400).json({ error: "Amount exceeds remaining payout" });
         }
 

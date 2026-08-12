@@ -1,3 +1,4 @@
+import mongoose from "mongoose";
 import { CallSession } from "../models/CallSession.js";
 import { PayoutPayment } from "../models/PayoutPayment.js";
 import { User } from "../models/User.js";
@@ -75,7 +76,7 @@ function getCallEntryForUser(call, userId) {
   };
 }
 
-function createSummary(user, callEntries, phraseEntries, payments) {
+function createSummary(user, callEntries, phraseEntries, payments, qaEarningsUsd = 0) {
   const stats = {
     totalCallsMade: callEntries.length,
     totalApprovedCalls: 0,
@@ -117,6 +118,8 @@ function createSummary(user, callEntries, phraseEntries, payments) {
     }
   }
 
+  stats.totalMoneyMadeUsd += Number(qaEarningsUsd) || 0;
+
   for (const payment of payments) {
     stats.totalPaidOutUsd += Number(payment.amountUsd) || 0;
   }
@@ -148,7 +151,7 @@ async function loadUsers(userIds) {
     filter.isQA = false;
   }
   return User.find(filter)
-    .select("firstname lastname username email upiId speaker_id isAdmin isQA")
+    .select("firstname lastname username email upiId speaker_id isAdmin isQA qaPerCallPayrateUsd qaHourlyPhrasePayrateUsd perCallPayrate hourlyPhrasePayrate")
     .sort({ firstname: 1, lastname: 1, email: 1 })
     .lean();
 }
@@ -218,6 +221,44 @@ async function loadPhrasesForUsers(userIds) {
   return [...activePhrases, ...rejectionItems].sort((a, b) => new Date(b.recordedAt || b.createdAt || 0) - new Date(a.recordedAt || a.createdAt || 0));
 }
 
+async function loadQaEarningsForUsers(userIds, userMap) {
+  const qaEarningsByUserId = Object.fromEntries(userIds.map((id) => [String(id), 0]));
+  
+  await Promise.all(
+    userIds.map(async (rawId) => {
+      const uIdStr = String(rawId);
+      const user = userMap[uIdStr];
+      if (!user) return;
+
+      const userIdObj = new mongoose.Types.ObjectId(uIdStr);
+
+      const [callsReviewed, approvedAgg, rejectedAgg] = await Promise.all([
+        CallSession.countDocuments({ reviewedBy: userIdObj, callStatus: { $in: ["approved", "rejected"] } }),
+        Phrase.aggregate([
+          { $match: { qaId: userIdObj, status: "approved" } },
+          { $group: { _id: null, totalSecs: { $sum: "$duration" } } }
+        ]),
+        PhraseRejection.aggregate([
+          { $match: { qaId: userIdObj } },
+          { $group: { _id: null, totalSecs: { $sum: "$duration" } } }
+        ])
+      ]);
+
+      const perCallRate = Number((user.qaPerCallPayrateUsd !== undefined && user.qaPerCallPayrateUsd !== null && user.qaPerCallPayrateUsd > 0) ? user.qaPerCallPayrateUsd : user.perCallPayrate) || 0;
+      const hourlyPhraseRate = Number((user.qaHourlyPhrasePayrateUsd !== undefined && user.qaHourlyPhrasePayrateUsd !== null && user.qaHourlyPhrasePayrateUsd > 0) ? user.qaHourlyPhrasePayrateUsd : user.hourlyPhraseRate) || 0;
+
+      const callEarnings = callsReviewed * perCallRate;
+      const totalPhraseSecs = (approvedAgg[0]?.totalSecs || 0) + (rejectedAgg[0]?.totalSecs || 0);
+      const phraseHours = totalPhraseSecs / 3600;
+      const phraseEarnings = phraseHours * hourlyPhraseRate;
+
+      qaEarningsByUserId[uIdStr] = roundCurrency(callEarnings + phraseEarnings);
+    })
+  );
+
+  return qaEarningsByUserId;
+}
+
 export async function getPayoutOverview(userIds = null) {
   const isSingleUserCheck = Array.isArray(userIds) && userIds.length > 0;
   const users = await loadUsers(userIds);
@@ -228,13 +269,14 @@ export async function getPayoutOverview(userIds = null) {
 
   const ids = validUsers.map((user) => String(user._id));
   const userMap = Object.fromEntries(validUsers.map(u => [String(u._id), u]));
-  const [calls, payments, phrases, langs, projects, companies] = await Promise.all([
+  const [calls, payments, phrases, langs, projects, companies, qaEarningsByUserId] = await Promise.all([
     loadCallsForUsers(ids),
     loadPaymentsForUsers(ids),
     loadPhrasesForUsers(ids),
     Language.find({}).lean(),
     Project.find({}).lean(),
-    Company.find({}).lean()
+    Company.find({}).lean(),
+    loadQaEarningsForUsers(ids, userMap)
   ]);
 
   const langRates = Object.fromEntries(langs.map(l => [l.code.toLowerCase(), Number(l.hourlyPayout) || 0]));
@@ -342,7 +384,8 @@ export async function getPayoutOverview(userIds = null) {
     user, 
     callsByUserId[String(user._id)] || [], 
     phrasesByUserId[String(user._id)] || [], 
-    paymentsByUserId[String(user._id)] || []
+    paymentsByUserId[String(user._id)] || [],
+    qaEarningsByUserId[String(user._id)] || 0
   ));
   return { summaries, callsByUserId, phrasesByUserId, paymentsByUserId, userMap };
 }
