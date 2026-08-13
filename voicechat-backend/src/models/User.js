@@ -18,6 +18,8 @@ const userSchema = new mongoose.Schema(
     overallPhraseLimit: { type: Number, default: -1 }, // -1 means unlimited
     perCallPayrate: { type: Number, default: 0, min: 0 },
     hourlyPhrasePayrate: { type: Number, default: 0, min: 0 },
+    qaPerCallPayrateUsd: { type: Number, default: 0, min: 0 },
+    qaHourlyPhrasePayrateUsd: { type: Number, default: 0, min: 0 },
     tokenVersion: { type: Number, default: 0 },
     isEmailVerified: { type: Boolean, default: false },
     dob: { type: Date, required: true },

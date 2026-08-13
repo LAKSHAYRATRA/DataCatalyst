@@ -158,10 +158,10 @@ export default function AdminQAPayments() {
                                                         <div className="text-xs text-neutral-400">{item.qaUser.email}</div>
                                                     </td>
                                                     <td className="px-4 py-3.5 whitespace-nowrap font-mono text-neutral-200">
-                                                        ${item.qaUser.qaPerCallPayrateUsd?.toFixed(2) || "0.00"}
+                                                        ${(item.qaUser.qaPerCallPayrateUsd !== undefined && item.qaUser.qaPerCallPayrateUsd !== null && item.qaUser.qaPerCallPayrateUsd > 0 ? item.qaUser.qaPerCallPayrateUsd : (item.qaUser.perCallPayrate || 0)).toFixed(2)}
                                                     </td>
                                                     <td className="px-4 py-3.5 whitespace-nowrap font-mono text-neutral-200">
-                                                        ${item.qaUser.qaHourlyPhrasePayrateUsd?.toFixed(2) || "0.00"}
+                                                        ${(item.qaUser.qaHourlyPhrasePayrateUsd !== undefined && item.qaUser.qaHourlyPhrasePayrateUsd !== null && item.qaUser.qaHourlyPhrasePayrateUsd > 0 ? item.qaUser.qaHourlyPhrasePayrateUsd : (item.qaUser.hourlyPhrasePayrate || 0)).toFixed(2)}
                                                     </td>
                                                     <td className="px-4 py-3.5 text-center font-bold text-white">
                                                         {item.callsReviewed}
@@ -275,7 +275,7 @@ export default function AdminQAPayments() {
                                     <FileText className="w-5 h-5 text-indigo-400" />
                                 </div>
                                 <div className="text-2xl font-extrabold text-white font-mono">
-                                    ${data?.qaUser?.qaHourlyPhrasePayrateUsd?.toFixed(2) || "0.00"}
+                                    ${(data?.qaUser?.qaHourlyPhrasePayrateUsd !== undefined && data?.qaUser?.qaHourlyPhrasePayrateUsd !== null && data?.qaUser?.qaHourlyPhrasePayrateUsd > 0 ? data.qaUser.qaHourlyPhrasePayrateUsd : (data?.qaUser?.hourlyPhrasePayrate || 0)).toFixed(2)}
                                 </div>
                                 <div className="text-[11px] text-neutral-400 mt-1">
                                     Per hour of phrase reviews

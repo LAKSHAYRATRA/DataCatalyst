@@ -395,10 +395,10 @@ export default function AdminPayouts() {
                             <div className="text-xs text-neutral-400">{item.qaUser.email}</div>
                           </td>
                           <td className="px-4 py-3.5 whitespace-nowrap font-mono text-neutral-200">
-                            ${item.qaUser.qaPerCallPayrateUsd?.toFixed(2) || "0.00"}
+                            ${(item.qaUser.qaPerCallPayrateUsd !== undefined && item.qaUser.qaPerCallPayrateUsd !== null && item.qaUser.qaPerCallPayrateUsd > 0 ? item.qaUser.qaPerCallPayrateUsd : (item.qaUser.perCallPayrate || 0)).toFixed(2)}
                           </td>
                           <td className="px-4 py-3.5 whitespace-nowrap font-mono text-neutral-200">
-                            ${item.qaUser.qaHourlyPhrasePayrateUsd?.toFixed(2) || "0.00"}
+                            ${(item.qaUser.qaHourlyPhrasePayrateUsd !== undefined && item.qaUser.qaHourlyPhrasePayrateUsd !== null && item.qaUser.qaHourlyPhrasePayrateUsd > 0 ? item.qaUser.qaHourlyPhrasePayrateUsd : (item.qaUser.hourlyPhrasePayrate || 0)).toFixed(2)}
                           </td>
                           <td className="px-4 py-3.5 text-center font-bold text-white">
                             {item.callsReviewed}
@@ -470,11 +470,11 @@ export default function AdminPayouts() {
               <div className="grid grid-cols-2 gap-3 text-xs">
                 <div className="bg-neutral-900/60 p-3 rounded-xl border border-neutral-700">
                   <span className="text-neutral-400 block font-semibold uppercase text-[10px]">Per Call Payrate</span>
-                  <span className="text-warning-400 font-mono font-bold text-base">${selectedQaModal.qaUser.qaPerCallPayrateUsd?.toFixed(2) || "0.00"}</span>
+                  <span className="text-warning-400 font-mono font-bold text-base">${(selectedQaModal.qaUser.qaPerCallPayrateUsd !== undefined && selectedQaModal.qaUser.qaPerCallPayrateUsd !== null && selectedQaModal.qaUser.qaPerCallPayrateUsd > 0 ? selectedQaModal.qaUser.qaPerCallPayrateUsd : (selectedQaModal.qaUser.perCallPayrate || 0)).toFixed(2)}</span>
                 </div>
                 <div className="bg-neutral-900/60 p-3 rounded-xl border border-neutral-700">
                   <span className="text-neutral-400 block font-semibold uppercase text-[10px]">Hourly Phrase Payrate</span>
-                  <span className="text-indigo-400 font-mono font-bold text-base">${selectedQaModal.qaUser.qaHourlyPhrasePayrateUsd?.toFixed(2) || "0.00"}</span>
+                  <span className="text-indigo-400 font-mono font-bold text-base">${(selectedQaModal.qaUser.qaHourlyPhrasePayrateUsd !== undefined && selectedQaModal.qaUser.qaHourlyPhrasePayrateUsd !== null && selectedQaModal.qaUser.qaHourlyPhrasePayrateUsd > 0 ? selectedQaModal.qaUser.qaHourlyPhrasePayrateUsd : (selectedQaModal.qaUser.hourlyPhrasePayrate || 0)).toFixed(2)}</span>
                 </div>
               </div>
 

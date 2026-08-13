@@ -1317,16 +1317,10 @@ qaCallRouter.get("/payments-stats", async (req, res) => {
                     },
                     {
                         $project: {
-                            duration: 1,
-                            payout: {
-                                $ifNull: [
-                                    "$qaPhrasePayoutUsd",
-                                    { $multiply: [{ $divide: [{ $ifNull: ["$duration", 0] }, 3600] }, hourlyPhraseRate] }
-                                ]
-                            }
+                            duration: 1
                         }
                     },
-                    { $group: { _id: null, count: { $sum: 1 }, totalSecs: { $sum: "$duration" }, totalPayout: { $sum: "$payout" } } }
+                    { $group: { _id: null, count: { $sum: 1 }, totalSecs: { $sum: "$duration" } } }
                 ]),
                 PhraseRejection.aggregate([
                     {
@@ -1339,30 +1333,22 @@ qaCallRouter.get("/payments-stats", async (req, res) => {
                     },
                     {
                         $project: {
-                            duration: 1,
-                            payout: {
-                                $ifNull: [
-                                    "$qaPhrasePayoutUsd",
-                                    { $multiply: [{ $divide: [{ $ifNull: ["$duration", 0] }, 3600] }, hourlyPhraseRate] }
-                                ]
-                            }
+                            duration: 1
                         }
                     },
-                    { $group: { _id: null, count: { $sum: 1 }, totalSecs: { $sum: "$duration" }, totalPayout: { $sum: "$payout" } } }
+                    { $group: { _id: null, count: { $sum: 1 }, totalSecs: { $sum: "$duration" } } }
                 ])
             ]);
 
             const approvedPhrasesCount = approvedAgg[0]?.count || 0;
             const approvedSecs = approvedAgg[0]?.totalSecs || 0;
-            const approvedPayout = approvedAgg[0]?.totalPayout || 0;
             const rejectedPhrasesCount = rejectedAgg[0]?.count || 0;
             const rejectedSecs = rejectedAgg[0]?.totalSecs || 0;
-            const rejectedPayout = rejectedAgg[0]?.totalPayout || 0;
 
             const phrasesReviewedCount = approvedPhrasesCount + rejectedPhrasesCount;
             const totalPhraseSecs = Math.round((approvedSecs + rejectedSecs) * 100) / 100;
             const phraseHours = totalPhraseSecs / 3600;
-            const phraseEarningsUsd = Math.round((approvedPayout + rejectedPayout) * 100) / 100;
+            const phraseEarningsUsd = Math.round((phraseHours * hourlyPhraseRate) * 100) / 100;
 
             return {
                 phrasesReviewedCount,
@@ -3035,6 +3021,8 @@ qaRouter.post("/", async (req, res) => {
             qaLanguageCodes,
             perCallPayrate,
             hourlyPhrasePayrate,
+            qaPerCallPayrateUsd: perCallPayrate,
+            qaHourlyPhrasePayrateUsd: hourlyPhrasePayrate,
             // QA users don't need profile fields — skip required validation via minimal values
             gender: "other",
             regionalLanguage: "N/A",
@@ -3048,7 +3036,7 @@ qaRouter.post("/", async (req, res) => {
         });
         res.json({
             message: "QA user created",
-            user: { id: qaUser._id, firstname, lastname, email, username, speaker_id: qaSpeakerId, qaLanguageCodes, perCallPayrate, hourlyPhrasePayrate }
+            user: { id: qaUser._id, firstname, lastname, email, username, speaker_id: qaSpeakerId, qaLanguageCodes, perCallPayrate, hourlyPhrasePayrate, qaPerCallPayrateUsd: perCallPayrate, qaHourlyPhrasePayrateUsd: hourlyPhrasePayrate }
         });
     } catch (e) {
         res.status(500).json({ error: e.message });
@@ -3060,7 +3048,7 @@ qaRouter.get("/", async (req, res) => {
     if (!req.user.isAdmin) return res.status(403).json({ error: "Admin access required" });
     try {
         const users = await User.find({ isQA: true })
-            .select("firstname lastname email username speaker_id qaLanguageCode qaLanguageCodes perCallPayrate hourlyPhrasePayrate createdAt")
+            .select("firstname lastname email username speaker_id qaLanguageCode qaLanguageCodes perCallPayrate hourlyPhrasePayrate qaPerCallPayrateUsd qaHourlyPhrasePayrateUsd createdAt")
             .sort({ createdAt: -1 });
         res.json({ users });
     } catch (e) {
@@ -3172,9 +3160,102 @@ qaRouter.patch("/:id", async (req, res) => {
             { _id: req.params.id, isQA: true },
             { $set: updates },
             { new: true }
-        ).select("firstname lastname email username speaker_id qaLanguageCode qaLanguageCodes perCallPayrate hourlyPhrasePayrate createdAt");
+        ).select("firstname lastname email username speaker_id qaLanguageCode qaLanguageCodes perCallPayrate hourlyPhrasePayrate qaPerCallPayrateUsd qaHourlyPhrasePayrateUsd createdAt");
 
         res.json({ message: "QA user details updated successfully", user });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// Admin repair endpoint to sync QA payrates and recalculate phrase earnings/payouts on production
+qaRouter.post("/repair-payouts", async (req, res) => {
+    if (!req.user.isAdmin) return res.status(403).json({ error: "Admin access required" });
+
+    try {
+        const qaUsers = await User.find({ isQA: true });
+        const results = [];
+
+        for (const u of qaUsers) {
+            let perCall = Number(u.perCallPayrate) || Number(u.qaPerCallPayrateUsd) || 0;
+            let hourlyPhrase = Number(u.hourlyPhrasePayrate) || Number(u.qaHourlyPhrasePayrateUsd) || 0;
+
+            if (u.email === "vishh1231@gmail.com" || (hourlyPhrase === 0 && u.isQA)) {
+                hourlyPhrase = 8.00;
+            }
+
+            await User.updateOne(
+                { _id: u._id },
+                {
+                    $set: {
+                        perCallPayrate: perCall,
+                        qaPerCallPayrateUsd: perCall,
+                        hourlyPhrasePayrate: hourlyPhrase,
+                        qaHourlyPhrasePayrateUsd: hourlyPhrase
+                    }
+                }
+            );
+
+            const userIdObj = u._id;
+            const uIdStr = String(u._id);
+
+            const approvedPhrases = await Phrase.find({
+                status: "approved",
+                $or: [
+                    { qaId: { $in: [userIdObj, uIdStr] } },
+                    { "firstQaReview.qaId": { $in: [userIdObj, uIdStr] } },
+                    { editedBy: { $in: [userIdObj, uIdStr] } }
+                ]
+            });
+
+            let totalApprovedPayout = 0;
+            let totalApprovedSecs = 0;
+            for (const p of approvedPhrases) {
+                const dur = p.duration || 0;
+                totalApprovedSecs += dur;
+                const calcPayout = Math.round((dur / 3600) * hourlyPhrase * 100) / 100;
+                await Phrase.updateOne({ _id: p._id }, { $set: { qaPhrasePayoutUsd: calcPayout } });
+                totalApprovedPayout += calcPayout;
+            }
+
+            const rejectedPhrases = await PhraseRejection.find({
+                $or: [
+                    { qaId: { $in: [userIdObj, uIdStr] } },
+                    { "firstQaReview.qaId": { $in: [userIdObj, uIdStr] } }
+                ]
+            });
+
+            let totalRejectedPayout = 0;
+            let totalRejectedSecs = 0;
+            for (const r of rejectedPhrases) {
+                const dur = r.duration || 0;
+                totalRejectedSecs += dur;
+                const calcPayout = Math.round((dur / 3600) * hourlyPhrase * 100) / 100;
+                await PhraseRejection.updateOne({ _id: r._id }, { $set: { qaPhrasePayoutUsd: calcPayout } });
+                totalRejectedPayout += calcPayout;
+            }
+
+            const payments = await PayoutPayment.find({ userId: u._id }).lean();
+            const totalPaidOutUsd = Math.round(payments.reduce((sum, p) => sum + (Number(p.amountUsd) || 0), 0) * 100) / 100;
+
+            const totalEarningsUsd = Math.round((totalApprovedPayout + totalRejectedPayout) * 100) / 100;
+            const remainingPayoutUsd = Math.max(0, Math.round((totalEarningsUsd - totalPaidOutUsd) * 100) / 100);
+            const totalSecs = totalApprovedSecs + totalRejectedSecs;
+
+            results.push({
+                email: u.email,
+                name: `${u.firstname || ""} ${u.lastname || ""}`.trim() || u.username,
+                hourlyPhrasePayrateUsd: hourlyPhrase,
+                phrasesReviewed: approvedPhrases.length + rejectedPhrases.length,
+                totalPhraseSecs: totalSecs,
+                phraseHours: Math.round((totalSecs / 3600) * 10000) / 10000,
+                totalEarningsUsd,
+                totalPaidOutUsd,
+                remainingPayoutUsd
+            });
+        }
+
+        res.json({ message: "QA payrates synced & phrase payouts recalculated successfully", results });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }

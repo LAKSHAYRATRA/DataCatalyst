@@ -267,15 +267,10 @@ async function loadQaEarningsForUsers(userIds, userMap) {
           },
           {
             $project: {
-              payout: {
-                $ifNull: [
-                  "$qaPhrasePayoutUsd",
-                  { $multiply: [{ $divide: [{ $ifNull: ["$duration", 0] }, 3600] }, hourlyPhraseRate] }
-                ]
-              }
+              duration: { $ifNull: ["$duration", 0] }
             }
           },
-          { $group: { _id: null, total: { $sum: "$payout" } } }
+          { $group: { _id: null, totalSecs: { $sum: "$duration" } } }
         ]),
         PhraseRejection.aggregate([
           {
@@ -288,23 +283,20 @@ async function loadQaEarningsForUsers(userIds, userMap) {
           },
           {
             $project: {
-              payout: {
-                $ifNull: [
-                  "$qaPhrasePayoutUsd",
-                  { $multiply: [{ $divide: [{ $ifNull: ["$duration", 0] }, 3600] }, hourlyPhraseRate] }
-                ]
-              }
+              duration: { $ifNull: ["$duration", 0] }
             }
           },
-          { $group: { _id: null, total: { $sum: "$payout" } } }
+          { $group: { _id: null, totalSecs: { $sum: "$duration" } } }
         ])
       ]);
 
       const callEarnings = callsAgg[0]?.total || 0;
-      const approvedEarnings = approvedAgg[0]?.total || 0;
-      const rejectedEarnings = rejectedAgg[0]?.total || 0;
+      const approvedSecs = approvedAgg[0]?.totalSecs || 0;
+      const rejectedSecs = rejectedAgg[0]?.totalSecs || 0;
+      const totalPhraseSecs = approvedSecs + rejectedSecs;
+      const phraseEarnings = roundCurrency((totalPhraseSecs / 3600) * hourlyPhraseRate);
 
-      qaEarningsByUserId[uIdStr] = roundCurrency(callEarnings + approvedEarnings + rejectedEarnings);
+      qaEarningsByUserId[uIdStr] = roundCurrency(callEarnings + phraseEarnings);
     })
   );
 
