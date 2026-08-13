@@ -151,7 +151,7 @@ async function loadUsers(userIds) {
     filter.isQA = false;
   }
   return User.find(filter)
-    .select("firstname lastname username email upiId speaker_id isAdmin isQA qaPerCallPayrateUsd qaHourlyPhrasePayrateUsd perCallPayrate hourlyPhrasePayrate")
+    .select("firstname lastname username email upiId speaker_id isAdmin isQA perCallPayrate hourlyPhrasePayrate")
     .sort({ firstname: 1, lastname: 1, email: 1 })
     .lean();
 }
@@ -231,8 +231,8 @@ async function loadQaEarningsForUsers(userIds, userMap) {
       if (!user) return;
 
       const userIdObj = new mongoose.Types.ObjectId(uIdStr);
-      const perCallRate = Number((user.qaPerCallPayrateUsd !== undefined && user.qaPerCallPayrateUsd !== null && user.qaPerCallPayrateUsd > 0) ? user.qaPerCallPayrateUsd : user.perCallPayrate) || 0;
-      const hourlyPhraseRate = Number((user.qaHourlyPhrasePayrateUsd !== undefined && user.qaHourlyPhrasePayrateUsd !== null && user.qaHourlyPhrasePayrateUsd > 0) ? user.qaHourlyPhrasePayrateUsd : user.hourlyPhraseRate) || 0;
+      const perCallRate = Number(user.perCallPayrate) || 0;
+      const hourlyPhraseRate = Number(user.hourlyPhrasePayrate) || 0;
 
       const [callsAgg, approvedAgg, rejectedAgg] = await Promise.all([
         CallSession.aggregate([

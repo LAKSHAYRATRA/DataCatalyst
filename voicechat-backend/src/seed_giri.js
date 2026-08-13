@@ -29,8 +29,8 @@ async function main() {
       username: "giribhardwaj",
       email: "giri.bhardwaj@datacatalyst.in",
       isQA: true,
-      qaPerCallPayrateUsd: 1.00,
-      qaHourlyPhrasePayrateUsd: 10.00,
+      perCallPayrate: 1.00,
+      hourlyPhrasePayrate: 10.00,
       qaLanguageCodes: ["hi", "en"],
       upiId: "giri@upi"
     });

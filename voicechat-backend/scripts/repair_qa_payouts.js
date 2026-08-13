@@ -28,8 +28,8 @@ async function runRepair() {
     console.log(`Found ${qaUsers.length} QA users`);
 
     for (const u of qaUsers) {
-      let perCall = Number(u.perCallPayrate) || Number(u.qaPerCallPayrateUsd) || 0;
-      let hourlyPhrase = Number(u.hourlyPhrasePayrate) || Number(u.qaHourlyPhrasePayrateUsd) || 0;
+      let perCall = Number(u.perCallPayrate) || 0;
+      let hourlyPhrase = Number(u.hourlyPhrasePayrate) || 0;
 
       // Special check for Vishakha Bose or if rate was 0
       if (u.email === "vishh1231@gmail.com" || (hourlyPhrase === 0 && u.isQA)) {
@@ -41,9 +41,11 @@ async function runRepair() {
         {
           $set: {
             perCallPayrate: perCall,
-            qaPerCallPayrateUsd: perCall,
-            hourlyPhrasePayrate: hourlyPhrase,
-            qaHourlyPhrasePayrateUsd: hourlyPhrase
+            hourlyPhrasePayrate: hourlyPhrase
+          },
+          $unset: {
+            qaPerCallPayrateUsd: "",
+            qaHourlyPhrasePayrateUsd: ""
           }
         }
       );

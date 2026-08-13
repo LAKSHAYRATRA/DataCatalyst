@@ -21,17 +21,19 @@ async function run() {
     console.log(`Found ${qaUsers.length} QA users`);
 
     for (const u of qaUsers) {
-      const perCall = Number(u.perCallPayrate) || Number(u.qaPerCallPayrateUsd) || 0;
-      const hourlyPhrase = Number(u.hourlyPhrasePayrate) || Number(u.qaHourlyPhrasePayrateUsd) || 0;
+      const perCall = Number(u.perCallPayrate) || 0;
+      const hourlyPhrase = Number(u.hourlyPhrasePayrate) || 0;
 
       await User.updateOne(
         { _id: u._id },
         {
           $set: {
             perCallPayrate: perCall,
-            qaPerCallPayrateUsd: perCall,
-            hourlyPhrasePayrate: hourlyPhrase,
-            qaHourlyPhrasePayrateUsd: hourlyPhrase
+            hourlyPhrasePayrate: hourlyPhrase
+          },
+          $unset: {
+            qaPerCallPayrateUsd: "",
+            qaHourlyPhrasePayrateUsd: ""
           }
         }
       );

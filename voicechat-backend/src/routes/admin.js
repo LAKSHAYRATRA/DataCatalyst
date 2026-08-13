@@ -775,8 +775,8 @@ async function applyRecordingDecision(call, userId, action, reviewerId, note, is
     call.reviewedAt = new Date();
 
     if (reviewerId) {
-        const qaUser = await User.findById(reviewerId).select("qaPerCallPayrateUsd perCallPayrate").lean();
-        const perCallRate = Number((qaUser?.qaPerCallPayrateUsd !== undefined && qaUser?.qaPerCallPayrateUsd !== null && qaUser?.qaPerCallPayrateUsd > 0) ? qaUser.qaPerCallPayrateUsd : qaUser?.perCallPayrate) || 0;
+        const qaUser = await User.findById(reviewerId).select("perCallPayrate").lean();
+        const perCallRate = Number(qaUser?.perCallPayrate) || 0;
         call.qaCallPayoutUsd = perCallRate;
     }
     
@@ -846,8 +846,8 @@ async function applyRecordingDecision(call, userId, action, reviewerId, note, is
         } else if (!call.needsSecondQaReview && Math.random() < 0.02) {
             // 2% chance to flag for Dual-QA Cross Audit
             call.needsSecondQaReview = true;
-            const qaUser = reviewerId ? await User.findById(reviewerId).select("qaPerCallPayrateUsd perCallPayrate").lean() : null;
-            const perCallRate = Number((qaUser?.qaPerCallPayrateUsd !== undefined && qaUser?.qaPerCallPayrateUsd !== null && qaUser?.qaPerCallPayrateUsd > 0) ? qaUser.qaPerCallPayrateUsd : qaUser?.perCallPayrate) || 0;
+            const qaUser = reviewerId ? await User.findById(reviewerId).select("perCallPayrate").lean() : null;
+            const perCallRate = Number(qaUser?.perCallPayrate) || 0;
             call.firstQaReview = {
                 qaId: reviewerId,
                 action: call.callStatus,
@@ -1365,14 +1365,14 @@ qaCallRouter.get("/payments-stats", async (req, res) => {
         if (isUserAdmin && !req.query.qaUserId) {
             // Admin summary across ALL QA Users
             const qaUsers = await User.find({ isQA: true })
-                .select("firstname lastname username email upiId qaPerCallPayrateUsd qaHourlyPhrasePayrateUsd perCallPayrate hourlyPhrasePayrate qaLanguageCodes qaLanguageCode createdAt")
+                .select("firstname lastname username email upiId perCallPayrate hourlyPhrasePayrate qaLanguageCodes qaLanguageCode createdAt")
                 .sort({ createdAt: -1 })
                 .lean();
 
             const stats = await Promise.all(
                 qaUsers.map(async (qa) => {
-                    const perCallRate = Number((qa.qaPerCallPayrateUsd !== undefined && qa.qaPerCallPayrateUsd !== null && qa.qaPerCallPayrateUsd > 0) ? qa.qaPerCallPayrateUsd : qa.perCallPayrate) || 0;
-                    const hourlyPhraseRate = Number((qa.qaHourlyPhrasePayrateUsd !== undefined && qa.qaHourlyPhrasePayrateUsd !== null && qa.qaHourlyPhrasePayrateUsd > 0) ? qa.qaHourlyPhrasePayrateUsd : qa.hourlyPhraseRate) || 0;
+                    const perCallRate = Number(qa.perCallPayrate) || 0;
+                    const hourlyPhraseRate = Number(qa.hourlyPhrasePayrate) || 0;
 
                     const [callsAgg, phraseStats, payments] = await Promise.all([
                         CallSession.aggregate([
@@ -1414,8 +1414,8 @@ qaCallRouter.get("/payments-stats", async (req, res) => {
                             name: `${qa.firstname || ""} ${qa.lastname || ""}`.trim() || qa.username,
                             email: qa.email,
                             upiId: qa.upiId || "",
-                            qaPerCallPayrateUsd: perCallRate,
-                            qaHourlyPhrasePayrateUsd: hourlyPhraseRate,
+                            perCallPayrate: perCallRate,
+                            hourlyPhrasePayrate: hourlyPhraseRate,
                         },
                         callsReviewed,
                         phrasesReviewed: phraseStats.phrasesReviewedCount,
@@ -1453,8 +1453,8 @@ qaCallRouter.get("/payments-stats", async (req, res) => {
         const qaUser = targetUserId ? await User.findById(targetUserId).lean() : req.user;
         if (!qaUser) return res.status(404).json({ error: "QA user not found" });
 
-        const perCallRate = Number((qaUser.qaPerCallPayrateUsd !== undefined && qaUser.qaPerCallPayrateUsd !== null && qaUser.qaPerCallPayrateUsd > 0) ? qaUser.qaPerCallPayrateUsd : qaUser.perCallPayrate) || 0;
-        const hourlyPhraseRate = Number((qaUser.qaHourlyPhrasePayrateUsd !== undefined && qaUser.qaHourlyPhrasePayrateUsd !== null && qaUser.qaHourlyPhrasePayrateUsd > 0) ? qaUser.qaHourlyPhrasePayrateUsd : qaUser.hourlyPhrasePayrate) || 0;
+        const perCallRate = Number(qaUser.perCallPayrate) || 0;
+        const hourlyPhraseRate = Number(qaUser.hourlyPhrasePayrate) || 0;
 
         const [callsAgg, approvedCallsCount, rejectedCallsCount, phraseStats, payments, recentCalls, recentApprovedPhrases, recentRejectedPhrases] = await Promise.all([
             CallSession.aggregate([
@@ -1520,8 +1520,8 @@ qaCallRouter.get("/payments-stats", async (req, res) => {
                 name: `${qaUser.firstname || ""} ${qaUser.lastname || ""}`.trim() || qaUser.username,
                 email: qaUser.email,
                 upiId: qaUser.upiId || "",
-                qaPerCallPayrateUsd: perCallRate,
-                qaHourlyPhrasePayrateUsd: hourlyPhraseRate,
+                perCallPayrate: perCallRate,
+                hourlyPhrasePayrate: hourlyPhraseRate,
             },
             callsReviewedCount,
             approvedCallsCount,
@@ -3021,8 +3021,6 @@ qaRouter.post("/", async (req, res) => {
             qaLanguageCodes,
             perCallPayrate,
             hourlyPhrasePayrate,
-            qaPerCallPayrateUsd: perCallPayrate,
-            qaHourlyPhrasePayrateUsd: hourlyPhrasePayrate,
             // QA users don't need profile fields — skip required validation via minimal values
             gender: "other",
             regionalLanguage: "N/A",
@@ -3036,7 +3034,7 @@ qaRouter.post("/", async (req, res) => {
         });
         res.json({
             message: "QA user created",
-            user: { id: qaUser._id, firstname, lastname, email, username, speaker_id: qaSpeakerId, qaLanguageCodes, perCallPayrate, hourlyPhrasePayrate, qaPerCallPayrateUsd: perCallPayrate, qaHourlyPhrasePayrateUsd: hourlyPhrasePayrate }
+            user: { id: qaUser._id, firstname, lastname, email, username, speaker_id: qaSpeakerId, qaLanguageCodes, perCallPayrate, hourlyPhrasePayrate }
         });
     } catch (e) {
         res.status(500).json({ error: e.message });
@@ -3048,7 +3046,7 @@ qaRouter.get("/", async (req, res) => {
     if (!req.user.isAdmin) return res.status(403).json({ error: "Admin access required" });
     try {
         const users = await User.find({ isQA: true })
-            .select("firstname lastname email username speaker_id qaLanguageCode qaLanguageCodes perCallPayrate hourlyPhrasePayrate qaPerCallPayrateUsd qaHourlyPhrasePayrateUsd createdAt")
+            .select("firstname lastname email username speaker_id qaLanguageCode qaLanguageCodes perCallPayrate hourlyPhrasePayrate createdAt")
             .sort({ createdAt: -1 });
         res.json({ users });
     } catch (e) {
@@ -3076,8 +3074,8 @@ qaRouter.patch("/:id", async (req, res) => {
         const existingUser = await User.findOne({ _id: req.params.id, isQA: true }).lean();
         if (!existingUser) return res.status(404).json({ error: "QA user not found" });
 
-        const oldPerCallRate = Number((existingUser.qaPerCallPayrateUsd !== undefined && existingUser.qaPerCallPayrateUsd !== null && existingUser.qaPerCallPayrateUsd > 0) ? existingUser.qaPerCallPayrateUsd : existingUser.perCallPayrate) || 0;
-        const oldHourlyPhraseRate = Number((existingUser.qaHourlyPhrasePayrateUsd !== undefined && existingUser.qaHourlyPhrasePayrateUsd !== null && existingUser.qaHourlyPhrasePayrateUsd > 0) ? existingUser.qaHourlyPhrasePayrateUsd : existingUser.hourlyPhraseRate) || 0;
+        const oldPerCallRate = Number(existingUser.perCallPayrate) || 0;
+        const oldHourlyPhraseRate = Number(existingUser.hourlyPhrasePayrate) || 0;
 
         const updates = {};
         if (req.body.qaLanguageCodes !== undefined) {
@@ -3096,13 +3094,11 @@ qaRouter.patch("/:id", async (req, res) => {
             const val = Math.max(0, Number(req.body.perCallPayrate) || 0);
             if (val !== oldPerCallRate) isRateChanged = true;
             updates.perCallPayrate = val;
-            updates.qaPerCallPayrateUsd = val;
         }
         if (req.body.hourlyPhrasePayrate !== undefined) {
             const val = Math.max(0, Number(req.body.hourlyPhrasePayrate) || 0);
             if (val !== oldHourlyPhraseRate) isRateChanged = true;
             updates.hourlyPhrasePayrate = val;
-            updates.qaHourlyPhrasePayrateUsd = val;
         }
 
         // Lock in all past work performed under the OLD rates before saving new rates!
@@ -3160,7 +3156,7 @@ qaRouter.patch("/:id", async (req, res) => {
             { _id: req.params.id, isQA: true },
             { $set: updates },
             { new: true }
-        ).select("firstname lastname email username speaker_id qaLanguageCode qaLanguageCodes perCallPayrate hourlyPhrasePayrate qaPerCallPayrateUsd qaHourlyPhrasePayrateUsd createdAt");
+        ).select("firstname lastname email username speaker_id qaLanguageCode qaLanguageCodes perCallPayrate hourlyPhrasePayrate createdAt");
 
         res.json({ message: "QA user details updated successfully", user });
     } catch (e) {
@@ -3168,17 +3164,20 @@ qaRouter.patch("/:id", async (req, res) => {
     }
 });
 
-// Admin repair endpoint to sync QA payrates and recalculate phrase earnings/payouts on production
+// Admin repair endpoint to purge obsolete fields, sync QA payrates and recalculate phrase earnings on production
 qaRouter.post("/repair-payouts", async (req, res) => {
     if (!req.user.isAdmin) return res.status(403).json({ error: "Admin access required" });
 
     try {
+        // Unset obsolete duplicate fields from all user documents in MongoDB
+        await User.updateMany({}, { $unset: { qaPerCallPayrateUsd: "", qaHourlyPhrasePayrateUsd: "" } });
+
         const qaUsers = await User.find({ isQA: true });
         const results = [];
 
         for (const u of qaUsers) {
-            let perCall = Number(u.perCallPayrate) || Number(u.qaPerCallPayrateUsd) || 0;
-            let hourlyPhrase = Number(u.hourlyPhrasePayrate) || Number(u.qaHourlyPhrasePayrateUsd) || 0;
+            let perCall = Number(u.perCallPayrate) || 0;
+            let hourlyPhrase = Number(u.hourlyPhrasePayrate) || 0;
 
             if (u.email === "vishh1231@gmail.com" || (hourlyPhrase === 0 && u.isQA)) {
                 hourlyPhrase = 8.00;
@@ -3189,9 +3188,7 @@ qaRouter.post("/repair-payouts", async (req, res) => {
                 {
                     $set: {
                         perCallPayrate: perCall,
-                        qaPerCallPayrateUsd: perCall,
-                        hourlyPhrasePayrate: hourlyPhrase,
-                        qaHourlyPhrasePayrateUsd: hourlyPhrase
+                        hourlyPhrasePayrate: hourlyPhrase
                     }
                 }
             );

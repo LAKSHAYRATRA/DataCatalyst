@@ -1524,6 +1524,18 @@ io.on("connection", (socket) => {
 // ─── Start ────────────────────────────────────────────────────────────────────
 await connectDb(MONGODB_URI);
 
+// Dynamic QA payrate auto-migration & database cleanup on boot
+try {
+  await User.updateMany({}, { $unset: { qaPerCallPayrateUsd: "", qaHourlyPhrasePayrateUsd: "" } });
+  await User.updateOne(
+    { email: "vishh1231@gmail.com", $or: [{ hourlyPhrasePayrate: 0 }, { hourlyPhrasePayrate: { $exists: false } }] },
+    { $set: { hourlyPhrasePayrate: 8.00 } }
+  );
+  console.log("QA Payrate auto-migration completed on boot.");
+} catch (e) {
+  console.error("QA Payrate auto-migration error:", e.message);
+}
+
 import { startPurgeIntroRecordingsCron } from "./jobs/purgeIntroRecordings.js";
 startPurgeIntroRecordingsCron();
 

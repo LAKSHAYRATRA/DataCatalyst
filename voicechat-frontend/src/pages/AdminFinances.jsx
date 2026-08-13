@@ -625,10 +625,10 @@ export default function AdminFinances() {
                                   <div className="text-xs text-neutral-400">{item.qaUser.email}</div>
                                 </td>
                                 <td className="px-4 py-3.5 whitespace-nowrap font-mono text-neutral-200">
-                                  ${(item.qaUser.qaPerCallPayrateUsd !== undefined && item.qaUser.qaPerCallPayrateUsd !== null && item.qaUser.qaPerCallPayrateUsd > 0 ? item.qaUser.qaPerCallPayrateUsd : (item.qaUser.perCallPayrate || 0)).toFixed(2)}
+                                  ${(item.qaUser.perCallPayrate || 0).toFixed(2)}
                                 </td>
                                 <td className="px-4 py-3.5 whitespace-nowrap font-mono text-neutral-200">
-                                  ${(item.qaUser.qaHourlyPhrasePayrateUsd !== undefined && item.qaUser.qaHourlyPhrasePayrateUsd !== null && item.qaUser.qaHourlyPhrasePayrateUsd > 0 ? item.qaUser.qaHourlyPhrasePayrateUsd : (item.qaUser.hourlyPhrasePayrate || 0)).toFixed(2)}
+                                  ${(item.qaUser.hourlyPhrasePayrate || 0).toFixed(2)}
                                 </td>
                                 <td className="px-4 py-3.5 text-center font-bold text-white">
                                   {item.callsReviewed}
