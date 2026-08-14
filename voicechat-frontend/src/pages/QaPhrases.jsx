@@ -314,6 +314,82 @@ export default function QaPhrases() {
     }
   };
 
+  const handleApproveAllEditedPhrases = async () => {
+    const displayedPhrases = queue.filter(q => {
+      const matchProject = filterProject === 'All' || (q.projectName || q.companyId) === filterProject;
+      const matchLanguage = filterLanguage === 'All' || (q.language && q.language.toLowerCase() === filterLanguage.toLowerCase());
+      return matchProject && matchLanguage;
+    });
+
+    const count = displayedPhrases.length;
+    if (count === 0) {
+      Swal.fire({
+        icon: "info",
+        title: "No Pending Edits",
+        text: "There are no pending edited phrases matching your filter criteria.",
+        background: "#171717",
+        color: "#ffffff"
+      });
+      return;
+    }
+
+    const filterInfo = [];
+    if (filterProject !== 'All') filterInfo.push(`Project: <b>${filterProject}</b>`);
+    if (filterLanguage !== 'All') filterInfo.push(`Language: <b>${filterLanguage}</b>`);
+    const filterText = filterInfo.length > 0 ? `<p class="text-xs text-amber-400 mt-1">Filters active: ${filterInfo.join(' | ')}</p>` : '';
+
+    const result = await Swal.fire({
+      title: 'Approve All Pending Edits?',
+      html: `
+        <div class="text-left text-sm space-y-2">
+          <p>Are you sure you want to approve all <b>${count}</b> pending edited phrases waiting for admin review?</p>
+          ${filterText}
+          <p class="text-xs text-neutral-400">All updated script texts will be marked as approved and cleared from the queue.</p>
+        </div>
+      `,
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonText: 'Yes, Approve All Above',
+      confirmButtonColor: '#10b981',
+      cancelButtonText: 'Cancel',
+      cancelButtonColor: '#4b5563',
+      background: '#171717',
+      color: '#ffffff'
+    });
+
+    if (!result.isConfirmed) return;
+
+    setProcessing('all');
+    try {
+      const res = await apiPostJson('/api/phrases/admin/review-edit-all', {
+        filterProject,
+        filterLanguage
+      });
+
+      Swal.fire({
+        icon: "success",
+        title: "All Edits Approved!",
+        text: res.message || `Successfully approved ${res.count} pending edited phrases.`,
+        timer: 2000,
+        showConfirmButton: false,
+        background: "#171717",
+        color: "#ffffff"
+      });
+      fetchQueue("edited");
+    } catch (err) {
+      console.error(err);
+      Swal.fire({
+        icon: "error",
+        title: "Action Failed",
+        text: err.message || "Failed to approve all edited phrases",
+        background: "#171717",
+        color: "#ffffff"
+      });
+    } finally {
+      setProcessing(null);
+    }
+  };
+
   const handleDeletePhrase = async (phrase) => {
     const result = await Swal.fire({
       title: 'Delete Phrase Options',
@@ -495,6 +571,17 @@ export default function QaPhrases() {
                     </option>
                   ))}
                 </select>
+
+                {activeTab === 'edited' && isAdmin && (
+                  <button
+                    type="button"
+                    onClick={handleApproveAllEditedPhrases}
+                    disabled={processing === 'all'}
+                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold text-xs rounded-lg transition-all shadow-sm flex items-center gap-1.5 ml-auto"
+                  >
+                    <Check className="w-4 h-4" /> Approve All Above
+                  </button>
+                )}
               </div>
             )}
 

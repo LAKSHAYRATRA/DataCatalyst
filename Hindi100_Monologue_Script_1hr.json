@@ -1,0 +1,2468 @@
+[
+  {
+    "sentence_id": 327,
+    "block": "STD",
+    "domain": "Advertisements and Commercials",
+    "emotion": "Energetic",
+    "emotion_subtype": "upbeat",
+    "target_seconds": 12.2,
+    "sentence": "क्या आप भी वही पुराना खाना खाकर बोर हो गए हैं? <laughs> चिंता मत कीजिए! पेश है TastyBites App, जहां ऑर्डर कीजिए अपने शहर के 500 से भी ज्यादा रेस्टोरेंट्स से, और पाइए flat 50% discount!"
+  },
+  {
+    "sentence_id": 328,
+    "block": "STD",
+    "domain": "Advertisements and Commercials",
+    "emotion": "Cheerful",
+    "emotion_subtype": "promotional",
+    "target_seconds": 12.9,
+    "sentence": "गर्मियों की छुट्टियों में घूमने का प्लान बना रहे हैं? <chuckles> तो देर किस बात की! MakeMyFly पर आज ही टिकट बुक करें और पाएं पहली बुकिंग पर 2000 रुपये तक का instant cashback!"
+  },
+  {
+    "sentence_id": 329,
+    "block": "STD",
+    "domain": "Advertisements and Commercials",
+    "emotion": "Loud",
+    "emotion_subtype": "excited",
+    "target_seconds": 10.4,
+    "sentence": "धमाका सेल! जी हां... भारत की सबसे बड़ी Online Sale शुरू हो चुकी है! इलेक्ट्रॉनिक्स, कपड़े, और होम अप्लायंसेज पर [stress]अविश्वसनीय[/stress] 80% तक की छूट! ऑफर सीमित समय के लिए!"
+  },
+  {
+    "sentence_id": 330,
+    "block": "STD",
+    "domain": "Advertisements and Commercials",
+    "emotion": "Soft",
+    "emotion_subtype": "soothing",
+    "target_seconds": 13.2,
+    "sentence": "दिन भर की भागदौड़ के बाद... क्या आपकी त्वचा भी बेजान लगने लगती है? <sighs> अपनाइए PureGlow Herbal Cream... 100% प्राकृतिक केसर और एलोवेरा के गुणों से भरपूर..."
+  },
+  {
+    "sentence_id": 331,
+    "block": "STD",
+    "domain": "Advertisements and Commercials",
+    "emotion": "Empathetic",
+    "emotion_subtype": "reassuring",
+    "target_seconds": 14.1,
+    "sentence": "बच्चों की पढ़ाई और भविष्य की चिंता... हर माता-पिता को सताती है। <inhales sharply> SafeFuture Child Plan के साथ आज ही निवेश शुरू करें और उनके सपनों को दें पंख।"
+  },
+  {
+    "sentence_id": 332,
+    "block": "STD",
+    "domain": "Advertisements and Commercials",
+    "emotion": "Energetic",
+    "emotion_subtype": "enthusiastic",
+    "target_seconds": 10.5,
+    "sentence": "अब हर सफर बनेगा यादगार! पेश है नई Alpha EV — 400 किलोमीटर की माइलेज, सुपरफास्ट चार्जिंग और ऑटोमैटिक ड्राइव मोड के साथ! टेस्ट ड्राइव बुक करें आज ही!"
+  },
+  {
+    "sentence_id": 333,
+    "block": "STD",
+    "domain": "Advertisements and Commercials",
+    "emotion": "Charming",
+    "emotion_subtype": "persuasive",
+    "target_seconds": 11.5,
+    "sentence": "घर सिर्फ चार दीवारों से नहीं बनता... वो बनता है यादों से! <smiles> ShubhNivas Developers आपके लिए ला रहे हैं लग्जरी 3BHK अपार्टमेंट्स, प्राइम लोकेशन पर!"
+  },
+  {
+    "sentence_id": 334,
+    "block": "STD",
+    "domain": "Advertisements and Commercials",
+    "emotion": "Fast",
+    "emotion_subtype": "urgent",
+    "target_seconds": 8.0,
+    "sentence": "जल्दी कीजिए! स्टॉक सीमित है! सिर्फ आज रात बारह बजे तक पाएं सभी ब्रांडेड जूतों पर Buy 1 Get 1 Free! अभी download कीजिए हमारा App!"
+  },
+  {
+    "sentence_id": 335,
+    "block": "STD",
+    "domain": "Advertisements and Commercials",
+    "emotion": "Happy",
+    "emotion_subtype": "vibrant",
+    "target_seconds": 12.4,
+    "sentence": "त्यौहारों की चमक, आपके घर की रौनक़! Royal Paint के साथ दीवारें मुस्कुराएंगी और पूरा घर चमकेगा! इस दिवाली, घर को दीजिए एक नया रूप!"
+  },
+  {
+    "sentence_id": 336,
+    "block": "STD",
+    "domain": "Advertisements and Commercials",
+    "emotion": "Neutral",
+    "emotion_subtype": "informative",
+    "target_seconds": 13.2,
+    "sentence": "क्या आप जानते हैं कि गलत गद्दे पर सोने से रीढ़ की हड्डी पर दबाव पड़ता है? <clears throat> SleepWell Ortho Mattress देता है सही सपोर्ट और 10 साल की वारंटी।"
+  },
+  {
+    "sentence_id": 337,
+    "block": "STD",
+    "domain": "Advertisements and Commercials",
+    "emotion": "Cheerful",
+    "emotion_subtype": "inviting",
+    "target_seconds": 10.7,
+    "sentence": "रविवार को परिवार के साथ कहां जाना है? <laughs> Grand Mall का Food Court है सही जगह! साउथ इंडियन से लेकर चाइनीज तक, सब कुछ एक ही छत के नीचे!"
+  },
+  {
+    "sentence_id": 338,
+    "block": "STD",
+    "domain": "Advertisements and Commercials",
+    "emotion": "Soft",
+    "emotion_subtype": "warm",
+    "target_seconds": 12.1,
+    "sentence": "सर्दियों की सुबह और एक कप कड़क चाय... <exhales> TajMahal Special Tea के साथ हर सुबह की शुरुआत कीजिए ताजगी और खुशबू के साथ।"
+  },
+  {
+    "sentence_id": 339,
+    "block": "STD",
+    "domain": "Advertisements and Commercials",
+    "emotion": "Proud",
+    "emotion_subtype": "confident",
+    "target_seconds": 12.7,
+    "sentence": "भारत का नंबर एक भरोसेमंद Solar Panel — SunPower! बिजली का बिल शून्य करें और पर्यावरण की रक्षा में अपना योगदान दें। अधिक जानकारी के लिए अभी कॉल करें!"
+  },
+  {
+    "sentence_id": 340,
+    "block": "STD",
+    "domain": "Advertisements and Commercials",
+    "emotion": "Energetic",
+    "emotion_subtype": "catchy",
+    "target_seconds": 10.9,
+    "sentence": "फिटनेस का नया दौर! GymPro App के साथ घर बैठे सीखिए पर्सनल ट्रेनर से योगा और वर्कआउट! 7 दिन का Free Trial पाने के लिए लिंक पर क्लिक करें!"
+  },
+  {
+    "sentence_id": 341,
+    "block": "STD",
+    "domain": "Advertisements and Commercials",
+    "emotion": "Surprised",
+    "emotion_subtype": "playful",
+    "target_seconds": 12.5,
+    "sentence": "अरे वाह! इतने कम दाम में 55 इंच का 4K Smart TV?! <gasps> जी हां, बिल्कुल सच! ऑफर खत्म होने से पहले तुरंत विजिट करें हमारी वेबसाइट पर!"
+  },
+  {
+    "sentence_id": 342,
+    "block": "STD",
+    "domain": "Agriculture",
+    "emotion": "Neutral",
+    "emotion_subtype": "informative",
+    "target_seconds": 14.9,
+    "sentence": "किसान भाइयों, रबी की फसल बोने से पहले मिट्टी की जांच कराना बहुत जरूरी है... मिट्टी में नाइट्रोजन और फॉस्फोरस की मात्रा का सही अनुमान लगाकर ही खाद का इस्तेमाल करें।"
+  },
+  {
+    "sentence_id": 343,
+    "block": "STD",
+    "domain": "Agriculture",
+    "emotion": "Hopeful",
+    "emotion_subtype": "encouraging",
+    "target_seconds": 14.8,
+    "sentence": "ड्रिप इरिगेशन यानी टपक सिंचाई पद्धति अपनाने से न सिर्फ साठ प्रतिशत तक पानी की बचत होती है... बल्कि फसलों की पैदावार में भी पच्चीस से तीस प्रतिशत की बढ़ोतरी देखी गई है।"
+  },
+  {
+    "sentence_id": 344,
+    "block": "STD",
+    "domain": "Agriculture",
+    "emotion": "Hesitation",
+    "emotion_subtype": "cautious",
+    "target_seconds": 14.3,
+    "sentence": "मौसम विभाग के अनुसार इस हफ्ते हल्की बारिश की संभावना है... <inhales sharply> इसलिए धान की कटाई कर चुके किसान अपनी फसल को सुरक्षित खलिहान या गोदाम में ढक कर रखें।"
+  },
+  {
+    "sentence_id": 345,
+    "block": "STD",
+    "domain": "Agriculture",
+    "emotion": "Proud",
+    "emotion_subtype": "satisfied",
+    "target_seconds": 16.5,
+    "sentence": "ऑर्गेनिक खेती अब सिर्फ एक विकल्प नहीं... <smiles> बल्कि भविष्य की ज़रूरत बन चुकी है। बिना रासायनिक कीटनाशकों के उगाए गए गेहूं और सब्जियों का बाज़ार में दाम भी बेहतर मिलता है।"
+  },
+  {
+    "sentence_id": 346,
+    "block": "STD",
+    "domain": "Agriculture",
+    "emotion": "Sad",
+    "emotion_subtype": "concerned",
+    "target_seconds": 14.6,
+    "sentence": "पिछले दो हफ्तों से लगातार पड़ रही ओलावृष्टि ने सरसों और चने की फसल को काफी नुकसान पहुंचाया है... <sighs> सरकार से मुआवजा प्रक्रिया जल्द शुरू करने की मांग की गई है।"
+  },
+  {
+    "sentence_id": 347,
+    "block": "STD",
+    "domain": "Agriculture",
+    "emotion": "Clear",
+    "emotion_subtype": "educational",
+    "target_seconds": 16.8,
+    "sentence": "पीएम किसान सम्मान निधि योजना के तहत अगली किस्त पाने के लिए अपना e-KYC तुरंत पूरा करें। नजदीकी जन सेवा केंद्र पर जाकर आधार कार्ड के साथ सत्यापन कराएं।"
+  },
+  {
+    "sentence_id": 348,
+    "block": "STD",
+    "domain": "Agriculture",
+    "emotion": "Energetic",
+    "emotion_subtype": "motivational",
+    "target_seconds": 14.6,
+    "sentence": "डेयरी फार्मिंग को आधुनिक तकनीक से जोड़कर हमारे गांव के युवा हर महीने लाखों रुपये कमा रहे हैं! ऑटोमैटिक मिल्किंग मशीन और साइलेज तकनीक ने काम बहुत आसान बना दिया है।"
+  },
+  {
+    "sentence_id": 349,
+    "block": "STD",
+    "domain": "Agriculture",
+    "emotion": "Soft",
+    "emotion_subtype": "advisory",
+    "target_seconds": 12.8,
+    "sentence": "फसलों में कीट नियंत्रण के लिए नीम के तेल का छिड़काव एक बहुत ही सस्ता और असरदार जैविक उपाय है... <clears throat> प्रति लीटर पानी में 5 ml नीम का तेल मिलाकर छिड़कें।"
+  },
+  {
+    "sentence_id": 350,
+    "block": "STD",
+    "domain": "Agriculture",
+    "emotion": "Surprised",
+    "emotion_subtype": "amazed",
+    "target_seconds": 13.4,
+    "sentence": "क्या आपने सोलर पंप सब्सिडी योजना के बारे में सुना है? <gasps> सरकार नब्बे प्रतिशत तक सब्सिडी दे रही है ताकि किसानों को बिजली या डीजल पर निर्भर न रहना पड़े!"
+  },
+  {
+    "sentence_id": 351,
+    "block": "STD",
+    "domain": "Agriculture",
+    "emotion": "Narration",
+    "emotion_subtype": "descriptive",
+    "target_seconds": 13.8,
+    "sentence": "सुबह की पहली किरण के साथ जब रामदीन अपने खेतों में पानी लगाने पहुंचता है... तो हरी-भरी लहलहाती फसल देखकर उसकी महीनों की थकान एक पल में गायब हो जाती है।"
+  },
+  {
+    "sentence_id": 352,
+    "block": "STD",
+    "domain": "Agriculture",
+    "emotion": "Neutral",
+    "emotion_subtype": "analytical",
+    "target_seconds": 14.2,
+    "sentence": "मंडी समिति में आज गेहूं का न्यूनतम समर्थन मूल्य दो हजार दो सौ पच्चीस रुपये प्रति क्विंटल दर्ज किया गया... आवक बढ़ने के साथ ही सरकारी खरीद केंद्रों पर व्यवस्था सुचारू है।"
+  },
+  {
+    "sentence_id": 353,
+    "block": "STD",
+    "domain": "Agriculture",
+    "emotion": "Hopeful",
+    "emotion_subtype": "optimistic",
+    "target_seconds": 13.8,
+    "sentence": "पॉलीहाउस खेती तकनीक के जरिए अब बेमौसम सब्जियां उगाना बहुत आसान हो गया है... कम जमीन में अधिक मुनाफा कमाने का यह एक बेहतरीन जरिया है।"
+  },
+  {
+    "sentence_id": 354,
+    "block": "STD",
+    "domain": "Agriculture",
+    "emotion": "Soft",
+    "emotion_subtype": "reflective",
+    "target_seconds": 14.2,
+    "sentence": "धरती माता हमें सब कुछ देती है... <sighs> अगर हम पराली जलाने के बजाय उसे मिट्टी में मिला दें, तो जमीन की उर्रवरा शक्ति और बढ़ जाएगी।"
+  },
+  {
+    "sentence_id": 355,
+    "block": "STD",
+    "domain": "Agriculture",
+    "emotion": "Energetic",
+    "emotion_subtype": "guidance",
+    "target_seconds": 13.8,
+    "sentence": "मशरूम फार्मिंग की शुरुआत छोटे स्तर से कमरे के अंदर भी की जा सकती है! कम लागत और कम समय में बेहतर रिटर्न देने वाला यह एक शानदार एग्री-बिजनेस है।"
+  },
+  {
+    "sentence_id": 356,
+    "block": "STD",
+    "domain": "Agriculture",
+    "emotion": "Happy",
+    "emotion_subtype": "cheerful",
+    "target_seconds": 12.6,
+    "sentence": "इस बार मानसून की अच्छी बारिश से गांव के सारे तालाब और कुएं भर गए हैं! <laughs> यकीनन इस साल फसलों की पैदावार रिकॉर्ड तोड़ने वाली है!"
+  },
+  {
+    "sentence_id": 357,
+    "block": "STD",
+    "domain": "Education",
+    "emotion": "Narration",
+    "emotion_subtype": "instructive",
+    "target_seconds": 13.5,
+    "sentence": "बोर्ड परीक्षाओं की तैयारी करते समय रिवीजन सबसे महत्वपूर्ण कदम है... हर विषय के महत्वपूर्ण सूत्रों और मुख्य बिंदुओं का एक अलग नोड बना लें ताकि अंत में दोहराने में आसानी हो।"
+  },
+  {
+    "sentence_id": 358,
+    "block": "STD",
+    "domain": "Education",
+    "emotion": "Soft",
+    "emotion_subtype": "encouraging",
+    "target_seconds": 14.3,
+    "sentence": "परीक्षा के समय तनाव होना स्वाभाविक है... <sighs> लेकिन याद रखिए, एक मार्कशीट का पन्ना आपका भविष्य तय नहीं करता। अपनी मेहनत पर भरोसा रखिए और शांत मन से पेपर दीजिए।"
+  },
+  {
+    "sentence_id": 359,
+    "block": "STD",
+    "domain": "Education",
+    "emotion": "Energetic",
+    "emotion_subtype": "inspiring",
+    "target_seconds": 12.9,
+    "sentence": "डिजिटल इंडिया के इस दौर में सीखने के साधन असीमित हैं! ऑनलाइन कोर्सेज, ई-बुक्स और एजुकेशनल वीडियोज के जरिए आप घर बैठे दुनिया के बेहतरीन प्रोफेसरों से सीख सकते हैं।"
+  },
+  {
+    "sentence_id": 360,
+    "block": "STD",
+    "domain": "Education",
+    "emotion": "Neutral",
+    "emotion_subtype": "informative",
+    "target_seconds": 14.8,
+    "sentence": "राष्ट्रीय शिक्षा नीति 2020 के तहत अब रटने की पद्धति को छोड़कर प्रैक्टिकल लर्निंग पर अधिक जोर दिया जा रहा है... जिससे विद्यार्थियों में क्रिटिकल थिंकिंग का विकास हो सके।"
+  },
+  {
+    "sentence_id": 361,
+    "block": "STD",
+    "domain": "Education",
+    "emotion": "Cheerful",
+    "emotion_subtype": "friendly",
+    "target_seconds": 12.1,
+    "sentence": "गणित से डर लगता है क्या? <laughs> अरे भाई, मैथ्स सिर्फ प्रैक्टिस का खेल है! रोज तीन सवाल हल करने का नियम बनाइए, डर अपने आप गायब हो जाएगा!"
+  },
+  {
+    "sentence_id": 362,
+    "block": "STD",
+    "domain": "Education",
+    "emotion": "Hesitation",
+    "emotion_subtype": "thoughtful",
+    "target_seconds": 15.2,
+    "sentence": "दसवीं के बाद कौन सी स्ट्रीम चुनें — साइंस, कॉमर्स या आर्ट्स? <inhales sharply> दूसरों की देखा-देखी नहीं, बल्कि अपनी रुचि और ताकत को पहचानकर फैसला लें।"
+  },
+  {
+    "sentence_id": 363,
+    "block": "STD",
+    "domain": "Education",
+    "emotion": "Loud",
+    "emotion_subtype": "assertive",
+    "target_seconds": 13.1,
+    "sentence": "समय प्रबंधन यानी टाइम मैनेजमेंट ही सफलता की असली कुंजी है! अगर आपने रोज के 24 घंटे सही तरीके से बांट लिए, तो कोई भी लक्ष्य नामुमकिन नहीं है!"
+  },
+  {
+    "sentence_id": 364,
+    "block": "STD",
+    "domain": "Education",
+    "emotion": "Soft",
+    "emotion_subtype": "gentle",
+    "target_seconds": 13.3,
+    "sentence": "पढ़ाई के साथ-साथ सही नींद और संतुलित आहार भी उतना ही जरूरी है... <smiles> जब शरीर स्वस्थ रहेगा, तभी दिमाग नई बातें जल्दी सीख पाएगा।"
+  },
+  {
+    "sentence_id": 365,
+    "block": "STD",
+    "domain": "Education",
+    "emotion": "Surprised",
+    "emotion_subtype": "curious",
+    "target_seconds": 14.4,
+    "sentence": "क्या आप जानते हैं कि प्रकाश को सूर्य से पृथ्वी तक पहुंचने में लगभग 8 मिनट 20 सेकंड का समय लगता है? <gasps> विज्ञान की दुनिया ऐसे ही अद्भुत तथ्यों से भरी पड़ी है!"
+  },
+  {
+    "sentence_id": 366,
+    "block": "STD",
+    "domain": "Education",
+    "emotion": "Proud",
+    "emotion_subtype": "supportive",
+    "target_seconds": 12.5,
+    "sentence": "हमारे संस्थान के छात्रों ने इस साल की प्रतियोगी परीक्षा में टॉप रैंक हासिल की है! उनकी यह सफलता लगन, अनुशासन और सही मार्गदर्शन का परिणाम है।"
+  },
+  {
+    "sentence_id": 367,
+    "block": "STD",
+    "domain": "Education",
+    "emotion": "Empathetic",
+    "emotion_subtype": "guiding",
+    "target_seconds": 14.9,
+    "sentence": "अंग्रेजी बोलने में हिचकिचाहट होती है? <chuckles> शुरुआत में गलतियां करने से मत डरिए। शीशे के सामने खड़े होकर रोज 5 मिनट बोलने का अभ्यास करें।"
+  },
+  {
+    "sentence_id": 368,
+    "block": "STD",
+    "domain": "Education",
+    "emotion": "Neutral",
+    "emotion_subtype": "academic",
+    "target_seconds": 13.7,
+    "sentence": "हड़प्पा सभ्यता की खोज ने भारतीय इतिहास को एक नई दिशा दी... सिंधु घाटी के नगर नियोजन और जल निकासी व्यवस्था आज भी आधुनिक इंजीनियरों को प्रेरित करती है।"
+  },
+  {
+    "sentence_id": 369,
+    "block": "STD",
+    "domain": "Education",
+    "emotion": "Hopeful",
+    "emotion_subtype": "motivational",
+    "target_seconds": 13.9,
+    "sentence": "स्कॉलरशिप योजनाएं उन होनहार छात्रों के लिए एक वरदान हैं जो आर्थिक तंगी के कारण आगे नहीं पढ़ पाते। सही समय पर फॉर्म भरें और अपने पंखों को उड़ान दें।"
+  },
+  {
+    "sentence_id": 370,
+    "block": "STD",
+    "domain": "Education",
+    "emotion": "Hesitation",
+    "emotion_subtype": "reflective",
+    "target_seconds": 15.0,
+    "sentence": "कोडिंग सीखना आज के युग में एक नई भाषा सीखने जैसा है... <clears throat> अगर आप बेसिक लॉजिक समझ गए, तो सॉफ्टवेयर डेवलपमेंट का रास्ता आसान हो जाता है।"
+  },
+  {
+    "sentence_id": 371,
+    "block": "STD",
+    "domain": "Education",
+    "emotion": "Happy",
+    "emotion_subtype": "enthusiastic",
+    "target_seconds": 10.8,
+    "sentence": "स्कूली जीवन के ये दिन दोबारा वापस नहीं आएंगे! दोस्तों के साथ पढ़ना, खेलकूद में भाग लेना और टीचर्स से सीखना... इन हसीन पलों को खुलकर जिएं!"
+  },
+  {
+    "sentence_id": 372,
+    "block": "STD",
+    "domain": "Finance & business",
+    "emotion": "Neutral",
+    "emotion_subtype": "analytical",
+    "target_seconds": 16.4,
+    "sentence": "म्यूचुअल फंड में एसआईपी यानी सिस्टमैटिक इन्वेस्टमेंट प्लान के जरिए निवेश करना लंबी अवधि में वेल्थ क्रिएट करने का एक बहुत ही अनुशासित तरीका है... कम्पाउंडिंग की ताकत से छोटा निवेश भी बड़ा बनता है।"
+  },
+  {
+    "sentence_id": 373,
+    "block": "STD",
+    "domain": "Finance & business",
+    "emotion": "Hesitation",
+    "emotion_subtype": "cautious",
+    "target_seconds": 13.6,
+    "sentence": "शेयर बाजार में आई अचानक गिरावट से घबराकर हड़बड़ी में अपने शेयर्स न बेचें... <inhales sharply> मार्केट साइकल को समझें और हमेशा फंडामेंटली मजबूत कंपनियों पर ही भरोसा रखें।"
+  },
+  {
+    "sentence_id": 374,
+    "block": "STD",
+    "domain": "Finance & business",
+    "emotion": "Clear",
+    "emotion_subtype": "explanatory",
+    "target_seconds": 17.3,
+    "sentence": "इमरजेंसी फंड का होना हर नौकरीपेशा व्यक्ति के लिए बेहद जरूरी है। आपकी कम से कम 6 महीने की सैलरी के बराबर रकम ऐसे खाते में होनी चाहिए जिसे जरूरत पड़ने पर तुरंत निकाला जा सके।"
+  },
+  {
+    "sentence_id": 375,
+    "block": "STD",
+    "domain": "Finance & business",
+    "emotion": "Soft",
+    "emotion_subtype": "advisory",
+    "target_seconds": 14.6,
+    "sentence": "क्रेडिट कार्ड का इस्तेमाल करते समय अपनी रीपेमेंट क्षमता का ध्यान जरूर रखें... <clears throat> मिनिमम ड्यू चुकाने के बजाय हमेशा पूरे बिल का भुगतान करें ताकि भारी ब्याज से बचा जा सके।"
+  },
+  {
+    "sentence_id": 376,
+    "block": "STD",
+    "domain": "Finance & business",
+    "emotion": "Proud",
+    "emotion_subtype": "confident",
+    "target_seconds": 14.9,
+    "sentence": "हमारी कंपनी ने इस तिमाही में रिकॉर्ड 35 प्रतिशत का रेवेन्यू ग्रोथ दर्ज किया है... यह हमारी समर्पित टीम और ग्राहकों के अटूट विश्वास का प्रमाण है।"
+  },
+  {
+    "sentence_id": 377,
+    "block": "STD",
+    "domain": "Finance & business",
+    "emotion": "Surprised",
+    "emotion_subtype": "alert",
+    "target_seconds": 13.6,
+    "sentence": "ऑनलाइन बैंकिंग धोखाधड़ी से बचने के लिए कभी भी अपना OTP, PIN या पासवर्ड किसी के साथ साझा न करें! <gasps> बैंक कभी भी फोन पर ऐसी गोपनीय जानकारी नहीं मांगता।"
+  },
+  {
+    "sentence_id": 378,
+    "block": "STD",
+    "domain": "Finance & business",
+    "emotion": "Energetic",
+    "emotion_subtype": "motivational",
+    "target_seconds": 13.7,
+    "sentence": "अगर आपके पास एक अनोखा आईडिया और काम करने का जुनून है, तो स्टार्टअप इंडिया योजना आपके सपनों को हकीकत में बदलने के लिए फंडिंग और मेंटरशिप प्रदान कर रही है!"
+  },
+  {
+    "sentence_id": 379,
+    "block": "STD",
+    "domain": "Finance & business",
+    "emotion": "Soft",
+    "emotion_subtype": "reflective",
+    "target_seconds": 16.4,
+    "sentence": "नया टैक्स रिजीम या ओल्ड टैक्स रिजीम? <sighs> सही विकल्प का चुनाव करने से पहले अपनी कुल कटौतियों और छूटों का सही आकलन कर लें ताकि टैक्स की बचत अधिकतम हो सके।"
+  },
+  {
+    "sentence_id": 380,
+    "block": "STD",
+    "domain": "Finance & business",
+    "emotion": "Cheerful",
+    "emotion_subtype": "informative",
+    "target_seconds": 12.5,
+    "sentence": "स्मॉल स्केल बिजनेस शुरू करना चाहते हैं? <laughs> मुद्रा लोन योजना के तहत बिना किसी गारंटी के 10 लाख रुपये तक का लोन आसानी से उपलब्ध है!"
+  },
+  {
+    "sentence_id": 381,
+    "block": "STD",
+    "domain": "Finance & business",
+    "emotion": "Neutral",
+    "emotion_subtype": "strategic",
+    "target_seconds": 15.0,
+    "sentence": "किसी भी नए प्रोजेक्ट में पूंजी लगाने से पहले ROI यानी रिटर्न ऑन इन्वेस्टमेंट का सही मूल्यांकन करना जरूरी है... जोखिम प्रबंधन ही बिजनेस की सफलता की नींव है।"
+  },
+  {
+    "sentence_id": 382,
+    "block": "STD",
+    "domain": "Finance & business",
+    "emotion": "Empathetic",
+    "emotion_subtype": "guiding",
+    "target_seconds": 14.1,
+    "sentence": "रिटायरमेंट की योजना जितनी जल्दी शुरू की जाए, उतना ही बेहतर है। 25 की उम्र में शुरू किया गया छोटा सा निवेश 60 की उम्र में आपको वित्तीय स्वतंत्रता दे सकता है।"
+  },
+  {
+    "sentence_id": 383,
+    "block": "STD",
+    "domain": "Finance & business",
+    "emotion": "Hopeful",
+    "emotion_subtype": "optimistic",
+    "target_seconds": 15.0,
+    "sentence": "भारतीय अर्थव्यवस्था में तेजी से हो रहा डिजिटल परिवर्तन छोटे व्यापारियों के लिए नए अवसर पैदा कर रहा है... यूपीआई और ई-कॉमर्स ने व्यापार का दायरा बढ़ा दिया है।"
+  },
+  {
+    "sentence_id": 384,
+    "block": "STD",
+    "domain": "Finance & business",
+    "emotion": "Hesitation",
+    "emotion_subtype": "deliberate",
+    "target_seconds": 13.5,
+    "sentence": "सोने में निवेश पारंपरिक रूप से सुरक्षित माना जाता है... <clears throat> फिजिकल गोल्ड खरीदने के बजाय सोवरन गोल्ड बॉन्ड में निवेश करें जहां ब्याज भी मिलता है और मेकिंग चार्ज भी नहीं लगता।"
+  },
+  {
+    "sentence_id": 385,
+    "block": "STD",
+    "domain": "Finance & business",
+    "emotion": "Loud",
+    "emotion_subtype": "assertive",
+    "target_seconds": 12.7,
+    "sentence": "वित्तीय साक्षरता हर नागरिक का अधिकार और कर्तव्य है! जब तक आप अपने पैसे को सही जगह काम पर नहीं लगाएंगे, तब तक आप वित्तीय रूप से मजबूत नहीं बन सकते!"
+  },
+  {
+    "sentence_id": 386,
+    "block": "STD",
+    "domain": "Finance & business",
+    "emotion": "Happy",
+    "emotion_subtype": "reassuring",
+    "target_seconds": 12.7,
+    "sentence": "टर्म इंश्योरेंस प्लान लेना अपने परिवार को वित्तीय सुरक्षा कवच देने जैसा है... बहुत कम प्रीमियम में आप अपने परिवार का भविष्य सुरक्षित कर सकते हैं।"
+  },
+  {
+    "sentence_id": 387,
+    "block": "STD",
+    "domain": "General conversation",
+    "emotion": "Happy",
+    "emotion_subtype": "friendly",
+    "target_seconds": 12.5,
+    "sentence": "अरे भाई! इतने दिनों बाद दिखे, कहां गायब थे यार? <laughs> चलो शाम को चाय पर मिलते हैं, बहुत सारी बातें करनी हैं तुमसे!"
+  },
+  {
+    "sentence_id": 388,
+    "block": "STD",
+    "domain": "General conversation",
+    "emotion": "Soft",
+    "emotion_subtype": "nostalgic",
+    "target_seconds": 14.8,
+    "sentence": "बारिश की ये बूंदें और मिट्टी की वो सौंधी खुशबू... <sighs> मुझे बचपन के वो दिन याद दिला देती हैं जब हम कागज की नावें बनाकर पानी में तैराया करते थे।"
+  },
+  {
+    "sentence_id": 389,
+    "block": "STD",
+    "domain": "General conversation",
+    "emotion": "Hesitation",
+    "emotion_subtype": "uncertain",
+    "target_seconds": 13.1,
+    "sentence": "मुझे समझ नहीं आ रहा कि इस वीकेंड पर कहां घूमने जाएं... <inhales sharply> पहाड़ चलें या फिर जयपुर की तरफ कोई रोड ट्रिप प्लान करें? तुम बताओ क्या सही रहेगा?"
+  },
+  {
+    "sentence_id": 390,
+    "block": "STD",
+    "domain": "General conversation",
+    "emotion": "Confused",
+    "emotion_subtype": "perplexed",
+    "target_seconds": 12.4,
+    "sentence": "अरे! मेरी गाड़ी की चाबी अभी तो यहीं मेज पर रखी थी... <gasps> अचानक कहां गायब हो गई? पूरे घर में ढूढ़ लिया, कहीं नहीं मिल रही!"
+  },
+  {
+    "sentence_id": 391,
+    "block": "STD",
+    "domain": "General conversation",
+    "emotion": "Surprised",
+    "emotion_subtype": "excited",
+    "target_seconds": 10.9,
+    "sentence": "क्या?! रोहन की शादी तय हो गई?! <gasps> मुझे तो यकीन ही नहीं हो रहा! पिछले हफ्ते ही तो बात हुई थी उससे, उसने कुछ बताया ही नहीं!"
+  },
+  {
+    "sentence_id": 392,
+    "block": "STD",
+    "domain": "General conversation",
+    "emotion": "Empathetic",
+    "emotion_subtype": "warm",
+    "target_seconds": 13.7,
+    "sentence": "तुम आजकल थोड़े परेशान लग रहे हो... क्या बात है? <smiles> अगर कुछ शेयर करना चाहो तो मैं हमेशा सुनने के लिए तैयार हूं, दोस्त।"
+  },
+  {
+    "sentence_id": 393,
+    "block": "STD",
+    "domain": "General conversation",
+    "emotion": "Angry",
+    "emotion_subtype": "annoyed",
+    "target_seconds": 12.6,
+    "sentence": "हद हो गई यार! दो घंटे से ट्रैफिक में फंसे हुए हैं, गाड़ियां टस से मस नहीं हो रही हैं... इतनी भयंकर गर्मी में एसी भी ठीक से काम नहीं कर रहा!"
+  },
+  {
+    "sentence_id": 394,
+    "block": "STD",
+    "domain": "General conversation",
+    "emotion": "Cheerful",
+    "emotion_subtype": "lively",
+    "target_seconds": 13.2,
+    "sentence": "आज का मौसम कितना सुहावना है ना! हल्की-हल्की ठंडी हवा चल रही है... ऐसे में तो बालकनी में बैठकर गरमा-गरम पकौड़े और चाय होनी ही चाहिए!"
+  },
+  {
+    "sentence_id": 395,
+    "block": "STD",
+    "domain": "General conversation",
+    "emotion": "Sad",
+    "emotion_subtype": "disappointed",
+    "target_seconds": 13.1,
+    "sentence": "हमने जिस रेस्टोरेंट का इतना नाम सुना था... वहां का खाना बिल्कुल बकवास निकला। <sighs> पैसे और समय दोनों बर्बाद हो गए।"
+  },
+  {
+    "sentence_id": 396,
+    "block": "STD",
+    "domain": "General conversation",
+    "emotion": "Neutral",
+    "emotion_subtype": "casual",
+    "target_seconds": 15.8,
+    "sentence": "नया घर शिफ्ट करना सच में एक बहुत बड़ा सिरदर्द है... आधी चीजें पैक हो चुकी हैं और आधी अभी भी बिखरी पड़ी हैं। समझ नहीं आ रहा कहां से शुरू करूं।"
+  },
+  {
+    "sentence_id": 397,
+    "block": "STD",
+    "domain": "General conversation",
+    "emotion": "Soft",
+    "emotion_subtype": "caring",
+    "target_seconds": 13.8,
+    "sentence": "अम्मा जी की तबीयत अब कैसी है? <clears throat> डॉक्टर ने जो दवाइयां दी थीं, उनसे कुछ आराम मिला या नहीं? मुझे जरूर बताना।"
+  },
+  {
+    "sentence_id": 398,
+    "block": "STD",
+    "domain": "General conversation",
+    "emotion": "Energetic",
+    "emotion_subtype": "enthusiastic",
+    "target_seconds": 12.6,
+    "sentence": "चलो यार! आज शाम को ऑल-फ्रेंड्स रीयूनियन रखते हैं! बहुत समय हो गया सब दोस्तों को एक साथ बैठकर हंसते-खिलखिलाते हुए!"
+  },
+  {
+    "sentence_id": 399,
+    "block": "STD",
+    "domain": "General conversation",
+    "emotion": "Hesitation",
+    "emotion_subtype": "embarrassed",
+    "target_seconds": 12.6,
+    "sentence": "अरे सच बताऊं तो... मैं तुम्हारा नाम भूल गया था! <chuckles> शक्ल बिल्कुल याद थी, पर दिमाग से नाम एकदम slip हो गया। मुझे माफ करना भाई!"
+  },
+  {
+    "sentence_id": 400,
+    "block": "STD",
+    "domain": "General conversation",
+    "emotion": "Sleepy",
+    "emotion_subtype": "tired",
+    "target_seconds": 10.4,
+    "sentence": "आज दिन भर इतना काम था कि कमर टूट गई है... <exhales> अब तो बस बिस्तर पर पड़ते ही सोने का मन कर रहा है। कल सुबह बात करते हैं।"
+  },
+  {
+    "sentence_id": 401,
+    "block": "STD",
+    "domain": "General conversation",
+    "emotion": "Hopeful",
+    "emotion_subtype": "optimistic",
+    "target_seconds": 12.0,
+    "sentence": "कोई बात नहीं, इस बार नहीं हुआ तो क्या हुआ! अगली बार दोगुनी तैयारी से कोशिश करेंगे, देखना सफलता जरूर मिलेगी!"
+  },
+  {
+    "sentence_id": 402,
+    "block": "STD",
+    "domain": "Government / public services",
+    "emotion": "Neutral",
+    "emotion_subtype": "official",
+    "target_seconds": 14.3,
+    "sentence": "ई-श्रम पोर्टल पर पंजीकरण कराने वाले असंगठित क्षेत्र के श्रमिकों को दो लाख रुपये का मुफ़्त दुर्घटना बीमा कवर दिया जा रहा है... तुरंत अपने नजदीकी सीएससी केंद्र पर जाकर पंजीकरण कराएं।"
+  },
+  {
+    "sentence_id": 403,
+    "block": "STD",
+    "domain": "Government / public services",
+    "emotion": "Clear",
+    "emotion_subtype": "instructive",
+    "target_seconds": 13.3,
+    "sentence": "आधार कार्ड को पैन कार्ड से लिंक करने की अंतिम तिथि नजदीक आ रही है। असुविधा से बचने के लिए आयकर विभाग की आधिकारिक वेबसाइट पर जाकर समय रहते प्रक्रिया पूरी करें।"
+  },
+  {
+    "sentence_id": 404,
+    "block": "STD",
+    "domain": "Government / public services",
+    "emotion": "Empathetic",
+    "emotion_subtype": "supportive",
+    "target_seconds": 16.6,
+    "sentence": "वरिष्ठ नागरिकों की सुविधा के लिए अब डिजिटल जीवन प्रमाण पत्र जमा करने की सुविधा घर बैठे उपलब्ध है... <smiles> इंडिया पोस्ट पेमेंट्स बैंक के डाकिया आपके घर आकर बायोमेट्रिक सत्यापन कर देंगे।"
+  },
+  {
+    "sentence_id": 405,
+    "block": "STD",
+    "domain": "Government / public services",
+    "emotion": "Hesitation",
+    "emotion_subtype": "advisory",
+    "target_seconds": 15.5,
+    "sentence": "राष्ट्रीय उपभोक्ता हेल्पलाइन 1915 पर आप किसी भी अनुचित व्यापार व्यवहार या भ्रामक विज्ञापन के खिलाफ शिकायत दर्ज करा सकते हैं... <clears throat> अपने अधिकारों के प्रति जागरूक बनें।"
+  },
+  {
+    "sentence_id": 406,
+    "block": "STD",
+    "domain": "Government / public services",
+    "emotion": "Proud",
+    "emotion_subtype": "announcement",
+    "target_seconds": 15.1,
+    "sentence": "डिजिलॉकर एक सुरक्षित क्लाउड-आधारित प्लेटफॉर्म है जहां आप अपने ड्राइविंग लाइसेंस, मार्कशीट और व्हीकल आरसी को डिजिटल रूप में रख सकते हैं... जो भौतिक दस्तावेजों के समान मान्य हैं।"
+  },
+  {
+    "sentence_id": 407,
+    "block": "STD",
+    "domain": "Government / public services",
+    "emotion": "Energetic",
+    "emotion_subtype": "campaign",
+    "target_seconds": 11.9,
+    "sentence": "स्वच्छ भारत अभियान में अपना योगदान दें! गीला कचरा हरे डिब्बे में और सूखा कचरा नीले डिब्बे में ही डालें। अपने शहर को सुंदर और स्वच्छ बनाने में सहयोग करें।"
+  },
+  {
+    "sentence_id": 408,
+    "block": "STD",
+    "domain": "Government / public services",
+    "emotion": "Soft",
+    "emotion_subtype": "informative",
+    "target_seconds": 15.6,
+    "sentence": "पासपोर्ट बनवाने के लिए अब लंबी लाइनों में खड़े होने की जरूरत नहीं है। Passport Seva App के जरिए ऑनलाइन अपॉइंटमेंट बुक करें और अपने नजदीकी केंद्र पर जाएं।"
+  },
+  {
+    "sentence_id": 409,
+    "block": "STD",
+    "domain": "Government / public services",
+    "emotion": "Surprised",
+    "emotion_subtype": "awareness",
+    "target_seconds": 12.7,
+    "sentence": "साइबर क्राइम के शिकार होने पर तुरंत 1930 नंबर पर कॉल करें! <gasps> पहले दो घंटों के भीतर शिकायत दर्ज कराने पर आपके पैसे वापस मिलने की संभावना सबसे ज्यादा होती है।"
+  },
+  {
+    "sentence_id": 410,
+    "block": "STD",
+    "domain": "Government / public services",
+    "emotion": "Neutral",
+    "emotion_subtype": "procedural",
+    "target_seconds": 16.0,
+    "sentence": "प्रधानमंत्री आवास योजना के तहत पात्र लाभार्थी आधिकारिक पोर्टल पर जाकर अपने आवेदन की स्थिति की जांच कर सकते हैं... किसी भी बिचौलिए के झांसे में न आएं।"
+  },
+  {
+    "sentence_id": 411,
+    "block": "STD",
+    "domain": "Government / public services",
+    "emotion": "Hopeful",
+    "emotion_subtype": "encouraging",
+    "target_seconds": 13.9,
+    "sentence": "बेटी बचाओ, बेटी पढ़ाओ अभियान के तहत सुकन्या समृद्धि योजना में खाता खुलवाएं और अपनी लाडली के उज्ज्वल भविष्य और शिक्षा के लिए आकर्षक ब्याज दर का लाभ उठाएं।"
+  },
+  {
+    "sentence_id": 412,
+    "block": "STD",
+    "domain": "Government / public services",
+    "emotion": "Loud",
+    "emotion_subtype": "assertive",
+    "target_seconds": 11.7,
+    "sentence": "यातायात नियमों का सख्ती से पालन करें! हेलमेट और सीट बेल्ट लगाना सिर्फ चालान से बचने के लिए नहीं, बल्कि आपकी अपनी कीमती जिंदगी की सुरक्षा के लिए जरूरी है!"
+  },
+  {
+    "sentence_id": 413,
+    "block": "STD",
+    "domain": "Government / public services",
+    "emotion": "Soft",
+    "emotion_subtype": "guiding",
+    "target_seconds": 13.4,
+    "sentence": "जल संरक्षण हम सबकी साझी जिम्मेदारी है... <sighs> वर्षा जल संचयन यानी रेन वाटर हार्वेस्टिंग अपनाएं और आने वाली पीढ़ियों के लिए पानी बचाएं।"
+  },
+  {
+    "sentence_id": 414,
+    "block": "STD",
+    "domain": "Government / public services",
+    "emotion": "Cheerful",
+    "emotion_subtype": "publicity",
+    "target_seconds": 13.8,
+    "sentence": "डिजिटल इंडिया का सपना साकार हो रहा है! अब देश के हर गांव और पंचायत को हाई-स्पीड ब्रॉडबैंड इंटरनेट कनेक्टिविटी से जोड़ा जा रहा है।"
+  },
+  {
+    "sentence_id": 415,
+    "block": "STD",
+    "domain": "Government / public services",
+    "emotion": "Hesitation",
+    "emotion_subtype": "clarification",
+    "target_seconds": 14.5,
+    "sentence": "वोटर लिस्ट में अपना नाम जांचने के लिए NVSP पोर्टल पर विजिट करें... <clears throat> यदि आपका नाम शामिल नहीं है तो फॉर्म 6 भरकर नया वोटर कार्ड बनवाएं।"
+  },
+  {
+    "sentence_id": 416,
+    "block": "STD",
+    "domain": "Government / public services",
+    "emotion": "Proud",
+    "emotion_subtype": "patriotic",
+    "target_seconds": 12.3,
+    "sentence": "राष्ट्र निर्माण में ईमानदारी से टैक्स चुकाना हर नागरिक का परम कर्तव्य है। देश के इंफ्रास्ट्रक्चर और विकास कार्यों में आपका योगदान अमूल्य है।"
+  },
+  {
+    "sentence_id": 417,
+    "block": "STD",
+    "domain": "Healthcare",
+    "emotion": "Soft",
+    "emotion_subtype": "caring",
+    "target_seconds": 15.6,
+    "sentence": "दिन भर लगातार कंप्यूटर स्क्रीन के सामने बैठने से आंखों पर भारी तनाव पड़ता है... <sighs> हर 20 मिनट बाद 20 फीट दूर किसी वस्तु को 20 सेकंड के लिए जरूर देखें।"
+  },
+  {
+    "sentence_id": 418,
+    "block": "STD",
+    "domain": "Healthcare",
+    "emotion": "Neutral",
+    "emotion_subtype": "medical-advice",
+    "target_seconds": 14.8,
+    "sentence": "टाइप 2 डायबिटीज को नियंत्रित करने के लिए केवल दवाइयां ही काफी नहीं हैं... दैनिक जीवन में 30 मिनट की पैदल चाल और कम कार्बोहाइड्रेट वाला आहार बेहद आवश्यक है।"
+  },
+  {
+    "sentence_id": 419,
+    "block": "STD",
+    "domain": "Healthcare",
+    "emotion": "Hesitation",
+    "emotion_subtype": "cautious",
+    "target_seconds": 14.2,
+    "sentence": "बिना डॉक्टर की सलाह के एंटीबायोटिक दवाइयों का सेवन करना सेहत के लिए खतरनाक हो सकता है... <inhales sharply> इससे शरीर में एंटीबायोटिक रेजिस्टेंस बढ़ने का खतरा रहता है।"
+  },
+  {
+    "sentence_id": 420,
+    "block": "STD",
+    "domain": "Healthcare",
+    "emotion": "Empathetic",
+    "emotion_subtype": "reassuring",
+    "target_seconds": 14.7,
+    "sentence": "मानसिक स्वास्थ्य भी शारीरिक स्वास्थ्य जितना ही महत्वपूर्ण है। <smiles> अगर आप डिप्रेशन या एंग्जायटी महसूस कर रहे हैं, तो झिझकें नहीं, किसी एक्सपर्ट से खुलकर बात करें।"
+  },
+  {
+    "sentence_id": 421,
+    "block": "STD",
+    "domain": "Healthcare",
+    "emotion": "Energetic",
+    "emotion_subtype": "health-awareness",
+    "target_seconds": 14.5,
+    "sentence": "रोज सुबह खाली पेट 2 गिलास हल्का गुनगुना पानी पीने के अनगिनत फायदे हैं! यह शरीर से टॉक्सिन्स को बाहर निकालता है और पाचन क्रिया को दुरुस्त रखता है।"
+  },
+  {
+    "sentence_id": 422,
+    "block": "STD",
+    "domain": "Healthcare",
+    "emotion": "Surprised",
+    "emotion_subtype": "informative",
+    "target_seconds": 12.2,
+    "sentence": "क्या आप जानते हैं कि कम से कम 7 से 8 घंटे की नींद न लेने से इम्युनिटी कमजोर हो जाती है? <gasps> अच्छी नींद शरीर की प्राकृतिक रिकवरी के लिए बहुत जरूरी है।"
+  },
+  {
+    "sentence_id": 423,
+    "block": "STD",
+    "domain": "Healthcare",
+    "emotion": "Soft",
+    "emotion_subtype": "gentle",
+    "target_seconds": 14.2,
+    "sentence": "पीठ और गर्दन के दर्द से बचना चाहते हैं तो बैठते समय अपने पोश्चर का ध्यान रखें... <clears throat> रीढ़ की हड्डी को हमेशा सीधा रखें और लंबे समय तक एक ही मुद्रा में न बैठें।"
+  },
+  {
+    "sentence_id": 424,
+    "block": "STD",
+    "domain": "Healthcare",
+    "emotion": "Hopeful",
+    "emotion_subtype": "encouraging",
+    "target_seconds": 13.3,
+    "sentence": "नियमित योग और प्राणायाम करने से न सिर्फ सांस की बीमारियां दूर रहती हैं... बल्कि मन भी शांत और तनावमुक्त रहता है। आज ही से योग को अपनी दिनचर्या का हिस्सा बनाएं।"
+  },
+  {
+    "sentence_id": 425,
+    "block": "STD",
+    "domain": "Healthcare",
+    "emotion": "Angry",
+    "emotion_subtype": "warning",
+    "target_seconds": 11.3,
+    "sentence": "जंक फूड और ज्यादा मीठे पेय पदार्थों का अत्यधिक सेवन बच्चों में मोटापे और कम उम्र में दिल की बीमारियों की मुख्य वजह बन रहा है! समय रहते सावधान हो जाइए!"
+  },
+  {
+    "sentence_id": 426,
+    "block": "STD",
+    "domain": "Healthcare",
+    "emotion": "Neutral",
+    "emotion_subtype": "nutritional",
+    "target_seconds": 15.5,
+    "sentence": "हृदय को स्वस्थ रखने के लिए अपने भोजन में फाइबर, हरी पत्तेदार सब्जियां, ओमेगा-3 फैटी एसिड और नट्स को शामिल करें... नमक और तले-भुने खाने से परहेज करें।"
+  },
+  {
+    "sentence_id": 427,
+    "block": "STD",
+    "domain": "Healthcare",
+    "emotion": "Cheerful",
+    "emotion_subtype": "preventive",
+    "target_seconds": 13.8,
+    "sentence": "सर्दियों में पानी पीने की इच्छा कम होती है, लेकिन शरीर को हाइड्रेटेड रखना उतना ही जरूरी है! <laughs> दिन में कम से कम 8 गिलास पानी पीने का लक्ष्य रखें।"
+  },
+  {
+    "sentence_id": 428,
+    "block": "STD",
+    "domain": "Healthcare",
+    "emotion": "Sad",
+    "emotion_subtype": "concerned",
+    "target_seconds": 13.8,
+    "sentence": "बढ़ते प्रदूषण और धुंध के कारण सांस के मरीजों और बुजुर्गों को बाहर निकलने में तकलीफ हो रही है... <sighs> बाहर निकलते समय N95 मास्क का इस्तेमाल जरूर करें।"
+  },
+  {
+    "sentence_id": 429,
+    "block": "STD",
+    "domain": "Healthcare",
+    "emotion": "Proud",
+    "emotion_subtype": "achievement",
+    "target_seconds": 13.3,
+    "sentence": "हमारे डॉक्टरों की टीम ने एक जटिल और दुर्लभ ओपन हार्ट सर्जरी को सफलतापूर्वक अंजाम दिया है... मरीज अब बिल्कुल स्वस्थ है और जल्द ही डिस्चार्ज होगा।"
+  },
+  {
+    "sentence_id": 430,
+    "block": "STD",
+    "domain": "Healthcare",
+    "emotion": "Soft",
+    "emotion_subtype": "soothing",
+    "target_seconds": 14.5,
+    "sentence": "कैल्शियम और विटामिन D3 हड्डियों की मजबूती के लिए आधारशिला हैं... <smiles> सुबह की हल्की धूप में 15 मिनट बैठना विटामिन D का सबसे अच्छा प्राकृतिक स्रोत है।"
+  },
+  {
+    "sentence_id": 431,
+    "block": "STD",
+    "domain": "Healthcare",
+    "emotion": "Hesitation",
+    "emotion_subtype": "gentle-reminder",
+    "target_seconds": 14.5,
+    "sentence": "40 की उम्र पार करने के बाद साल में एक बार फुल बॉडी हेल्थ चेकअप जरूर कराएं... <clears throat> बीमारियां शुरुआती स्टेज में पकड़ में आ जाएं तो इलाज आसान हो जाता है।"
+  },
+  {
+    "sentence_id": 432,
+    "block": "STD",
+    "domain": "Motivational Content / Self-help",
+    "emotion": "Energetic",
+    "emotion_subtype": "passionate",
+    "target_seconds": 14.2,
+    "sentence": "जब लोग तुमसे कहें कि तुम यह काम नहीं कर सकते... तो पलटकर जवाब मत दो! बस शांति से मेहनत करो और अपनी सफलता का शोर उन्हें सुनने दो!"
+  },
+  {
+    "sentence_id": 433,
+    "block": "STD",
+    "domain": "Motivational Content / Self-help",
+    "emotion": "Soft",
+    "emotion_subtype": "inspiring",
+    "target_seconds": 14.9,
+    "sentence": "जिंदगी में रास्ते कभी खत्म नहीं होते... <sighs> बस लोग हिम्मत हार जाते हैं। अगर आज अंधेरा है तो विश्वास रखिए, कल सूरज भी चमकेगा और नया सवेरा भी आएगा।"
+  },
+  {
+    "sentence_id": 434,
+    "block": "STD",
+    "domain": "Motivational Content / Self-help",
+    "emotion": "Proud",
+    "emotion_subtype": "empowering",
+    "target_seconds": 13.1,
+    "sentence": "तुम्हारी सबसे बड़ी ताकत तुम्हारी अपनी सोच है। अगर तुमने मन में ठान लिया कि तुम जीतोगे, तो दुनिया की कोई ताकत तुम्हें हरा नहीं सकती!"
+  },
+  {
+    "sentence_id": 435,
+    "block": "STD",
+    "domain": "Motivational Content / Self-help",
+    "emotion": "Hesitation",
+    "emotion_subtype": "reflective",
+    "target_seconds": 15.3,
+    "sentence": "क्या तुम भी अक्सर दूसरों से अपनी तुलना करके निराश हो जाते हो? <inhales sharply> याद रखो, सूरज और चांद अपने-अपने वक्त पर चमकते हैं... तुम्हारा वक्त भी आएगा।"
+  },
+  {
+    "sentence_id": 436,
+    "block": "STD",
+    "domain": "Motivational Content / Self-help",
+    "emotion": "Loud",
+    "emotion_subtype": "strong",
+    "target_seconds": 10.8,
+    "sentence": "गिरना असफलता नहीं है! गिरकर दोबारा खड़े न होना ही असली असफलता है! उठो, अपने पसीने को पोंछो और एक बार फिर पूरे जुनून से लक्ष्य की तरफ बढ़ो!"
+  },
+  {
+    "sentence_id": 437,
+    "block": "STD",
+    "domain": "Motivational Content / Self-help",
+    "emotion": "Empathetic",
+    "emotion_subtype": "comforting",
+    "target_seconds": 15.4,
+    "sentence": "अगर आज तुम्हारा दिन अच्छा नहीं बीता, तो कोई बात नहीं... <smiles> खुद पर ज्यादा सख्त मत बनो। तुमने आज अपनी तरफ से पूरी कोशिश की, और यही काफी है।"
+  },
+  {
+    "sentence_id": 438,
+    "block": "STD",
+    "domain": "Motivational Content / Self-help",
+    "emotion": "Happy",
+    "emotion_subtype": "uplifting",
+    "target_seconds": 11.9,
+    "sentence": "हर नई सुबह तुम्हारे सामने एक नया पन्ना खोलती है! <laughs> पुरानी गलतियों को भूलकर आज से एक नई शुरुआत करो और अपनी कहानी खुद लिखो!"
+  },
+  {
+    "sentence_id": 439,
+    "block": "STD",
+    "domain": "Motivational Content / Self-help",
+    "emotion": "Neutral",
+    "emotion_subtype": "philosophical",
+    "target_seconds": 16.8,
+    "sentence": "अनुशासन यानी डिसिप्लिन वो पुल है जो आपके सपनों को आपकी सफलताओं से जोड़ता है... जब तक आप रोज़ छोटे-छोटे कदम नहीं उठाएंगे, मंजिल तक नहीं पहुंच पाएंगे।"
+  },
+  {
+    "sentence_id": 440,
+    "block": "STD",
+    "domain": "Motivational Content / Self-help",
+    "emotion": "Soft",
+    "emotion_subtype": "gentle-guide",
+    "target_seconds": 13.1,
+    "sentence": "अपनी तुलना बीते हुए कल के खुद से करो... <clears throat> क्या तुम कल से बेहतर इंसान बने हो? अगर हां, तो तुम सही रास्ते पर हो।"
+  },
+  {
+    "sentence_id": 441,
+    "block": "STD",
+    "domain": "Motivational Content / Self-help",
+    "emotion": "Surprised",
+    "emotion_subtype": "mindset-shift",
+    "target_seconds": 13.4,
+    "sentence": "क्या तुम्हें पता है कि असफलता असल में क्या है? <gasps> असफलता यह सीखने का मौका है कि कौन सा तरीका काम नहीं करता! यह अंत नहीं, बस एक सबक है।"
+  },
+  {
+    "sentence_id": 442,
+    "block": "STD",
+    "domain": "Motivational Content / Self-help",
+    "emotion": "Hopeful",
+    "emotion_subtype": "optimistic",
+    "target_seconds": 13.8,
+    "sentence": "मुश्किलें उन्हीं के हिस्से आती हैं जो बेहतरीन खिलाड़ी होते हैं... रब तुम्हें आज़मा रहा है क्योंकि वो जानता है कि तुम्हारे अंदर सहने की और जीतने की क्षमता है।"
+  },
+  {
+    "sentence_id": 443,
+    "block": "STD",
+    "domain": "Motivational Content / Self-help",
+    "emotion": "Hesitation",
+    "emotion_subtype": "vulnerable",
+    "target_seconds": 14.4,
+    "sentence": "कई बार लगता है कि सब कुछ छोड़ दें... <sighs> लेकिन फिर सोचता हूं कि अगर आज रुक गया, तो उन लोगों की बात सच हो जाएगी जो कहते थे कि मैं कुछ नहीं कर पाऊंगा।"
+  },
+  {
+    "sentence_id": 444,
+    "block": "STD",
+    "domain": "Motivational Content / Self-help",
+    "emotion": "Energetic",
+    "emotion_subtype": "action-oriented",
+    "target_seconds": 13.3,
+    "sentence": "कल का इंतजार मत करो! जो करना है आज करो, अभी करो! 'सोचेंगे' कहने वाले सोचते ही रह जाते हैं और 'करेंगे' वाले दुनिया बदल देते हैं!"
+  },
+  {
+    "sentence_id": 445,
+    "block": "STD",
+    "domain": "Motivational Content / Self-help",
+    "emotion": "Soft",
+    "emotion_subtype": "peaceful",
+    "target_seconds": 15.4,
+    "sentence": "अपने मन के भीतर शांति की तलाश करो... बाहर की दुनिया में चाहे कितना भी शोर क्यों न हो, अगर तुम्हारा अंदरूनी मन शांत है तो कोई तुम्हें विचलित नहीं कर सकता।"
+  },
+  {
+    "sentence_id": 446,
+    "block": "STD",
+    "domain": "Motivational Content / Self-help",
+    "emotion": "Proud",
+    "emotion_subtype": "unapologetic",
+    "target_seconds": 13.4,
+    "sentence": "किसी के सांचे में ढलने के लिए खुद को मत बदलो। तुम जैसे हो, अनोखे हो और अपनी पहचान के साथ जीना ही तुम्हारी असली खूबसूरती है।"
+  },
+  {
+    "sentence_id": 447,
+    "block": "STD",
+    "domain": "Movies & entertainment",
+    "emotion": "Energetic",
+    "emotion_subtype": "enthusiastic",
+    "target_seconds": 12.3,
+    "sentence": "दोस्तों! इस शुक्रवार रिलीज़ हुई नई एक्शन-थ्रिलर फिल्म 'विक्रम' का रिव्यू लेकर आए हैं! क्या जबरदस्त VFX, क्या बैकग्राउंड स्कोर, और क्या परफॉर्मेंस!"
+  },
+  {
+    "sentence_id": 448,
+    "block": "STD",
+    "domain": "Movies & entertainment",
+    "emotion": "Surprised",
+    "emotion_subtype": "amazed",
+    "target_seconds": 12.8,
+    "sentence": "फिल्म का वो इंटरवल सीन... बाप रे! <gasps> ऐसा क्लाइमेक्स ट्विस्ट मैंने पिछले 5 सालों में किसी भारतीय फिल्म में नहीं देखा! रोंगटे खड़े हो गए बिल्कुल!"
+  },
+  {
+    "sentence_id": 449,
+    "block": "STD",
+    "domain": "Movies & entertainment",
+    "emotion": "Soft",
+    "emotion_subtype": "critical",
+    "target_seconds": 13.0,
+    "sentence": "फिल्म की सिनेमैटोग्राफी और बैकग्राउंड म्यूजिक बहुत शानदार है... <sighs> लेकिन कहानी का दूसरा हिस्सा थोड़ा धीमा और खींचा हुआ सा महसूस होता है।"
+  },
+  {
+    "sentence_id": 450,
+    "block": "STD",
+    "domain": "Movies & entertainment",
+    "emotion": "Cheerful",
+    "emotion_subtype": "chatty",
+    "target_seconds": 12.7,
+    "sentence": "अगर आप इस वीकेंड पर कोई हल्की-फुल्की कॉमेडी सीरीज देखना चाहते हैं... <laughs> तो OTT पर आई यह नई 6 एपिसोड वाली सीरीज आपकी संडे नाइट्स बना देगी!"
+  },
+  {
+    "sentence_id": 451,
+    "block": "STD",
+    "domain": "Movies & entertainment",
+    "emotion": "Neutral",
+    "emotion_subtype": "analytical",
+    "target_seconds": 14.3,
+    "sentence": "बॉक्स ऑफिस कलेक्शन की बात करें तो फिल्म ने पहले ही दिन 45 करोड़ का आंकड़ा पार कर लिया है... जो कि इस साल का सबसे बड़ा ओपनिंग रिकॉर्ड है।"
+  },
+  {
+    "sentence_id": 452,
+    "block": "STD",
+    "domain": "Movies & entertainment",
+    "emotion": "Hesitation",
+    "emotion_subtype": "spoiler-alert",
+    "target_seconds": 15.2,
+    "sentence": "बिना कोई स्पॉइलर दिए अगर मैं कहूं... <inhales sharply> तो फिल्म का आखिरी 15 मिनट पूरे थिएटर को तालियां बजाने पर मजबूर कर देता है।"
+  },
+  {
+    "sentence_id": 453,
+    "block": "STD",
+    "domain": "Movies & entertainment",
+    "emotion": "Happy",
+    "emotion_subtype": "fan-moment",
+    "target_seconds": 12.1,
+    "sentence": "जब हीरो की स्क्रीन पर एंट्री हुई ना... <laughs> पूरा हॉल सींटियों और तालियों से गूंज उठा! असली सिनेमा हॉल वाला माहौल था गुरु!"
+  },
+  {
+    "sentence_id": 454,
+    "block": "STD",
+    "domain": "Movies & entertainment",
+    "emotion": "Sad",
+    "emotion_subtype": "disappointed",
+    "target_seconds": 13.3,
+    "sentence": "इतने बड़े स्टारकास्ट और इतने भारी बजट के बावजूद... फिल्म की पटकथा में वो दम नहीं दिखा जिसकी उम्मीद दर्शक लगाकर बैठे थे। <sighs>"
+  },
+  {
+    "sentence_id": 455,
+    "block": "STD",
+    "domain": "Movies & entertainment",
+    "emotion": "Proud",
+    "emotion_subtype": "tribute",
+    "target_seconds": 13.4,
+    "sentence": "लीजेंडरी संगीतकार के इस आखिरी एल्बम के गाने दिल को छू लेने वाले हैं... हर धुन में एक अजीब सा जादू और क्लासिक विंटेज फील है।"
+  },
+  {
+    "sentence_id": 456,
+    "block": "STD",
+    "domain": "Movies & entertainment",
+    "emotion": "Loud",
+    "emotion_subtype": "excited",
+    "target_seconds": 11.2,
+    "sentence": "टीजर आ गया है दोस्तों! क्या फाड़ू लुक है विलेन का! इस साल की सबसे बड़ी ब्लॉकबस्टर होने वाली है यह फिल्म, लिख के ले लो!"
+  },
+  {
+    "sentence_id": 457,
+    "block": "STD",
+    "domain": "Movies & entertainment",
+    "emotion": "Surprised",
+    "emotion_subtype": "trivia",
+    "target_seconds": 13.6,
+    "sentence": "क्या आप जानते हैं कि इस फिल्म का 80% हिस्सा बिना किसी डुप्लीकेट या बॉडी डबल के खुद एक्टर ने शूट किया है? <gasps> सच में अविश्वसनीय समर्पण!"
+  },
+  {
+    "sentence_id": 458,
+    "block": "STD",
+    "domain": "Movies & entertainment",
+    "emotion": "Soft",
+    "emotion_subtype": "nostalgic",
+    "target_seconds": 14.8,
+    "sentence": "90 के दशक के उस सिनेमा का दौर ही कुछ अलग था... <smiles> सादगी भरी कहानियां, कर्णप्रिय संगीत और ऐसे किरदार जो आज भी हमारे दिलों में बसे हैं।"
+  },
+  {
+    "sentence_id": 459,
+    "block": "STD",
+    "domain": "Movies & entertainment",
+    "emotion": "Confused",
+    "emotion_subtype": "mixed-review",
+    "target_seconds": 14.9,
+    "sentence": "फिल्म देखकर समझ नहीं आया कि निर्देशक आखिर कहना क्या चाहते थे... <clears throat> कुछ सीन बहुत गहरे थे और कुछ एकदम बचकाने।"
+  },
+  {
+    "sentence_id": 460,
+    "block": "STD",
+    "domain": "Movies & entertainment",
+    "emotion": "Energetic",
+    "emotion_subtype": "recommendation",
+    "target_seconds": 12.7,
+    "sentence": "अगर आप थ्रिलर और सस्पेंस के शौकीन हैं तो यह वेब सीरीज आपकी मस्ट-वॉच लिस्ट में होनी ही चाहिए! आज ही बिंज-वॉच करें!"
+  },
+  {
+    "sentence_id": 461,
+    "block": "STD",
+    "domain": "Movies & entertainment",
+    "emotion": "Cheerful",
+    "emotion_subtype": "awards-news",
+    "target_seconds": 14.4,
+    "sentence": "ऑस्कर की रेस में भारत की इंडिपेंडेंट शॉर्ट फिल्म को ऑफिशियल एंट्री मिल गई है! <laughs> यह पूरे देश के सिनेमा प्रेमियों के लिए गर्व का पल है!"
+  },
+  {
+    "sentence_id": 462,
+    "block": "STD",
+    "domain": "Movies and TV Dialogues / Theatre / Stage drama",
+    "emotion": "Angry",
+    "emotion_subtype": "dramatic-confrontation",
+    "target_seconds": 14.2,
+    "sentence": "तुमने सोचा था कि तुम मुझे धोखा देकर चैन की नींद सोओगे?! कानून की नजरों से बच सकते हो रघुनाथ... पर इस अदालत में सच को छुपाया नहीं जा सकता!"
+  },
+  {
+    "sentence_id": 463,
+    "block": "STD",
+    "domain": "Movies and TV Dialogues / Theatre / Stage drama",
+    "emotion": "Sad",
+    "emotion_subtype": "tragic-farewell",
+    "target_seconds": 14.7,
+    "sentence": "अब जाने भी दो मुझे... <sighs> मैंने तुम्हारी खुशी के लिए अपना सब कुछ दांव पर लगा दिया... और बदले में मुझे क्या मिला? सिर्फ ये तन्हाई और खामोशी।"
+  },
+  {
+    "sentence_id": 464,
+    "block": "STD",
+    "domain": "Movies and TV Dialogues / Theatre / Stage drama",
+    "emotion": "Loud",
+    "emotion_subtype": "villainous",
+    "target_seconds": 11.9,
+    "sentence": "हाहाहा! बेवकूफ! तुम अभी तक मुझे पहचान नहीं पाए?! इस शहर की हर इमारत, हर रास्ते पर मेरी हुकूमत चलती है! तुम्हारा रक्षक अब तुम्हें बचाने नहीं आएगा!"
+  },
+  {
+    "sentence_id": 465,
+    "block": "STD",
+    "domain": "Movies and TV Dialogues / Theatre / Stage drama",
+    "emotion": "Proud",
+    "emotion_subtype": "heroic-speech",
+    "target_seconds": 13.3,
+    "sentence": "जब तक मेरी नसों में लहू की एक भी बूंद बाकी है... मैं अपनी मातृभूमि की रक्षा के लिए लड़ता रहूंगा! पीछे हटना हमारी परंपरा में नहीं है!"
+  },
+  {
+    "sentence_id": 466,
+    "block": "STD",
+    "domain": "Movies and TV Dialogues / Theatre / Stage drama",
+    "emotion": "Hesitation",
+    "emotion_subtype": "emotional-confession",
+    "target_seconds": 13.3,
+    "sentence": "मैं तुमसे बहुत कुछ कहना चाहता था... <inhales sharply> लेकिन हर बार तुम्हारी आंखों में देखकर मेरे शब्द गले में ही अटक जाते हैं।"
+  },
+  {
+    "sentence_id": 467,
+    "block": "STD",
+    "domain": "Movies and TV Dialogues / Theatre / Stage drama",
+    "emotion": "Shocked",
+    "emotion_subtype": "betrayal",
+    "target_seconds": 11.9,
+    "sentence": "तुम?! तुमने अपनी ही बहन की पीठ में छुरा घोंपा?! <gasps> जिस पर मैंने अपनी जान से ज्यादा भरोसा किया... वही मेरी बर्बादी का कारण निकला?!"
+  },
+  {
+    "sentence_id": 468,
+    "block": "STD",
+    "domain": "Movies and TV Dialogues / Theatre / Stage drama",
+    "emotion": "Soft",
+    "emotion_subtype": "poetic-monologue",
+    "target_seconds": 15.0,
+    "sentence": "रात की इस खामोशी में सुलगती हुई मोमबत्ती से पूछो... <exhales> कि इंतज़ार का दर्द क्या होता है। हवा का एक झोंका आता है और रोशनी बुझ जाती है।"
+  },
+  {
+    "sentence_id": 469,
+    "block": "STD",
+    "domain": "Movies and TV Dialogues / Theatre / Stage drama",
+    "emotion": "Fearful",
+    "emotion_subtype": "suspenseful",
+    "target_seconds": 12.3,
+    "sentence": "सुनो! वो कदमों की आवाज़ फिर से आ रही है... <gasps> दरवाजे का हैंडल घूम रहा है... कोई बाहर खड़ा है... कौन है वहां?!"
+  },
+  {
+    "sentence_id": 470,
+    "block": "STD",
+    "domain": "Movies and TV Dialogues / Theatre / Stage drama",
+    "emotion": "Charming",
+    "emotion_subtype": "romantic",
+    "target_seconds": 13.9,
+    "sentence": "तुम्हारी हंसी में वो जादू है जो पतझड़ में भी फूल खिला दे... <smiles> अगर एक बार तुम हां कह दो, तो मैं सितारे भी तुम्हारे कदमों में बिछा दूं।"
+  },
+  {
+    "sentence_id": 471,
+    "block": "STD",
+    "domain": "Movies and TV Dialogues / Theatre / Stage drama",
+    "emotion": "Confused",
+    "emotion_subtype": "madness",
+    "target_seconds": 12.3,
+    "sentence": "यह दीवारें मुझसे बातें क्यों कर रही हैं?! <clears throat> सब हंस रहे हैं मुझ पर... बंद करो यह शोर! मुझे अकेला छोड़ दो... मुझे अकेला छोड़ दो!"
+  },
+  {
+    "sentence_id": 472,
+    "block": "STD",
+    "domain": "Movies and TV Dialogues / Theatre / Stage drama",
+    "emotion": "Happy",
+    "emotion_subtype": "reunion",
+    "target_seconds": 11.6,
+    "sentence": "बीस साल बाद... मेरी आंखें तुम्हें देख पा रही हैं बेटे! <laughs> मुझे लगा था कि मैं जीते जी दोबारा तुम्हारा चेहरा कभी नहीं देख पाऊंगा!"
+  },
+  {
+    "sentence_id": 473,
+    "block": "STD",
+    "domain": "Movies and TV Dialogues / Theatre / Stage drama",
+    "emotion": "Narration",
+    "emotion_subtype": "stage-intro",
+    "target_seconds": 15.1,
+    "sentence": "रंगमंच का पर्दा उठता है... और सामने आता है उन्नीसवीं सदी का वो ऐतिहासिक दरबार, जहां साजिशों का जाल बुना जा रहा है।"
+  },
+  {
+    "sentence_id": 474,
+    "block": "STD",
+    "domain": "Movies and TV Dialogues / Theatre / Stage drama",
+    "emotion": "Whisper",
+    "emotion_subtype": "secret-conspiracy",
+    "target_seconds": 11.3,
+    "sentence": "धीमे बोलो... दीवारों के भी कान होते हैं। जैसे ही सुल्तान का काफिला पुल पार करेगा, हमारा निशाना एकदम सटीक होना चाहिए।"
+  },
+  {
+    "sentence_id": 475,
+    "block": "STD",
+    "domain": "Movies and TV Dialogues / Theatre / Stage drama",
+    "emotion": "Energetic",
+    "emotion_subtype": "courtroom-climax",
+    "target_seconds": 12.7,
+    "sentence": "ऑर्डर! ऑर्डर! माइलॉर्ड, यह निर्दोष इंसान पिछले दस सालों से उस जुर्म की सजा काट रहा है जो उसने कभी किया ही नहीं! न्याय कीजिए!"
+  },
+  {
+    "sentence_id": 476,
+    "block": "STD",
+    "domain": "Movies and TV Dialogues / Theatre / Stage drama",
+    "emotion": "Soft",
+    "emotion_subtype": "paternal-advice",
+    "target_seconds": 16.1,
+    "sentence": "बेटा, गुस्सा इंसान का सबसे बड़ा दुश्मन होता है... <sighs> यह सही और गलत की पहचान छीन लेता है। फैसला हमेशा ठंडे दिमाग से लिया करो।"
+  },
+  {
+    "sentence_id": 477,
+    "block": "STD",
+    "domain": "News and Current Affairs",
+    "emotion": "Neutral",
+    "emotion_subtype": "anchor-intro",
+    "target_seconds": 13.7,
+    "sentence": "नमस्कार, देश और दुनिया की मुख्य खबरों के साथ मैं हूं रोहन शर्मा। शुरुआत करते हैं आज की सबसे बड़ी अंतरराष्ट्रीय खबर से..."
+  },
+  {
+    "sentence_id": 478,
+    "block": "STD",
+    "domain": "News and Current Affairs",
+    "emotion": "Loud",
+    "emotion_subtype": "breaking-news",
+    "target_seconds": 10.9,
+    "sentence": "ब्रेकिंग न्यूज़! इसरो ने एक बार फिर रचा इतिहास! चंद्रयान मिशन के लैंडर ने सफलतापूर्वक चंद्रमा की सतह पर सॉफ्ट लैंडिंग पूरी की!"
+  },
+  {
+    "sentence_id": 479,
+    "block": "STD",
+    "domain": "News and Current Affairs",
+    "emotion": "Neutral",
+    "emotion_subtype": "economic-report",
+    "target_seconds": 14.8,
+    "sentence": "भारतीय रिजर्व बैंक ने अपनी द्विमासिक मौद्रिक नीति समीक्षा में रेपो रेट को 6.5 प्रतिशत पर बरकरार रखा है... जिससे आम जनता पर होम लोन EMI का अतिरिक्त बोझ नहीं पड़ेगा।"
+  },
+  {
+    "sentence_id": 480,
+    "block": "STD",
+    "domain": "News and Current Affairs",
+    "emotion": "Hesitation",
+    "emotion_subtype": "disaster-update",
+    "target_seconds": 15.1,
+    "sentence": "उत्तराखंड के पर्वतीय क्षेत्रों में भारी भूस्खलन के कारण राष्ट्रीय राजमार्ग बाधित हो गया है... <inhales sharply> प्रशासन द्वारा राहत और बचाव कार्य युद्ध स्तर पर जारी है।"
+  },
+  {
+    "sentence_id": 481,
+    "block": "STD",
+    "domain": "News and Current Affairs",
+    "emotion": "Proud",
+    "emotion_subtype": "national-pride",
+    "target_seconds": 13.3,
+    "sentence": "एशियन गेम्स में भारतीय एथलीटों का शानदार प्रदर्शन जारी है! भारत ने निशानेबाजी में दो और स्वर्ण पदक जीतकर कुल पदकों की संख्या 50 के पार पहुंचा दी है।"
+  },
+  {
+    "sentence_id": 482,
+    "block": "STD",
+    "domain": "News and Current Affairs",
+    "emotion": "Soft",
+    "emotion_subtype": "climate-news",
+    "target_seconds": 14.1,
+    "sentence": "ग्लोबल वार्मिंग के बढ़ते खतरों के बीच संयुक्त राष्ट्र जलवायु सम्मेलन में 190 से अधिक देशों ने कार्बन उत्सर्जन घटाने के ऐतिहासिक समझौते पर हस्ताक्षर किए हैं।"
+  },
+  {
+    "sentence_id": 483,
+    "block": "STD",
+    "domain": "News and Current Affairs",
+    "emotion": "Surprised",
+    "emotion_subtype": "tech-summit",
+    "target_seconds": 13.0,
+    "sentence": "नई दिल्ली में आयोजित ग्लोबल एआई समिट में प्रधानमंत्री ने कृत्रिम बुद्धिमत्ता के नैतिक इस्तेमाल और जिम्मेदार उपयोग पर जोर दिया।"
+  },
+  {
+    "sentence_id": 484,
+    "block": "STD",
+    "domain": "News and Current Affairs",
+    "emotion": "Sad",
+    "emotion_subtype": "condolence-report",
+    "target_seconds": 14.2,
+    "sentence": "देश के दिग्गज उद्योगपति और परोपकारी व्यक्तित्व का 86 वर्ष की आयु में निधन हो गया है... <sighs> पूरे देश में शोक की लहर व्याप्त है।"
+  },
+  {
+    "sentence_id": 485,
+    "block": "STD",
+    "domain": "News and Current Affairs",
+    "emotion": "Neutral",
+    "emotion_subtype": "infrastructure",
+    "target_seconds": 15.4,
+    "sentence": "देश के सबसे लंबे एक्सप्रेसवे का उद्घाटन आज किया जा रहा है... जिससे दो बड़े शहरों के बीच की यात्रा का समय 12 घंटे से घटकर मात्र 6 घंटे रह जाएगा।"
+  },
+  {
+    "sentence_id": 486,
+    "block": "STD",
+    "domain": "News and Current Affairs",
+    "emotion": "Energetic",
+    "emotion_subtype": "election-update",
+    "target_seconds": 12.8,
+    "sentence": "विधानसभा चुनावों के लिए मतों की गिनती जारी है! शुरुआती रुझानों में सत्तारूढ़ दल बहुमत के करीब पहुंचता नजर आ रहा है।"
+  },
+  {
+    "sentence_id": 487,
+    "block": "STD",
+    "domain": "News and Current Affairs",
+    "emotion": "Hesitation",
+    "emotion_subtype": "crime-report",
+    "target_seconds": 15.5,
+    "sentence": "राजधानी में हुई बड़ी साइबर ठगी के मामले में पुलिस की विशेष शाखा ने अंतरराज्यीय गिरोह का पर्दाफाश करते हुए पांच मुख्य आरोपियों को गिरफ्तार किया है।"
+  },
+  {
+    "sentence_id": 488,
+    "block": "STD",
+    "domain": "News and Current Affairs",
+    "emotion": "Clear",
+    "emotion_subtype": "health-bulletin",
+    "target_seconds": 15.0,
+    "sentence": "स्वास्थ्य मंत्रालय ने मानसून के मौसम में डेंगू और मलेरिया के बढ़ते मामलों को देखते हुए सभी राज्यों को दिशा-निर्देश और एडवाइजरी जारी की है।"
+  },
+  {
+    "sentence_id": 489,
+    "block": "STD",
+    "domain": "News and Current Affairs",
+    "emotion": "Hopeful",
+    "emotion_subtype": "education-policy",
+    "target_seconds": 14.2,
+    "sentence": "सरकार ने ग्रामीण क्षेत्रों के 10,000 सरकारी स्कूलों को मॉडर्न डिजिटल क्लासरूम्स में बदलने के लिए 500 करोड़ रुपये के बजट को मंजूरी दे दी है।"
+  },
+  {
+    "sentence_id": 490,
+    "block": "STD",
+    "domain": "News and Current Affairs",
+    "emotion": "Neutral",
+    "emotion_subtype": "diplomatic-relations",
+    "target_seconds": 16.0,
+    "sentence": "द्विपक्षीय वार्ता के दौरान दोनों देशों के राष्ट्रध्यक्षों ने व्यापार, रक्षा और नवीकरणीय ऊर्जा के क्षेत्र में कई महत्वपूर्ण समझौतों पर हस्ताक्षर किए।"
+  },
+  {
+    "sentence_id": 491,
+    "block": "STD",
+    "domain": "News and Current Affairs",
+    "emotion": "Soft",
+    "emotion_subtype": "weather-forecast",
+    "target_seconds": 13.2,
+    "sentence": "मौसम विभाग के ताजा बुलेटिन के अनुसार आगामी 48 घंटों में मैदानी इलाकों में ठंडी हवाओं का प्रकोप बढ़ेगा और कोहरे का प्रभाव बना रहेगा।"
+  },
+  {
+    "sentence_id": 492,
+    "block": "STD",
+    "domain": "Podcasts and Interviews",
+    "emotion": "Cheerful",
+    "emotion_subtype": "host-intro",
+    "target_seconds": 13.0,
+    "sentence": "हेलो दोस्तों! द हिंदी पॉडकास्ट के एक और धमाकेदार एपिसोड में आपका स्वागत है! आज हमारे साथ स्टूडियो में मौजूद हैं एक बेहद खास मेहमान..."
+  },
+  {
+    "sentence_id": 493,
+    "block": "STD",
+    "domain": "Podcasts and Interviews",
+    "emotion": "Hesitation",
+    "emotion_subtype": "thoughtful-question",
+    "target_seconds": 15.8,
+    "sentence": "जब आपने 24 साल की उम्र में अपनी जमी-जमाई कॉर्पोरेट जॉब छोड़ी थी... <inhales sharply> तो क्या आपके मन में यह डर नहीं आया कि अगर यह स्टार्टअप नहीं चला तो क्या होगा?"
+  },
+  {
+    "sentence_id": 494,
+    "block": "STD",
+    "domain": "Podcasts and Interviews",
+    "emotion": "Soft",
+    "emotion_subtype": "guest-answer",
+    "target_seconds": 15.5,
+    "sentence": "सच कहूं तो डर बहुत था... <sighs> लेकिन मुझे अपने विजन पर भरोसा था। मुझे पता था कि अगर मैंने यह रिस्क नहीं लिया, तो मैं पूरी जिंदगी मलाल करता रहूंगा।"
+  },
+  {
+    "sentence_id": 495,
+    "block": "STD",
+    "domain": "Podcasts and Interviews",
+    "emotion": "Happy",
+    "emotion_subtype": "engaging-story",
+    "target_seconds": 13.1,
+    "sentence": "फिर एक दिन ऐसा हुआ कि हमारी पहली सेल आई! <laughs> सिर्फ 500 रुपये का ऑर्डर था, लेकिन हमारी पूरी टीम ने पिज्जा पार्टी की थी उस दिन!"
+  },
+  {
+    "sentence_id": 496,
+    "block": "STD",
+    "domain": "Podcasts and Interviews",
+    "emotion": "Neutral",
+    "emotion_subtype": "deep-dive",
+    "target_seconds": 15.7,
+    "sentence": "आजकल की युवा पीढ़ी में फाइनेंशियल इंडिपेंडेंस और अर्ली रिटायरमेंट का ट्रेंड तेजी से बढ़ रहा है... आइए समझते हैं इसके पीछे के मुख्य सामाजिक और आर्थिक कारण।"
+  },
+  {
+    "sentence_id": 497,
+    "block": "STD",
+    "domain": "Podcasts and Interviews",
+    "emotion": "Empathetic",
+    "emotion_subtype": "cozy-chat",
+    "target_seconds": 14.5,
+    "sentence": "आपकी किताब का जो पांचवां चैप्टर है 'अकेलेपन से दोस्ती'... <smiles> उसने मेरे सोचने का नजरिया ही बदल दिया। क्या आप दर्शकों के साथ उसका एक अंश शेयर करेंगे?"
+  },
+  {
+    "sentence_id": 498,
+    "block": "STD",
+    "domain": "Podcasts and Interviews",
+    "emotion": "Surprised",
+    "emotion_subtype": "revelation",
+    "target_seconds": 13.4,
+    "sentence": "अरे वाह! यह तो बहुत ही कम लोग जानते हैं! <gasps> क्या सच में उस मशहूर गाने की धुन आपने सिर्फ 10 मिनट में हारमोनियम पर तैयार कर ली थी?!"
+  },
+  {
+    "sentence_id": 499,
+    "block": "STD",
+    "domain": "Podcasts and Interviews",
+    "emotion": "Proud",
+    "emotion_subtype": "guest-achievement",
+    "target_seconds": 12.9,
+    "sentence": "एक छोटे से गांव से निकलकर सिलिकॉन वैली तक का यह सफर... आपकी कड़ी मेहनत, लगन और निरंतर प्रयास की एक मिसाल है।"
+  },
+  {
+    "sentence_id": 500,
+    "block": "STD",
+    "domain": "Podcasts adventure",
+    "emotion": "Soft",
+    "emotion_subtype": "reflective-outro",
+    "target_seconds": 16.1,
+    "sentence": "आज की इस चर्चा से जो सबसे बड़ी सीख मुझे मिली... <clears throat> वो यह है कि विफलताएं ही हमारी सबसे बड़ी शिक्षक होती हैं।"
+  },
+  {
+    "sentence_id": 501,
+    "block": "STD",
+    "domain": "Podcasts and Interviews",
+    "emotion": "Energetic",
+    "emotion_subtype": "rapid-fire",
+    "target_seconds": 10.8,
+    "sentence": "तो चलिए अब बढ़ते हैं हमारे सबसे पसंदीदा सेगमेंट की तरफ — द रैपिड फायर राउंड! आपको बिना सोचे 3 सेकंड में जवाब देना है!"
+  },
+  {
+    "sentence_id": 502,
+    "block": "STD",
+    "domain": "Podcasts and Interviews",
+    "emotion": "Confused",
+    "emotion_subtype": "probing-question",
+    "target_seconds": 15.2,
+    "sentence": "लेकिन जब मार्केट में इतने सारे स्थापित ब्रांड्स पहले से थे... तो आपने कैसे तय किया कि आपकी सर्विस उनसे अलग और बेहतर होगी?"
+  },
+  {
+    "sentence_id": 503,
+    "block": "STD",
+    "domain": "Podcasts and Interviews",
+    "emotion": "Hesitation",
+    "emotion_subtype": "vulnerable-moment",
+    "target_seconds": 15.4,
+    "sentence": "उस कठिन दौर में जब फंडिंग नहीं मिल रही थी... <sighs> मैंने अपने गहने तक गिरवी रख दिए थे ताकि कर्मचारियों की सैलरी रुकने न पाए।"
+  },
+  {
+    "sentence_id": 504,
+    "block": "STD",
+    "domain": "Podcasts and Interviews",
+    "emotion": "Cheerful",
+    "emotion_subtype": "listener-qa",
+    "target_seconds": 14.1,
+    "sentence": "हमारे एक लिस्नर ने इंस्टाग्राम पर पूछा है कि काम के साथ-साथ क्रिएटिव राइटिंग के लिए वक्त कैसे निकाला जाए? आपका क्या सुझाव है?"
+  },
+  {
+    "sentence_id": 505,
+    "block": "STD",
+    "domain": "Podcasts and Interviews",
+    "emotion": "Hopeful",
+    "emotion_subtype": "inspirational-message",
+    "target_seconds": 13.7,
+    "sentence": "अगर आप भी अपने सपनों का पीछा कर रहे हैं... तो बस लगे रहिए। रास्ते मुश्किल हो सकते हैं, पर मंजिल तक पहुंचना असंभव नहीं है।"
+  },
+  {
+    "sentence_id": 506,
+    "block": "STD",
+    "domain": "Podcasts and Interviews",
+    "emotion": "Soft",
+    "emotion_subtype": "closing-remarks",
+    "target_seconds": 13.3,
+    "sentence": "आज के एपिसोड में हमारे साथ जुड़ने के लिए बहुत-बहुत धन्यवाद। उम्मीद है हमारे दर्शकों को यह बातचीत जरूर पसंद आई होगी। टेक केयर!"
+  },
+  {
+    "sentence_id": 507,
+    "block": "STD",
+    "domain": "Sports",
+    "emotion": "Energetic",
+    "emotion_subtype": "pre-match",
+    "target_seconds": 12.9,
+    "sentence": "दोनों टीमें मैदान पर पहुंच चुकी हैं! मौसम बिल्कुल साफ है और टॉस जीतकर पहले बल्लेबाजी करने का फैसला एक मास्टरस्ट्रोक साबित हो सकता है!"
+  },
+  {
+    "sentence_id": 508,
+    "block": "STD",
+    "domain": "Sports",
+    "emotion": "Happy",
+    "emotion_subtype": "victory-celebration",
+    "target_seconds": 13.3,
+    "sentence": "और यह ऐतिहासिक जीत! <laughs> भारतीय बैडमिंटन खिलाड़ी ने फाइनल मुकाबले में दुनिया के नंबर एक खिलाड़ी को सीधे सेटों में शिकस्त देकर गोल्ड मेडल पर कब्जा जमाया!"
+  },
+  {
+    "sentence_id": 509,
+    "block": "STD",
+    "domain": "Sports",
+    "emotion": "Hesitation",
+    "emotion_subtype": "injury-update",
+    "target_seconds": 14.3,
+    "sentence": "मैच के बीच में स्टार स्ट्राइकर की पैर की मांसपेशी में खिंचाव आ गया है... <inhales sharply> फिजियो मैदान पर दौड़कर पहुंचे हैं। क्या वे खेल जारी रख पाएंगे?"
+  },
+  {
+    "sentence_id": 510,
+    "block": "STD",
+    "domain": "Sports",
+    "emotion": "Loud",
+    "emotion_subtype": "cheering",
+    "target_seconds": 11.0,
+    "sentence": "शानदार गोल! क्या कलात्मक ड्रिबलिंग और क्या सटीक फिनिश! स्टेडियम में मौजूद 40,000 दर्शक खुशी से झूम उठे हैं!"
+  },
+  {
+    "sentence_id": 511,
+    "block": "STD",
+    "domain": "Sports",
+    "emotion": "Sad",
+    "emotion_subtype": "heartbreak",
+    "target_seconds": 14.2,
+    "sentence": "सिर्फ 0.01 सेकंड के अंतर से मेडल से चूक जाना बेहद दुखद है... <sighs> लेकिन हमारे एथलीट ने अंतिम क्षण तक जो जज्बा दिखाया, उस पर पूरे देश को गर्व है।"
+  },
+  {
+    "sentence_id": 512,
+    "block": "STD",
+    "domain": "Sports",
+    "emotion": "Neutral",
+    "emotion_subtype": "match-stats",
+    "target_seconds": 14.3,
+    "sentence": "पहले हाफ का खेल समाप्त होने तक दोनों टीमें 1-1 की बराबरी पर हैं... बॉल पजेशन में हालांकि होम टीम का दबदबा 60 प्रतिशत दर्ज किया गया है।"
+  },
+  {
+    "sentence_id": 513,
+    "block": "STD",
+    "domain": "Sports",
+    "emotion": "Proud",
+    "emotion_subtype": "tribute-athlete",
+    "target_seconds": 14.9,
+    "sentence": "38 वर्ष की आयु में भी उनका फिटनेस लेवल और मैदान पर तेजी... युवा खिलाड़ियों के लिए प्रेरणा का एक बहुत बड़ा स्रोत है।"
+  },
+  {
+    "sentence_id": 514,
+    "block": "STD",
+    "domain": "Sports",
+    "emotion": "Surprised",
+    "emotion_subtype": "upset-win",
+    "target_seconds": 12.5,
+    "sentence": "अविश्वसनीय उलटफेर! <gasps> इस अनसीडेड युवा खिलाड़ी ने पूर्व विश्व चैंपियन को हराकर टूर्नामेंट से बाहर का रास्ता दिखा दिया है!"
+  },
+  {
+    "sentence_id": 515,
+    "block": "STD",
+    "domain": "Sports",
+    "emotion": "Hopeful",
+    "emotion_subtype": "comeback",
+    "target_seconds": 13.1,
+    "sentence": "दूसरे हाफ में टीम ने नई रणनीति के साथ वापसी की है... दो बैक-टू-बैक पॉइंट्स के साथ अब मैच बहुत ही रोमांचक मोड़ पर आ पहुंचा है।"
+  },
+  {
+    "sentence_id": 516,
+    "block": "STD",
+    "domain": "Sports",
+    "emotion": "Clear",
+    "emotion_subtype": "tactical-analysis",
+    "target_seconds": 16.1,
+    "sentence": "कबड्डी में ऑल-आउट से बचने के लिए डिफेंडर्स को बहुत संयम दिखाना होगा... बोनस पॉइंट देने के बजाय अपनी डिफेंसिव लाइन को मजबूत बनाए रखना जरूरी है।"
+  },
+  {
+    "sentence_id": 517,
+    "block": "STD",
+    "domain": "Sports",
+    "emotion": "Soft",
+    "emotion_subtype": "sportsmanship",
+    "target_seconds": 13.0,
+    "sentence": "हार और जीत खेल के दो पहलू हैं... <smiles> लेकिन मैच के बाद दोनों खिलाड़ियों का एक-दूसरे को गले लगाना ही खेल भावना का सच्चा उदाहरण है।"
+  },
+  {
+    "sentence_id": 518,
+    "block": "STD",
+    "domain": "Sports",
+    "emotion": "Energetic",
+    "emotion_subtype": "marathon-finish",
+    "target_seconds": 12.6,
+    "sentence": "42 किलोमीटर की थका देने वाली मैराथन दौड़ का आखिरी 100 मीटर! धावक अपनी बची-कुची पूरी ताकत झोंकते हुए फिनिश लाइन की तरफ बढ़ रहा है!"
+  },
+  {
+    "sentence_id": 519,
+    "block": "STD",
+    "domain": "Sports",
+    "emotion": "Fearful",
+    "emotion_subtype": "penalty-shootout",
+    "target_seconds": 12.7,
+    "sentence": "पेनल्टी शूटआउट का निर्णय! <gasps> गोलकीपर और पेनल्टी टेकर के बीच दिमागी जंग... पूरा स्टेडियम अपनी सांसें रोककर देख रहा है!"
+  },
+  {
+    "sentence_id": 520,
+    "block": "STD",
+    "domain": "Sports",
+    "emotion": "Cheerful",
+    "emotion_subtype": "training-camp",
+    "target_seconds": 11.5,
+    "sentence": "ओलंपिक की तैयारियों के लिए राष्ट्रीय प्रशिक्षण शिविर की शुरुआत हो चुकी है... खिलाड़ी रोज 8 घंटे कड़ा अभ्यास कर रहे हैं।"
+  },
+  {
+    "sentence_id": 521,
+    "block": "STD",
+    "domain": "Sports",
+    "emotion": "Proud",
+    "emotion_subtype": "captain-speech",
+    "target_seconds": 13.5,
+    "sentence": "हमारी टीम ने कभी हार मानना नहीं सीखा। हर खिलाड़ी ने अपनी जिम्मेदारी समझी और मैदान पर अपना 100% दिया। यह ट्रॉफी हमारी एकता की जीत है!"
+  },
+  {
+    "sentence_id": 522,
+    "block": "S3-46",
+    "domain": "Sports Commentary",
+    "emotion": "Energetic",
+    "emotion_subtype": "fast-over",
+    "target_seconds": 14.8,
+    "sentence": "बुमराह गेंदबाजी मार्ग पर वापस आते हुए... सामने हैं खतरनाक बल्लेबाज... पहली गेंद इन-स्विंगर, सीधे पैड पर लगी! भारी अपील, लेकिन अंपायर ने उंगली नहीं उठाई!"
+  },
+  {
+    "sentence_id": 523,
+    "block": "S3-47",
+    "domain": "Sports Commentary",
+    "emotion": "Loud",
+    "emotion_subtype": "sixer-call",
+    "target_seconds": 12.7,
+    "sentence": "और यह शॉट! गेंद काफी ऊंची गई है... हवा में तैरती हुई... और गेंद सीधे कवर स्टैंड्स में! [stress]गगनचुंबी छक्का[/stress]! क्या टाइमिंग थी!"
+  },
+  {
+    "sentence_id": 524,
+    "block": "S3-48",
+    "domain": "Sports Commentary",
+    "emotion": "Shocked",
+    "emotion_subtype": "wicket-moment",
+    "target_seconds": 11.6,
+    "sentence": "क्लीन बोल्ड! क्या गेंद थी यार! <gasps> ऑफ स्टंप उड़कर हवा में चक्कर खाता हुआ दूर जा गिरा! बल्लेबाज को समझ ही नहीं आया कि गेंद कहां से निकली!"
+  },
+  {
+    "sentence_id": 525,
+    "block": "S3-49",
+    "domain": "Sports Commentary",
+    "emotion": "Fearful",
+    "emotion_subtype": "close-catch",
+    "target_seconds": 14.3,
+    "sentence": "हवा में गेंद... स्लिप में खिलाड़ी नीचे आ रहा है... क्या पकड़ पाएंगे? <gasps> डाइव लगाई... और... <exhales> छूट गई! कैच ड्रॉप हो गया दोस्तों!"
+  },
+  {
+    "sentence_id": 526,
+    "block": "S3-50",
+    "domain": "Sports Commentary",
+    "emotion": "Happy",
+    "emotion_subtype": "century-moment",
+    "target_seconds": 14.3,
+    "sentence": "और इसी के साथ शानदार शतक पूरा! <laughs> हेलमेट उतारा, बल्ला हवा में उठाया और दर्शकों का अभिवादन स्वीकार किया! क्या पारी खेली है आज इन्होंने!"
+  },
+  {
+    "sentence_id": 527,
+    "block": "S3-26",
+    "domain": "Sports Commentary",
+    "emotion": "Neutral",
+    "emotion_subtype": "field-setup",
+    "target_seconds": 15.0,
+    "sentence": "कप्तान ने फील्ड में बड़ा बदलाव किया है... थर्ड मैन को ऊपर बुला लिया गया है और लॉन्ग ऑफ पर एक अतिरिक्त फील्डर तैनात कर दिया गया है।"
+  },
+  {
+    "sentence_id": 528,
+    "block": "S3-27",
+    "domain": "Sports Commentary",
+    "emotion": "Hesitation",
+    "emotion_subtype": "runout-review",
+    "target_seconds": 13.3,
+    "sentence": "डायरेक्ट हिट! क्या बल्लेबाज क्रीज में पहुंच पाए थे? <inhales sharply> थर्ड अंपायर को रेफर किया गया है... फ्रेम बाय फ्रेम रिप्ले देखा जा रहा है..."
+  },
+  {
+    "sentence_id": 529,
+    "block": "S3-28",
+    "domain": "Sports Commentary",
+    "emotion": "Empathetic",
+    "emotion_subtype": "batsman-pain",
+    "target_seconds": 12.6,
+    "sentence": "ओह! 95mph की बाउंसर सीधे बल्लेबाज के हेलमेट पर लगी है... <sighs> फिजियो तुरंत कंकशन टेस्ट के लिए मैदान में आ पहुंचे हैं।"
+  },
+  {
+    "sentence_id": 530,
+    "block": "S3-29",
+    "domain": "Sports Commentary",
+    "emotion": "Fast",
+    "emotion_subtype": "last-over-drama",
+    "target_seconds": 13.3,
+    "sentence": "3 गेंदें 6 रन! गेंदबाज़ दौड़ा... यॉर्कर डालने की कोशिश, लेकिन फुलटॉस बन गई! मिड-विकेट की तरफ शॉट, दो रनों की मांग... और आसानी से दो रन पूरे!"
+  },
+  {
+    "sentence_id": 531,
+    "block": "S3-30",
+    "domain": "Sports Commentary",
+    "emotion": "Narration",
+    "emotion_subtype": "pitch-report",
+    "target_seconds": 14.3,
+    "sentence": "पिच में दरारें साफ दिखाई दे रही हैं... जैसे-जैसे खेल आगे बढ़ेगा, स्पिन गेंदबाजों को ग्रिप और टर्न मिलना तय है।"
+  },
+  {
+    "sentence_id": 532,
+    "block": "STD",
+    "domain": "Stand-up Comedy / Satire",
+    "emotion": "Cheerful",
+    "emotion_subtype": "relatable-joke",
+    "target_seconds": 12.3,
+    "sentence": "हमारे देश में जिम ज्वाइन करने का नियम बहुत सिंपल है भाई... <laughs> 1 तारीख को फीस दो, 2 तारीख को जिम जाओ, और 3 तारीख से बॉडी में दर्द का बहाना बनाकर घर बैठो!"
+  },
+  {
+    "sentence_id": 533,
+    "block": "STD",
+    "domain": "Stand-up Comedy / Satire",
+    "emotion": "Surprised",
+    "emotion_subtype": "funny-observation",
+    "target_seconds": 14.4,
+    "sentence": "और ये फैमिली व्हाट्सएप ग्रुप्स का क्या चक्कर है यार?! <gasps> सुबह 5 बजे गुड मॉर्निंग के 50 मैसेज आ जाते हैं वो भी चमकते हुए गुलाब के फूलों के साथ!"
+  },
+  {
+    "sentence_id": 534,
+    "block": "STD",
+    "domain": "Stand-up Comedy / Satire",
+    "emotion": "Hesitation",
+    "emotion_subtype": "corporate-satire",
+    "target_seconds": 15.2,
+    "sentence": "ऑफिस में बॉस बोलते हैं — 'वी आर लाइक ए फैमिली!' <sighs> हां भाई, वही फैमिली जहां सारा काम मुझसे कराया जाता है और प्रॉपर्टी का हिस्सा बाकी सहकर्मियों को मिलता है!"
+  },
+  {
+    "sentence_id": 535,
+    "block": "STD",
+    "domain": "Stand-up Comedy / Satire",
+    "emotion": "Soft",
+    "emotion_subtype": "sarcastic",
+    "target_seconds": 13.8,
+    "sentence": "ऑनलाइन शॉपिंग से कपड़ा मंगाओ... फोटो में लगता है जैसे ऋतिक रोशन पहन के खड़ा है... <chuckles> और जब खुद पहनो तो लगता है पोछा लपेट लिया है!"
+  },
+  {
+    "sentence_id": 536,
+    "block": "STD",
+    "domain": "Stand-up Comedy / Satire",
+    "emotion": "Loud",
+    "emotion_subtype": "punchline",
+    "target_seconds": 11.8,
+    "sentence": "मेरी मम्मी कहती हैं — 'दिन भर मोबाइल में घुसा रहता है!' अरे मम्मी, मोबाइल से बाहर निकल आऊं तो आपकी शक्ल कैसे देखूंगा?!"
+  },
+  {
+    "sentence_id": 537,
+    "block": "STD",
+    "domain": "Stand-up Comedy / Satire",
+    "emotion": "Confused",
+    "emotion_subtype": "modern-life",
+    "target_seconds": 15.8,
+    "sentence": "आजकल के बच्चों का एटीट्यूड देखो भाई... <clears throat> 8 साल का बच्चा डिप्रेशन में है क्योंकि उसका वाई-फाई बंद हो गया! हमारे टाइम में तो शक्तिमान बंद होने पर रोते थे!"
+  },
+  {
+    "sentence_id": 538,
+    "block": "STD",
+    "domain": "Stand-up Comedy / Satire",
+    "emotion": "Happy",
+    "emotion_subtype": "crowd-interaction",
+    "target_seconds": 13.0,
+    "sentence": "इंजीनियरिंग करने वालों के लिए एक जोरदार तालियां हो जाएं! <laughs> क्योंकि 4 साल पढ़ाई करने के बाद भी उन्हें समझ नहीं आता कि उन्होंने पढ़ाई क्या की थी!"
+  },
+  {
+    "sentence_id": 539,
+    "block": "STD",
+    "domain": "Stand-up Comedy / Satire",
+    "emotion": "Fast",
+    "emotion_subtype": "rant",
+    "target_seconds": 13.4,
+    "sentence": "ट्रैफिक पुलिस वाला रोक ले तो सबसे पहले दिमाग में अपनी पूरी जिंदगी की गलतियां याद आ जाती हैं! भले ही सारे कागजात पूरे हों!"
+  },
+  {
+    "sentence_id": 540,
+    "block": "STD",
+    "domain": "Stand-up Comedy / Satire",
+    "emotion": "Sad",
+    "emotion_subtype": "self-deprecating",
+    "target_seconds": 14.5,
+    "sentence": "मैं इतना सिंगल हूं दोस्तों... <sighs> कि जोमाटो वाला भी नोटिफिकेशन भेजता है तो लगता है किसी ने प्यार से हाल-चाल पूछा है!"
+  },
+  {
+    "sentence_id": 541,
+    "block": "STD",
+    "domain": "Stand-up Comedy / Satire",
+    "emotion": "Charming",
+    "emotion_subtype": "funny-story",
+    "target_seconds": 14.5,
+    "sentence": "एक बार मैं डाइटिंग करने की कोशिश कर रहा था... <smiles> 2 घंटे पिज्जा नहीं खाया, मुझे लगा मेरा 2 किलो वजन कम हो गया होगा!"
+  },
+  {
+    "sentence_id": 542,
+    "block": "S1-27",
+    "domain": "Storytelling / Audiobooks",
+    "emotion": "Narration",
+    "emotion_subtype": "mysterious-intro",
+    "target_seconds": 13.8,
+    "sentence": "घने काले बादलों ने पूरे शहर को अपने आगोश में ले लिया था... सड़क पर सन्नाटा था, और दूर कहीं एक पुरानी घड़ी हर घंटे पर अजीब सी आवाज़ कर रही थी।"
+  },
+  {
+    "sentence_id": 543,
+    "block": "S1-28",
+    "domain": "Storytelling / Audiobooks",
+    "emotion": "Soft",
+    "emotion_subtype": "emotional-scene",
+    "target_seconds": 13.6,
+    "sentence": "वृद्ध मां ने कांपते हाथों से चिठ्ठी खोली... <sighs> उसमें लिखा था कि उसका बेटा इस साल भी त्यौहार पर घर नहीं आ पाएगा। आंखों से एक आंसू टपककर कागज पर फैल गया।"
+  },
+  {
+    "sentence_id": 544,
+    "block": "S1-29",
+    "domain": "Storytelling / Audiobooks",
+    "emotion": "Fearful",
+    "emotion_subtype": "scary-moment",
+    "target_seconds": 13.2,
+    "sentence": "अचानक कमरे की खिड़की जोर से खटखटाई... <gasps> बाहर हवा का झोंका आया और मोमबत्ती बुझ गई। अंधेरे में उसे किसी की सांसों की सरसराहट महसूस हुई..."
+  },
+  {
+    "sentence_id": 545,
+    "block": "S1-30",
+    "domain": "Storytelling / Audiobooks",
+    "emotion": "Hopeful",
+    "emotion_subtype": "inspiring-tale",
+    "target_seconds": 16.8,
+    "sentence": "उस छोटे से चिड़िया के बच्चे ने पहली बार अपने पंख फैलाए... <smiles> डर था कि कहीं गिर न जाए, लेकिन जैसे ही हवा ने उसे सहारा दिया, वो खुले आसमान में उड़ चला।"
+  },
+  {
+    "sentence_id": 546,
+    "block": "S1-31",
+    "domain": "Storytelling / Audiobooks",
+    "emotion": "Surprised",
+    "emotion_subtype": "plot-twist",
+    "target_seconds": 14.3,
+    "sentence": "जब उसने संदूक का ताला तोड़ा... <gasps> तो उसमें सोने-चांदी के सिक्के नहीं, बल्कि पचास साल पुरानी वो खोई हुई तस्वीरें थीं जिन्हें वो बरसों से ढूढ़ रहा था।"
+  },
+  {
+    "sentence_id": 547,
+    "block": "S1-32",
+    "domain": "Storytelling / Audiobooks",
+    "emotion": "Hesitation",
+    "emotion_subtype": "suspense",
+    "target_seconds": 13.9,
+    "sentence": "जंगल का रास्ता दो हिस्सों में बंट रहा था... <inhales sharply> बाएं तरफ घना अंधेरा था और दाएं तरफ की पगडंडी पर किसी अनजान जानवर के पंजों के निशान थे।"
+  },
+  {
+    "sentence_id": 548,
+    "block": "S1-33",
+    "domain": "Storytelling / Audiobooks",
+    "emotion": "Happy",
+    "emotion_subtype": "heartwarming",
+    "target_seconds": 13.8,
+    "sentence": "सर्दियों की उस ठंडी रात में जब उस अनाथ बच्चे को एक गर्म कंबल और कटोरी भर गर्म सूप मिला... <laughs> तो उसकी नन्हीं मुस्कान ने पूरे कमरे को रोशन कर दिया।"
+  },
+  {
+    "sentence_id": 549,
+    "block": "S1-34",
+    "domain": "Storytelling / Audiobooks",
+    "emotion": "Sad",
+    "emotion_subtype": "tragedy",
+    "target_seconds": 14.8,
+    "sentence": "नाव नदी के बीचों-बीच भंवर में फंस चुकी थी... <sighs> मल्लाह ने अपनी पूरी ताकत लगा दी, लेकिन पानी का तेज बहाव उसे किनारे से दूर खींचता चला गया।"
+  },
+  {
+    "sentence_id": 550,
+    "block": "S1-35",
+    "domain": "Storytelling / Audiobooks",
+    "emotion": "Proud",
+    "emotion_subtype": "folklore-hero",
+    "target_seconds": 14.3,
+    "sentence": "गांव के बुज़ुर्ग आज भी उस वीर योद्धा की गाथा सुनाते हैं... जिसने अकेले ही डाकुओं के गिरोह को खदेड़कर पूरे गांव की रक्षा की थी।"
+  },
+  {
+    "sentence_id": 551,
+    "block": "S1-36",
+    "domain": "Storytelling / Audiobooks",
+    "emotion": "Whisper",
+    "emotion_subtype": "secret-legend",
+    "target_seconds": 14.1,
+    "sentence": "कहा जाता है कि उस पुराने किले की नींव में एक ऐसा रहस्य छुपा है... जो आज तक कोई नहीं जान पाया।"
+  },
+  {
+    "sentence_id": 552,
+    "block": "STD",
+    "domain": "Technology",
+    "emotion": "Neutral",
+    "emotion_subtype": "tech-review",
+    "target_seconds": 14.2,
+    "sentence": "स्मार्टफोन टेक्नोलॉजी में AI का एकीकरण अब केवल कैमरे तक सीमित नहीं है... यह बैटरी लाइफ, सिस्टम परफॉर्मेंस और यूजर प्राइवेसी को भी रियल-टाइम में ऑप्टिमाइज़ कर रहा है।"
+  },
+  {
+    "sentence_id": 553,
+    "block": "STD",
+    "domain": "Technology",
+    "emotion": "Energetic",
+    "emotion_subtype": "product-launch",
+    "target_seconds": 13.0,
+    "sentence": "पेश है दुनिया का पहला फ्लेक्सिबल फोल्डेबल डिस्प्ले लैपटॉप! जो एक पल में टैबलेट और दूसरे पल में एक पावरफुल वर्कस्टेशन में बदल जाता है!"
+  },
+  {
+    "sentence_id": 554,
+    "block": "STD",
+    "domain": "Technology",
+    "emotion": "Hesitation",
+    "emotion_subtype": "security-warning",
+    "target_seconds": 13.5,
+    "sentence": "फिशिंग ईमेल और फर्जी लिंक्स से सावधान रहें... <inhales sharply> किसी भी अज्ञात लिंक पर क्लिक करने से पहले URL की प्रामाणिकता और HTTPS सुरक्षा जरूर जांच लें।"
+  },
+  {
+    "sentence_id": 555,
+    "block": "STD",
+    "domain": "Technology",
+    "emotion": "Surprised",
+    "emotion_subtype": "ai-innovation",
+    "target_seconds": 14.2,
+    "sentence": "क्या आपने जनरेटिव एआई के नए टूल का इस्तेमाल किया है? <gasps> सिर्फ एक लाइन के टेक्स्ट प्रॉम्प्ट से यह 4K क्वालिटी का वीडियो कुछ ही सेकंड में तैयार कर देता है!"
+  },
+  {
+    "sentence_id": 556,
+    "block": "STD",
+    "domain": "Technology",
+    "emotion": "Soft",
+    "emotion_subtype": "explanatory",
+    "target_seconds": 15.4,
+    "sentence": "क्लाउड कंप्यूटिंग का सरल अर्थ यह है कि आपको अपना डेटा या सॉफ्टवेयर अपने लोकल कंप्यूटर पर स्टोर करने की जरूरत नहीं है... <clears throat> आप इंटरनेट के जरिए कहीं से भी उस तक पहुंच सकते हैं।"
+  },
+  {
+    "sentence_id": 557,
+    "block": "STD",
+    "domain": "Technology",
+    "emotion": "Proud",
+    "emotion_subtype": "tech-milestone",
+    "target_seconds": 13.8,
+    "sentence": "भारत में निर्मित 5G नेटवर्क इंफ्रास्ट्रक्चर ने दुनिया भर के तकनीकी विशेषज्ञों का ध्यान आकर्षित किया है... कम लागत में उच्च गति इंटरनेट का यह एक बेहतरीन उदाहरण है।"
+  },
+  {
+    "sentence_id": 558,
+    "block": "STD",
+    "domain": "Technology",
+    "emotion": "Cheerful",
+    "emotion_subtype": "gadget-unboxing",
+    "target_seconds": 12.9,
+    "sentence": "बॉक्स खोलते ही जो प्रीमियम फील आती है ना... <laughs> मैटल फिनिश, स्लिम डिजाइन और साथ में 120Hz का एमोलेड डिस्प्ले! सच में पैसा वसूल प्रोडक्ट है!"
+  },
+  {
+    "sentence_id": 559,
+    "block": "STD",
+    "domain": "Technology",
+    "emotion": "Sad",
+    "emotion_subtype": "tech-obsolescence",
+    "target_seconds": 13.8,
+    "sentence": "एक जमाना था जब फ्लॉपी डिस्क और सीडी का राज हुआ करता था... <sighs> आज वे केवल संग्रहालय की वस्तुएं बनकर रह गई हैं। तकनीक कितनी तेजी से बदलती है!"
+  },
+  {
+    "sentence_id": 560,
+    "block": "STD",
+    "domain": "Technology",
+    "emotion": "Neutral",
+    "emotion_subtype": "ev-technology",
+    "target_seconds": 16.5,
+    "sentence": "सॉलिड-स्टेट बैटरी तकनीक इलेक्ट्रिक वाहनों की रेंज को दोगुना करने और चार्जिंग समय को घटाकर 10 मिनट करने का दावा कर रही है... जो ऑटोमोबाइल उद्योग में क्रांति ला सकती है।"
+  },
+  {
+    "sentence_id": 561,
+    "block": "STD",
+    "domain": "Technology",
+    "emotion": "Hopeful",
+    "emotion_subtype": "future-tech",
+    "target_seconds": 12.9,
+    "sentence": "क्वांटम कंप्यूटिंग की मदद से चिकित्सा, औषधि खोज और जटिल वैज्ञानिक समस्याओं को हल करने में जो समय सालों लगता था, वह अब कुछ घंटों में संभव हो जाएगा।"
+  },
+  {
+    "sentence_id": 562,
+    "block": "STD",
+    "domain": "Voice Acting / Character voices",
+    "emotion": "Loud",
+    "emotion_subtype": "grumpy-king",
+    "target_seconds": 12.8,
+    "sentence": "कौन है जो हमारी अनुमति के बिना हमारे राजदरबार में प्रवेश करने का दुस्साहस कर रहा है?! संतरी! इसे तुरंत बंदी बना लो!"
+  },
+  {
+    "sentence_id": 563,
+    "block": "STD",
+    "domain": "Voice Acting / Character voices",
+    "emotion": "Soft",
+    "emotion_subtype": "wise-owl",
+    "target_seconds": 15.9,
+    "sentence": "सुनो छोटे बालक... <sighs> जंगल के नियम बहुत पुराने हैं। जो पेड़ हवा के साथ झुकना सीखता है, वही बड़े से बड़े तूफान में भी खड़ा रहता है।"
+  },
+  {
+    "sentence_id": 564,
+    "block": "STD",
+    "domain": "Voice Acting / Character voices",
+    "emotion": "Cheerful",
+    "emotion_subtype": "quirky-alien",
+    "target_seconds": 12.8,
+    "sentence": "ज़ोग-ज़ोग! पृथ्वीवासियों! <laughs> हम ग्रह एक्स-9 से आए हैं! क्या आपके पास चॉकलेट नाम की वो मीठी चीज़ है? हमें बहुत पसंद आई!"
+  },
+  {
+    "sentence_id": 565,
+    "block": "STD",
+    "domain": "Voice Acting / Character voices",
+    "emotion": "Whisper",
+    "emotion_subtype": "ghostly-presence",
+    "target_seconds": 11.8,
+    "sentence": "तुमने मुझे बुलाया ना... <exhales> अब मैं तुम्हें कभी छोड़कर नहीं जाऊंगी... हमेशा तुम्हारे साथ रहूंगी... हमेशा..."
+  },
+  {
+    "sentence_id": 566,
+    "block": "STD",
+    "domain": "Voice Acting / Character voices",
+    "emotion": "Confused",
+    "emotion_subtype": "mad-scientist",
+    "target_seconds": 14.6,
+    "sentence": "यूरेका! यूरेका! <gasps> थोड़ा सा नीले रंग का केमिकल मिलाया... और यह क्या?! यह तो हरे रंग का धुआं छोड़ने लगा! अद्भुत! अप्रत्याशित!"
+  },
+  {
+    "sentence_id": 567,
+    "block": "STD",
+    "domain": "Voice Acting / Character voices",
+    "emotion": "Surprised",
+    "emotion_subtype": "cartoon-mascot",
+    "target_seconds": 10.3,
+    "sentence": "ओहो! चीकू बंदर ने मेरी सारी मूंगफली चुरा ली! <gasps> रुको चीकू! मैं तुम्हें अभी पकड़ता हूं!"
+  },
+  {
+    "sentence_id": 568,
+    "block": "STD",
+    "domain": "Voice Acting / Character voices",
+    "emotion": "Angry",
+    "emotion_subtype": "pirate-captain",
+    "target_seconds": 11.6,
+    "sentence": "ऐ जहाजी! लंगर उठाओ और पाल खोल दो! उस दूसरे जहाज को डूबने से पहले उसका सारा खजाना हमारा होना चाहिए! अररर!"
+  },
+  {
+    "sentence_id": 569,
+    "block": "STD",
+    "domain": "Voice Acting / Character voices",
+    "emotion": "Soft",
+    "emotion_subtype": "nurturing-fairy",
+    "target_seconds": 15.0,
+    "sentence": "डरो मत नन्ही परी... <smiles> अपनी जादुई छड़ी को हवा में घुमाओ और बोलो — 'अबरा का डाबरा!' देखना सारे सपने सच हो जाएंगे।"
+  },
+  {
+    "sentence_id": 570,
+    "block": "STD",
+    "domain": "Voice Acting / Character voices",
+    "emotion": "Slow",
+    "emotion_subtype": "giant-monster",
+    "target_seconds": 13.2,
+    "sentence": "मैं... इस... पहाड़... का... रक्षक... हूं! <exhales> कोई... भी... बिना... मेरी... आज्ञा... आगे... नहीं... बढ़... सकता!"
+  },
+  {
+    "sentence_id": 571,
+    "block": "STD",
+    "domain": "Voice Acting / Character voices",
+    "emotion": "Happy",
+    "emotion_subtype": "cheerful-elf",
+    "target_seconds": 12.6,
+    "sentence": "ट्रिंन-ट्रिंन! सांता क्लॉस की वर्कशॉप में खिलौने बनकर तैयार हो गए हैं! <laughs> बच्चों के लिए ढेर सारे तोफे पैक कर दो जल्दी से!"
+  },
+  {
+    "sentence_id": 572,
+    "block": "STD",
+    "domain": "Advertisements and Commercials",
+    "emotion": "Energetic",
+    "emotion_subtype": "upbeat",
+    "target_seconds": 11.8,
+    "sentence": "इसके अलावा, क्या आप भी वही पुराना खाना खाकर बोर हो गए हैं? <laughs> चिंता मत कीजिए! पेश है TastyBites App, जहां ऑर्डर कीजिए अपने शहर के 500 से भी ज्यादा रेस्टोरेंट्स से, और पाइए flat 50% discount!"
+  },
+  {
+    "sentence_id": 573,
+    "block": "STD",
+    "domain": "Advertisements and Commercials",
+    "emotion": "Cheerful",
+    "emotion_subtype": "promotional",
+    "target_seconds": 11.8,
+    "sentence": "देखा जाए तो गर्मियों की छुट्टियों में घूमने का प्लान बना रहे हैं? <chuckles> तो देर किस बात की! MakeMyFly पर आज ही टिकट बुक करें और पाएं पहली बुकिंग पर 2000 रुपये तक का instant cashback!"
+  },
+  {
+    "sentence_id": 574,
+    "block": "STD",
+    "domain": "Advertisements and Commercials",
+    "emotion": "Loud",
+    "emotion_subtype": "excited",
+    "target_seconds": 11.2,
+    "sentence": "सच कहें तो धमाका सेल! <smiles> जी हां... <inhales sharply> भारत की सबसे बड़ी Online Sale शुरू हो चुकी है! <smiles> इलेक्ट्रॉनिक्स, कपड़े, और होम अप्लायंसेज पर [stress]अविश्वसनीय[/stress] 80% तक की छूट! <smiles> ऑफर सीमित समय के लिए! <smiles>"
+  },
+  {
+    "sentence_id": 575,
+    "block": "STD",
+    "domain": "Advertisements and Commercials",
+    "emotion": "Soft",
+    "emotion_subtype": "soothing",
+    "target_seconds": 14.0,
+    "sentence": "ध्यान देने वाली बात यह है कि दिन भर की भागदौड़ के बाद... क्या आपकी त्वचा भी बेजान लगने लगती है? <sighs> अपनाइए PureGlow Herbal Cream... 100% प्राकृतिक केसर और एलोवेरा के गुणों से भरपूर..."
+  },
+  {
+    "sentence_id": 576,
+    "block": "STD",
+    "domain": "Advertisements and Commercials",
+    "emotion": "Empathetic",
+    "emotion_subtype": "reassuring",
+    "target_seconds": 15.4,
+    "sentence": "एक और महत्वपूर्ण बात... बच्चों की पढ़ाई और भविष्य की चिंता... हर माता-पिता को सताती है। <inhales sharply> SafeFuture Child Plan के साथ आज ही निवेश शुरू करें और उनके सपनों को दें पंख।"
+  },
+  {
+    "sentence_id": 577,
+    "block": "STD",
+    "domain": "Advertisements and Commercials",
+    "emotion": "Energetic",
+    "emotion_subtype": "enthusiastic",
+    "target_seconds": 12.1,
+    "sentence": "इसके अलावा, अब हर सफर बनेगा यादगार! <smiles> पेश है नई Alpha EV — 400 किलोमीटर की माइलेज, सुपरफास्ट चार्जिंग और ऑटोमैटिक ड्राइव मोड के साथ! <smiles> टेस्ट ड्राइव बुक करें आज ही! <smiles>"
+  },
+  {
+    "sentence_id": 578,
+    "block": "STD",
+    "domain": "Advertisements and Commercials",
+    "emotion": "Charming",
+    "emotion_subtype": "persuasive",
+    "target_seconds": 12.3,
+    "sentence": "देखा जाए तो घर सिर्फ चार दीवारों से नहीं बनता... वो बनता है यादों से! <smiles> ShubhNivas Developers आपके लिए ला रहे हैं लग्जरी 3BHK अपार्टमेंट्स, प्राइम लोकेशन पर!"
+  },
+  {
+    "sentence_id": 579,
+    "block": "STD",
+    "domain": "Advertisements and Commercials",
+    "emotion": "Fast",
+    "emotion_subtype": "urgent",
+    "target_seconds": 8.5,
+    "sentence": "सच कहें तो जल्दी कीजिए! <smiles> स्टॉक सीमित है! <smiles> सिर्फ आज रात बारह बजे तक पाएं सभी ब्रांडेड जूतों पर Buy 1 Get 1 Free! <smiles> अभी download कीजिए हमारा App! <smiles>"
+  },
+  {
+    "sentence_id": 580,
+    "block": "STD",
+    "domain": "Advertisements and Commercials",
+    "emotion": "Happy",
+    "emotion_subtype": "vibrant",
+    "target_seconds": 11.3,
+    "sentence": "ध्यान देने वाली बात यह है कि त्यौहारों की चमक, आपके घर की रौनक़! <smiles> Royal Paint के साथ दीवारें मुस्कुराएंगी और पूरा घर चमकेगा! <smiles> इस दिवाली, घर को दीजिए एक नया रूप! <smiles>"
+  },
+  {
+    "sentence_id": 581,
+    "block": "STD",
+    "domain": "Advertisements and Commercials",
+    "emotion": "Neutral",
+    "emotion_subtype": "informative",
+    "target_seconds": 13.2,
+    "sentence": "एक और महत्वपूर्ण बात... क्या आप जानते हैं कि गलत गद्दे पर सोने से रीढ़ की हड्डी पर दबाव पड़ता है? <clears throat> SleepWell Ortho Mattress देता है सही सपोर्ट और 10 साल की वारंटी।"
+  },
+  {
+    "sentence_id": 582,
+    "block": "STD",
+    "domain": "Advertisements and Commercials",
+    "emotion": "Cheerful",
+    "emotion_subtype": "inviting",
+    "target_seconds": 11.8,
+    "sentence": "इसके अलावा, रविवार को परिवार के साथ कहां जाना है? <laughs> Grand Mall का Food Court है सही जगह! साउथ इंडियन से लेकर चाइनीज तक, सब कुछ एक ही छत के नीचे!"
+  },
+  {
+    "sentence_id": 583,
+    "block": "STD",
+    "domain": "Advertisements and Commercials",
+    "emotion": "Soft",
+    "emotion_subtype": "warm",
+    "target_seconds": 14.1,
+    "sentence": "देखा जाए तो सर्दियों की सुबह और एक कप कड़क चाय... <exhales> TajMahal Special Tea के साथ हर सुबह की शुरुआत कीजिए ताजगी और खुशबू के साथ।"
+  },
+  {
+    "sentence_id": 584,
+    "block": "STD",
+    "domain": "Advertisements and Commercials",
+    "emotion": "Proud",
+    "emotion_subtype": "confident",
+    "target_seconds": 13.0,
+    "sentence": "सच कहें तो भारत का नंबर एक भरोसेमंद Solar Panel — SunPower! <smiles> बिजली का बिल शून्य करें और पर्यावरण की रक्षा में अपना योगदान दें। अधिक जानकारी के लिए अभी कॉल करें! <smiles>"
+  },
+  {
+    "sentence_id": 585,
+    "block": "STD",
+    "domain": "Advertisements and Commercials",
+    "emotion": "Energetic",
+    "emotion_subtype": "catchy",
+    "target_seconds": 10.2,
+    "sentence": "ध्यान देने वाली बात यह है कि फिटनेस का नया दौर! <smiles> GymPro App के साथ घर बैठे सीखिए पर्सनल ट्रेनर से योगा और वर्कआउट! <smiles> 7 दिन का Free Trial पाने के लिए लिंक पर क्लिक करें! <smiles>"
+  },
+  {
+    "sentence_id": 586,
+    "block": "STD",
+    "domain": "Advertisements and Commercials",
+    "emotion": "Surprised",
+    "emotion_subtype": "playful",
+    "target_seconds": 12.5,
+    "sentence": "एक और महत्वपूर्ण बात... अरे वाह! इतने कम दाम में 55 इंच का 4K Smart TV?! <gasps> जी हां, बिल्कुल सच! ऑफर खत्म होने से पहले तुरंत विजिट करें हमारी वेबसाइट पर!"
+  },
+  {
+    "sentence_id": 587,
+    "block": "STD",
+    "domain": "Agriculture",
+    "emotion": "Neutral",
+    "emotion_subtype": "informative",
+    "target_seconds": 14.9,
+    "sentence": "इसके अलावा, किसान भाइयों, रबी की फसल बोने से पहले मिट्टी की जांच कराना बहुत जरूरी है... <inhales sharply> मिट्टी में नाइट्रोजन और फॉस्फोरस की मात्रा का सही अनुमान लगाकर ही खाद का इस्तेमाल करें।"
+  },
+  {
+    "sentence_id": 588,
+    "block": "STD",
+    "domain": "Agriculture",
+    "emotion": "Hopeful",
+    "emotion_subtype": "encouraging",
+    "target_seconds": 13.6,
+    "sentence": "देखा जाए तो ड्रिप इरिगेशन यानी टपक सिंचाई पद्धति अपनाने से न सिर्फ साठ प्रतिशत तक पानी की बचत होती है... <inhales sharply> बल्कि फसलों की पैदावार में भी पच्चीस से तीस प्रतिशत की बढ़ोतरी देखी गई है।"
+  },
+  {
+    "sentence_id": 589,
+    "block": "STD",
+    "domain": "Agriculture",
+    "emotion": "Hesitation",
+    "emotion_subtype": "cautious",
+    "target_seconds": 13.9,
+    "sentence": "सच कहें तो मौसम विभाग के अनुसार इस हफ्ते हल्की बारिश की संभावना है... <inhales sharply> इसलिए धान की कटाई कर चुके किसान अपनी फसल को सुरक्षित खलिहान या गोदाम में ढक कर रखें।"
+  },
+  {
+    "sentence_id": 590,
+    "block": "STD",
+    "domain": "Agriculture",
+    "emotion": "Proud",
+    "emotion_subtype": "satisfied",
+    "target_seconds": 14.9,
+    "sentence": "ध्यान देने वाली बात यह है कि ऑर्गेनिक खेती अब सिर्फ एक विकल्प नहीं... <smiles> बल्कि भविष्य की ज़रूरत बन चुकी है। बिना रासायनिक कीटनाशकों के उगाए गए गेहूं और सब्जियों का बाज़ार में दाम भी बेहतर मिलता है।"
+  },
+  {
+    "sentence_id": 591,
+    "block": "STD",
+    "domain": "Agriculture",
+    "emotion": "Sad",
+    "emotion_subtype": "concerned",
+    "target_seconds": 13.0,
+    "sentence": "एक और महत्वपूर्ण बात... पिछले दो हफ्तों से लगातार पड़ रही ओलावृष्टि ने सरसों और चने की फसल को काफी नुकसान पहुंचाया है... <sighs> सरकार से मुआवजा प्रक्रिया जल्द शुरू करने की मांग की गई है।"
+  },
+  {
+    "sentence_id": 592,
+    "block": "STD",
+    "domain": "Agriculture",
+    "emotion": "Clear",
+    "emotion_subtype": "educational",
+    "target_seconds": 15.5,
+    "sentence": "इसके अलावा, पीएम किसान सम्मान निधि योजना के तहत अगली किस्त पाने के लिए अपना e-KYC तुरंत पूरा करें। नजदीकी जन सेवा केंद्र पर जाकर आधार कार्ड के साथ सत्यापन कराएं।"
+  },
+  {
+    "sentence_id": 593,
+    "block": "STD",
+    "domain": "Agriculture",
+    "emotion": "Energetic",
+    "emotion_subtype": "motivational",
+    "target_seconds": 13.8,
+    "sentence": "देखा जाए तो डेयरी फार्मिंग को आधुनिक तकनीक से जोड़कर हमारे गांव के युवा हर महीने लाखों रुपये कमा रहे हैं! <smiles> ऑटोमैटिक मिल्किंग मशीन और साइलेज तकनीक ने काम बहुत आसान बना दिया है।"
+  },
+  {
+    "sentence_id": 594,
+    "block": "STD",
+    "domain": "Agriculture",
+    "emotion": "Soft",
+    "emotion_subtype": "advisory",
+    "target_seconds": 12.8,
+    "sentence": "सच कहें तो फसलों में कीट नियंत्रण के लिए नीम के तेल का छिड़काव एक बहुत ही सस्ता और असरदार जैविक उपाय है... <clears throat> प्रति लीटर पानी में 5 ml नीम का तेल मिलाकर छिड़कें।"
+  },
+  {
+    "sentence_id": 595,
+    "block": "STD",
+    "domain": "Agriculture",
+    "emotion": "Surprised",
+    "emotion_subtype": "amazed",
+    "target_seconds": 11.4,
+    "sentence": "ध्यान देने वाली बात यह है कि क्या आपने सोलर पंप सब्सिडी योजना के बारे में सुना है? <gasps> सरकार नब्बे प्रतिशत तक सब्सिडी दे रही है ताकि किसानों को बिजली या डीजल पर निर्भर न रहना पड़े!"
+  },
+  {
+    "sentence_id": 596,
+    "block": "STD",
+    "domain": "Agriculture",
+    "emotion": "Narration",
+    "emotion_subtype": "descriptive",
+    "target_seconds": 14.7,
+    "sentence": "एक और महत्वपूर्ण बात... सुबह की पहली किरण के साथ जब रामदीन अपने खेतों में पानी लगाने पहुंचता है... <inhales sharply> तो हरी-भरी लहलहाती फसल देखकर उसकी महीनों की थकान एक पल में गायब हो जाती है।"
+  },
+  {
+    "sentence_id": 597,
+    "block": "STD",
+    "domain": "Agriculture",
+    "emotion": "Neutral",
+    "emotion_subtype": "analytical",
+    "target_seconds": 13.8,
+    "sentence": "इसके अलावा, मंडी समिति में आज गेहूं का न्यूनतम समर्थन मूल्य दो हजार दो सौ पच्चीस रुपये प्रति क्विंटल दर्ज किया गया... <inhales sharply> आवक बढ़ने के साथ ही सरकारी खरीद केंद्रों पर व्यवस्था सुचारू है।"
+  },
+  {
+    "sentence_id": 598,
+    "block": "STD",
+    "domain": "Agriculture",
+    "emotion": "Hopeful",
+    "emotion_subtype": "optimistic",
+    "target_seconds": 13.1,
+    "sentence": "देखा जाए तो पॉलीहाउस खेती तकनीक के जरिए अब बेमौसम सब्जियां उगाना बहुत आसान हो गया है... <inhales sharply> कम जमीन में अधिक मुनाफा कमाने का यह एक बेहतरीन जरिया है।"
+  },
+  {
+    "sentence_id": 599,
+    "block": "STD",
+    "domain": "Agriculture",
+    "emotion": "Soft",
+    "emotion_subtype": "reflective",
+    "target_seconds": 14.6,
+    "sentence": "सच कहें तो धरती माता हमें सब कुछ देती है... <sighs> अगर हम पराली जलाने के बजाय उसे मिट्टी में मिला दें, तो जमीन की उर्रवरा शक्ति और बढ़ जाएगी।"
+  },
+  {
+    "sentence_id": 600,
+    "block": "STD",
+    "domain": "Agriculture",
+    "emotion": "Energetic",
+    "emotion_subtype": "guidance",
+    "target_seconds": 13.4,
+    "sentence": "ध्यान देने वाली बात यह है कि मशरूम फार्मिंग की शुरुआत छोटे स्तर से कमरे के अंदर भी की जा सकती है! <smiles> कम लागत और कम समय में बेहतर रिटर्न देने वाला यह एक शानदार एग्री-बिजनेस है।"
+  }
+]

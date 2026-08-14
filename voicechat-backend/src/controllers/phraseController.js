@@ -1101,7 +1101,7 @@ export async function getQaQueue(req, res) {
       if (!req.user || !req.user.isAdmin) {
         return res.status(403).json({ error: "Only admins can access edited phrases queue" });
       }
-      query = { isEdited: true };
+      query = { isEdited: true, editedPhraseStatus: { $nin: ["approved", "rejected"] } };
     } else {
       query = { status: requestedStatus };
     }
@@ -1263,6 +1263,68 @@ export async function reviewEditedPhrase(req, res) {
   } catch (error) {
     console.error("reviewEditedPhrase error:", error);
     res.status(500).json({ error: error.message || "Failed to review edited phrase" });
+  }
+}
+
+/**
+ * Admin: Bulk approve all pending edited phrases waiting for admin review
+ */
+export async function approveAllEditedPhrases(req, res) {
+  try {
+    if (!req.user || !req.user.isAdmin) {
+      return res.status(403).json({ error: "Only admins can approve edited phrases" });
+    }
+
+    const { filterProject, filterLanguage } = req.body || {};
+
+    const query = {
+      isEdited: true,
+      editedPhraseStatus: { $nin: ["approved", "rejected"] }
+    };
+
+    if (filterLanguage && filterLanguage !== "All") {
+      query.language = new RegExp(`^${filterLanguage.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')}$`, "i");
+    }
+
+    let phrases = await Phrase.find(query);
+
+    // If filterProject is provided and not "All", filter matching phrases by project / companyId
+    if (filterProject && filterProject !== "All") {
+      const companies = await Company.find({}).lean();
+      const matchingCompanyNames = companies
+        .filter(c => (c.projectName || c.name) === filterProject)
+        .map(c => c.name);
+
+      phrases = phrases.filter(p => {
+        const projName = p.projectName || p.companyId;
+        return projName === filterProject || matchingCompanyNames.includes(p.companyId);
+      });
+    }
+
+    if (phrases.length === 0) {
+      return res.json({ success: true, count: 0, message: "No pending edited phrases to approve" });
+    }
+
+    const phraseIds = phrases.map(p => p._id);
+
+    await Phrase.updateMany(
+      { _id: { $in: phraseIds } },
+      {
+        $set: {
+          status: "approved",
+          editedPhraseStatus: "approved"
+        }
+      }
+    );
+
+    res.json({
+      success: true,
+      count: phrases.length,
+      message: `Successfully approved ${phrases.length} pending edited phrases`
+    });
+  } catch (error) {
+    console.error("approveAllEditedPhrases error:", error);
+    res.status(500).json({ error: error.message || "Failed to approve all edited phrases" });
   }
 }
 
