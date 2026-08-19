@@ -25,14 +25,28 @@ export default function Login() {
     setError("");
     setLoading(true);
     try {
-      await apiPostJson("/api/auth/login/initiate", { email, password });
+      const res = await apiPostJson("/api/auth/login/initiate", { email, password });
+      if (res.directLogin || res.token) {
+        setUserInfo(res.user);
+        if (res.user?.isAdmin) {
+          navigate("/admin/dashboard");
+        } else if (res.user?.isQA) {
+          navigate("/admin/qa");
+        } else {
+          const s = res.user?.accountStatus;
+          if (s === "pending_intro" || s === "rejected") navigate("/intro-recording");
+          else if (s === "pending_approval") navigate("/pending-approval");
+          else navigate("/call");
+        }
+        return;
+      }
+
       setPhase(2);
       startResendCooldown();
     } catch (e2) {
       const msg = e2.message;
       if (msg === "invalid_credentials") setError("Invalid email or password.");
       else if (msg === "otp_too_soon") {
-        // Already has a valid OTP from recent attempt
         setPhase(2);
         startResendCooldown();
       } else {

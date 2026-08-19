@@ -35,11 +35,15 @@ export async function sendOtpEmail(to, otp, purpose = "signup") {
     const subject =
         purpose === "signup"
             ? "Verify your Voclara account"
+            : purpose === "reset"
+            ? "Your Voclara password reset OTP"
             : "Your Voclara login OTP";
 
     const action =
         purpose === "signup"
             ? "complete your account registration"
+            : purpose === "reset"
+            ? "reset your account password"
             : "sign in to your account";
 
     const html = `

@@ -260,6 +260,32 @@ export async function loginInitiate(req, res) {
   const ok = await bcrypt.compare(password, user.passwordHash || "");
   if (!ok) return res.status(401).json({ error: "invalid_credentials" });
 
+  // Normal Contributor Users: Direct login with NO OTP!
+  if (!user.isAdmin && !user.isQA) {
+    const newTokenVersion = (user.tokenVersion || 0) + 1;
+    await User.updateOne(
+      { _id: user._id },
+      { $set: { tokenVersion: newTokenVersion } }
+    );
+    user.tokenVersion = newTokenVersion;
+
+    const token = signToken(
+      { userId: user._id.toString(), tokenVersion: user.tokenVersion },
+      JWT_SECRET
+    );
+
+    res.cookie("vc_token", token, cookieOptions());
+    res.cookie("vc_token_client", token, { ...cookieOptions(), httpOnly: false });
+
+    return res.json({
+      ok: true,
+      directLogin: true,
+      token,
+      user: formatUserResponse(user),
+    });
+  }
+
+  // Admin and QA users: Require OTP verification
   const recent = await OtpCode.findOne({
     email,
     type: "login",
@@ -271,16 +297,17 @@ export async function loginInitiate(req, res) {
 
   const code = generateOtp();
   const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
-  await OtpCode.create({ email, code, type: "login", expiresAt });
+  const otpDoc = await OtpCode.create({ email, code, type: "login", expiresAt });
 
   try {
     await sendOtpEmail(email, code, "login");
   } catch (err) {
     console.error("Failed to send login OTP email:", err);
+    await OtpCode.deleteOne({ _id: otpDoc._id }).catch(() => {});
     return res.status(500).json({ error: "email_send_failed" });
   }
 
-  res.json({ ok: true, otpSent: true });
+  res.json({ ok: true, requiresOtp: true, otpSent: true });
 }
 
 // POST /api/auth/login  — needs io injected; we use a factory
@@ -290,11 +317,7 @@ export function makeLogin(io) {
     const password = String(req.body?.password || "");
     const otpCode = String(req.body?.otpCode || "").trim();
 
-    if (
-      !isNonEmptyString(email) ||
-      !isNonEmptyString(password) ||
-      !isNonEmptyString(otpCode)
-    ) {
+    if (!isNonEmptyString(email) || !isNonEmptyString(password)) {
       return res.status(400).json({ error: "invalid_input" });
     }
 
@@ -304,13 +327,19 @@ export function makeLogin(io) {
     const ok = await bcrypt.compare(password, user.passwordHash || "");
     if (!ok) return res.status(401).json({ error: "invalid_credentials" });
 
-    const otp = await OtpCode.findOne({ email, type: "login", used: false })
-      .sort({ createdAt: -1 })
-      .lean();
-    if (!otp || new Date() > otp.expiresAt || otp.code !== otpCode) {
-      return res.status(400).json({ error: "otp_invalid_or_expired" });
+    // Only enforce OTP if user is Admin or QA
+    if (user.isAdmin || user.isQA) {
+      if (!isNonEmptyString(otpCode)) {
+        return res.status(400).json({ error: "invalid_input" });
+      }
+      const otp = await OtpCode.findOne({ email, type: "login", used: false })
+        .sort({ createdAt: -1 })
+        .lean();
+      if (!otp || new Date() > otp.expiresAt || otp.code !== otpCode) {
+        return res.status(400).json({ error: "otp_invalid_or_expired" });
+      }
+      await OtpCode.updateOne({ _id: otp._id }, { $set: { used: true } });
     }
-    await OtpCode.updateOne({ _id: otp._id }, { $set: { used: true } });
 
     if (user.currentSocketId && io.sockets.sockets.has(user.currentSocketId)) {
       const oldSocket = io.sockets.sockets.get(user.currentSocketId);
@@ -394,48 +423,59 @@ export async function forgotPassword(req, res) {
     return res.json({ ok: true });
   }
 
-  const token = crypto.randomBytes(32).toString("hex");
-  user.resetPasswordToken = token;
-  user.resetPasswordExpires = new Date(Date.now() + 3600000); // 1 hour
-  await user.save();
+  const recent = await OtpCode.findOne({
+    email,
+    type: "reset",
+    createdAt: { $gte: new Date(Date.now() - 60 * 1000) },
+  });
+  if (recent) {
+    return res.status(429).json({ error: "otp_too_soon", retryAfter: 60 });
+  }
 
-  const resetUrl = `${process.env.FRONTEND_ORIGIN || "http://localhost:5173"}/reset-password?token=${token}`;
-  
+  const code = generateOtp();
+  const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+  const otpDoc = await OtpCode.create({ email, code, type: "reset", expiresAt });
+
   try {
-    await sendResetPasswordEmail(email, resetUrl);
+    await sendOtpEmail(email, code, "reset");
     res.json({ ok: true });
   } catch (err) {
-    console.error("Failed to send reset password email:", err);
+    console.error("Failed to send reset password OTP email:", err);
+    await OtpCode.deleteOne({ _id: otpDoc._id }).catch(() => {});
     res.status(500).json({ error: "email_send_failed" });
   }
 }
 
 // POST /api/auth/reset-password
 export async function resetPassword(req, res) {
-  const token = String(req.body?.token || "");
+  const email = normalizeEmail(req.body?.email);
+  const otpCode = String(req.body?.otpCode || "").trim();
   const newPassword = String(req.body?.password || "");
 
-  if (!isNonEmptyString(token) || newPassword.length < 6) {
+  if (!isNonEmptyString(email) || !isNonEmptyString(otpCode) || newPassword.length < 6) {
     return res.status(400).json({ error: "invalid_input" });
   }
 
-  const user = await User.findOne({
-    resetPasswordToken: token,
-    resetPasswordExpires: { $gt: new Date() },
-  });
+  const otp = await OtpCode.findOne({ email, type: "reset" })
+    .sort({ createdAt: -1 })
+    .lean();
 
+  if (!otp || new Date() > otp.expiresAt || otp.code !== otpCode) {
+    return res.status(400).json({ error: "otp_invalid_or_expired" });
+  }
+
+  const user = await User.findOne({ email });
   if (!user) {
-    return res.status(400).json({ error: "token_invalid_or_expired" });
+    return res.status(404).json({ error: "user_not_found" });
   }
 
   user.passwordHash = await bcrypt.hash(newPassword, 10);
   user.resetPasswordToken = null;
   user.resetPasswordExpires = null;
-  
-  // Revoke all existing sessions
   user.tokenVersion = (user.tokenVersion || 0) + 1;
-  
   await user.save();
+
+  await OtpCode.updateOne({ _id: otp._id }, { $set: { used: true } });
 
   res.json({ ok: true });
 }

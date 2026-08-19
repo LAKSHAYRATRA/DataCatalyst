@@ -5,13 +5,13 @@ import { setUserInfo } from "../lib/auth.js";
 import { INDIA_STATE_NAMES } from "../lib/indiaData.js";
 import { REGIONAL_LANGUAGES } from "../lib/regionalLanguages.js";
 
-const TOTAL_STEPS = 4;
+const TOTAL_STEPS = 3;
 
 function ProgressBar({ step }) {
   return (
     <div className="mb-8">
       <div className="flex items-center justify-between mb-2">
-        {["Personal", "Address", "Equipment", "Verify Email"].map((label, i) => {
+        {["Personal", "Address", "Equipment"].map((label, i) => {
           const num = i + 1;
           const done = step > num;
           const active = step === num;
@@ -192,11 +192,10 @@ export default function Signup() {
     }
 
     setFieldErrors({});
-    setStep((s) => s + 1);
-
     if (step === 3) {
-      // Auto-send OTP when moving to step 4
-      sendOtp();
+      onSubmit();
+    } else {
+      setStep((s) => s + 1);
     }
   }
 
@@ -206,45 +205,9 @@ export default function Signup() {
     setStep((s) => s - 1);
   }
 
-  // ─── OTP ─────────────────────────────────────────────────────────────────
-  async function sendOtp() {
-    setLoading(true);
-    try {
-      await apiPostJson("/api/auth/send-otp", { email, type: "signup" });
-      setOtpSent(true);
-      startResendCooldown();
-    } catch (e) {
-      if (e.message === "otp_too_soon") {
-        setOtpSent(true);
-        startResendCooldown();
-      } else {
-        setGlobalError("Failed to send OTP. Please check your email and try again.");
-      }
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  function startResendCooldown() {
-    setResendCooldown(60);
-    const interval = setInterval(() => {
-      setResendCooldown((c) => {
-        if (c <= 1) {
-          clearInterval(interval);
-          return 0;
-        }
-        return c - 1;
-      });
-    }, 1000);
-  }
-
   // ─── Submit ───────────────────────────────────────────────────────────────
   async function onSubmit(e) {
-    e.preventDefault();
-    if (!otp.trim() || otp.length !== 6) {
-      setFieldErrors({ otp: "Enter the 6-digit OTP" });
-      return;
-    }
+    if (e && e.preventDefault) e.preventDefault();
     setGlobalError("");
     setFieldErrors({});
     setLoading(true);
@@ -263,14 +226,12 @@ export default function Signup() {
         accent: accent.trim(),
         dialect: dialect.trim(),
         dob,
-        otpCode: otp,
       });
       setUserInfo(res.user);
       navigate("/intro-recording");
     } catch (e2) {
       const msg = e2.message;
-      if (msg === "otp_invalid_or_expired") setGlobalError("OTP is incorrect or expired. Request a new one.");
-      else if (msg === "user_exists") setGlobalError("An account with this email already exists.");
+      if (msg === "user_exists") setGlobalError("An account with this email already exists.");
       else if (msg === "underage") setGlobalError("You must be at least 18 years old to sign up.");
       else if (msg === "overage") setGlobalError("Maximum age allowed to register is 65 years.");
       else if (msg === "invalid_dob") setGlobalError("Please enter a valid date of birth.");
@@ -445,89 +406,17 @@ export default function Signup() {
                   <span>This information helps us understand microphone usage patterns across our users. Any microphone type is fine.</span>
                 </p>
               </div>
+
+              <p className="text-xs text-neutral-500 text-center leading-relaxed mt-4">
+                By clicking Complete Registration, you agree to Voclara's{" "}
+                <a href="/Legal/Voclara-ToS.html" target="_blank" rel="noopener noreferrer" className="text-primary-600 underline hover:text-primary-700">
+                  Terms of Service
+                </a>{" "}and{" "}
+                <a href="/Legal/Voclara-Privacy-Policy.html" target="_blank" rel="noopener noreferrer" className="text-primary-600 underline hover:text-primary-700">
+                  Privacy Policy
+                </a>. Voice sample consent is captured separately before recording.
+              </p>
             </div>
-          )}
-
-          {/* ── STEP 4: Email OTP ── */}
-          {step === 4 && (
-            <form onSubmit={onSubmit}>
-              <div className="space-y-5">
-                <div className="text-center">
-                  <div className="inline-flex items-center justify-center w-14 h-14 bg-primary-100 rounded-full mb-3">
-                    <svg className="w-7 h-7 text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                    </svg>
-                  </div>
-                  <h2 className="text-lg font-semibold text-neutral-800">Verify Your Email</h2>
-                  <p className="text-sm text-neutral-500 mt-1">
-                    We sent a 6-digit OTP to<br />
-                    <span className="font-semibold text-neutral-700">{email}</span>
-                  </p>
-                </div>
-
-                <FormField label="Enter OTP" id="otp" required error={fieldErrors.otp}>
-                  <input
-                    id="otp"
-                    type="text"
-                    className={`${inputClass} text-center text-2xl font-mono tracking-widest letter-spacing-4`}
-                    placeholder="— — — — — —"
-                    value={otp}
-                    onChange={e => setOtp(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                    maxLength={6}
-                    inputMode="numeric"
-                    autoComplete="one-time-code"
-                  />
-                </FormField>
-
-                <p className="text-xs text-neutral-500 text-center">OTP expires in 10 minutes</p>
-
-                {/* Resend */}
-                <div className="text-center">
-                  {resendCooldown > 0 ? (
-                    <span className="text-sm text-neutral-400">Resend OTP in {resendCooldown}s</span>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={sendOtp}
-                      disabled={loading}
-                      className="text-sm text-primary-600 hover:text-primary-700 font-semibold transition-colors"
-                    >
-                      Resend OTP
-                    </button>
-                  )}
-                </div>
-
-                {globalError && (
-                  <div className="bg-error-50 border border-error-200 text-error-700 px-4 py-3 rounded-lg text-sm animate-scale-in">
-                    {globalError}
-                  </div>
-                )}
-
-                <button type="submit" disabled={loading || otp.length !== 6} className="btn btn-primary w-full">
-                  {loading ? (
-                    <span className="flex items-center justify-center">
-                      <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                      </svg>
-                      Creating Account...
-                    </span>
-                  ) : (
-                    "Verify & Create Account"
-                  )}
-                </button>
-
-                <p className="text-xs text-neutral-500 text-center leading-relaxed">
-                  By clicking Verify & Create Account, you agree to Voclara's{" "}
-                  <a href="/Legal/Voclara-ToS.html" target="_blank" rel="noopener noreferrer" className="text-primary-600 underline hover:text-primary-700">
-                    Terms of Service
-                  </a>{" "}and{" "}
-                  <a href="/Legal/Voclara-Privacy-Policy.html" target="_blank" rel="noopener noreferrer" className="text-primary-600 underline hover:text-primary-700">
-                    Privacy Policy
-                  </a>. Voice sample consent is captured separately before recording.
-                </p>
-              </div>
-            </form>
           )}
 
           {/* ── Errors (steps 1-3) ── */}
@@ -558,10 +447,10 @@ export default function Signup() {
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                     </svg>
-                    Sending OTP...
+                    Creating Account...
                   </span>
                 ) : step === 3 ? (
-                  "Send OTP & Verify →"
+                  "Complete Registration →"
                 ) : (
                   "Next →"
                 )}
