@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { io } from "socket.io-client";
 import { useNavigate } from "react-router-dom";
 import Nav from "../components/Nav.jsx";
-import { getSystemCheckPassed, getUserInfo, setSystemCheckPassed } from "../lib/auth.js";
+import { clearToken, getSystemCheckPassed, getUserInfo, setSystemCheckPassed } from "../lib/auth.js";
 import { apiGet } from "../lib/api.js";
 import { setLastCall } from "../lib/lastCall.js";
 import { useSystemCheck } from "../context/SystemCheckContext.jsx";
@@ -666,11 +666,34 @@ export default function Call() {
       return;
     }
 
+    // Clean up any existing socket instance first
+    if (socketRef.current) {
+      try {
+        socketRef.current.disconnect();
+      } catch {}
+    }
+
     // Socket will authenticate via cookies automatically
     const socket = io(BACKEND_URL, {
       withCredentials: true,
     });
     socketRef.current = socket;
+
+    socket.on("connect_error", (err) => {
+      setConnected(false);
+      setIsFindingMatch(false);
+      log(`connect_error: ${err.message}`);
+
+      if (err.message === "unauthorized") {
+        socket.disconnect();
+        alert("Your session has expired or authentication failed. Please log in again.");
+        clearToken().finally(() => {
+          navigate("/login");
+        });
+      } else {
+        console.warn("Socket connection error:", err.message);
+      }
+    });
 
     socket.on("connect", () => {
       setConnected(true);

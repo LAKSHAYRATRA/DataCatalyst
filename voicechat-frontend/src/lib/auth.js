@@ -4,6 +4,10 @@ const USER_INFO_KEY = "vc_user_info";
 // No need for getToken() or setToken() functions
 
 export async function clearToken() {
+  // Clear local storage synchronously FIRST to prevent route guard loops
+  localStorage.removeItem("vc_system_check_passed");
+  localStorage.removeItem(USER_INFO_KEY);
+
   // Call logout endpoint to clear HTTP-only cookie
   try {
     await fetch(`${import.meta.env.VITE_BACKEND_URL || "http://localhost:3001"}/api/auth/logout`, {
@@ -13,10 +17,6 @@ export async function clearToken() {
   } catch (e) {
     console.error("Logout failed:", e);
   }
-
-  // Clear local storage
-  localStorage.removeItem("vc_system_check_passed");
-  localStorage.removeItem(USER_INFO_KEY);
 }
 
 // In-memory storage for system check status to reset on refresh
