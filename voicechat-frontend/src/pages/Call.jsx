@@ -6,6 +6,7 @@ import { clearToken, getSystemCheckPassed, getUserInfo, setSystemCheckPassed } f
 import { apiGet } from "../lib/api.js";
 import { setLastCall } from "../lib/lastCall.js";
 import { useSystemCheck } from "../context/SystemCheckContext.jsx";
+import { saveAudioChunk, markChunkAcked, getMissingAudioChunks, clearCallAudioChunks } from "../lib/audioDb.js";
 
 // Import new components
 import LanguageSelection from "../components/call/LanguageSelection/LanguageSelection.jsx";
@@ -410,6 +411,7 @@ export default function Call() {
             if (pendingChunksRef.current.has(ackSeq)) {
               pendingChunksRef.current.delete(ackSeq);
             }
+            markChunkAcked(activeCallId, ackSeq);
           });
         }
       };
@@ -421,6 +423,7 @@ export default function Call() {
         const data = e.data;
         const seq = currentSeqRef.current++;
         pendingChunksRef.current.set(seq, data);
+        saveAudioChunk(activeCallId, seq, data);
         sendChunk(seq, data);
       };
 
@@ -437,18 +440,41 @@ export default function Call() {
 
   function stopCallRecording() {
     const socket = socketRef.current;
+    const activeCallId = callRef.current?.callId;
+
     if (workletNodeRef.current) {
         workletNodeRef.current.port.postMessage("flush");
-        // Give it a tiny moment to post back the final buffer before disconnecting
         setTimeout(() => {
           if (workletNodeRef.current) {
             workletNodeRef.current.disconnect();
             workletNodeRef.current = null;
           }
-          try { if (socket) socket.emit("record_stop"); } catch { }
         }, 50);
+    }
+
+    if (socket && activeCallId) {
+      try {
+        socket.emit("verify_call_chunks", { callId: activeCallId }, async (res) => {
+          if (res && res.complete === false && Array.isArray(res.missingRanges)) {
+            const missingChunks = await getMissingAudioChunks(activeCallId, res.missingRanges);
+            if (missingChunks.length > 0) {
+              socket.emit("upload_missing_chunks", { callId: activeCallId, chunks: missingChunks }, () => {
+                try { socket.emit("record_stop"); } catch {}
+                clearCallAudioChunks(activeCallId);
+              });
+              return;
+            }
+          }
+          try { socket.emit("record_stop"); } catch {}
+          clearCallAudioChunks(activeCallId);
+        });
+      } catch {
+        try { if (socket) socket.emit("record_stop"); } catch {}
+        if (activeCallId) clearCallAudioChunks(activeCallId);
+      }
     } else {
-        try { if (socket) socket.emit("record_stop"); } catch { }
+      try { if (socket) socket.emit("record_stop"); } catch {}
+      if (activeCallId) clearCallAudioChunks(activeCallId);
     }
     
     if (audioContextRef.current) {

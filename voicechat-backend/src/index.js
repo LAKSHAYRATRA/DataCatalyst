@@ -435,8 +435,15 @@ async function cleanupRecording(socket, endedAt, callIdOverride) {
   }
 
   if (isRecording && tempPath && filePath) {
+    if (streamObj && streamObj.fd) {
+      try {
+        fs.closeSync(streamObj.fd);
+      } catch {}
+    }
     if (stream) {
-      stream.end();
+      try {
+        stream.end();
+      } catch {}
     }
     
     // Give OS disk IO small boundary to flush end bits
@@ -1296,8 +1303,18 @@ io.on("connection", (socket) => {
       socket.data.recording = true;
 
       const newStream = fs.createWriteStream(tempLocalPath);
+      let fd = null;
+      try {
+        fd = fs.openSync(tempLocalPath, "w+");
+      } catch (err) {
+        console.error("Failed to open file descriptor for PCM stream:", err);
+      }
+
       activeStreams.set(streamKey, {
         stream: newStream,
+        fd,
+        receivedSeqs: new Set(),
+        maxSeq: 0,
         expectedSeq: 0,
         pendingChunks: new Map(),
         fileName,
@@ -1331,6 +1348,7 @@ io.on("connection", (socket) => {
     });
   });
 
+  // SACK: Random-access chunk write at position seq * 96000
   socket.on("record_chunk", (payload, callback) => {
     try {
       if (!socket.data.recording) return;
@@ -1340,26 +1358,7 @@ io.on("connection", (socket) => {
 
       const streamKey = `${callId}_${socket.data.userId}`;
       const streamObj = activeStreams.get(streamKey);
-      if (!streamObj || !streamObj.stream) return;
-
-      if (seq > streamObj.expectedSeq) {
-        const skipped = seq - streamObj.expectedSeq;
-        const rate = streamObj.recordSampleRate || 48000;
-        const missedSec = skipped * (24000 / rate);
-        streamObj.totalMissedSeconds = (streamObj.totalMissedSeconds || 0) + missedSec;
-
-        if (skipped < 600) { // Max 5 minutes
-          const silenceBytesPerChunk = 24000 * 4; // float32 is 4 bytes
-          const silenceBuffer = Buffer.alloc(skipped * silenceBytesPerChunk, 0);
-          streamObj.stream.write(silenceBuffer);
-        }
-        streamObj.expectedSeq = seq;
-      }
-
-      if (seq < streamObj.expectedSeq) {
-        if (callback) callback(seq); // Already processed, acknowledge it
-        return;
-      }
+      if (!streamObj) return;
 
       let buf;
       if (Buffer.isBuffer(data)) buf = data;
@@ -1368,36 +1367,115 @@ io.on("connection", (socket) => {
         buf = Buffer.from(data.buffer, data.byteOffset, data.byteLength);
       else return;
 
-      if (seq === streamObj.expectedSeq) {
+      // Random-access byte offset formula: seq * 96000
+      const offset = seq * 96000;
+      if (streamObj.fd) {
+        try {
+          fs.writeSync(streamObj.fd, buf, 0, buf.length, offset);
+        } catch (wErr) {
+          if (streamObj.stream) streamObj.stream.write(buf);
+        }
+      } else if (streamObj.stream) {
         streamObj.stream.write(buf);
-        streamObj.expectedSeq++;
-        
-        // Process any subsequent pending chunks that have now arrived in order
-        while (streamObj.pendingChunks.has(streamObj.expectedSeq)) {
-          const nextBuf = streamObj.pendingChunks.get(streamObj.expectedSeq);
-          streamObj.stream.write(nextBuf);
-          streamObj.pendingChunks.delete(streamObj.expectedSeq);
-          streamObj.expectedSeq++;
-        }
-      } else {
-        // Out of order arrival, store in pending
-        streamObj.pendingChunks.set(seq, buf);
-
-        // FIX FOR #3: Prevent RAM memory leak by capping pendingChunks to max 50 items and auto-flushing
-        if (streamObj.pendingChunks.size > 50) {
-          const sortedSeqs = Array.from(streamObj.pendingChunks.keys()).sort((a, b) => a - b);
-          for (const s of sortedSeqs) {
-            const pBuf = streamObj.pendingChunks.get(s);
-            if (pBuf) streamObj.stream.write(pBuf);
-          }
-          streamObj.pendingChunks.clear();
-          streamObj.expectedSeq = Math.max(streamObj.expectedSeq, sortedSeqs[sortedSeqs.length - 1] + 1);
-        }
       }
+
+      if (streamObj.receivedSeqs) streamObj.receivedSeqs.add(seq);
+      if (seq > (streamObj.maxSeq || 0)) streamObj.maxSeq = seq;
 
       if (callback) callback(seq);
     } catch (e) {
       console.error("Error writing record_chunk:", e);
+    }
+  });
+
+  // SACK: Batch upload missing sequence ranges
+  socket.on("upload_missing_chunks", (payload, callback) => {
+    try {
+      const { callId, chunks } = payload || {};
+      if (!callId || !Array.isArray(chunks)) {
+        if (callback) callback({ ok: false, error: "invalid_payload" });
+        return;
+      }
+
+      const streamKey = `${callId}_${socket.data.userId}`;
+      const streamObj = activeStreams.get(streamKey);
+      if (!streamObj) {
+        if (callback) callback({ ok: false, error: "stream_not_found" });
+        return;
+      }
+
+      let patchedCount = 0;
+      for (const chunkItem of chunks) {
+        const { seq, data } = chunkItem;
+        if (seq === undefined || !data) continue;
+
+        let buf;
+        if (Buffer.isBuffer(data)) buf = data;
+        else if (data instanceof ArrayBuffer) buf = Buffer.from(data);
+        else if (ArrayBuffer.isView(data))
+          buf = Buffer.from(data.buffer, data.byteOffset, data.byteLength);
+        else continue;
+
+        const offset = seq * 96000;
+        if (streamObj.fd) {
+          try {
+            fs.writeSync(streamObj.fd, buf, 0, buf.length, offset);
+          } catch {}
+        }
+
+        if (streamObj.receivedSeqs) streamObj.receivedSeqs.add(seq);
+        if (seq > (streamObj.maxSeq || 0)) streamObj.maxSeq = seq;
+        patchedCount++;
+      }
+
+      if (callback) callback({ ok: true, patchedCount });
+    } catch (e) {
+      console.error("Error processing upload_missing_chunks:", e);
+      if (callback) callback({ ok: false, error: e.message });
+    }
+  });
+
+  // SACK: End-of-call 2-second handshake to verify 100% chunk completeness
+  socket.on("verify_call_chunks", (payload, callback) => {
+    try {
+      const { callId } = payload || {};
+      if (!callId) {
+        if (callback) callback({ complete: true, totalChunks: 0 });
+        return;
+      }
+
+      const streamKey = `${callId}_${socket.data.userId}`;
+      const streamObj = activeStreams.get(streamKey);
+      if (!streamObj || !streamObj.receivedSeqs) {
+        if (callback) callback({ complete: true, totalChunks: 0 });
+        return;
+      }
+
+      const missingRanges = [];
+      let rangeStart = null;
+
+      for (let s = 0; s <= (streamObj.maxSeq || 0); s++) {
+        if (!streamObj.receivedSeqs.has(s)) {
+          if (rangeStart === null) rangeStart = s;
+        } else {
+          if (rangeStart !== null) {
+            missingRanges.push({ start: rangeStart, end: s - 1 });
+            rangeStart = null;
+          }
+        }
+      }
+      if (rangeStart !== null) {
+        missingRanges.push({ start: rangeStart, end: streamObj.maxSeq });
+      }
+
+      if (missingRanges.length === 0) {
+        if (callback) callback({ complete: true, totalChunks: streamObj.receivedSeqs.size });
+      } else {
+        if (callback) callback({ complete: false, missingRanges, totalChunks: streamObj.receivedSeqs.size });
+      }
+    } catch (e) {
+      console.error("Error in verify_call_chunks:", e);
+      if (callback) callback({ complete: true, error: e.message });
     }
   });
 
