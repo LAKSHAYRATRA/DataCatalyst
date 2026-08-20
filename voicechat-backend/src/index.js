@@ -479,7 +479,30 @@ async function cleanupRecording(socket, endedAt, callIdOverride) {
               const bytesPerSample = 4; // float32 is 4 bytes
               const bytesPerSec = sampleRate * bytesPerSample;
               
-              // Lock both files to identical target length based on master call duration
+              // 1. Pad Start (pre-pend silence if user started after actualCallStartedAt)
+              const startOffsetSec = Math.max(0, (recStartTime - callStartTime) / 1000);
+              const startSilenceSize = Math.round(startOffsetSec * bytesPerSec);
+              if (startSilenceSize > 0 && fs.existsSync(tempPath)) {
+                const tempPadded = tempPath + '.padded';
+                const wStream = fs.createWriteStream(tempPadded);
+                const silenceBuffer = Buffer.alloc(Math.min(startSilenceSize, 4 * 1024 * 1024), 0);
+                let remaining = startSilenceSize;
+                while (remaining > 0) {
+                  const chunk = remaining >= silenceBuffer.length ? silenceBuffer : Buffer.alloc(remaining, 0);
+                  wStream.write(chunk);
+                  remaining -= chunk.length;
+                }
+                await new Promise((res, rej) => {
+                  const rStream = fs.createReadStream(tempPath);
+                  rStream.pipe(wStream, { end: false });
+                  rStream.on('end', () => { wStream.end(); res(); });
+                  rStream.on('error', rej);
+                  wStream.on('error', rej);
+                });
+                fs.renameSync(tempPadded, tempPath);
+              }
+
+              // 2. Pad End / Trim End (Lock both files to identical target length based on master call duration)
               const totalCallDurationSec = Math.max(0, (callEndTime - callStartTime) / 1000);
               const targetSizeBytes = Math.round(totalCallDurationSec * bytesPerSec);
               if (fs.existsSync(tempPath)) {

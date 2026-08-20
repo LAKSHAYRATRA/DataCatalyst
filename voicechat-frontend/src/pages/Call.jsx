@@ -378,9 +378,9 @@ export default function Call() {
     pendingChunksRef.current.clear();
 
     try {
-      // Create AudioContext without forcing a specific sampleRate.
-      // This prevents resampling bugs in the browser and captures at the exact native hardware rate.
-      const audioCtx = new AudioContext();
+      // Enforce strict 48,000 Hz native WebAudio hardware sample rate to eliminate clock drift
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+      const audioCtx = new AudioContextClass({ sampleRate: 48000 });
       audioContextRef.current = audioCtx;
       
       await audioCtx.audioWorklet.addModule("/pcm-worklet.js");
