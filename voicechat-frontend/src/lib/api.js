@@ -21,7 +21,7 @@ export async function apiFetch(path, options = {}) {
     // Handle session expiration or unauthorized access
     if (res.status === 401 || body?.error === "session_expired" || body?.error === "unauthorized") {
       await clearToken();
-      const publicPaths = ["/", "/login", "/signup", "/earnings", "/community", "/about", "/terms", "/privacy", "/support"];
+      const publicPaths = ["/", "/login", "/signup", "/forgot-password", "/reset-password", "/earnings", "/community", "/about", "/terms", "/privacy", "/support"];
       if (!publicPaths.includes(window.location.pathname)) {
         window.location.href = "/login";
       }

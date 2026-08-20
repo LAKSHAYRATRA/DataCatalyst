@@ -356,6 +356,7 @@ const io = new Server(server, {
     methods: ["GET", "POST"],
     credentials: true,
   },
+  maxHttpBufferSize: 20 * 1024 * 1024,
   adapter: createAdapter(pubClient, subClient),
 });
 
@@ -720,6 +721,11 @@ async function endCall(callId, reason) {
   if (call.timer) {
     try { clearTimeout(call.timer); } catch { /* ignore */ }
   }
+  if (call.disconnectTimers) {
+    Object.values(call.disconnectTimers).forEach((t) => {
+      try { clearTimeout(t); } catch { /* ignore */ }
+    });
+  }
 
   try {
     const endedAt = new Date();
@@ -890,9 +896,16 @@ async function endCall(callId, reason) {
   // Run audio conversion (FFMPEG) and AWS S3 upload asynchronously in background
   setImmediate(async () => {
     try {
-      const cleanupPromises = [];
-      if (a) cleanupPromises.push(cleanupRecording(a, endedAt, callId));
-      if (b) cleanupPromises.push(cleanupRecording(b, endedAt, callId));
+      const socketA = call.a ? io.sockets.sockets.get(call.a) : null;
+      const socketB = call.b ? io.sockets.sockets.get(call.b) : null;
+
+      const dummyA = socketA || { data: { userId: call.userAId, callId } };
+      const dummyB = socketB || { data: { userId: call.userBId, callId } };
+
+      const cleanupPromises = [
+        cleanupRecording(dummyA, endedAt, callId),
+        cleanupRecording(dummyB, endedAt, callId)
+      ];
       await Promise.allSettled(cleanupPromises);
 
       if (reason !== "negotiation_timeout") {
@@ -1221,6 +1234,77 @@ io.on("connection", (socket) => {
     if (getCallIdForSocket(socket) !== callId) return;
     if (getPeerId(socket) !== to) return;
     io.to(to).emit("signal", { callId, from: socket.id, data });
+  });
+
+  socket.on("rejoin_call", ({ callId }) => {
+    if (!callId) return;
+    const call = calls.get(callId);
+    if (!call) {
+      socket.emit("call_ended", { callId, reason: "call_not_found" });
+      return;
+    }
+
+    const userIdStr = String(socket.data.userId);
+    const isUserA = String(call.userAId) === userIdStr;
+    const isUserB = String(call.userBId) === userIdStr;
+
+    if (!isUserA && !isUserB) {
+      socket.emit("error_message", { message: "not_a_participant" });
+      return;
+    }
+
+    // Cancel disconnect timer for this user if active
+    if (call.disconnectTimers && call.disconnectTimers[userIdStr]) {
+      clearTimeout(call.disconnectTimers[userIdStr]);
+      delete call.disconnectTimers[userIdStr];
+      console.log(`[Disconnect Grace Window] User ${userIdStr} reconnected to call ${callId}. Disconnect timer cancelled.`);
+    }
+
+    // Update socket data and call participant references
+    socket.data.callId = callId;
+    socket.join(`call_${callId}`);
+
+    if (isUserA) {
+      call.a = socket.id;
+      socket.data.peerId = call.b;
+      socket.data.role = call.roleA;
+      const peerSocketB = io.sockets.sockets.get(call.b);
+      if (peerSocketB) {
+        peerSocketB.data.peerId = socket.id;
+      }
+    } else {
+      call.b = socket.id;
+      socket.data.peerId = call.a;
+      socket.data.role = call.roleB;
+      const peerSocketA = io.sockets.sockets.get(call.a);
+      if (peerSocketA) {
+        peerSocketA.data.peerId = socket.id;
+      }
+    }
+
+    const peerUserId = isUserA ? call.userBId : call.userAId;
+    const myRole = isUserA ? call.roleA : call.roleB;
+    const peerRole = isUserA ? call.roleB : call.roleA;
+
+    socket.emit("rejoined_call", {
+      callId,
+      peerId: isUserA ? call.b : call.a,
+      peerUserId,
+      yourRole: myRole,
+      peerRole,
+      selectedTopic: call.selectedTopic,
+      selectedSubtopic: call.selectedSubtopic,
+      rolesConfirmed: call.rolesConfirmed,
+      actualCallStartedAt: call.actualCallStartedAt
+    });
+
+    const peerSocketId = isUserA ? call.b : call.a;
+    if (peerSocketId) {
+      io.to(peerSocketId).emit("peer_reconnected", {
+        userId: socket.data.userId,
+        newPeerSocketId: socket.id
+      });
+    }
   });
 
   socket.on("hangup", () => {
@@ -1579,8 +1663,31 @@ io.on("connection", (socket) => {
   socket.on("disconnect", () => {
     removeFromQueue(socket.id);
     const callId = getCallIdForSocket(socket);
-    if (callId) endCall(callId, "disconnect");
-    cleanupRecording(socket, new Date(), callId);
+    if (callId) {
+      const call = calls.get(callId);
+      if (call) {
+        call.disconnectTimers = call.disconnectTimers || {};
+        const userIdStr = String(socket.data.userId);
+
+        if (!call.disconnectTimers[userIdStr]) {
+          console.log(`[Disconnect Grace Window] Socket disconnected for user ${userIdStr} in call ${callId}. Starting 120s grace period.`);
+          
+          const peerId = (String(call.userAId) === userIdStr) ? call.b : call.a;
+          if (peerId) {
+            io.to(peerId).emit("peer_disconnected_temp", { userId: socket.data.userId });
+          }
+
+          call.disconnectTimers[userIdStr] = setTimeout(() => {
+            console.log(`[Disconnect Grace Window] Grace period expired for user ${userIdStr} in call ${callId}. Ending call.`);
+            endCall(callId, "disconnect_timeout");
+          }, 120 * 1000);
+        }
+      } else {
+        cleanupRecording(socket, new Date(), callId);
+      }
+    } else {
+      cleanupRecording(socket, new Date(), callId);
+    }
 
     if (socket.data.userId) {
       User.findById(socket.data.userId)

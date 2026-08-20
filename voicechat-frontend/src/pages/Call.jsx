@@ -438,38 +438,54 @@ export default function Call() {
     }
   }
 
-  function stopCallRecording() {
+  async function uploadMissingChunksInBatches(socket, callId, missingChunks) {
+    if (!socket || !callId || !Array.isArray(missingChunks) || missingChunks.length === 0) return;
+    const BATCH_SIZE = 10; // Exactly 10 chunks (~960 KB) per payload to stay strictly under Socket.IO 1MB limit
+    for (let i = 0; i < missingChunks.length; i += BATCH_SIZE) {
+      const batch = missingChunks.slice(i, i + BATCH_SIZE);
+      await new Promise((resolve) => {
+        socket.emit("upload_missing_chunks", { callId, chunks: batch }, () => {
+          resolve();
+        });
+      });
+    }
+  }
+
+  async function stopCallRecording() {
     const socket = socketRef.current;
     const activeCallId = callRef.current?.callId;
 
     if (workletNodeRef.current) {
+      try {
         workletNodeRef.current.port.postMessage("flush");
-        setTimeout(() => {
-          if (workletNodeRef.current) {
-            workletNodeRef.current.disconnect();
-            workletNodeRef.current = null;
-          }
-        }, 50);
+      } catch {}
+      // Give AudioWorklet 80ms to flush the last 500ms audio frame to main thread & IndexedDB
+      await new Promise((r) => setTimeout(r, 80));
+      if (workletNodeRef.current) {
+        try { workletNodeRef.current.disconnect(); } catch {}
+        workletNodeRef.current = null;
+      }
     }
 
-    if (socket && activeCallId) {
+    if (socket && socket.connected && activeCallId) {
       try {
-        socket.emit("verify_call_chunks", { callId: activeCallId }, async (res) => {
-          if (res && res.complete === false && Array.isArray(res.missingRanges)) {
-            const missingChunks = await getMissingAudioChunks(activeCallId, res.missingRanges);
-            if (missingChunks.length > 0) {
-              socket.emit("upload_missing_chunks", { callId: activeCallId, chunks: missingChunks }, () => {
-                try { socket.emit("record_stop"); } catch {}
-                clearCallAudioChunks(activeCallId);
-              });
-              return;
+        await new Promise((resolve) => {
+          socket.emit("verify_call_chunks", { callId: activeCallId }, async (res) => {
+            if (res && res.complete === false && Array.isArray(res.missingRanges)) {
+              const missingChunks = await getMissingAudioChunks(activeCallId, res.missingRanges);
+              if (missingChunks.length > 0) {
+                await uploadMissingChunksInBatches(socket, activeCallId, missingChunks);
+              }
             }
-          }
-          try { socket.emit("record_stop"); } catch {}
-          clearCallAudioChunks(activeCallId);
+            try { socket.emit("record_stop"); } catch {}
+            clearCallAudioChunks(activeCallId);
+            resolve();
+          });
+          setTimeout(resolve, 3000);
         });
-      } catch {
-        try { if (socket) socket.emit("record_stop"); } catch {}
+      } catch (err) {
+        console.error("Error in stopCallRecording:", err);
+        try { socket.emit("record_stop"); } catch {}
         if (activeCallId) clearCallAudioChunks(activeCallId);
       }
     } else {
@@ -478,12 +494,8 @@ export default function Call() {
     }
     
     if (audioContextRef.current) {
-        setTimeout(() => {
-          if (audioContextRef.current) {
-            audioContextRef.current.close();
-            audioContextRef.current = null;
-          }
-        }, 50);
+      try { await audioContextRef.current.close(); } catch {}
+      audioContextRef.current = null;
     }
   }
 
@@ -656,8 +668,8 @@ export default function Call() {
     }
   }
 
-  function cleanupCallUi() {
-    stopCallRecording();
+  async function cleanupCallUi() {
+    await stopCallRecording();
 
     try {
       if (pcRef.current) pcRef.current.close();
@@ -729,21 +741,71 @@ export default function Call() {
         localStorage.getItem("systemCheckPassed") === "true" || systemCheckPassed;
       socket.emit("system_check_status", { passed, language: selectedLanguage || 'english' });
 
-      if (socket.recovered) {
-        // Resend pending chunks
-        if (socket.sendChunk && pendingChunksRef.current.size > 0) {
-          for (const [seq, data] of pendingChunksRef.current.entries()) {
-            socket.sendChunk(seq, data);
+      // If an active call was in progress, send rejoin_call to backend
+      const activeCallId = callRef.current?.callId;
+      if (activeCallId) {
+        log(`Attempting to rejoin call session: ${activeCallId}`);
+        socket.emit("rejoin_call", { callId: activeCallId });
+      }
+    });
+
+    socket.on("rejoined_call", async (payload) => {
+      log("rejoined_call successfully");
+      callRef.current = {
+        ...callRef.current,
+        callId: payload.callId,
+        peerId: payload.peerId,
+        peerUserId: payload.peerUserId,
+        role: payload.yourRole,
+      };
+      setCallId(payload.callId);
+      setRole(payload.yourRole);
+      setPeerId(payload.peerId);
+      setPeerUserId(payload.peerUserId);
+
+      // Perform missing chunk verification / SACK sync from IndexedDB
+      if (payload.callId) {
+        try {
+          socket.emit("verify_call_chunks", { callId: payload.callId }, async (res) => {
+            if (res && res.complete === false && Array.isArray(res.missingRanges)) {
+              const missingChunks = await getMissingAudioChunks(payload.callId, res.missingRanges);
+              if (missingChunks.length > 0) {
+                await uploadMissingChunksInBatches(socket, payload.callId, missingChunks);
+              }
+            }
+          });
+        } catch {}
+      }
+
+      // If WebRTC connection dropped, attempt WebRTC ICE restart
+      const pc = pcRef.current;
+      if (pc && (pc.connectionState === "disconnected" || pc.iceConnectionState === "disconnected" || pc.iceConnectionState === "failed")) {
+        if (payload.yourRole === "offerer" && pc.signalingState === "stable") {
+          try {
+            const offer = await pc.createOffer({ iceRestart: true, offerToReceiveAudio: true });
+            await pc.setLocalDescription(offer);
+            socket.emit("signal", {
+              callId: payload.callId,
+              to: payload.peerId,
+              data: { type: "offer", sdp: pc.localDescription },
+            });
+          } catch (e) {
+            console.error("ICE Restart error on rejoin:", e);
           }
         }
-      } else {
-        // If recovery failed (e.g. disconnected for >60s), the backend already ended the call.
-        if (callRef.current && callRef.current.callId) {
-          stopCallRecording();
-          cleanupCallUi();
-          alert("Network connection was lost for too long. The call has been ended.");
-        }
       }
+    });
+
+    socket.on("peer_disconnected_temp", () => {
+      log("Peer temporarily lost connection. Waiting for reconnect...");
+    });
+
+    socket.on("peer_reconnected", ({ newPeerSocketId }) => {
+      log("Peer reconnected to call session");
+      if (callRef.current) {
+        callRef.current.peerId = newPeerSocketId;
+      }
+      setPeerId(newPeerSocketId);
     });
 
     socket.on("disconnect", () => {
@@ -869,18 +931,18 @@ export default function Call() {
       } catch { }
     });
 
-    socket.on("peer_left", ({ reason }) => {
+    socket.on("peer_left", async ({ reason }) => {
       log(`peer_left: ${reason}`);
-      cleanupCallUi();
+      await cleanupCallUi();
     });
 
-    socket.on("call_ended", ({ callId: endedId, reason, peerUserId: p }) => {
+    socket.on("call_ended", async ({ callId: endedId, reason, peerUserId: p }) => {
       log(`call_ended: ${reason}`);
 
       const wasInNegotiation = negotiationModeRef.current;
       const peerInfoBeforeCleanup = callRef.current;
 
-      cleanupCallUi();
+      await cleanupCallUi();
       try {
         socket.disconnect();
       } catch { }
@@ -1029,6 +1091,12 @@ export default function Call() {
       {/* Permanent top-level WebRTC remote audio playback element */}
       <audio ref={remoteAudioRef} autoPlay playsInline style={{ position: "absolute", width: 1, height: 1, opacity: 0, pointerEvents: "none" }} />
       <Nav disabled={!!callId && !showFeedback} />
+      {!connected && callId && (
+        <div className="fixed top-16 right-4 z-50 bg-amber-500 text-white px-4 py-2 rounded-lg shadow-lg flex items-center gap-2 text-sm font-medium animate-pulse">
+          <span className="w-2 h-2 rounded-full bg-white animate-ping" />
+          Network reconnecting... Audio is saved safely.
+        </div>
+      )}
       <div className="max-w-full md:max-w-6xl mx-auto px-4 md:px-6 py-4 md:py-8 w-full">
         {/* Call Interface */}
         {showFeedback ? (

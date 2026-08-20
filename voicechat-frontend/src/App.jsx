@@ -328,9 +328,7 @@ export default function App() {
         const data = await apiGet("/api/auth/me");
         setUserInfo(data.user);
       } catch (e) {
-        if (e.message.includes("401") || e.message.includes("Unauthorized") || e.message.includes("session_expired")) {
-          clearToken();
-        }
+        await clearToken();
       } finally {
         setLoading(false);
       }
