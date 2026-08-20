@@ -83,6 +83,9 @@ export async function sendOtpEmail(to, otp, purpose = "signup") {
                 If you didn't request this, you can safely ignore this email.<br/>
                 Do not share this code with anyone.
               </p>
+              <p style="margin:12px 0 0;color:#94a3b8;font-size:12px;text-align:center;">
+                If you don't find this OTP in your inbox, make sure to check your <strong>SPAM</strong> folder.
+              </p>
             </td>
           </tr>
           <!-- Footer -->

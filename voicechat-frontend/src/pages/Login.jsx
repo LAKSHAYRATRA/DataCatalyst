@@ -219,6 +219,11 @@ export default function Login() {
                 />
               </div>
 
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-800 flex items-start gap-2">
+                <span className="text-base leading-none">⚠️</span>
+                <span>If you don't find the OTP in your inbox, make sure to check the <strong>SPAM</strong> folder of your mail.</span>
+              </div>
+
               <p className="text-xs text-neutral-500 text-center">OTP expires in 10 minutes</p>
 
               <div className="text-center">
