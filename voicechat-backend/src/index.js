@@ -479,32 +479,7 @@ async function cleanupRecording(socket, endedAt, callIdOverride) {
               const bytesPerSample = 4; // float32 is 4 bytes
               const bytesPerSec = sampleRate * bytesPerSample;
               
-              // 1. Pad Start (pre-pend silence if user started late)
-              const startOffsetSec = Math.max(0, (recStartTime - callStartTime) / 1000);
-              const startSilenceSize = Math.round(startOffsetSec * bytesPerSec);
-              if (startSilenceSize > 0 && fs.existsSync(tempPath)) {
-                // Stream-based approach: write silence then copy original data
-                // avoids loading entire 200+ MB PCM file into memory
-                const tempPadded = tempPath + '.padded';
-                const wStream = fs.createWriteStream(tempPadded);
-                const silenceBuffer = Buffer.alloc(Math.min(startSilenceSize, 4 * 1024 * 1024), 0); // write in 4MB chunks
-                let remaining = startSilenceSize;
-                while (remaining > 0) {
-                  const chunk = remaining >= silenceBuffer.length ? silenceBuffer : Buffer.alloc(remaining, 0);
-                  wStream.write(chunk);
-                  remaining -= chunk.length;
-                }
-                await new Promise((res, rej) => {
-                  const rStream = fs.createReadStream(tempPath);
-                  rStream.pipe(wStream, { end: false });
-                  rStream.on('end', () => { wStream.end(); res(); });
-                  rStream.on('error', rej);
-                  wStream.on('error', rej);
-                });
-                fs.renameSync(tempPadded, tempPath);
-              }
-              
-              // 2. Pad End / Trim End (Lock both files to identical target length)
+              // Lock both files to identical target length based on master call duration
               const totalCallDurationSec = Math.max(0, (callEndTime - callStartTime) / 1000);
               const targetSizeBytes = Math.round(totalCallDurationSec * bytesPerSec);
               if (fs.existsSync(tempPath)) {
