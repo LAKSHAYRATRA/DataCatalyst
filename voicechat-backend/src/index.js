@@ -741,29 +741,6 @@ async function endCall(callId, reason) {
       let recordingBReviewNote = null;
       let reviewNotes = null;
 
-      const getMissedDuration = (streamObj) => {
-        let missed = streamObj ? (streamObj.totalMissedSeconds || 0) : 0;
-        if (streamObj) {
-          const callStartTime = new Date(session.actualCallStartedAt).getTime();
-          const callEndTime = endedAt.getTime();
-          const sampleRate = streamObj.recordSampleRate || 48000;
-          const bytesPerSec = sampleRate * 4;
-          
-          if (fs.existsSync(streamObj.tempLocalPath)) {
-            const size = fs.statSync(streamObj.tempLocalPath).size;
-            const expectedSize = Math.max(0, (callEndTime - callStartTime) / 1000) * bytesPerSec;
-            if (size < expectedSize) {
-              missed += (expectedSize - size) / bytesPerSec;
-            }
-          }
-        } else {
-          const callStartTime = new Date(session.actualCallStartedAt).getTime();
-          const callEndTime = endedAt.getTime();
-          missed += Math.max(0, (callEndTime - callStartTime) / 1000);
-        }
-        return Math.round(missed * 100) / 100;
-      };
-
       if (session.actualCallStartedAt && actualCallDuration < 540) {
         callStatus = "rejected";
         recordingAStatus = "rejected";
@@ -771,45 +748,6 @@ async function endCall(callId, reason) {
         recordingAReviewNote = "Duration below 9 min limit";
         recordingBReviewNote = "Duration below 9 min limit";
         reviewNotes = "Duration below 9 min limit";
-      } else {
-        const streamKeyA = `${callId}_${call.userAId}`;
-        const streamKeyB = `${callId}_${call.userBId}`;
-        const streamObjA = activeStreams.get(streamKeyA);
-        const streamObjB = activeStreams.get(streamKeyB);
-        
-        const missedA = getMissedDuration(streamObjA);
-        const missedB = getMissedDuration(streamObjB);
-
-        const isUnder15Min = actualCallDuration < 900;
-
-        if (missedA >= 5) {
-          if (isUnder15Min) {
-            recordingAStatus = "rejected";
-            recordingAReviewNote = "Internet Issue detected";
-          } else {
-            recordingAReviewNote = "Internet gap detected after 15 min";
-          }
-        }
-        if (missedB >= 5) {
-          if (isUnder15Min) {
-            recordingBStatus = "rejected";
-            recordingBReviewNote = "Internet Issue detected";
-          } else {
-            recordingBReviewNote = "Internet gap detected after 15 min";
-          }
-        }
-
-        if (recordingAStatus === "rejected" || recordingBStatus === "rejected") {
-          callStatus = "rejected";
-        }
-
-        if (recordingAStatus === "rejected" && recordingBStatus === "rejected") {
-          reviewNotes = "Internet Issue detected on both speakers";
-        } else if (recordingAStatus === "rejected") {
-          reviewNotes = "Internet Issue detected on Speaker A";
-        } else if (recordingBStatus === "rejected") {
-          reviewNotes = "Internet Issue detected on Speaker B";
-        }
       }
 
       const canonicalDurationMin = actualCallDuration && Number.isFinite(actualCallDuration) && actualCallDuration > 0
