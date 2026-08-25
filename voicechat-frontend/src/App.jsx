@@ -9,6 +9,8 @@ import AdminCalls from "./pages/AdminCalls.jsx";
 import AdminTopics from "./pages/AdminTopics.jsx";
 import AdminUsers from "./pages/AdminUsers.jsx";
 import AdminQA from "./pages/AdminQA.jsx";
+import AdminSegmentation from "./pages/AdminSegmentation.jsx";
+import AdminTranscription from "./pages/AdminTranscription.jsx";
 import AdminPayouts from "./pages/AdminPayouts.jsx";
 import AdminFinances from "./pages/AdminFinances.jsx";
 import AdminAgreements from "./pages/AdminAgreements.jsx";
@@ -373,6 +375,8 @@ export default function App() {
         <Route path="/admin/agreements" element={<RequireAdmin><AdminAgreements /></RequireAdmin>} />
         <Route path="/admin/pan-verification" element={<RequireAdmin><AdminPanVerification /></RequireAdmin>} />
         <Route path="/admin/qa" element={<RequireAdminOrQA><AdminQA /></RequireAdminOrQA>} />
+        <Route path="/admin/segmentation" element={<RequireAdminOrQA><AdminSegmentation /></RequireAdminOrQA>} />
+        <Route path="/admin/transcription" element={<RequireAdminOrQA><AdminTranscription /></RequireAdminOrQA>} />
         <Route path="/admin/languages" element={<RequireAdmin><AdminLanguages /></RequireAdmin>} />
         <Route path="/admin/language-apps" element={<RequireAdminOrQA><AdminLanguageApps /></RequireAdminOrQA>} />
         <Route path="/admin/call-apps" element={<RequireAdminOrQA><AdminCallApps /></RequireAdminOrQA>} />

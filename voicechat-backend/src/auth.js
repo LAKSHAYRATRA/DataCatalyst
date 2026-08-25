@@ -10,8 +10,8 @@ export function verifyToken(token, jwtSecret) {
 }
 
 export function requireAuth(jwtSecret) {
-
   return async (req, res, next) => {
+    const secret = jwtSecret || process.env.JWT_SECRET;
     // Try to get token from cookie first
     let token = req.cookies?.vc_token;
 
@@ -36,7 +36,7 @@ export function requireAuth(jwtSecret) {
     }
 
     try {
-      const payload = verifyToken(token, jwtSecret);
+      const payload = verifyToken(token, secret);
 
       // Verify token version for single session enforcement
       const user = await User.findById(payload.sub);

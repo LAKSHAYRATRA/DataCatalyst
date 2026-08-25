@@ -17,6 +17,10 @@ export default function AdminPhrases() {
   const [error, setError] = useState('');
   const [metadataKeys, setMetadataKeys] = useState([]);
   const [newKey, setNewKey] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [allocationFilter, setAllocationFilter] = useState('all'); // 'all', 'reserved', 'open'
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [selectedCompanyFilter, setSelectedCompanyFilter] = useState('all');
 
   const handleAddKey = () => {
     const trimmed = newKey.trim();
@@ -379,80 +383,174 @@ export default function AdminPhrases() {
         </div>
       </motion.div>
 
-      <motion.div 
-        initial={{ y: 20, opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
-        transition={{ delay: 0.1 }}
-        className="card overflow-hidden"
-      >
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-xl font-semibold">Database Overview ({phrasesList.length} Total Phrases)</h2>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse whitespace-nowrap">
-            <thead>
-              <tr className="border-b border-neutral-200 dark:border-neutral-700">
-                <th className="p-3 opacity-70">Company</th>
-                <th className="p-3 opacity-70">Phrase ID</th>
-                <th className="p-3 opacity-70">Lang</th>
-                <th className="p-3 opacity-70">Status</th>
-                <th className="p-3 opacity-70">Duration</th>
-                <th className="p-3 opacity-70">Recorded At</th>
-                <th className="p-3 opacity-70">Contributor</th>
-                <th className="p-3 opacity-70">QA User</th>
-                <th className="p-3 opacity-70">QA Reviewed</th>
-                <th className="p-3 opacity-70 max-w-xs">QA Comment</th>
-              </tr>
-            </thead>
-            <tbody>
-              {phrasesList.map((p) => (
-                <tr key={p._id} className="border-b border-neutral-100 dark:border-neutral-800 hover:bg-neutral-50 dark:hover:bg-neutral-800/50 transition-colors text-sm">
-                  <td className="p-3 font-medium">
-                    {(() => {
-                      const comp = companiesList.find(c => c.name.toLowerCase() === (p.companyId || '').toLowerCase());
-                      if (!comp) return p.companyId || 'N/A';
-                      return (
-                        <div>
-                          <span>{comp.name}</span>
-                          {comp.projectName && comp.projectName !== comp.name && (
-                            <span className="text-xs opacity-75 block text-primary-500 font-normal">{comp.projectName}</span>
+      {/* Database Overview Table with Search & Allocation Filter */}
+      {(() => {
+        const filteredPhrases = phrasesList.filter(p => {
+          const isReserved = Boolean(p.assigned_speaker_id || (p.status === 'pending' && p.speaker_id));
+          if (allocationFilter === 'reserved' && !isReserved) return false;
+          if (allocationFilter === 'open' && isReserved) return false;
+          if (statusFilter !== 'all' && p.status !== statusFilter) return false;
+          if (selectedCompanyFilter !== 'all' && (p.companyId || '').toLowerCase() !== selectedCompanyFilter.toLowerCase()) return false;
+          if (searchQuery.trim()) {
+            const q = searchQuery.trim().toLowerCase();
+            const matchId = String(p.phraseId || '').toLowerCase().includes(q);
+            const matchText = String(p.text || '').toLowerCase().includes(q);
+            const matchSpeaker = String(p.assigned_speaker_id || p.speaker_id || '').toLowerCase().includes(q);
+            const matchContributor = String(p.contributorId?.username || '').toLowerCase().includes(q);
+            if (!matchId && !matchText && !matchSpeaker && !matchContributor) return false;
+          }
+          return true;
+        });
+
+        const reservedCount = phrasesList.filter(p => p.assigned_speaker_id || (p.status === 'pending' && p.speaker_id)).length;
+        const openPoolCount = phrasesList.length - reservedCount;
+
+        return (
+          <motion.div 
+            initial={{ y: 20, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            transition={{ delay: 0.1 }}
+            className="card overflow-hidden space-y-4"
+          >
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div>
+                <h2 className="text-xl font-semibold">Database Overview ({phrasesList.length} Total Phrases)</h2>
+                <p className="text-xs opacity-70 mt-0.5">
+                  Showing {filteredPhrases.length} of {phrasesList.length} phrases • <span className="text-indigo-400 font-semibold">{reservedCount} Reserved</span> • <span className="text-emerald-400 font-semibold">{openPoolCount} Open Pool</span>
+                </p>
+              </div>
+
+              {/* Filters & Search */}
+              <div className="flex flex-wrap items-center gap-2.5">
+                <input
+                  type="text"
+                  placeholder="🔍 Search ID, text, spk_..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="input input-sm text-xs bg-white dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 px-3 py-1.5 rounded-lg w-48"
+                />
+
+                <select
+                  value={allocationFilter}
+                  onChange={(e) => setAllocationFilter(e.target.value)}
+                  className="input input-sm text-xs bg-white dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 px-2.5 py-1.5 rounded-lg font-medium"
+                >
+                  <option value="all">All Allocations</option>
+                  <option value="reserved">🔒 Reserved Only ({reservedCount})</option>
+                  <option value="open">🌐 Open Pool Only ({openPoolCount})</option>
+                </select>
+
+                <select
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value)}
+                  className="input input-sm text-xs bg-white dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 px-2.5 py-1.5 rounded-lg capitalize"
+                >
+                  <option value="all">All Statuses</option>
+                  <option value="pending">Pending</option>
+                  <option value="locked">Locked</option>
+                  <option value="recorded">Recorded</option>
+                  <option value="approved">Approved</option>
+                  <option value="rejected">Rejected</option>
+                </select>
+
+                <select
+                  value={selectedCompanyFilter}
+                  onChange={(e) => setSelectedCompanyFilter(e.target.value)}
+                  className="input input-sm text-xs bg-white dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 px-2.5 py-1.5 rounded-lg"
+                >
+                  <option value="all">All Projects</option>
+                  {companiesList.map(c => (
+                    <option key={c._id || c.name} value={c.name}>{c.projectName || c.name}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse whitespace-nowrap">
+                <thead>
+                  <tr className="border-b border-neutral-200 dark:border-neutral-700 text-xs uppercase font-bold tracking-wider">
+                    <th className="p-3 opacity-70">Company</th>
+                    <th className="p-3 opacity-70">Phrase ID</th>
+                    <th className="p-3 opacity-70">Allocation</th>
+                    <th className="p-3 opacity-70">Lang</th>
+                    <th className="p-3 opacity-70">Status</th>
+                    <th className="p-3 opacity-70">Duration</th>
+                    <th className="p-3 opacity-70">Recorded At</th>
+                    <th className="p-3 opacity-70">Contributor</th>
+                    <th className="p-3 opacity-70">QA User</th>
+                    <th className="p-3 opacity-70">QA Reviewed</th>
+                    <th className="p-3 opacity-70 max-w-xs">QA Comment</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredPhrases.map((p) => {
+                    const assignedSpk = p.assigned_speaker_id || (p.status === 'pending' ? p.speaker_id : null);
+
+                    return (
+                      <tr key={p._id} className="border-b border-neutral-100 dark:border-neutral-800 hover:bg-neutral-50 dark:hover:bg-neutral-800/50 transition-colors text-sm">
+                        <td className="p-3 font-medium">
+                          {(() => {
+                            const comp = companiesList.find(c => c.name.toLowerCase() === (p.companyId || '').toLowerCase());
+                            if (!comp) return p.companyId || 'N/A';
+                            return (
+                              <div>
+                                <span>{comp.name}</span>
+                                {comp.projectName && comp.projectName !== comp.name && (
+                                  <span className="text-xs opacity-75 block text-primary-500 font-normal">{comp.projectName}</span>
+                                )}
+                                <span className="text-[11px] opacity-60 block font-mono">
+                                  ${comp.hourlyPayout ?? 0}/hr • {comp.maxContributionMinutes ?? 195}m max
+                                </span>
+                              </div>
+                            );
+                          })()}
+                        </td>
+                        <td className="p-3 font-mono opacity-80">{p.phraseId}</td>
+                        <td className="p-3">
+                          {assignedSpk ? (
+                            <span className="px-2.5 py-1 rounded-md bg-indigo-950/80 text-indigo-300 border border-indigo-700/60 font-mono text-xs font-bold inline-flex items-center gap-1">
+                              <span>🔒</span>
+                              <span>{assignedSpk}</span>
+                            </span>
+                          ) : (
+                            <span className="px-2.5 py-1 rounded-md bg-neutral-800/90 text-neutral-400 border border-neutral-700 font-mono text-xs inline-flex items-center gap-1">
+                              <span>🌐</span>
+                              <span>Open Pool</span>
+                            </span>
                           )}
-                          <span className="text-[11px] opacity-60 block font-mono">
-                            ${comp.hourlyPayout ?? 0}/hr • {comp.maxContributionMinutes ?? 195}m max
+                        </td>
+                        <td className="p-3 capitalize">{p.language}</td>
+                        <td className="p-3">
+                          <span className={`badge ${
+                            p.status === 'approved' ? 'badge-success' : 
+                            p.status === 'rejected' ? 'badge-error' : 
+                            p.status === 'recorded' ? 'badge-warning' : 
+                            p.status === 'locked' ? 'badge-secondary bg-blue-100 text-blue-800' : 'badge-neutral'
+                          }`}>
+                            {p.status}
                           </span>
-                        </div>
-                      );
-                    })()}
-                  </td>
-                  <td className="p-3 font-mono opacity-80">{p.phraseId}</td>
-                  <td className="p-3 capitalize">{p.language}</td>
-                  <td className="p-3">
-                    <span className={`badge ${
-                      p.status === 'approved' ? 'badge-success' : 
-                      p.status === 'rejected' ? 'badge-error' : 
-                      p.status === 'recorded' ? 'badge-warning' : 
-                      p.status === 'locked' ? 'badge-secondary bg-blue-100 text-blue-800' : 'badge-neutral'
-                    }`}>
-                      {p.status}
-                    </span>
-                  </td>
-                  <td className="p-3">{p.duration > 0 ? `${p.duration}s` : '-'}</td>
-                  <td className="p-3 opacity-70">{p.recordedAt ? new Date(p.recordedAt).toLocaleString() : '-'}</td>
-                  <td className="p-3">{p.contributorId ? p.contributorId.username : '-'}</td>
-                  <td className="p-3">{p.qaId ? p.qaId.username : '-'}</td>
-                  <td className="p-3 opacity-70">{p.reviewedAt ? new Date(p.reviewedAt).toLocaleString() : '-'}</td>
-                  <td className="p-3 truncate max-w-[200px]" title={p.qaComment}>{p.qaComment || '-'}</td>
-                </tr>
-              ))}
-              {phrasesList.length === 0 && (
-                <tr>
-                  <td colSpan="10" className="p-8 text-center opacity-50">No phrases uploaded yet.</td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </motion.div>
+                        </td>
+                        <td className="p-3">{p.duration > 0 ? `${p.duration}s` : '-'}</td>
+                        <td className="p-3 opacity-70">{p.recordedAt ? new Date(p.recordedAt).toLocaleString() : '-'}</td>
+                        <td className="p-3">{p.contributorId ? `${p.contributorId.username} (${p.speaker_id || p.contributorId.speaker_id || '-'})` : '-'}</td>
+                        <td className="p-3">{p.qaId ? p.qaId.username : '-'}</td>
+                        <td className="p-3 opacity-70">{p.reviewedAt ? new Date(p.reviewedAt).toLocaleString() : '-'}</td>
+                        <td className="p-3 truncate max-w-[200px]" title={p.qaComment}>{p.qaComment || '-'}</td>
+                      </tr>
+                    );
+                  })}
+                  {filteredPhrases.length === 0 && (
+                    <tr>
+                      <td colSpan="11" className="p-8 text-center opacity-50">No phrases found matching your search or filters.</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </motion.div>
+        );
+      })()}
       </main>
     </div>
   );

@@ -319,13 +319,16 @@ export async function uploadPhrases(req, res) {
         currentFreq++;
         const copyPhraseId = cIdx === 1 ? cleanId : `${cleanId}_c${cIdx}`;
 
+        const targetSpeaker = p.speaker_id ? String(p.speaker_id).trim() : (p.speakerId ? String(p.speakerId).trim() : (p.speaker ? String(p.speaker).trim() : null));
+
         docsToInsert.push({
           phraseId: copyPhraseId,
           companyId: targetCompanyName,
           projectName: projectName ? projectName.trim() : null,
           language: cleanLanguage,
           script_type: p.script_type || p.scriptType || null,
-          speaker_id: p.speaker_id || p.speakerId || p.speaker || null,
+          assigned_speaker_id: targetSpeaker || null,
+          speaker_id: targetSpeaker || null,
           text: text,
           emotion: p.emotion || p.emotions || null,
           style: p.style || null,
@@ -602,6 +605,26 @@ export async function getAvailablePhrase(req, res) {
       });
       baseQuery.$nor = norConditions;
     }
+
+    // Enforce Target Speaker ID restriction:
+    // If a phrase is targeted to a specific speaker (assigned_speaker_id or speaker_id), only that exact contributor can receive it.
+    // If assigned_speaker_id / speaker_id is null/empty/omitted, it is in the open pool for any contributor.
+    const userSpkId = user.speaker_id ? String(user.speaker_id).trim() : null;
+    const speakerCondition = [
+      { assigned_speaker_id: null, speaker_id: null },
+      { assigned_speaker_id: "", speaker_id: "" },
+      { assigned_speaker_id: { $exists: false }, speaker_id: { $exists: false } },
+      { assigned_speaker_id: null, speaker_id: "" },
+      { assigned_speaker_id: "", speaker_id: null },
+      { assigned_speaker_id: null, speaker_id: { $exists: false } },
+      { assigned_speaker_id: { $exists: false }, speaker_id: null }
+    ];
+    if (userSpkId) {
+      speakerCondition.push({ assigned_speaker_id: userSpkId });
+      speakerCondition.push({ speaker_id: userSpkId });
+    }
+    baseQuery.$and = baseQuery.$and || [];
+    baseQuery.$and.push({ $or: speakerCondition });
 
     // 1. Fetch any phrases already locked for this contributor that haven't expired
     let lockedPhrases = [];
@@ -1417,7 +1440,7 @@ export async function reviewPhrase(req, res) {
       // 3. Reset the phrase document directly so it goes back to the recording pipeline
       phrase.status = "pending";
       phrase.contributorId = null;
-      phrase.speaker_id = null;
+      phrase.speaker_id = phrase.assigned_speaker_id || null;
       phrase.audioFile = null;
       phrase.duration = 0;
       phrase.recordedAt = null;

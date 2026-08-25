@@ -1,5 +1,7 @@
 import React, { useEffect, useState, useRef } from "react";
 import { Navigate } from "react-router-dom";
+import { Download, RefreshCw, Layers } from "lucide-react";
+import Swal from "sweetalert2";
 import AdminNav from "../components/AdminNav.jsx";
 import { fetchAndConvertToWav } from "../lib/audioToWav.js";
 import { getUserInfo } from "../lib/auth.js";
@@ -73,6 +75,62 @@ export default function AdminLanguageApps() {
             setLoading(false);
         }
     }
+
+    const handleDownloadAppsZip = async () => {
+        try {
+            const compRes = await apiFetch("/api/admin/companies");
+            const companyList = compRes.companies || [];
+
+            const optionsHtml = companyList.map(c => `<option value="${c.name}">${c.name}</option>`).join("");
+
+            const { value: formValues } = await Swal.fire({
+                title: "Download Phrase Applications ZIP",
+                html: `
+                    <div class="text-left space-y-3 text-sm">
+                        <div>
+                            <label class="block font-semibold mb-1 text-neutral-300">Select Company:</label>
+                            <select id="swal-comp" class="w-full p-2.5 bg-neutral-800 border border-neutral-700 text-white rounded-lg text-sm">
+                                ${optionsHtml || '<option value="Gnani">Gnani</option>'}
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block font-semibold mb-1 text-neutral-300">Download Filter:</label>
+                            <select id="swal-type" class="w-full p-2.5 bg-neutral-800 border border-neutral-700 text-white rounded-lg text-sm">
+                                <option value="approved_apps">QA-Approved Applications Only</option>
+                                <option value="all_apps">All Applications (Approved, Pending, Rejected)</option>
+                            </select>
+                        </div>
+                    </div>
+                `,
+                focusConfirm: false,
+                showCancelButton: true,
+                confirmButtonText: "Download ZIP",
+                confirmButtonColor: "#ea580c",
+                cancelButtonText: "Cancel",
+                preConfirm: () => {
+                    return {
+                        company: document.getElementById("swal-comp").value,
+                        type: document.getElementById("swal-type").value
+                    };
+                }
+            });
+
+            if (formValues && formValues.company) {
+                const token = document.cookie.split("; ").find(r => r.startsWith("vc_token="))?.split("=")[1] || localStorage.getItem("vc_token") || "";
+                const url = `${BASE}/api/admin/phrases/download-company?company=${encodeURIComponent(formValues.company)}&type=${formValues.type}${token ? `&token=${encodeURIComponent(token)}` : ""}`;
+                window.location.href = url;
+                Swal.fire({
+                    icon: "success",
+                    title: "ZIP Download Started",
+                    text: `Compiling ${formValues.type === 'approved_apps' ? 'approved' : 'all'} phrase applications for ${formValues.company}.`,
+                    timer: 2500,
+                    showConfirmButton: false
+                });
+            }
+        } catch (err) {
+            Swal.fire("Error", err.message || "Failed to download phrase applications", "error");
+        }
+    };
 
     async function act(userId, appId, action) {
         const key = `${action}_${appId}`;
@@ -150,18 +208,28 @@ export default function AdminLanguageApps() {
                 <div className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                     <div>
                         <h1 className="text-2xl md:text-3xl font-bold text-white mb-1">Phrase Applications</h1>
-                        <p className="text-neutral-400 text-sm">Review and approve phrase language audio submissions.</p>
+                        <p className="text-neutral-400 text-sm">Review, approve, and download phrase language application audio submissions.</p>
                     </div>
-                    <select
-                        value={statusFilter}
-                        onChange={e => { setStatusFilter(e.target.value); setPage(1); }}
-                        className="bg-neutral-700 border border-neutral-600 text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-warning-500"
-                    >
-                        <option value="">All</option>
-                        <option value="pending">Pending</option>
-                        <option value="approved">Approved</option>
-                        <option value="rejected">Rejected</option>
-                    </select>
+                    <div className="flex flex-wrap items-center gap-3">
+                        <button
+                            onClick={handleDownloadAppsZip}
+                            className="px-4 py-2 bg-primary-600 hover:bg-primary-500 text-white text-xs font-bold rounded-lg transition-colors flex items-center gap-2 shadow-md"
+                            title="Download ZIP package of phrase applications"
+                        >
+                            <Download className="w-4 h-4" />
+                            <span>Download Apps ZIP</span>
+                        </button>
+                        <select
+                            value={statusFilter}
+                            onChange={e => { setStatusFilter(e.target.value); setPage(1); }}
+                            className="bg-neutral-700 border border-neutral-600 text-white text-xs font-semibold rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-warning-500"
+                        >
+                            <option value="">All Statuses</option>
+                            <option value="pending">Pending</option>
+                            <option value="approved">Approved</option>
+                            <option value="rejected">Rejected</option>
+                        </select>
+                    </div>
                 </div>
 
                 {error && <div className="bg-red-900/50 border border-red-700 text-red-300 px-4 py-3 rounded-lg mb-4">{error}</div>}
@@ -174,7 +242,7 @@ export default function AdminLanguageApps() {
                     <div className="text-center py-16 text-neutral-500">No applications found.</div>
                 ) : (
                     <>
-                        <div className="bg-neutral-800 border border-neutral-700 rounded-xl overflow-hidden">
+                        <div className="bg-neutral-800 border border-neutral-700 rounded-xl overflow-hidden shadow-xl">
                             <div className="overflow-x-auto">
                                 <table className="w-full text-sm">
                                     <thead className="bg-neutral-700">
@@ -217,7 +285,17 @@ export default function AdminLanguageApps() {
                                                                         {loadingAudio[key] ? "Converting..." : "▶ Load"}
                                                                     </button>
                                                                 ) : (
-                                                                    <audio ref={el => audioRefs.current[key] = el} src={audioSrc[key]} controls controlsList="nodownload noplaybackrate" onContextMenu={(e) => e.preventDefault()} className="h-8 w-64" />
+                                                                    <div className="flex items-center gap-2">
+                                                                        <audio ref={el => audioRefs.current[key] = el} src={audioSrc[key]} controls controlsList="nodownload noplaybackrate" onContextMenu={(e) => e.preventDefault()} className="h-8 w-60" />
+                                                                        <a
+                                                                            href={audioSrc[key]}
+                                                                            download={`${([app.userFirstname, app.userLastname].filter(Boolean).join('_') || app.username || 'applicant').replace(/[^a-zA-Z0-9_\-]/g, '')}_${app.speaker_id || app.speakerId || 'spk'}.wav`}
+                                                                            className="p-1.5 bg-neutral-700 hover:bg-neutral-600 text-warning-400 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors"
+                                                                            title="Download converted WAV file"
+                                                                        >
+                                                                            <Download className="w-3.5 h-3.5" />
+                                                                        </a>
+                                                                    </div>
                                                                 )
                                                             ) : (
                                                                 <span className="text-neutral-600 text-xs">—</span>

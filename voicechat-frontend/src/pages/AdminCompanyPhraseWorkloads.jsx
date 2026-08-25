@@ -19,6 +19,7 @@ export default function AdminCompanyPhraseWorkloads() {
 
   const [company, setCompany] = useState(null);
   const [languages, setLanguages] = useState([]);
+  const [summary, setSummary] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -28,6 +29,7 @@ export default function AdminCompanyPhraseWorkloads() {
         const data = await apiGet(`/api/admin/companies/${id}/phrase-workloads`);
         setCompany(data.company);
         setLanguages(data.languages || []);
+        setSummary(data.summary || null);
       } catch (err) {
         Swal.fire({
           icon: "error",
@@ -67,11 +69,60 @@ export default function AdminCompanyPhraseWorkloads() {
                 )}
               </h1>
               <p className="text-sm text-neutral-400 mt-1">
-                Select a language below to inspect its phrase database, assign application test samples, and manage phrase inventory.
+                Inspect phrase databases by language, monitor speaker allocations (Reserved vs Open Pool), and manage workload inventory.
               </p>
             </div>
           </div>
         </div>
+
+        {/* Company Allocation & Progress Summary Banner */}
+        {summary && summary.totalPhrases > 0 && (
+          <div className="mb-8 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+            <div className="bg-neutral-800/90 border border-neutral-700 p-4 rounded-xl shadow-sm">
+              <div className="text-[11px] font-bold uppercase tracking-wider text-neutral-400">Total Workload</div>
+              <div className="text-2xl font-black text-white mt-1">{summary.totalPhrases}</div>
+              <div className="text-[11px] text-neutral-400 mt-0.5">{languages.length} {languages.length === 1 ? 'Language' : 'Languages'}</div>
+            </div>
+
+            <div className="bg-indigo-950/40 border border-indigo-700/60 p-4 rounded-xl shadow-sm">
+              <div className="text-[11px] font-bold uppercase tracking-wider text-indigo-300 flex items-center gap-1">
+                <span>🔒</span> Reserved
+              </div>
+              <div className="text-2xl font-black text-indigo-200 mt-1">{summary.totalReserved}</div>
+              <div className="text-[11px] text-indigo-400 mt-0.5">
+                {summary.totalPhrases > 0 ? Math.round((summary.totalReserved / summary.totalPhrases) * 100) : 0}% of workload
+              </div>
+            </div>
+
+            <div className="bg-teal-950/40 border border-teal-700/60 p-4 rounded-xl shadow-sm">
+              <div className="text-[11px] font-bold uppercase tracking-wider text-teal-300 flex items-center gap-1">
+                <span>🌐</span> Open Pool
+              </div>
+              <div className="text-2xl font-black text-teal-200 mt-1">{summary.totalOpenPool}</div>
+              <div className="text-[11px] text-teal-400 mt-0.5">
+                {summary.totalPhrases > 0 ? Math.round((summary.totalOpenPool / summary.totalPhrases) * 100) : 0}% of workload
+              </div>
+            </div>
+
+            <div className="bg-neutral-800/90 border border-neutral-700 p-4 rounded-xl shadow-sm">
+              <div className="text-[11px] font-bold uppercase tracking-wider text-neutral-400">Pending</div>
+              <div className="text-2xl font-black text-amber-400 mt-1">{summary.totalPending}</div>
+              <div className="text-[11px] text-neutral-400 mt-0.5">Awaiting recording</div>
+            </div>
+
+            <div className="bg-neutral-800/90 border border-neutral-700 p-4 rounded-xl shadow-sm">
+              <div className="text-[11px] font-bold uppercase tracking-wider text-neutral-400">Recorded</div>
+              <div className="text-2xl font-black text-blue-400 mt-1">{summary.totalRecorded}</div>
+              <div className="text-[11px] text-neutral-400 mt-0.5">In QA review queue</div>
+            </div>
+
+            <div className="bg-neutral-800/90 border border-neutral-700 p-4 rounded-xl shadow-sm">
+              <div className="text-[11px] font-bold uppercase tracking-wider text-neutral-400">Approved</div>
+              <div className="text-2xl font-black text-emerald-400 mt-1">{summary.totalApproved}</div>
+              <div className="text-[11px] text-neutral-400 mt-0.5">QA Completed</div>
+            </div>
+          </div>
+        )}
 
         {loading ? (
           <div className="bg-neutral-800 border border-neutral-700 rounded-2xl text-center py-20 shadow-xl">
@@ -106,7 +157,7 @@ export default function AdminCompanyPhraseWorkloads() {
                 <div
                   key={lang.code}
                   onClick={() => navigate(`/admin/companies/${id}/phrase-workloads/${lang.code}`)}
-                  className="bg-neutral-800 hover:bg-neutral-750 border border-neutral-700 hover:border-primary-500/60 transition-all cursor-pointer group flex flex-col justify-between p-6 rounded-2xl shadow-xl"
+                  className="bg-neutral-800 hover:bg-neutral-750 border border-neutral-700 hover:border-primary-500/60 transition-all cursor-pointer group flex flex-col justify-between p-6 rounded-2xl shadow-xl space-y-4"
                 >
                   <div>
                     <div className="flex items-center justify-between mb-4">
@@ -125,9 +176,19 @@ export default function AdminCompanyPhraseWorkloads() {
                     <p className="text-xs text-neutral-400 mt-1">
                       Language Code: <span className="font-mono text-neutral-300">{lang.code}</span>
                     </p>
+
+                    {/* Allocation Breakdown Chips */}
+                    <div className="mt-4 pt-3 border-t border-neutral-700/60 flex flex-wrap items-center gap-2">
+                      <span className="text-[11px] font-semibold px-2 py-0.5 rounded bg-indigo-950/80 text-indigo-300 border border-indigo-700/60 font-mono flex items-center gap-1">
+                        <span>🔒</span> {lang.reservedCount ?? 0} Reserved
+                      </span>
+                      <span className="text-[11px] font-semibold px-2 py-0.5 rounded bg-teal-950/80 text-teal-300 border border-teal-700/60 font-mono flex items-center gap-1">
+                        <span>🌐</span> {lang.openPoolCount ?? 0} Open
+                      </span>
+                    </div>
                   </div>
 
-                  <div className="mt-6 pt-4 border-t border-neutral-700/80 flex items-center justify-between text-xs font-semibold text-primary-400 group-hover:text-primary-300">
+                  <div className="pt-3 border-t border-neutral-700/80 flex items-center justify-between text-xs font-semibold text-primary-400 group-hover:text-primary-300">
                     <span>View Phrase Database</span>
                     <ChevronRight className="w-4 h-4 transform group-hover:translate-x-1 transition-transform" />
                   </div>

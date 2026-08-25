@@ -52,3 +52,23 @@ suggestion.txt
 Electron/
 electron/
 
+# Local-only DataCatalyst Labels & Hindi Transcription scripts
+DataCatalyst_Labels-main/
+datacatalyst-labels-main/
+Hindi Transcription.py
+Hindi_Transcription.py
+
+# Vite build timestamps & python cache
+*.timestamp-*.mjs
+__pycache__/
+temp_extracted/
+*_transcription_output.json
+upcoming_workflow.md
+
+# Scratch inspection scripts
+*.cjs
+check_durations.py
+extract_call.py
+inspect_zip.py
+test_stream_download.py
+reset-call.js

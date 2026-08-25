@@ -7,6 +7,7 @@ const phraseSchema = new mongoose.Schema(
     projectName: { type: String, default: null }, // Optional project grouping
     language: { type: String, required: true },
     script_type: { type: String, default: null },
+    assigned_speaker_id: { type: String, default: null, index: true }, // Optional targeted speaker ID from JSON (e.g. spk_129)
     speaker_id: { type: String, default: null }, // from JSON, though we'll assign our own contributorId internally if we want
     text: { type: String, required: true },
     emotion: { type: String, default: null },

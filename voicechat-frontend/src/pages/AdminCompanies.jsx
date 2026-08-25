@@ -267,9 +267,12 @@ export default function AdminCompanies() {
                     <p className="text-xs text-neutral-500 mb-4 flex flex-wrap items-center gap-1.5">
                       <span>Placeholders:</span>
                       <code className="bg-neutral-200 dark:bg-neutral-750 px-1.5 py-0.5 rounded">{`{phraseId}`}</code>
-                      <code className="bg-neutral-200 dark:bg-neutral-750 px-1.5 py-0.5 rounded">{`{language}`}</code>
                       <code className="bg-neutral-200 dark:bg-neutral-750 px-1.5 py-0.5 rounded">{`{speaker_id}`}</code>
+                      <code className="bg-neutral-200 dark:bg-neutral-750 px-1.5 py-0.5 rounded">{`{first_name}`}</code>
+                      <code className="bg-neutral-200 dark:bg-neutral-750 px-1.5 py-0.5 rounded">{`{last_name}`}</code>
                       <code className="bg-neutral-200 dark:bg-neutral-750 px-1.5 py-0.5 rounded">{`{gender}`}</code>
+                      <code className="bg-neutral-200 dark:bg-neutral-750 px-1.5 py-0.5 rounded">{`{recording_date}`}</code>
+                      <code className="bg-neutral-200 dark:bg-neutral-750 px-1.5 py-0.5 rounded">{`{language}`}</code>
                       <code className="bg-neutral-200 dark:bg-neutral-750 px-1.5 py-0.5 rounded">{`{freq}`}</code>
                       <code className="bg-neutral-200 dark:bg-neutral-750 px-1.5 py-0.5 rounded">{`{spkfreq}`}</code>
                       {company.availableTags && company.availableTags.length > 0 && (

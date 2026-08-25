@@ -107,6 +107,15 @@ const callSessionSchema = new mongoose.Schema(
 
     // Soft delete for Admin UI while retaining user earnings and history
     adminDeleted: { type: Boolean, default: false },
+
+    // Monologue tracking for rejected calls sent to monologue transcription
+    isMonologued: { type: Boolean, default: false },
+    recordingAMonologueStatus: { type: String, enum: ['pending', 'transcribed', 'rejected'], default: 'pending' },
+    recordingBMonologueStatus: { type: String, enum: ['pending', 'transcribed', 'rejected'], default: 'pending' },
+    monologueDetails: {
+      type: mongoose.Schema.Types.Mixed,
+      default: {}
+    },
   },
   { timestamps: true }
 );

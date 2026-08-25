@@ -1,3 +1,4 @@
+import "dotenv/config";
 import express from "express";
 import mongoose from "mongoose";
 import { Topic } from "../models/Topic.js";
@@ -35,6 +36,819 @@ ffmpeg.setFfmpegPath(ffmpegInstaller.path);
 
 const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET;
+
+const transcriptionCallSchema = new mongoose.Schema(
+  {
+    call_id: { type: String, required: true, unique: true, index: true },
+    Segmentation_Done: { type: Boolean, default: false, index: true },
+    segmentation_qa: { type: Boolean, default: false, index: true },
+    segmentation_qa_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+    segmentation_qa_notes: { type: String, default: null },
+    segmented_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+    initial_submitted_segments: { type: Array, default: [] },
+    qa_changes_count: { type: Number, default: 0 },
+    qa_penalty_percentage: { type: Number, default: 0 },
+    qa_payout_percentage: { type: Number, default: 100 },
+    ready_for_transcription: { type: Boolean, default: false, index: true },
+    transcription_status: { type: String, enum: ['PENDING_TRANSCRIPTION', 'IN_TRANSCRIPTION', 'TRANSCRIPTION_COMPLETED', 'QA_APPROVED'], default: 'PENDING_TRANSCRIPTION' },
+    audio1Name: { type: String, default: '' },
+    audio2Name: { type: String, default: '' },
+    total_segments: { type: Number, default: 0 },
+    transcribed_segments_count: { type: Number, default: 0 },
+    qa_verified_segments_count: { type: Number, default: 0 },
+    asr_status: { type: String, enum: ['PENDING', 'PROCESSING', 'COMPLETED', 'FAILED'], default: 'PENDING' },
+    asr_error: { type: String, default: null },
+    asr_completed_at: { type: Date, default: null }
+  },
+  { timestamps: true }
+);
+
+const TranscriptionCall = mongoose.models.TranscriptionCall || mongoose.model('TranscriptionCall', transcriptionCallSchema);
+
+const wordSchema = new mongoose.Schema(
+  {
+    word: { type: String, required: true },
+    start: { type: Number, required: true },
+    end: { type: Number, required: true },
+    start_ms: { type: Number },
+    end_ms: { type: Number },
+  },
+  { _id: false }
+);
+
+const transcriptionSegmentSchema = new mongoose.Schema(
+  {
+    call_id: { type: String, required: true, index: true },
+    segment_id: { type: String, required: true },
+    call_id_segment_id: { type: String, required: true, unique: true, index: true },
+    speaker: { type: String, default: 'speaker1' },
+    start_sec: { type: Number, required: true },
+    end_sec: { type: Number, required: true },
+    start_ms: { type: Number, required: true },
+    end_ms: { type: Number, required: true },
+    duration_sec: { type: Number },
+    duration_ms: { type: Number },
+    segment_text: { type: String, default: '' },
+    words: [wordSchema],
+    tier1_text_verified: { type: Boolean, default: false },
+    tier2_timestamps_verified: { type: Boolean, default: false },
+    IsTranscribed: { type: Boolean, default: false, index: true },
+    QAVerified: { type: Boolean, default: false, index: true },
+    tier1_verified_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+    tier2_verified_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+    qa_verified_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+    qa_notes: { type: String, default: null },
+  },
+  { timestamps: true }
+);
+
+const TranscriptionSegment = mongoose.models.TranscriptionSegment || mongoose.model('TranscriptionSegment', transcriptionSegmentSchema);
+
+async function syncToSegmentationPipeline(call) {
+  if (call && call.callStatus === 'approved') {
+    try {
+      await TranscriptionCall.findOneAndUpdate(
+        { call_id: call.callId },
+        {
+          $set: {
+            call_id: call.callId,
+            audio1Name: call.recordingAFile || '',
+            audio2Name: call.recordingBFile || '',
+          },
+          $setOnInsert: {
+            Segmentation_Done: false,
+            segmentation_qa: false,
+            total_segments: 0,
+            asr_status: 'PENDING'
+          }
+        },
+        { upsert: true, new: true }
+      );
+      console.log(`[Segmentation Pipeline] Auto-registered QA Approved call: ${call.callId}`);
+    } catch (err) {
+      console.error('[Segmentation Pipeline Sync Error]:', err.message);
+    }
+  }
+}
+
+// Stream Speaker 1 & Speaker 2 audio for Segmentation Canvas
+router.get("/qa/calls/:callId/recording/:speaker", async (req, res) => {
+  try {
+    const { callId, speaker } = req.params;
+    const call = await CallSession.findOne({ callId });
+    if (!call) return res.status(404).json({ error: "Call not found" });
+
+    const key = speaker === "speaker1" ? call.recordingAFile : call.recordingBFile;
+    if (!key) return res.status(404).json({ error: "Recording file not found" });
+
+    if (key.startsWith("local:")) {
+      const fileName = key.replace("local:", "");
+      const possiblePaths = [
+        path.join(process.cwd(), "recordings", "calls", fileName),
+        path.join(process.cwd(), "temp_extracted", callId, fileName),
+        path.join(process.cwd(), "temp_extracted", callId, `call_${callId}`, fileName),
+      ];
+
+      for (const p of possiblePaths) {
+        if (fs.existsSync(p)) {
+          return res.sendFile(p);
+        }
+      }
+      return res.status(404).json({ error: "Local recording audio file not found" });
+    }
+
+    // Try S3 first, fallback to local temp_extracted
+    try {
+      const command = new GetObjectCommand({ Bucket: BUCKET_NAME, Key: key });
+      const response = await s3Client.send(command);
+      res.setHeader("Content-Type", response.ContentType || "audio/wav");
+      return response.Body.pipe(res);
+    } catch (s3Err) {
+      const baseName = path.basename(key);
+      const possiblePaths = [
+        path.join(process.cwd(), "temp_extracted", callId, baseName),
+        path.join(process.cwd(), "temp_extracted", callId, `call_${callId}`, baseName),
+        path.join(process.cwd(), "recordings", "calls", baseName),
+      ];
+      for (const p of possiblePaths) {
+        if (fs.existsSync(p)) {
+          return res.sendFile(p);
+        }
+      }
+      return res.status(404).json({ error: "Audio file not found in S3 or local storage" });
+    }
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/admin/qa/segmentation-calls: List QA Approved calls in segmentation pipeline with tab filtering
+router.get("/qa/segmentation-calls", requireAuth(JWT_SECRET), async (req, res) => {
+  try {
+    const page = parseInt(req.query.page || '1', 10);
+    const limit = parseInt(req.query.limit || '20', 10);
+    const tab = req.query.tab || 'pending'; // pending, approved, rejected, logs, all
+    const search = (req.query.search || '').trim();
+
+    // Fetch all approved call sessions
+    let callSessionQuery = { callStatus: "approved" };
+    if (search) {
+      callSessionQuery.callId = { $regex: search, $options: 'i' };
+    }
+
+    const approvedCalls = await CallSession.find(callSessionQuery)
+      .populate("userA", "username speaker_id email")
+      .populate("userB", "username speaker_id email")
+      .populate("topicId", "title")
+      .sort({ updatedAt: -1 })
+      .lean();
+
+    const callIds = approvedCalls.map(c => c.callId);
+    const tCalls = await TranscriptionCall.find({ call_id: { $in: callIds } })
+      .populate("segmented_by", "username email firstname lastname")
+      .populate("segmentation_qa_by", "username email firstname lastname")
+      .lean();
+
+    const tCallMap = new Map(tCalls.map(t => [t.call_id, t]));
+
+    let results = approvedCalls.map(c => {
+      const t = tCallMap.get(c.callId) || {};
+      const isDone = Boolean(t.Segmentation_Done);
+      const isApproved = Boolean(t.segmentation_qa);
+      const isRejected = Boolean(t.segmentation_rejected || (!t.segmentation_qa && t.segmentation_qa_by));
+      const isReviewed = Boolean(t.segmentation_qa_by || isApproved || isRejected);
+
+      return {
+        ...c,
+        transcriptionCall: t,
+        Segmentation_Done: isDone,
+        segmentation_qa: isApproved,
+        segmentation_rejected: isRejected,
+        segmentation_qa_by: t.segmentation_qa_by || null,
+        segmentation_qa_notes: t.segmentation_qa_notes || '',
+        segmentation_qa_at: t.segmentation_qa_at || t.updatedAt,
+        segmented_by: t.segmented_by || null,
+        total_segments: t.total_segments || 0,
+        qa_changes_count: t.qa_changes_count || 0,
+        qa_penalty_percentage: t.qa_penalty_percentage || 0,
+        qa_payout_percentage: t.qa_payout_percentage !== undefined ? t.qa_payout_percentage : 100,
+        asr_status: t.asr_status || 'PENDING',
+        isDone,
+        isApproved,
+        isRejected,
+        isReviewed
+      };
+    });
+
+    // Apply Tab Filtering
+    if (tab === 'pending') {
+      // Pending QA Review: Segmented by user, but not yet approved or rejected
+      results = results.filter(r => r.isDone && !r.isApproved && !r.isRejected);
+    } else if (tab === 'approved') {
+      // QA Approved
+      results = results.filter(r => r.isApproved);
+    } else if (tab === 'rejected') {
+      // QA Rejected
+      results = results.filter(r => r.isRejected);
+    } else if (tab === 'logs') {
+      // Segmentation Logs: All reviewed segmentations sorted by review timestamp
+      results = results.filter(r => r.isReviewed);
+      results.sort((a, b) => new Date(b.segmentation_qa_at || b.updatedAt) - new Date(a.segmentation_qa_at || a.updatedAt));
+    } else if (tab === 'all') {
+      // All segmentation calls
+      // no filter
+    }
+
+    const total = results.length;
+    const paginated = results.slice((page - 1) * limit, page * limit);
+
+    res.json({
+      calls: paginated,
+      page,
+      pages: Math.ceil(total / limit) || 1,
+      total,
+      tab
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/admin/qa/next-unsegmented-call: Returns the latest QA approved call that needs segmentation
+router.get("/qa/next-unsegmented-call", async (req, res) => {
+  try {
+    const approvedCalls = await CallSession.find({ callStatus: "approved" })
+      .populate("userA", "username speaker_id email")
+      .populate("userB", "username speaker_id email")
+      .populate("topicId", "title")
+      .sort({ updatedAt: -1 })
+      .lean();
+
+    if (!approvedCalls || approvedCalls.length === 0) {
+      return res.json({ hasUnsegmentedCall: false });
+    }
+
+    const callIds = approvedCalls.map(c => c.callId);
+    const completedTCalls = await TranscriptionCall.find({ call_id: { $in: callIds }, Segmentation_Done: true }).lean();
+    const completedSet = new Set(completedTCalls.map(t => t.call_id));
+
+    const targetCall = approvedCalls.find(c => !completedSet.has(c.callId));
+    if (!targetCall) {
+      return res.json({ hasUnsegmentedCall: false });
+    }
+
+    const spk1 = targetCall.userA?.speaker_id || targetCall.userA?.username || 'Speaker 1';
+    const spk2 = targetCall.userB?.speaker_id || targetCall.userB?.username || 'Speaker 2';
+
+    res.json({
+      hasUnsegmentedCall: true,
+      call_id: targetCall.callId,
+      audio1Url: `http://localhost:3001/api/admin/qa/calls/${encodeURIComponent(targetCall.callId)}/recording/speaker1`,
+      audio2Url: `http://localhost:3001/api/admin/qa/calls/${encodeURIComponent(targetCall.callId)}/recording/speaker2`,
+      audio1Name: targetCall.recordingAFile || `${spk1}.wav`,
+      audio2Name: targetCall.recordingBFile || `${spk2}.wav`,
+      meta1Name: `${spk1}_metadata.json`,
+      meta2Name: `${spk2}_metadata.json`,
+      meta1Data: JSON.stringify({ speaker_id: spk1, role: 'Speaker 1', email: targetCall.userA?.email || '' }, null, 2),
+      meta2Data: JSON.stringify({ speaker_id: spk2, role: 'Speaker 2', email: targetCall.userB?.email || '' }, null, 2)
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/admin/qa/calls/:callId/segments: Fetch all segments of a call for QA Review
+router.get("/qa/calls/:callId/segments", requireAuth(JWT_SECRET), async (req, res) => {
+  try {
+    const { callId } = req.params;
+    const callSession = await CallSession.findOne({ callId })
+      .populate("userA", "username speaker_id email")
+      .populate("userB", "username speaker_id email")
+      .populate("topicId", "title")
+      .lean();
+
+    const tCall = await TranscriptionCall.findOne({ call_id: callId }).lean();
+    const segments = await TranscriptionSegment.find({ call_id: callId })
+      .sort({ start_ms: 1, start_sec: 1 })
+      .lean();
+
+    res.json({
+      callId,
+      callSession,
+      transcriptionCall: tCall,
+      total_segments: segments.length,
+      segments,
+      audio1Url: `http://localhost:3001/api/admin/qa/calls/${encodeURIComponent(callId)}/recording/speaker1`,
+      audio2Url: `http://localhost:3001/api/admin/qa/calls/${encodeURIComponent(callId)}/recording/speaker2`,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+function calculateSegmentationChanges(original = [], current = []) {
+  if (!original || original.length === 0) return 0;
+  if (!current || current.length === 0) return original.length;
+
+  let changes = 0;
+  const matchedCurrent = new Set();
+
+  for (const orig of original) {
+    const origStart = orig.start_sec !== undefined ? Number(orig.start_sec) : (orig.start_ms ? orig.start_ms / 1000 : (Number(orig.start) || 0));
+    const origEnd = orig.end_sec !== undefined ? Number(orig.end_sec) : (orig.end_ms ? orig.end_ms / 1000 : (Number(orig.end) || 0));
+    const origSpk = String(orig.speaker || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+
+    const matchIdx = current.findIndex((c, idx) => {
+      if (matchedCurrent.has(idx)) return false;
+      if (c.segment_id && orig.segment_id && c.segment_id === orig.segment_id) return true;
+      const cStart = c.start_sec !== undefined ? Number(c.start_sec) : (c.start_ms ? c.start_ms / 1000 : (Number(c.start) || 0));
+      const cEnd = c.end_sec !== undefined ? Number(c.end_sec) : (c.end_ms ? c.end_ms / 1000 : (Number(c.end) || 0));
+      return Math.abs(cStart - origStart) <= 1.0 && Math.abs(cEnd - origEnd) <= 1.0;
+    });
+
+    if (matchIdx === -1) {
+      // Original segment was deleted -> 1 change
+      changes++;
+    } else {
+      matchedCurrent.add(matchIdx);
+      const curr = current[matchIdx];
+      const cStart = curr.start_sec !== undefined ? Number(curr.start_sec) : (curr.start_ms ? curr.start_ms / 1000 : (Number(curr.start) || 0));
+      const cEnd = curr.end_sec !== undefined ? Number(curr.end_sec) : (curr.end_ms ? curr.end_ms / 1000 : (Number(curr.end) || 0));
+      const currSpk = String(curr.speaker || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+
+      // Check if start/end shifted by > 150ms or speaker changed
+      const startDiff = Math.abs(cStart - origStart);
+      const endDiff = Math.abs(cEnd - origEnd);
+      const spkDiff = origSpk !== currSpk && (origSpk && currSpk);
+
+      if (startDiff > 0.15 || endDiff > 0.15 || spkDiff) {
+        changes++;
+      }
+    }
+  }
+
+  // Any unmatched new segments were added by QA -> 1 change each
+  const addedCount = current.length - matchedCurrent.size;
+  if (addedCount > 0) {
+    changes += addedCount;
+  }
+
+  return changes;
+}
+
+// POST /api/admin/qa/calls/:callId/segmentation-qa: QA approve or reject segmentation & calculate pay cuts
+router.post("/qa/calls/:callId/segmentation-qa", requireAuth(JWT_SECRET), async (req, res) => {
+  try {
+    const { callId } = req.params;
+    const { status, notes, changes_count } = req.body || {};
+    const isApproved = status === 'approved' || status === true;
+
+    // Fetch existing call and segments
+    const existingCall = await TranscriptionCall.findOne({ call_id: callId });
+    const currentSegments = await TranscriptionSegment.find({ call_id: callId }).lean();
+
+    let computedChanges = 0;
+    if (changes_count !== undefined && changes_count !== null) {
+      computedChanges = Math.max(0, parseInt(changes_count, 10) || 0);
+    } else if (existingCall && existingCall.initial_submitted_segments && existingCall.initial_submitted_segments.length > 0) {
+      computedChanges = calculateSegmentationChanges(existingCall.initial_submitted_segments, currentSegments);
+    }
+
+    // 1 change = 10% pay cut, 2 changes = 20%, ..., 10 changes = 100% pay cut
+    const penaltyPercentage = Math.min(100, computedChanges * 10);
+    const payoutPercentage = Math.max(0, 100 - penaltyPercentage);
+
+    const tCall = await TranscriptionCall.findOneAndUpdate(
+      { call_id: callId },
+      {
+        $set: {
+          segmentation_qa: isApproved,
+          segmentation_rejected: !isApproved,
+          segmentation_qa_at: new Date(),
+          segmentation_qa_by: req.user?._id,
+          segmentation_qa_notes: notes || '',
+          qa_changes_count: computedChanges,
+          qa_penalty_percentage: penaltyPercentage,
+          qa_payout_percentage: payoutPercentage,
+          ready_for_transcription: isApproved,
+          transcription_status: isApproved ? 'PENDING_TRANSCRIPTION' : 'PENDING',
+        }
+      },
+      { new: true }
+    );
+
+    if (isApproved) {
+      await TranscriptionSegment.updateMany(
+        { call_id: callId },
+        { $set: { QAVerified: true, qa_verified_by: req.user?._id, qa_notes: notes || '' } }
+      );
+
+      // Route into segment-wise transcription pipeline in CallSession
+      await CallSession.updateOne(
+        { callId },
+        {
+          $set: {
+            ready_for_transcription: true,
+            segmentation_qa_approved_at: new Date(),
+          }
+        }
+      );
+    }
+
+    res.json({
+      success: true,
+      transcriptionCall: tCall,
+      status: isApproved ? 'approved' : 'rejected',
+      qa_changes_count: computedChanges,
+      qa_penalty_percentage: penaltyPercentage,
+      qa_payout_percentage: payoutPercentage,
+      ready_for_transcription: isApproved,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+async function syncSegmentsFromDisk(callId) {
+  try {
+    const existingCount = await TranscriptionSegment.countDocuments({ call_id: callId });
+    if (existingCount > 0) {
+      return; // Already synced, instant return
+    }
+
+    const possiblePaths = [
+      path.resolve(process.cwd(), '../DataCatalyst_Labels-main/backend/uploads/segmentations', `call_${callId}`, `${callId}_segmentation_labels.json`),
+      path.resolve(process.cwd(), 'DataCatalyst_Labels-main/backend/uploads/segmentations', `call_${callId}`, `${callId}_segmentation_labels.json`),
+      path.resolve('c:/Users/manoj/OneDrive/Desktop/DC App n Website/DC Website/DataCatalyst_Labels-main/backend/uploads/segmentations', `call_${callId}`, `${callId}_segmentation_labels.json`),
+    ];
+
+    let foundData = null;
+    for (const p of possiblePaths) {
+      try {
+        if (fs.existsSync(p)) {
+          const raw = fs.readFileSync(p, 'utf-8');
+          foundData = JSON.parse(raw);
+          if (foundData && foundData.segments && foundData.segments.length > 0) {
+            break;
+          }
+        }
+      } catch (e) {}
+    }
+
+    if (foundData && foundData.segments && foundData.segments.length > 0) {
+      const docs = foundData.segments.map((seg, idx) => {
+        const segId = String(seg.segment_id || `seg_${String(idx + 1).padStart(3, '0')}`);
+        const callSegId = seg.call_id_segment_id || `${callId}_${segId}`;
+        const startSec = Number(seg.start_sec) || 0;
+        const endSec = Number(seg.end_sec) || 0;
+        const startMs = Number(seg.start_ms) || Math.round(startSec * 1000);
+        const endMs = Number(seg.end_ms) || Math.round(endSec * 1000);
+
+        return {
+          call_id: callId,
+          segment_id: segId,
+          call_id_segment_id: callSegId,
+          speaker: seg.speaker || 'speaker1',
+          start_sec: startSec,
+          end_sec: endSec,
+          start_ms: startMs,
+          end_ms: endMs,
+          duration_sec: Number(seg.duration_sec) || (endSec - startSec),
+          duration_ms: Number(seg.duration_ms) || (endMs - startMs),
+          segment_text: seg.segment_text || '',
+          words: (seg.words || []).map(w => ({
+            word: String(w.word || w.text || ''),
+            start: Number(w.start) || 0,
+            end: Number(w.end) || 0,
+            start_ms: Number(w.start_ms) || Math.round((Number(w.start) || 0) * 1000),
+            end_ms: Number(w.end_ms) || Math.round((Number(w.end) || 0) * 1000),
+          })),
+          tier1_text_verified: Boolean(seg.tier1_text_verified || seg.segment_text),
+          tier2_timestamps_verified: Boolean(seg.tier2_timestamps_verified || (seg.words && seg.words.length > 0)),
+          IsTranscribed: Boolean(seg.IsTranscribed || seg.segment_text),
+          QAVerified: false,
+        };
+      });
+
+      await TranscriptionSegment.deleteMany({ call_id: callId });
+      await TranscriptionSegment.insertMany(docs, { ordered: false });
+
+      await TranscriptionCall.findOneAndUpdate(
+        { call_id: callId },
+        {
+          $set: {
+            total_segments: foundData.segments.length,
+            audio1Name: foundData.audio1_name || '',
+            audio2Name: foundData.audio2_name || '',
+            Segmentation_Done: true
+          }
+        },
+        { upsert: true }
+      );
+    }
+  } catch (err) {
+    console.error('syncSegmentsFromDisk error:', err);
+  }
+}
+
+// POST /api/admin/qa/calls/:callId/transcription/reset-qa: Unreview/reset all segments for call
+router.post("/qa/calls/:callId/transcription/reset-qa", requireAuth(JWT_SECRET), async (req, res) => {
+  try {
+    const { callId } = req.params;
+    await syncSegmentsFromDisk(callId);
+
+    const resSeg = await TranscriptionSegment.updateMany(
+      { call_id: callId },
+      { $set: { QAVerified: false, qa_verified_by: null, qa_notes: '' } }
+    );
+
+    await TranscriptionCall.updateOne(
+      { call_id: callId },
+      { $set: { qa_verified_segments_count: 0, transcription_status: 'IN_TRANSCRIPTION' } }
+    );
+
+    res.json({
+      success: true,
+      message: `Reset QA verification for call ${callId}`,
+      modifiedSegments: resSeg.modifiedCount
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/admin/qa/transcription-calls: List calls in transcription pipeline
+router.get("/qa/transcription-calls", requireAuth(JWT_SECRET), async (req, res) => {
+  try {
+    const page = parseInt(req.query.page || '1', 10);
+    const limit = parseInt(req.query.limit || '20', 10);
+    const search = (req.query.search || '').trim();
+    const filterStatus = req.query.status || 'all';
+
+    let callSessionQuery = { callStatus: "approved" };
+    if (search) {
+      callSessionQuery.callId = { $regex: search, $options: 'i' };
+    }
+
+    const approvedCalls = await CallSession.find(callSessionQuery)
+      .populate("userA", "username speaker_id email")
+      .populate("userB", "username speaker_id email")
+      .populate("topicId", "title")
+      .sort({ updatedAt: -1 })
+      .lean();
+
+    const callIds = approvedCalls.map(c => c.callId);
+
+    const tCalls = await TranscriptionCall.find({ call_id: { $in: callIds } }).lean();
+    const tCallMap = new Map(tCalls.map(t => [t.call_id, t]));
+
+    // Fetch segment stats grouped by call_id
+    const segmentStats = await TranscriptionSegment.aggregate([
+      { $match: { call_id: { $in: callIds } } },
+      {
+        $group: {
+          _id: "$call_id",
+          total_segments: { $sum: 1 },
+          tier1_verified: { $sum: { $cond: [{ $eq: ["$tier1_text_verified", true] }, 1, 0] } },
+          tier2_verified: { $sum: { $cond: [{ $eq: ["$tier2_timestamps_verified", true] }, 1, 0] } },
+          is_transcribed: { $sum: { $cond: [{ $eq: ["$IsTranscribed", true] }, 1, 0] } },
+          qa_verified: { $sum: { $cond: [{ $eq: ["$QAVerified", true] }, 1, 0] } },
+        }
+      }
+    ]);
+
+    const statsMap = new Map(segmentStats.map(s => [s._id, s]));
+
+    let results = approvedCalls.map(c => {
+      const t = tCallMap.get(c.callId) || {};
+      const stats = statsMap.get(c.callId) || {
+        total_segments: t.total_segments || 0,
+        tier1_verified: 0,
+        tier2_verified: 0,
+        is_transcribed: 0,
+        qa_verified: 0
+      };
+
+      const totalSegs = stats.total_segments || t.total_segments || 0;
+      const isTranscribedCount = stats.is_transcribed || 0;
+      const qaVerifiedCount = stats.qa_verified || 0;
+
+      const isFullyTranscribed = totalSegs > 0 && isTranscribedCount >= totalSegs && isTranscribedCount > 0;
+      const isQAComplete = totalSegs > 0 && qaVerifiedCount >= totalSegs && qaVerifiedCount > 0;
+
+      return {
+        ...c,
+        callId: c.callId,
+        transcriptionCall: t,
+        Segmentation_Done: t.Segmentation_Done,
+        segmentation_qa: t.segmentation_qa,
+        transcription_status: isQAComplete ? 'QA_APPROVED' : (isFullyTranscribed ? 'TRANSCRIPTION_COMPLETED' : 'IN_TRANSCRIPTION'),
+        total_segments: totalSegs,
+        tier1_verified_count: stats.tier1_verified || 0,
+        tier2_verified_count: stats.tier2_verified || 0,
+        is_transcribed_count: isTranscribedCount,
+        qa_verified_count: qaVerifiedCount,
+        isFullyTranscribed,
+        isQAComplete
+      };
+    });
+
+    // Apply status filter matching user specifications
+    if (filterStatus === 'pending_transcription') {
+      results = results.filter(r => (r.is_transcribed_count || 0) < (r.total_segments || 1));
+    } else if (filterStatus === 'pending_review') {
+      results = results.filter(r => (r.is_transcribed_count || 0) > 0 && (r.qa_verified_count || 0) < (r.is_transcribed_count || 0));
+    } else if (filterStatus === 'fully_transcribed') {
+      results = results.filter(r => r.isFullyTranscribed && !r.isQAComplete);
+    } else if (filterStatus === 'qa_reviewed') {
+      results = results.filter(r => r.isQAComplete);
+    }
+
+    const total = results.length;
+    const paginated = results.slice((page - 1) * limit, page * limit);
+
+    res.json({
+      calls: paginated,
+      page,
+      pages: Math.ceil(total / limit) || 1,
+      total
+    });
+  } catch (err) {
+    console.error('GET /qa/transcription-calls error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/admin/qa/calls/:callId/transcription/reset-qa: Unreview/reset all segments for call
+router.post("/qa/calls/:callId/transcription/reset-qa", requireAuth(JWT_SECRET), async (req, res) => {
+  try {
+    const { callId } = req.params;
+    await syncSegmentsFromDisk(callId);
+
+    const resSeg = await TranscriptionSegment.updateMany(
+      { call_id: callId },
+      { $set: { QAVerified: false, qa_verified_by: null, qa_notes: '' } }
+    );
+
+    await TranscriptionCall.updateOne(
+      { call_id: callId },
+      { $set: { qa_verified_segments_count: 0, transcription_status: 'IN_TRANSCRIPTION' } }
+    );
+
+    res.json({
+      success: true,
+      message: `Reset QA verification for call ${callId}`,
+      modifiedSegments: resSeg.modifiedCount
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/admin/qa/calls/:callId/transcription: Fetch full transcription details with word timestamps
+router.get("/qa/calls/:callId/transcription", requireAuth(JWT_SECRET), async (req, res) => {
+  try {
+    const { callId } = req.params;
+    await syncSegmentsFromDisk(callId);
+
+    const callSession = await CallSession.findOne({ callId })
+      .populate("userA", "username speaker_id email")
+      .populate("userB", "username speaker_id email")
+      .populate("topicId", "title")
+      .lean();
+
+    const tCall = await TranscriptionCall.findOne({ call_id: callId }).lean();
+    const segments = await TranscriptionSegment.find({ call_id: callId })
+      .populate("tier1_verified_by", "username email")
+      .populate("tier2_verified_by", "username email")
+      .populate("qa_verified_by", "username email")
+      .sort({ start_ms: 1, start_sec: 1 })
+      .lean();
+
+    const totalSegs = segments.length;
+    const tier1Count = segments.filter(s => s.tier1_text_verified).length;
+    const tier2Count = segments.filter(s => s.tier2_timestamps_verified).length;
+    const transcribedCount = segments.filter(s => s.IsTranscribed).length;
+    const qaCount = segments.filter(s => s.QAVerified).length;
+
+    res.json({
+      callId,
+      callSession,
+      transcriptionCall: tCall,
+      total_segments: totalSegs,
+      tier1_verified_count: tier1Count,
+      tier2_verified_count: tier2Count,
+      transcribed_count: transcribedCount,
+      qa_verified_count: qaCount,
+      segments,
+      audio1Url: `http://localhost:3001/api/admin/qa/calls/${encodeURIComponent(callId)}/recording/speaker1`,
+      audio2Url: `http://localhost:3001/api/admin/qa/calls/${encodeURIComponent(callId)}/recording/speaker2`,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PATCH /api/admin/qa/calls/:callId/transcription/segments/:segmentId: Update single segment transcription & word timestamps
+router.patch("/qa/calls/:callId/transcription/segments/:segmentId", requireAuth(JWT_SECRET), async (req, res) => {
+  try {
+    const { callId, segmentId } = req.params;
+    const { segment_text, words, tier1_text_verified, tier2_timestamps_verified, QAVerified, qa_notes } = req.body;
+
+    const updateFields = {};
+    if (segment_text !== undefined) updateFields.segment_text = segment_text;
+    if (words !== undefined) updateFields.words = words;
+    if (tier1_text_verified !== undefined) {
+      updateFields.tier1_text_verified = Boolean(tier1_text_verified);
+      if (tier1_text_verified) updateFields.tier1_verified_by = req.user?._id;
+    }
+    if (tier2_timestamps_verified !== undefined) {
+      updateFields.tier2_timestamps_verified = Boolean(tier2_timestamps_verified);
+      if (tier2_timestamps_verified) updateFields.tier2_verified_by = req.user?._id;
+    }
+    if (QAVerified !== undefined) {
+      updateFields.QAVerified = Boolean(QAVerified);
+      if (QAVerified) updateFields.qa_verified_by = req.user?._id;
+    }
+    if (qa_notes !== undefined) updateFields.qa_notes = qa_notes;
+
+    const segment = await TranscriptionSegment.findOneAndUpdate(
+      { call_id: callId, segment_id: segmentId },
+      { $set: updateFields },
+      { new: true }
+    );
+
+    if (!segment) {
+      return res.status(404).json({ error: "Segment not found" });
+    }
+
+    // Check overall call status and count verified segments
+    const allSegments = await TranscriptionSegment.find({ call_id: callId }).lean();
+    const totalSegs = allSegments.length;
+    const transcribedCount = allSegments.filter(s => s.IsTranscribed).length;
+    const qaCount = allSegments.filter(s => s.QAVerified).length;
+    const allTranscribed = totalSegs > 0 && transcribedCount >= totalSegs;
+    const allQa = totalSegs > 0 && qaCount >= totalSegs;
+
+    await TranscriptionCall.updateOne(
+      { call_id: callId },
+      {
+        $set: {
+          total_segments: totalSegs,
+          transcribed_segments_count: transcribedCount,
+          qa_verified_segments_count: qaCount,
+          transcription_status: allQa ? 'TRANSCRIPTION_COMPLETED' : (allTranscribed ? 'TRANSCRIPTION_COMPLETED' : 'IN_TRANSCRIPTION')
+        }
+      }
+    );
+
+    res.json({ 
+      success: true, 
+      segment, 
+      total_segments: totalSegs,
+      transcribed_count: transcribedCount,
+      qa_verified_count: qaCount,
+      allTranscribed, 
+      allQa 
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/admin/qa/calls/:callId/transcription/qa-verify-all: Verify all transcription segments for call
+router.post("/qa/calls/:callId/transcription/qa-verify-all", requireAuth(JWT_SECRET), async (req, res) => {
+  try {
+    const { callId } = req.params;
+    const { status, qa_notes } = req.body;
+    const isApproved = status === 'approved' || status === true;
+
+    await TranscriptionSegment.updateMany(
+      { call_id: callId },
+      {
+        $set: {
+          QAVerified: isApproved,
+          qa_verified_by: req.user?._id,
+          qa_notes: qa_notes || ''
+        }
+      }
+    );
+
+    const tCall = await TranscriptionCall.findOneAndUpdate(
+      { call_id: callId },
+      {
+        $set: {
+          transcription_status: isApproved ? 'TRANSCRIPTION_COMPLETED' : 'IN_TRANSCRIPTION'
+        }
+      },
+      { new: true }
+    );
+
+    res.json({ success: true, transcriptionCall: tCall, isApproved });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 router.get("/fix-speaker-ids", async (req, res) => {
     try {
@@ -498,6 +1312,49 @@ const qaCallRouter = express.Router();
 qaCallRouter.use(requireAuth(JWT_SECRET));
 qaCallRouter.use(isAdminOrQA);
 
+// GET /api/admin/qa/segmentation-calls — Retrieves all QA approved calls for Segmentation Panel
+qaCallRouter.get("/segmentation-calls", async (req, res) => {
+    try {
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 20;
+        const skip = (page - 1) * limit;
+
+        const approvedFilter = { callStatus: "approved", adminDeleted: { $ne: true } };
+
+        const [sessions, total] = await Promise.all([
+            CallSession.find(approvedFilter)
+                .populate("userA", "firstname lastname username email speaker_id")
+                .populate("userB", "firstname lastname username email speaker_id")
+                .populate("topicId", "title")
+                .populate("subtopicId", "title")
+                .sort({ updatedAt: -1 })
+                .skip(skip)
+                .limit(limit)
+                .lean(),
+            CallSession.countDocuments(approvedFilter)
+        ]);
+
+        const callIds = sessions.map(s => s.callId);
+        const transcriptionRecords = await TranscriptionCall.find({ call_id: { $in: callIds } }).lean();
+        const transcriptionMap = new Map(transcriptionRecords.map(t => [t.call_id, t]));
+
+        const callsWithSegmentation = sessions.map(s => {
+            const segRecord = transcriptionMap.get(s.callId) || {};
+            return {
+                ...s,
+                Segmentation_Done: segRecord.Segmentation_Done || false,
+                segmentation_qa: segRecord.segmentation_qa || false,
+                total_segments: segRecord.total_segments || 0,
+                asr_status: segRecord.asr_status || 'PENDING'
+            };
+        });
+
+        res.json({ calls: callsWithSegmentation, total, page, pages: Math.ceil(total / limit) });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 // List calls for QA review with pagination
 qaCallRouter.get("/calls", async (req, res) => {
     try {
@@ -640,6 +1497,9 @@ qaCallRouter.patch("/calls/:callId", async (req, res) => {
         call.reviewedAt = new Date();
         call.reviewNotes = notes !== undefined ? (notes || null) : call.reviewNotes;
         await call.save();
+        if (call.callStatus === 'approved') {
+            await syncToSegmentationPipeline(call);
+        }
 
         res.json({ message: action ? `Call ${action}` : "Notes saved", callId: call.callId, callStatus: call.callStatus });
     } catch (e) {
@@ -773,6 +1633,10 @@ async function applyRecordingDecision(call, userId, action, reviewerId, note, is
     call.callStatus = computeCallStatus(call.recordingAStatus, call.recordingBStatus);
     call.reviewedBy = reviewerId;
     call.reviewedAt = new Date();
+
+    if (call.callStatus === 'approved') {
+        await syncToSegmentationPipeline(call);
+    }
 
     if (reviewerId) {
         const qaUser = await User.findById(reviewerId).select("perCallPayrate").lean();
@@ -2049,7 +2913,37 @@ router.get("/calls", async (req, res) => {
         if (req.query.status) {
             if (req.query.status === "logs" || req.query.status === "reviewed") {
                 query.callStatus = { $in: ["approved", "rejected"] };
-            } else if (["pending", "approved", "rejected"].includes(req.query.status)) {
+            } else if (req.query.status === "rejected") {
+                if (req.query.rejectedSubTab === "monologued") {
+                    query.$or = [
+                        { recordingAMonologueStatus: "transcribed" },
+                        { recordingBMonologueStatus: "transcribed" },
+                        { isMonologued: true }
+                    ];
+                } else if (req.query.rejectedSubTab === "pending_rejected") {
+                    query.$and = [
+                        {
+                            $or: [
+                                { callStatus: "rejected" },
+                                { recordingAStatus: "rejected" },
+                                { recordingBStatus: "rejected" }
+                            ]
+                        },
+                        {
+                            $or: [
+                                { recordingAMonologueStatus: { $in: ["pending", null] } },
+                                { recordingBMonologueStatus: { $in: ["pending", null] } }
+                            ]
+                        }
+                    ];
+                } else {
+                    query.$or = [
+                        { callStatus: "rejected" },
+                        { recordingAStatus: "rejected" },
+                        { recordingBStatus: "rejected" }
+                    ];
+                }
+            } else if (["pending", "approved"].includes(req.query.status)) {
                 query.callStatus = req.query.status;
             } else {
                 query.endReason = req.query.status;
@@ -2130,7 +3024,127 @@ router.post("/calls/purge-rejected", async (req, res) => {
     }
 });
 
+// ===== TRANSCRIBE REJECTED RECORDING AS MONOLOGUE =====
+router.post("/calls/:callId/transcribe-monologue", async (req, res) => {
+    try {
+        const { callId } = req.params;
+        const { speaker } = req.body; // 'userA' or 'userB'
 
+        const call = await CallSession.findOne({ callId })
+            .populate("userA", "firstname lastname username email speaker_id")
+            .populate("userB", "firstname lastname username email speaker_id");
+
+        if (!call) return res.status(404).json({ error: "Call not found" });
+
+        let chosenUser;
+        let recordingFile;
+
+        if (speaker === "userA") {
+            chosenUser = call.userA;
+            recordingFile = call.recordingAFile;
+            call.recordingAMonologueStatus = 'transcribed';
+        } else if (speaker === "userB") {
+            chosenUser = call.userB;
+            recordingFile = call.recordingBFile;
+            call.recordingBMonologueStatus = 'transcribed';
+        } else {
+            return res.status(400).json({ error: "Invalid speaker selected. Must be userA or userB." });
+        }
+
+        if (!recordingFile) {
+            return res.status(400).json({ error: `No audio recording found for ${speaker}.` });
+        }
+
+        // Mark CallSession as monologued
+        call.isMonologued = true;
+        const monologueCallId = `${call.callId}_${speaker}`;
+
+        call.monologueDetails = {
+            ...(call.monologueDetails || {}),
+            [speaker]: {
+                status: 'transcribed',
+                sentAt: new Date(),
+                sentBy: req.user?._id || null,
+                speakerName: chosenUser?.username || speaker,
+                transcriptionCallId: monologueCallId
+            }
+        };
+        call.markModified('monologueDetails');
+        await call.save();
+
+        // Create or update TranscriptionCall record for monologue queue
+        let transDoc = await TranscriptionCall.findOne({ call_id: monologueCallId });
+        if (!transDoc) {
+            transDoc = new TranscriptionCall({
+                call_id: monologueCallId,
+                audio1Name: recordingFile,
+                audio2Name: '',
+                isMonologue: true,
+                monologueSpeaker: chosenUser?.username || speaker,
+                ready_for_transcription: true,
+                transcription_status: 'PENDING_TRANSCRIPTION',
+                Segmentation_Done: true,
+            });
+            await transDoc.save();
+        }
+
+        res.json({
+            success: true,
+            message: `Audio for ${chosenUser?.username || speaker} successfully sent for monologue transcription!`,
+            call,
+            monologueCallId
+        });
+    } catch (error) {
+        console.error("Error sending monologue transcription:", error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// ===== REJECT RECORDING AS MONOLOGUE =====
+router.post("/calls/:callId/reject-monologue", async (req, res) => {
+    try {
+        const { callId } = req.params;
+        const { speaker } = req.body; // 'userA' or 'userB'
+
+        const call = await CallSession.findOne({ callId })
+            .populate("userA", "firstname lastname username email speaker_id")
+            .populate("userB", "firstname lastname username email speaker_id");
+
+        if (!call) return res.status(404).json({ error: "Call not found" });
+
+        let chosenUser;
+        if (speaker === "userA") {
+            chosenUser = call.userA;
+            call.recordingAMonologueStatus = 'rejected';
+        } else if (speaker === "userB") {
+            chosenUser = call.userB;
+            call.recordingBMonologueStatus = 'rejected';
+        } else {
+            return res.status(400).json({ error: "Invalid speaker selected. Must be userA or userB." });
+        }
+
+        call.monologueDetails = {
+            ...(call.monologueDetails || {}),
+            [speaker]: {
+                status: 'rejected',
+                rejectedAt: new Date(),
+                rejectedBy: req.user?._id || null,
+                speakerName: chosenUser?.username || speaker
+            }
+        };
+        call.markModified('monologueDetails');
+        await call.save();
+
+        res.json({
+            success: true,
+            message: `Recording for ${chosenUser?.username || speaker} marked as rejected from monologue transcription.`,
+            call
+        });
+    } catch (error) {
+        console.error("Error rejecting monologue recording:", error);
+        res.status(500).json({ error: error.message });
+    }
+});
 
 // Get all approved calls that are NOT yet downloaded by the current admin
 router.get("/calls/exportable", async (req, res) => {
@@ -4630,6 +5644,9 @@ router.get("/phrases/download-company", async (req, res) => {
                     appRecords.push({
                         app,
                         speakerId: u.speaker_id || `spk_unknown_${u._id}`,
+                        userFirstname: u.firstname || "",
+                        userLastname: u.lastname || "",
+                        username: u.username || "",
                         language: String(app.languageCode || "unknown").toLowerCase().trim()
                     });
                 }
@@ -4668,7 +5685,9 @@ router.get("/phrases/download-company", async (req, res) => {
             for (const record of appRecords) {
                 const app = record.app;
                 const baseFileName = app.recordingFile.split("/").pop().replace("local:", "");
-                const destFileName = `${record.speakerId}__${companyFolder}__${record.language}.wav`;
+                const rawName = [record.userFirstname, record.userLastname].filter(Boolean).join("_").trim() || record.username || "applicant";
+                const cleanName = rawName.replace(/[^a-zA-Z0-9_\-]/g, "");
+                const destFileName = `${cleanName}_${record.speakerId}.wav`;
                 const zipPath = `${record.language}/${destFileName}`;
 
                 if (app.recordingFile.startsWith("local:")) {
@@ -4759,6 +5778,8 @@ router.get("/phrases/download-company", async (req, res) => {
         const languageUtterances = {};
         const languageSpeakers = {};
 
+        const usedFolderNames = new Set();
+
         // Process ONLY approved phrase records, organized by language
         for (const phrase of approvedPhrases) {
             const key = phrase.audioFile;
@@ -4789,11 +5810,24 @@ router.get("/phrases/download-company", async (req, res) => {
             }
 
             // Compute flexible/custom filename from namingPattern
+            const firstName = contributor.firstname ? String(contributor.firstname).trim() : (contributor.username || "");
+            const lastName = contributor.lastname ? String(contributor.lastname).trim() : "";
+            const recordingDate = phrase.recordedAt ? new Date(phrase.recordedAt).toISOString().split("T")[0] : "";
+            const genderVal = contributor.gender || "unknown";
+
             let computedName = filenamePattern
                 .replace(/{phraseId}/g, phraseId || "")
+                .replace(/{phrase_id}/g, phraseId || "")
                 .replace(/{language}/g, phrase.language || "")
                 .replace(/{speaker_id}/g, speakerId || `spk_${contributor._id || "unknown"}`)
-                .replace(/{gender}/g, contributor.gender || "unknown")
+                .replace(/{first_name}/g, firstName)
+                .replace(/{firstname}/g, firstName)
+                .replace(/{last_name}/g, lastName)
+                .replace(/{lastname}/g, lastName)
+                .replace(/{recording_date}/g, recordingDate)
+                .replace(/{recorded_date}/g, recordingDate)
+                .replace(/{date}/g, recordingDate)
+                .replace(/{gender}/g, genderVal)
                 .replace(/{freq}/g, phrase.freq !== undefined && phrase.freq !== null ? String(phrase.freq) : "")
                 .replace(/{spkfreq}/g, spkfreq)
                 .replace(/{baseName}/g, baseName)
@@ -4860,7 +5894,7 @@ router.get("/phrases/download-company", async (req, res) => {
             };
 
             const utterance = {
-                id: phrase.phraseId || folderName,
+                id: folderName,
                 path: `${folderName}.wav`,
                 language: phrase.language,
                 script_type: phrase.script_type || "orthographic",
@@ -4896,9 +5930,12 @@ router.get("/phrases/download-company", async (req, res) => {
                 const baseName = cleanKey.substring(cleanKey.lastIndexOf("/") + 1);
 
                 const localCandidates = [
+                    path.join(process.cwd(), cleanKey),
                     path.join(process.cwd(), "uploads", cleanKey),
                     path.join(process.cwd(), "uploads", "phrases", companyFolder, baseName),
                     path.join(process.cwd(), "uploads", "phrases", cleanKey),
+                    path.join(process.cwd(), "recordings", baseName),
+                    path.join(process.cwd(), "recordings", cleanKey),
                     path.join(process.cwd(), "recordings", "phrases", baseName),
                     path.join(process.cwd(), "recordings", "temp", baseName),
                     path.join(process.cwd(), "uploads", "phrases", baseName),
@@ -5469,19 +6506,75 @@ router.get("/companies/:id/phrase-workloads", async (req, res) => {
 
         const langStats = await Phrase.aggregate([
             { $match: { companyId: { $regex: companyRegex } } },
-            { $group: { _id: { $toLower: "$language" }, count: { $sum: 1 } } },
+            { 
+              $group: { 
+                _id: { $toLower: "$language" }, 
+                count: { $sum: 1 },
+                reservedCount: {
+                  $sum: {
+                    $cond: [
+                      {
+                        $or: [
+                          { $and: [{ $ne: ["$assigned_speaker_id", null] }, { $ne: ["$assigned_speaker_id", ""] }] },
+                          { $and: [{ $eq: ["$status", "pending"] }, { $ne: ["$speaker_id", null] }, { $ne: ["$speaker_id", ""] }] }
+                        ]
+                      },
+                      1,
+                      0
+                    ]
+                  }
+                },
+                openPoolCount: {
+                  $sum: {
+                    $cond: [
+                      {
+                        $and: [
+                          { $or: [{ $eq: ["$assigned_speaker_id", null] }, { $eq: ["$assigned_speaker_id", ""] }] },
+                          { $or: [{ $ne: ["$status", "pending"] }, { $eq: ["$speaker_id", null] }, { $eq: ["$speaker_id", ""] }] }
+                        ]
+                      },
+                      1,
+                      0
+                    ]
+                  }
+                },
+                pendingCount: { $sum: { $cond: [{ $eq: ["$status", "pending"] }, 1, 0] } },
+                recordedCount: { $sum: { $cond: [{ $eq: ["$status", "recorded"] }, 1, 0] } },
+                approvedCount: { $sum: { $cond: [{ $eq: ["$status", "approved"] }, 1, 0] } },
+              } 
+            },
             { $sort: { _id: 1 } }
         ]);
 
         const languages = langStats.map(s => ({
             code: s._id,
             name: s._id.charAt(0).toUpperCase() + s._id.slice(1),
-            count: s.count
+            count: s.count || 0,
+            reservedCount: s.reservedCount || 0,
+            openPoolCount: s.openPoolCount || 0,
+            pendingCount: s.pendingCount || 0,
+            recordedCount: s.recordedCount || 0,
+            approvedCount: s.approvedCount || 0
         }));
+
+        const totalPhrases = languages.reduce((sum, l) => sum + l.count, 0);
+        const totalReserved = languages.reduce((sum, l) => sum + l.reservedCount, 0);
+        const totalOpenPool = languages.reduce((sum, l) => sum + l.openPoolCount, 0);
+        const totalPending = languages.reduce((sum, l) => sum + l.pendingCount, 0);
+        const totalRecorded = languages.reduce((sum, l) => sum + l.recordedCount, 0);
+        const totalApproved = languages.reduce((sum, l) => sum + l.approvedCount, 0);
 
         res.json({
             company,
-            languages
+            languages,
+            summary: {
+                totalPhrases,
+                totalReserved,
+                totalOpenPool,
+                totalPending,
+                totalRecorded,
+                totalApproved
+            }
         });
     } catch (e) {
         res.status(500).json({ error: e.message });
@@ -5496,21 +6589,112 @@ router.get("/companies/:id/phrase-workloads/:language", async (req, res) => {
         const companyFolder = company.name.replace(/[^a-zA-Z0-9_\-\ ]/g, "").trim();
         const companyRegex = new RegExp(`^${companyFolder}(_downloaded)?$`, "i");
         const language = String(req.params.language).trim().toLowerCase();
-        const filter = { 
+        const baseFilter = { 
             companyId: { $regex: companyRegex },
             language: { $regex: new RegExp(`^${language}$`, "i") }
         };
 
+        const filter = { ...baseFilter };
+
+        if (req.query.allocation === "reserved") {
+            filter.$or = [
+                { assigned_speaker_id: { $ne: null, $ne: "" } },
+                { status: "pending", speaker_id: { $ne: null, $ne: "" } }
+            ];
+        } else if (req.query.allocation === "open") {
+            filter.$and = filter.$and || [];
+            filter.$and.push({
+                $or: [
+                    { assigned_speaker_id: null },
+                    { assigned_speaker_id: "" },
+                    { assigned_speaker_id: { $exists: false } }
+                ]
+            });
+            filter.$and.push({
+                $or: [
+                    { status: { $ne: "pending" } },
+                    { speaker_id: null },
+                    { speaker_id: "" },
+                    { speaker_id: { $exists: false } }
+                ]
+            });
+        }
+
+        if (req.query.status && req.query.status !== "all") {
+            filter.status = req.query.status;
+        }
+
         if (req.query.search) {
             const regex = new RegExp(req.query.search.trim(), "i");
-            filter.$or = [
+            const searchOr = [
                 { phraseId: regex },
                 { text: regex },
                 { emotion: regex },
                 { style: regex },
-                { intent: regex }
+                { intent: regex },
+                { assigned_speaker_id: regex },
+                { speaker_id: regex }
             ];
+            if (filter.$or) {
+                filter.$and = filter.$and || [];
+                filter.$and.push({ $or: filter.$or });
+                delete filter.$or;
+                filter.$and.push({ $or: searchOr });
+            } else {
+                filter.$or = searchOr;
+            }
         }
+
+        // Aggregate language summary stats
+        const statsAgg = await Phrase.aggregate([
+            { $match: baseFilter },
+            {
+                $group: {
+                    _id: null,
+                    totalCount: { $sum: 1 },
+                    reservedCount: {
+                        $sum: {
+                            $cond: [
+                                {
+                                    $or: [
+                                        { $and: [{ $ne: ["$assigned_speaker_id", null] }, { $ne: ["$assigned_speaker_id", ""] }] },
+                                        { $and: [{ $eq: ["$status", "pending"] }, { $ne: ["$speaker_id", null] }, { $ne: ["$speaker_id", ""] }] }
+                                    ]
+                                },
+                                1,
+                                0
+                            ]
+                        }
+                    },
+                    openPoolCount: {
+                        $sum: {
+                            $cond: [
+                                {
+                                    $and: [
+                                        { $or: [{ $eq: ["$assigned_speaker_id", null] }, { $eq: ["$assigned_speaker_id", ""] }] },
+                                        { $or: [{ $ne: ["$status", "pending"] }, { $eq: ["$speaker_id", null] }, { $eq: ["$speaker_id", ""] }] }
+                                    ]
+                                },
+                                1,
+                                0
+                            ]
+                        }
+                    },
+                    pendingCount: { $sum: { $cond: [{ $eq: ["$status", "pending"] }, 1, 0] } },
+                    recordedCount: { $sum: { $cond: [{ $eq: ["$status", "recorded"] }, 1, 0] } },
+                    approvedCount: { $sum: { $cond: [{ $eq: ["$status", "approved"] }, 1, 0] } },
+                }
+            }
+        ]);
+
+        const langSummary = statsAgg[0] || {
+            totalCount: 0,
+            reservedCount: 0,
+            openPoolCount: 0,
+            pendingCount: 0,
+            recordedCount: 0,
+            approvedCount: 0
+        };
 
         const page = Math.max(1, parseInt(req.query.page) || 1);
         const limit = req.query.limit === "all" ? 100000 : Math.max(1, parseInt(req.query.limit) || 50);
@@ -5529,7 +6713,8 @@ router.get("/companies/:id/phrase-workloads/:language", async (req, res) => {
             phrases,
             totalPhrases,
             page,
-            totalPages: Math.ceil(totalPhrases / limit)
+            totalPages: Math.ceil(totalPhrases / limit),
+            summary: langSummary
         });
     } catch (e) {
         res.status(500).json({ error: e.message });

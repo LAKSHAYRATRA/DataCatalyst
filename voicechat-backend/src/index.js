@@ -9,8 +9,8 @@ process.on("unhandledRejection", (reason, promise) => {
 import http from "http";
 import path from "path";
 import crypto from "crypto";
-import fs from "fs";
 import express from "express";
+import mongoose from "mongoose";
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import multer from "multer";
@@ -1653,8 +1653,20 @@ try {
     { $set: { hourlyPhrasePayrate: 8.00 } }
   );
   console.log("QA Payrate auto-migration completed on boot.");
+
+  // Auto-reset call aac512d3 segments to unreviewed
+  const targetCallId = "aac512d3-5af2-4066-a5b5-ccba4539c718";
+  const resSeg = await mongoose.connection.collection("transcriptionsegments").updateMany(
+    { call_id: { $regex: targetCallId, $options: "i" } },
+    { $set: { QAVerified: false, qa_verified_by: null, qa_notes: "" } }
+  );
+  await mongoose.connection.collection("transcriptioncalls").updateMany(
+    { call_id: { $regex: targetCallId, $options: "i" } },
+    { $set: { qa_verified_segments_count: 0, transcription_status: "IN_TRANSCRIPTION" } }
+  );
+  console.log(`Reset ${resSeg.modifiedCount} segments of call ${targetCallId} to unreviewed.`);
 } catch (e) {
-  console.error("QA Payrate auto-migration error:", e.message);
+  console.error("QA Payrate / Segment reset error:", e.message);
 }
 
 import { startPurgeIntroRecordingsCron } from "./jobs/purgeIntroRecordings.js";

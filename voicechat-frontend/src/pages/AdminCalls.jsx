@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState, useRef, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { apiGet, apiPostJson, apiDeleteJson } from "../lib/api.js";
 import AdminNav from "../components/AdminNav.jsx";
@@ -49,9 +49,11 @@ function mergeReviewFields(call, updatedCall) {
 
 export default function AdminCalls() {
     const userInfo = getUserInfo();
+    const isAdmin = Boolean(userInfo?.isAdmin || userInfo?.role === 'admin');
     const navigate = useNavigate();
     const [calls, setCalls] = useState([]);
     const [statusFilter, setStatusFilter] = useState("");
+    const [rejectedSubTab, setRejectedSubTab] = useState("pending_rejected");
     const [pagination, setPagination] = useState({ page: 1, limit: 20, total: 0, pages: 0 });
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
@@ -74,19 +76,69 @@ export default function AdminCalls() {
 
     const [selectedCallIds, setSelectedCallIds] = useState([]);
     const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+    const [isTranscribingMonologue, setIsTranscribingMonologue] = useState({});
 
     useEffect(() => {
         setSelectedCallIds([]);
         loadCalls();
-    }, [pagination.page, statusFilter]);
+    }, [pagination.page, statusFilter, rejectedSubTab]);
 
-    const isAllSelected = calls.length > 0 && calls.every(c => selectedCallIds.includes(c.callId));
+    const displayCalls = useMemo(() => {
+        if (statusFilter === "rejected" && rejectedSubTab === "monologued") {
+            const monologueItems = [];
+            calls.forEach(call => {
+                const hasA = call.recordingAMonologueStatus === 'transcribed' || (call.isMonologued && call.monologueDetails?.speakerUsed === 'userA') || (call.isMonologued && call.monologueDetails?.userA?.status === 'transcribed');
+                const hasB = call.recordingBMonologueStatus === 'transcribed' || (call.isMonologued && call.monologueDetails?.speakerUsed === 'userB') || (call.isMonologued && call.monologueDetails?.userB?.status === 'transcribed');
+                
+                if (hasA) {
+                    monologueItems.push({
+                        ...call,
+                        monologueUniqueKey: `${call.callId}_userA`,
+                        monologueSpeaker: 'userA',
+                        monologueSpeakerLabel: 'Speaker A',
+                        monologueUser: call.userA,
+                        monologueAudioFile: call.recordingAFile,
+                        monologueStatus: 'transcribed',
+                        monologueDetailsItem: call.monologueDetails?.userA || call.monologueDetails
+                    });
+                }
+                if (hasB) {
+                    monologueItems.push({
+                        ...call,
+                        monologueUniqueKey: `${call.callId}_userB`,
+                        monologueSpeaker: 'userB',
+                        monologueSpeakerLabel: 'Speaker B',
+                        monologueUser: call.userB,
+                        monologueAudioFile: call.recordingBFile,
+                        monologueStatus: 'transcribed',
+                        monologueDetailsItem: call.monologueDetails?.userB || call.monologueDetails
+                    });
+                }
+                if (!hasA && !hasB && call.isMonologued) {
+                    monologueItems.push({
+                        ...call,
+                        monologueUniqueKey: `${call.callId}_monologue`,
+                        monologueSpeaker: call.monologueDetails?.speakerUsed || 'userA',
+                        monologueSpeakerLabel: call.monologueDetails?.speakerUsed === 'userB' ? 'Speaker B' : 'Speaker A',
+                        monologueUser: call.monologueDetails?.speakerUsed === 'userB' ? call.userB : call.userA,
+                        monologueAudioFile: call.monologueDetails?.speakerUsed === 'userB' ? call.recordingBFile : call.recordingAFile,
+                        monologueStatus: 'transcribed',
+                        monologueDetailsItem: call.monologueDetails
+                    });
+                }
+            });
+            return monologueItems;
+        }
+        return calls;
+    }, [calls, statusFilter, rejectedSubTab]);
+
+    const isAllSelected = displayCalls.length > 0 && displayCalls.every(c => selectedCallIds.includes(c.monologueUniqueKey || c.callId));
 
     const toggleSelectAll = () => {
         if (isAllSelected) {
             setSelectedCallIds([]);
         } else {
-            setSelectedCallIds(calls.map(c => c.callId));
+            setSelectedCallIds(displayCalls.map(c => c.monologueUniqueKey || c.callId));
         }
     };
 
@@ -100,7 +152,8 @@ export default function AdminCalls() {
         try {
             setLoading(true);
             const statusParam = statusFilter ? `&status=${statusFilter}` : "";
-            const data = await apiGet(`/api/admin/calls?page=${pagination.page}&limit=${pagination.limit}${statusParam}`);
+            const subTabParam = (statusFilter === "rejected" && isAdmin && rejectedSubTab) ? `&rejectedSubTab=${rejectedSubTab}` : "";
+            const data = await apiGet(`/api/admin/calls?page=${pagination.page}&limit=${pagination.limit}${statusParam}${subTabParam}`);
             setCalls(data.calls);
             setPagination(data.pagination);
         } catch (e) {
@@ -659,6 +712,103 @@ export default function AdminCalls() {
         }
     }
 
+    async function handleSendAsMonologue(callId, speaker, username) {
+        const speakerLabel = speaker === "userA" ? "Speaker A" : "Speaker B";
+        const result = await Swal.fire({
+            title: 'Transcribe as Monologue?',
+            html: `Send <strong>${username || speakerLabel}</strong>'s recording for individual monologue transcription?`,
+            icon: 'question',
+            showCancelButton: true,
+            confirmButtonColor: '#9333ea',
+            cancelButtonColor: '#404040',
+            confirmButtonText: 'Yes, Transcribe Monologue'
+        });
+
+        if (!result.isConfirmed) return;
+
+        const key = `${callId}_${speaker}`;
+        try {
+            setIsTranscribingMonologue(prev => ({ ...prev, [key]: true }));
+            const data = await apiPostJson(`/api/admin/calls/${callId}/transcribe-monologue`, { speaker });
+            
+            Swal.fire({
+                icon: 'success',
+                title: 'Sent for Transcription!',
+                text: data.message || `Audio for ${username || speakerLabel} is now in the monologue transcription queue.`,
+                timer: 2000,
+                showConfirmButton: false
+            });
+
+            if (selectedCall?.callId === callId) {
+                setSelectedCall(prev => ({
+                    ...prev,
+                    isMonologued: true,
+                    recordingAMonologueStatus: speaker === 'userA' ? 'transcribed' : prev.recordingAMonologueStatus,
+                    recordingBMonologueStatus: speaker === 'userB' ? 'transcribed' : prev.recordingBMonologueStatus,
+                    monologueDetails: data.call?.monologueDetails || prev.monologueDetails
+                }));
+            }
+            await loadCalls();
+        } catch (err) {
+            Swal.fire({
+                icon: 'error',
+                title: 'Action Failed',
+                text: err.message || 'Could not send audio for monologue transcription.',
+                confirmButtonColor: '#ea580c'
+            });
+        } finally {
+            setIsTranscribingMonologue(prev => ({ ...prev, [key]: false }));
+        }
+    }
+
+    async function handleRejectAsMonologue(callId, speaker, username) {
+        const speakerLabel = speaker === "userA" ? "Speaker A" : "Speaker B";
+        const result = await Swal.fire({
+            title: 'Reject as Monologue?',
+            text: `Dismiss ${username || speakerLabel}'s recording from monologue transcription?`,
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#dc2626',
+            cancelButtonColor: '#404040',
+            confirmButtonText: 'Yes, Reject Monologue'
+        });
+
+        if (!result.isConfirmed) return;
+
+        const key = `${callId}_${speaker}`;
+        try {
+            setIsTranscribingMonologue(prev => ({ ...prev, [key]: true }));
+            const data = await apiPostJson(`/api/admin/calls/${callId}/reject-monologue`, { speaker });
+            
+            Swal.fire({
+                icon: 'info',
+                title: 'Monologue Dismissed',
+                text: data.message || `Recording for ${username || speakerLabel} will not be monologued.`,
+                timer: 2000,
+                showConfirmButton: false
+            });
+
+            if (selectedCall?.callId === callId) {
+                setSelectedCall(prev => ({
+                    ...prev,
+                    recordingAMonologueStatus: speaker === 'userA' ? 'rejected' : prev.recordingAMonologueStatus,
+                    recordingBMonologueStatus: speaker === 'userB' ? 'rejected' : prev.recordingBMonologueStatus,
+                    monologueDetails: data.call?.monologueDetails || prev.monologueDetails
+                }));
+            }
+            await loadCalls();
+        } catch (err) {
+            Swal.fire({
+                icon: 'error',
+                title: 'Action Failed',
+                text: err.message || 'Could not reject monologue recording.',
+                confirmButtonColor: '#ea580c'
+            });
+        } finally {
+            setIsTranscribingMonologue(prev => ({ ...prev, [key]: false }));
+        }
+    }
+
     async function handlePurgeRejected() {
         const result = await Swal.fire({
             title: 'Purge Rejected Recordings?',
@@ -1052,12 +1202,63 @@ export default function AdminCalls() {
                         </div>
 
                         {statusFilter === "rejected" && (
-                            <div className="flex justify-end mb-4 animate-in fade-in slide-in-from-top-2 duration-200">
+                            <div className="flex flex-wrap items-center justify-between gap-3 mb-4 p-3 bg-neutral-800/80 border border-neutral-700/80 rounded-xl animate-in fade-in slide-in-from-top-2 duration-200">
+                                {isAdmin ? (
+                                    <div className="flex flex-wrap items-center gap-2">
+                                        <span className="text-xs font-bold text-neutral-400 uppercase tracking-wider mr-1">
+                                            Rejected View:
+                                        </span>
+                                        <button
+                                            onClick={() => {
+                                                setRejectedSubTab("pending_rejected");
+                                                setPagination(prev => ({ ...prev, page: 1 }));
+                                            }}
+                                            className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${
+                                                rejectedSubTab === "pending_rejected"
+                                                    ? "bg-amber-600 text-white shadow-md shadow-amber-950/40"
+                                                    : "bg-neutral-900 text-neutral-400 hover:text-white border border-neutral-700"
+                                            }`}
+                                        >
+                                            <span>⏳ Pending Rejected</span>
+                                        </button>
+                                        <button
+                                            onClick={() => {
+                                                setRejectedSubTab("monologued");
+                                                setPagination(prev => ({ ...prev, page: 1 }));
+                                            }}
+                                            className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${
+                                                rejectedSubTab === "monologued"
+                                                    ? "bg-purple-600 text-white shadow-md shadow-purple-950/40"
+                                                    : "bg-neutral-900 text-neutral-400 hover:text-white border border-neutral-700"
+                                            }`}
+                                        >
+                                            <span>🎙️ Monologued</span>
+                                        </button>
+                                        <button
+                                            onClick={() => {
+                                                setRejectedSubTab("");
+                                                setPagination(prev => ({ ...prev, page: 1 }));
+                                            }}
+                                            className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${
+                                                rejectedSubTab === ""
+                                                    ? "bg-neutral-600 text-white shadow-md"
+                                                    : "bg-neutral-900 text-neutral-400 hover:text-white border border-neutral-700"
+                                            }`}
+                                        >
+                                            <span>All Rejected</span>
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <div className="text-xs text-neutral-400 font-medium">
+                                        Viewing Rejected Calls
+                                    </div>
+                                )}
+
                                 <button
                                     onClick={handlePurgeRejected}
-                                    className="inline-flex items-center px-4 py-2.5 bg-red-600 hover:bg-red-700 text-white text-sm font-semibold rounded-xl shadow-lg shadow-red-950/20 transition-all transform active:scale-95 border border-red-500/30"
+                                    className="inline-flex items-center px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold rounded-lg shadow-md shadow-red-950/20 transition-all transform active:scale-95 border border-red-500/30 ml-auto"
                                 >
-                                    <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <svg className="w-3.5 h-3.5 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                                     </svg>
                                     Delete All Rejected Calls
@@ -1127,6 +1328,31 @@ export default function AdminCalls() {
                                                     <th className="hidden lg:table-cell px-2.5 py-2.5 text-left text-xs font-semibold text-neutral-300 uppercase tracking-tight">Date</th>
                                                     <th className="sticky right-0 bg-neutral-700 z-20 px-3 py-2.5 text-left text-xs font-bold text-warning-400 uppercase tracking-tight shadow-[-4px_0_10px_rgba(0,0,0,0.4)]">Actions</th>
                                                 </>
+                                            ) : (statusFilter === "rejected" && rejectedSubTab === "monologued") ? (
+                                                <>
+                                                    <th className="px-2.5 py-2.5 text-left text-xs font-semibold text-neutral-300 uppercase tracking-tight">Call ID</th>
+                                                    <th className="px-2.5 py-2.5 text-left text-xs font-semibold text-neutral-300 uppercase tracking-tight">Monologue Speaker</th>
+                                                    <th className="px-2.5 py-2.5 text-left text-xs font-semibold text-neutral-300 uppercase tracking-tight">Speaker ID</th>
+                                                    <th className="hidden md:table-cell px-2.5 py-2.5 text-left text-xs font-semibold text-neutral-300 uppercase tracking-tight">Topic</th>
+                                                    <th className="hidden md:table-cell px-2.5 py-2.5 text-left text-xs font-semibold text-neutral-300 uppercase tracking-tight">Language</th>
+                                                    <th className="px-2.5 py-2.5 text-left text-xs font-semibold text-neutral-300 uppercase tracking-tight">Duration</th>
+                                                    <th className="px-2.5 py-2.5 text-left text-xs font-bold text-purple-400 uppercase tracking-tight">Monologue Status</th>
+                                                    <th className="sticky right-0 bg-neutral-700 z-20 px-3 py-2.5 text-left text-xs font-bold text-warning-400 uppercase tracking-tight shadow-[-4px_0_10px_rgba(0,0,0,0.4)]">Actions</th>
+                                                </>
+                                            ) : statusFilter === "rejected" ? (
+                                                <>
+                                                    <th className="px-2.5 py-2.5 text-left text-xs font-semibold text-neutral-300 uppercase tracking-tight">Call ID</th>
+                                                    <th className="px-2.5 py-2.5 text-left text-xs font-semibold text-neutral-300 uppercase tracking-tight">Speakers & Verdict</th>
+                                                    <th className="hidden md:table-cell px-2.5 py-2.5 text-left text-xs font-semibold text-neutral-300 uppercase tracking-tight">Topic</th>
+                                                    <th className="hidden md:table-cell px-2.5 py-2.5 text-left text-xs font-semibold text-neutral-300 uppercase tracking-tight">Language</th>
+                                                    <th className="px-2.5 py-2.5 text-left text-xs font-semibold text-neutral-300 uppercase tracking-tight">Duration</th>
+                                                    {isAdmin ? (
+                                                        <th className="px-2.5 py-2.5 text-left text-xs font-bold text-purple-400 uppercase tracking-tight">Monologue Status</th>
+                                                    ) : (
+                                                        <th className="px-2.5 py-2.5 text-left text-xs font-semibold text-neutral-300 uppercase tracking-tight">Verdict</th>
+                                                    )}
+                                                    <th className="sticky right-0 bg-neutral-700 z-20 px-3 py-2.5 text-left text-xs font-bold text-warning-400 uppercase tracking-tight shadow-[-4px_0_10px_rgba(0,0,0,0.4)]">Actions</th>
+                                                </>
                                             ) : (
                                                 <>
                                                     <th className="px-2.5 py-2.5 text-left text-xs font-semibold text-neutral-300 uppercase tracking-tight">Call ID</th>
@@ -1143,13 +1369,15 @@ export default function AdminCalls() {
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-neutral-700">
-                                        {calls.map((call) => (
-                                            <tr key={call.callId} className={`group hover:bg-neutral-700/50 transition-colors ${selectedCallIds.includes(call.callId) ? 'bg-warning-950/20' : ''}`}>
+                                        {displayCalls.map((call) => {
+                                            const rowKey = call.monologueUniqueKey || call.callId;
+                                            return (
+                                            <tr key={rowKey} className={`group hover:bg-neutral-700/50 transition-colors ${selectedCallIds.includes(rowKey) ? 'bg-warning-950/20' : ''}`}>
                                                 <td className="w-8 px-2 py-2 text-center">
                                                     <input
                                                         type="checkbox"
-                                                        checked={selectedCallIds.includes(call.callId)}
-                                                        onChange={() => toggleSelectCall(call.callId)}
+                                                        checked={selectedCallIds.includes(rowKey)}
+                                                        onChange={() => toggleSelectCall(rowKey)}
                                                         className="w-3.5 h-3.5 rounded accent-warning-500 cursor-pointer"
                                                     />
                                                 </td>
@@ -1214,6 +1442,98 @@ export default function AdminCalls() {
                                                                 {call.reviewedAt ? formatDate(call.reviewedAt) : formatDate(call.startedAt)}
                                                             </div>
                                                         </td>
+                                                    </>
+                                                ) : (statusFilter === "rejected" && rejectedSubTab === "monologued") ? (
+                                                    <>
+                                                        <td className="px-2.5 py-2 whitespace-nowrap">
+                                                            <div className="text-xs font-mono text-neutral-300">{call.callId.slice(0, 8)}...</div>
+                                                            <div className="text-[10px] text-purple-400 font-mono font-semibold">[{call.monologueSpeakerLabel}]</div>
+                                                        </td>
+                                                        <td className="px-2.5 py-2">
+                                                            <div className="text-xs text-white font-semibold flex items-center gap-1.5">
+                                                                <span>🎙️</span>
+                                                                <span>{call.monologueUser?.username || "Unknown"}</span>
+                                                            </div>
+                                                            <div className="text-[10px] text-neutral-400">
+                                                                {call.monologueUser?.email || ""}
+                                                            </div>
+                                                        </td>
+                                                        <td className="px-2.5 py-2 whitespace-nowrap">
+                                                            <div className="text-xs font-mono text-neutral-300">{call.monologueUser?.speaker_id || "—"}</div>
+                                                        </td>
+                                                        <td className="hidden md:table-cell px-2.5 py-2">
+                                                            <div className="text-xs font-medium text-white max-w-[150px] truncate" title={call.subtopicId?.title}>
+                                                                {call.subtopicId?.title || "—"}
+                                                            </div>
+                                                        </td>
+                                                        <td className="hidden md:table-cell px-2.5 py-2 whitespace-nowrap">
+                                                            <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-indigo-900/50 text-indigo-300 capitalize">
+                                                                {call.language || '—'}
+                                                            </span>
+                                                        </td>
+                                                        <td className="px-2.5 py-2 whitespace-nowrap">
+                                                            <div className="text-xs text-neutral-300">{formatDuration(call.recordingAStartedAt || call.startedAt, call.endedAt)}</div>
+                                                        </td>
+                                                        <td className="px-2.5 py-2 whitespace-nowrap">
+                                                            <span className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-bold rounded-lg bg-purple-900/70 text-purple-200 border border-purple-500/50 shadow-sm shadow-purple-950/40">
+                                                                ✓ Monologued ({call.monologueSpeakerLabel})
+                                                            </span>
+                                                        </td>
+                                                    </>
+                                                ) : statusFilter === "rejected" ? (
+                                                    <>
+                                                        <td className="px-2.5 py-2 whitespace-nowrap">
+                                                            <div className="text-xs font-mono text-neutral-300">{call.callId.slice(0, 8)}...</div>
+                                                        </td>
+                                                        <td className="px-2.5 py-2">
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="text-xs text-white font-medium">{call.userA?.username || "Unknown"}</span>
+                                                                <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded ${call.recordingAStatus === 'approved' ? 'bg-success-950/60 text-success-300' : 'bg-error-950/60 text-error-300'}`}>
+                                                                    {call.recordingAStatus === 'approved' ? '✓ Approved' : '✗ Rejected'}
+                                                                </span>
+                                                            </div>
+                                                            <div className="flex items-center gap-2 mt-1">
+                                                                <span className="text-xs text-neutral-300 font-medium">{call.userB?.username || "Unknown"}</span>
+                                                                <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded ${call.recordingBStatus === 'approved' ? 'bg-success-950/60 text-success-300' : 'bg-error-950/60 text-error-300'}`}>
+                                                                    {call.recordingBStatus === 'approved' ? '✓ Approved' : '✗ Rejected'}
+                                                                </span>
+                                                            </div>
+                                                        </td>
+                                                        <td className="hidden md:table-cell px-2.5 py-2">
+                                                            <div className="text-xs font-medium text-white max-w-[150px] truncate" title={call.subtopicId?.title}>
+                                                                {call.subtopicId?.title || "—"}
+                                                            </div>
+                                                        </td>
+                                                        <td className="hidden md:table-cell px-2.5 py-2 whitespace-nowrap">
+                                                            <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-indigo-900/50 text-indigo-300 capitalize">
+                                                                {call.language || '—'}
+                                                            </span>
+                                                        </td>
+                                                        <td className="px-2.5 py-2 whitespace-nowrap">
+                                                            <div className="text-xs text-neutral-300">{formatDuration(call.recordingAStartedAt || call.startedAt, call.endedAt)}</div>
+                                                        </td>
+                                                        {isAdmin ? (
+                                                            <td className="px-2.5 py-2 whitespace-nowrap">
+                                                                {call.isMonologued ? (
+                                                                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-bold rounded-lg bg-purple-900/70 text-purple-200 border border-purple-500/50 shadow-sm shadow-purple-950/40">
+                                                                        <span>🎙️ Monologued</span>
+                                                                        <span className="text-[10px] text-purple-300 font-normal">
+                                                                            ({call.monologueDetails?.speakerUsed === 'userA' ? (call.userA?.username || 'Spk A') : (call.userB?.username || 'Spk B')})
+                                                                        </span>
+                                                                    </span>
+                                                                ) : (
+                                                                    <span className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-lg bg-amber-950/40 text-amber-300 border border-amber-800/40">
+                                                                        ⏳ Pending Monologue
+                                                                    </span>
+                                                                )}
+                                                            </td>
+                                                        ) : (
+                                                            <td className="px-2.5 py-2 whitespace-nowrap">
+                                                                <span className="px-2 py-0.5 text-xs font-bold rounded bg-error-950/60 text-error-300 border border-error-800/50">
+                                                                    Rejected
+                                                                </span>
+                                                            </td>
+                                                        )}
                                                     </>
                                                 ) : (
                                                     <>
@@ -1292,6 +1612,13 @@ export default function AdminCalls() {
                                                                             call.recordingBStatus === 'rejected' ? '✗' : '⏳'}
                                                                     </span>
                                                                 </div>
+                                                                {call.isMonologued && (
+                                                                    <div className="mt-1">
+                                                                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-bold rounded bg-purple-900/60 text-purple-300 border border-purple-500/30">
+                                                                            🎙️ Monologued ({call.monologueDetails?.speakerUsed === 'userA' ? (call.userA?.username || 'Spk A') : (call.userB?.username || 'Spk B')})
+                                                                        </span>
+                                                                    </div>
+                                                                )}
                                                             </div>
                                                         </td>
                                                     </>
@@ -1302,13 +1629,15 @@ export default function AdminCalls() {
                                                         <button
                                                             onClick={() => {
                                                                 setSelectedCall(call);
+                                                                const uAId = call.userA?._id || call.userA || 'userA';
+                                                                const uBId = call.userB?._id || call.userB || 'userB';
                                                                 setRecordingNotes({
-                                                                    [call.userA?._id]: call.recordingAReviewNote || "",
-                                                                    [call.userB?._id]: call.recordingBReviewNote || ""
+                                                                    [uAId]: call.recordingAReviewNote || "",
+                                                                    [uBId]: call.recordingBReviewNote || ""
                                                                 });
                                                                 setQcResults({
-                                                                    [call.userA?._id]: call.recordingAQCResult || null,
-                                                                    [call.userB?._id]: call.recordingBQCResult || null
+                                                                    [uAId]: call.recordingAQCResult || null,
+                                                                    [uBId]: call.recordingBQCResult || null
                                                                 });
                                                             }}
                                                             className="px-2.5 py-1 bg-warning-600/90 hover:bg-warning-500 text-white font-semibold rounded text-xs transition-colors shadow-sm"
@@ -1318,7 +1647,8 @@ export default function AdminCalls() {
                                                     </div>
                                                 </td>
                                             </tr>
-                                        ))}
+                                        );
+                                    })}
                                     </tbody>
                                 </table>
                             </div>
@@ -1353,8 +1683,217 @@ export default function AdminCalls() {
                 )}
             </div>
 
-            {/* Call Details Modal */}
-            {selectedCall && (
+            {/* Call Details / Monologue Details Modal */}
+            {selectedCall && (() => {
+                const isIndividualMonologueModal = Boolean(selectedCall.monologueSpeaker && rejectedSubTab === "monologued");
+                
+                if (isIndividualMonologueModal) {
+                    const monoUserId = selectedCall.monologueUser?._id || (typeof selectedCall.monologueUser === 'string' ? selectedCall.monologueUser : 'monoUser');
+                    const monoUserName = selectedCall.monologueUser?.username || (typeof selectedCall.monologueUser === 'string' ? selectedCall.monologueUser : 'Speaker');
+                    const monoUserEmail = selectedCall.monologueUser?.email || '';
+
+                    return (
+                        <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50" onClick={() => setSelectedCall(null)}>
+                            <div className="bg-neutral-800 border border-neutral-700 rounded-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto p-4 md:p-6 animate-scale-in" onClick={(e) => e.stopPropagation()}>
+                                <div className="flex items-center justify-between mb-4 md:mb-6">
+                                    <div>
+                                        <h2 className="text-xl md:text-2xl font-bold text-white flex items-center gap-2">
+                                            <span>🎙️</span>
+                                            <span>Monologue Details</span>
+                                        </h2>
+                                        <p className="text-xs text-neutral-400 mt-0.5">Individual audio extracted for single-speaker transcription</p>
+                                    </div>
+                                    <button onClick={() => setSelectedCall(null)} className="text-neutral-400 hover:text-white">
+                                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path>
+                                        </svg>
+                                    </button>
+                                </div>
+
+                                <div className="space-y-4">
+                                    {/* Monologue Identification Grid */}
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div className="bg-neutral-900/60 p-3.5 rounded-lg border border-neutral-700/60">
+                                            <div className="text-xs text-neutral-400 mb-1">Monologue ID</div>
+                                            <div className="text-purple-300 font-mono text-sm font-bold break-all">
+                                                {selectedCall.callId}_{selectedCall.monologueSpeaker}
+                                            </div>
+                                            <div className="text-[10px] text-neutral-500 font-mono mt-1">
+                                                Parent Call: {selectedCall.callId}
+                                            </div>
+                                        </div>
+                                        <div className="bg-neutral-900/60 p-3.5 rounded-lg border border-neutral-700/60 flex flex-col justify-center">
+                                            <div className="text-xs text-neutral-400 mb-1.5">Transcription Pipeline</div>
+                                            <div className="flex items-center gap-2">
+                                                <span className="inline-flex items-center gap-1.5 px-3 py-1 text-xs font-bold rounded-full bg-purple-900/70 text-purple-200 border border-purple-500/50 shadow-sm">
+                                                    <span>🎙️</span>
+                                                    <span>In Monologue Queue</span>
+                                                </span>
+                                                <span className="text-xs text-success-400 font-semibold">✓ Ready</span>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Speaker & Topic Information */}
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div className="bg-neutral-700 p-3.5 rounded-lg">
+                                            <div className="text-xs text-neutral-400 mb-1 uppercase font-bold tracking-wider">Speaker Information</div>
+                                            <div className="text-white font-semibold text-base flex items-center gap-2">
+                                                <span>👤 {monoUserName}</span>
+                                                <span className="text-xs px-2 py-0.5 rounded bg-purple-900/80 text-purple-200 border border-purple-600/40">
+                                                    {selectedCall.monologueSpeakerLabel || (selectedCall.monologueSpeaker === 'userB' ? 'Speaker B' : 'Speaker A')}
+                                                </span>
+                                            </div>
+                                            {monoUserEmail && <div className="text-xs text-neutral-300 mt-1 break-all">{monoUserEmail}</div>}
+                                            <div className="text-xs text-neutral-400 mt-1 font-mono">
+                                                Speaker ID: <span className="text-neutral-200">{selectedCall.monologueUser?.speaker_id || '—'}</span>
+                                            </div>
+                                        </div>
+
+                                        <div className="bg-neutral-700 p-3.5 rounded-lg">
+                                            <div className="text-xs text-neutral-400 mb-1 uppercase font-bold tracking-wider">Topic & Language</div>
+                                            <div className="text-white text-sm font-semibold">{selectedCall.subtopicId?.title || 'General Discussion'}</div>
+                                            {selectedCall.subtopicId?.description && (
+                                                <div className="text-xs text-neutral-400 mt-1 line-clamp-2">{selectedCall.subtopicId.description}</div>
+                                            )}
+                                            <div className="flex items-center gap-2 mt-2">
+                                                <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-indigo-900/50 text-indigo-300 capitalize">
+                                                    🌐 {selectedCall.language || 'Hindi'}
+                                                </span>
+                                                <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-neutral-800 text-neutral-300">
+                                                    ⏱️ {formatDuration(selectedCall.recordingAStartedAt || selectedCall.startedAt, selectedCall.endedAt)}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Single Monologue Audio Player */}
+                                    <div className="bg-neutral-700 p-4 rounded-lg">
+                                        <div className="flex items-center justify-between mb-3">
+                                            <div className="text-sm text-white font-semibold flex items-center gap-2">
+                                                <span>🔊</span>
+                                                <span>Monologue Audio Waveform</span>
+                                            </div>
+                                            {audioUrls[`${selectedCall.callId}_${monoUserId}`] && (
+                                                <span className="text-[10px] text-success-400 font-bold bg-success-950/60 px-2 py-0.5 rounded border border-success-800/40">
+                                                    WAV Ready
+                                                </span>
+                                            )}
+                                        </div>
+
+                                        {audioUrls[`${selectedCall.callId}_${monoUserId}`] ? (
+                                            <div className="space-y-3">
+                                                <AudioVisualizer 
+                                                    url={audioUrls[`${selectedCall.callId}_${monoUserId}`]}
+                                                    audioRef={{ current: audioRefs.current[`${selectedCall.callId}_${monoUserId}`] }} 
+                                                />
+                                                <audio 
+                                                    ref={(el) => (audioRefs.current[`${selectedCall.callId}_${monoUserId}`] = el)}
+                                                    controls 
+                                                    src={audioUrls[`${selectedCall.callId}_${monoUserId}`]} 
+                                                    className="w-full h-10 rounded" 
+                                                    controlsList="nodownload noplaybackrate" 
+                                                    onContextMenu={(e) => e.preventDefault()}
+                                                />
+                                            </div>
+                                        ) : (
+                                            <button 
+                                                onClick={() => loadCallAudio(selectedCall.callId, monoUserId)} 
+                                                disabled={loadingAudio[`${selectedCall.callId}_${monoUserId}`]} 
+                                                className="w-full py-3 bg-neutral-800 hover:bg-neutral-600 border border-neutral-600 text-white text-xs font-semibold rounded-lg disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
+                                            >
+                                                {loadingAudio[`${selectedCall.callId}_${monoUserId}`] ? (
+                                                    <span className="flex items-center gap-2">
+                                                        <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                                        Loading WAV Audio...
+                                                    </span>
+                                                ) : "▶ Load Monologue Audio Waveform"}
+                                            </button>
+                                        )}
+
+                                        {/* Single Monologue QC Analyzer Card */}
+                                        <div className="mt-4 pt-3 border-t border-neutral-600">
+                                            <button
+                                                onClick={() => runAudioQC(selectedCall.callId, monoUserId)}
+                                                disabled={qcLoading[monoUserId]}
+                                                className="w-full inline-flex items-center justify-center px-4 py-2 bg-neutral-800 hover:bg-neutral-600 disabled:opacity-50 text-white rounded-lg text-xs font-bold border border-neutral-600 transition-colors"
+                                            >
+                                                {qcLoading[monoUserId] ? (
+                                                    <span className="flex items-center gap-1.5">
+                                                        <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                                        Running QC Analysis...
+                                                    </span>
+                                                ) : (qcResults[monoUserId] ? "🔄 Re-run QC Analyzer" : "📊 Run Audio QC Analyzer")}
+                                            </button>
+                                            
+                                            {qcErrors[monoUserId] && (
+                                                <div className="mt-2 text-xs text-error-400 font-medium">
+                                                    ⚠️ {qcErrors[monoUserId]}
+                                                </div>
+                                            )}
+
+                                            {qcResults[monoUserId] && (
+                                                <div className="mt-3 space-y-3 bg-neutral-900/50 p-3.5 rounded-lg border border-neutral-700/50">
+                                                    <div className="flex justify-between text-xs">
+                                                        <span className="text-neutral-400">YAMNet Noise Verdict:</span>
+                                                        <span className={`font-bold ${qcResults[monoUserId].yamnet.suspicion_rating === 10 ? 'text-error-400' : qcResults[monoUserId].yamnet.suspicion_rating === 5 ? 'text-warning-400' : 'text-success-400'}`}>
+                                                            {qcResults[monoUserId].yamnet.rating_label}
+                                                        </span>
+                                                    </div>
+                                                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[10px] text-neutral-300 bg-neutral-800/60 p-2 rounded border border-neutral-700">
+                                                        <div>Bit Verdict: <span className="font-bold">{qcResults[monoUserId].freq.bit_verdict}</span></div>
+                                                        <div>Noise Floor: <span className="font-bold">{qcResults[monoUserId].freq.noise_floor_db} dBFS</span></div>
+                                                        <div>Crest Factor: <span className="font-bold">{qcResults[monoUserId].freq.crest_factor} dB</span></div>
+                                                        <div>Processing: <span className="font-bold">{qcResults[monoUserId].freq.processing_verdict}</span></div>
+                                                    </div>
+                                                    {(qcResults[monoUserId].spectrogram || qcResults[monoUserId].spectrogramS3Key) && (
+                                                        <div className="mt-2 bg-black/40 rounded p-1 border border-neutral-800">
+                                                            <div className="text-[9px] text-neutral-500 mb-1 font-bold tracking-wider uppercase text-center">Nyquist Spectrogram (Click to zoom)</div>
+                                                            <img 
+                                                                src={qcResults[monoUserId].spectrogram 
+                                                                     ? `data:image/png;base64,${qcResults[monoUserId].spectrogram}`
+                                                                     : `${BACKEND_URL}/api/admin/qa/calls/${selectedCall.callId}/spectrogram/${monoUserId}`
+                                                                 }
+                                                                alt="Spectrogram"
+                                                                crossOrigin="use-credentials"
+                                                                className="w-full rounded border border-neutral-900 cursor-zoom-in hover:opacity-80 transition-opacity"
+                                                                onClick={() => {
+                                                                    const src = qcResults[monoUserId].spectrogram 
+                                                                        ? `data:image/png;base64,${qcResults[monoUserId].spectrogram}`
+                                                                        : `${BACKEND_URL}/api/admin/qa/calls/${selectedCall.callId}/spectrogram/${monoUserId}`;
+                                                                    setZoomedImage({ src, title: `${monoUserName}'s Spectrogram` });
+                                                                }}
+                                                            />
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    {/* Close Button */}
+                                    <div className="pt-2 flex justify-end">
+                                        <button
+                                            onClick={() => setSelectedCall(null)}
+                                            className="px-5 py-2 bg-neutral-700 hover:bg-neutral-600 text-white rounded-lg text-xs font-semibold transition-all"
+                                        >
+                                            Close
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    );
+                }
+
+                const userAId = selectedCall.userA?._id || (typeof selectedCall.userA === 'string' ? selectedCall.userA : 'userA');
+                const userBId = selectedCall.userB?._id || (typeof selectedCall.userB === 'string' ? selectedCall.userB : 'userB');
+                const userAName = selectedCall.userA?.username || (typeof selectedCall.userA === 'string' ? selectedCall.userA : 'Speaker A');
+                const userBName = selectedCall.userB?.username || (typeof selectedCall.userB === 'string' ? selectedCall.userB : 'Speaker B');
+                const userAEmail = selectedCall.userA?.email || '';
+                const userBEmail = selectedCall.userB?.email || '';
+
+                return (
                 <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50" onClick={() => setSelectedCall(null)}>
                     <div className="bg-neutral-800 border border-neutral-700 rounded-xl max-w-6xl w-full max-h-[90vh] overflow-y-auto p-4 md:p-6 animate-scale-in" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center justify-between mb-4 md:mb-6">
@@ -1374,11 +1913,18 @@ export default function AdminCalls() {
                                 </div>
                                 <div>
                                     <div className="text-sm text-neutral-400 mb-1">Status</div>
-                                    <span className={`px-2 py-1 text-xs font-medium rounded-full ${selectedCall.endReason === 'completed' ? 'bg-success-900/50 text-success-300' :
-                                        'bg-neutral-700 text-neutral-300'
-                                        }`}>
-                                        {selectedCall.endReason || 'Unknown'}
-                                    </span>
+                                    <div className="flex flex-wrap items-center gap-2">
+                                        <span className={`px-2 py-1 text-xs font-medium rounded-full ${selectedCall.endReason === 'completed' ? 'bg-success-900/50 text-success-300' :
+                                            'bg-neutral-700 text-neutral-300'
+                                            }`}>
+                                            {selectedCall.endReason || 'Unknown'}
+                                        </span>
+                                        {selectedCall.isMonologued && (
+                                            <span className="px-2.5 py-1 text-xs font-semibold rounded-full bg-purple-900/70 text-purple-300 border border-purple-500/40">
+                                                🎙️ Monologued ({selectedCall.monologueDetails?.speakerUsed === 'userA' ? userAName : userBName})
+                                            </span>
+                                        )}
+                                    </div>
                                 </div>
                             </div>
 
@@ -1386,22 +1932,22 @@ export default function AdminCalls() {
                                 <div className="text-sm text-neutral-400 mb-2">Participants</div>
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     <div className="bg-neutral-700 p-3 rounded-lg">
-                                        <div className="text-white font-semibold text-sm md:text-base">{selectedCall.userA?.username}</div>
-                                        <div className="text-xs text-neutral-400 break-all">{selectedCall.userA?.email}</div>
-                                        {selectedCall.questionerUserId?.toString() === selectedCall.userA?._id?.toString() && (
+                                        <div className="text-white font-semibold text-sm md:text-base">{userAName}</div>
+                                        {userAEmail && <div className="text-xs text-neutral-400 break-all">{userAEmail}</div>}
+                                        {selectedCall.questionerUserId?.toString() === userAId?.toString() && (
                                             <div className="text-xs text-warning-400 mt-1">Questioner</div>
                                         )}
-                                        {selectedCall.answererUserId?.toString() === selectedCall.userA?._id?.toString() && (
+                                        {selectedCall.answererUserId?.toString() === userAId?.toString() && (
                                             <div className="text-xs text-success-400 mt-1">Answerer</div>
                                         )}
                                     </div>
                                     <div className="bg-neutral-700 p-3 rounded-lg">
-                                        <div className="text-white font-semibold text-sm md:text-base">{selectedCall.userB?.username}</div>
-                                        <div className="text-xs text-neutral-400 break-all">{selectedCall.userB?.email}</div>
-                                        {selectedCall.questionerUserId?.toString() === selectedCall.userB?._id?.toString() && (
+                                        <div className="text-white font-semibold text-sm md:text-base">{userBName}</div>
+                                        {userBEmail && <div className="text-xs text-neutral-400 break-all">{userBEmail}</div>}
+                                        {selectedCall.questionerUserId?.toString() === userBId?.toString() && (
                                             <div className="text-xs text-warning-400 mt-1">Questioner</div>
                                         )}
-                                        {selectedCall.answererUserId?.toString() === selectedCall.userB?._id?.toString() && (
+                                        {selectedCall.answererUserId?.toString() === userBId?.toString() && (
                                             <div className="text-xs text-success-400 mt-1">Answerer</div>
                                         )}
                                     </div>
@@ -1466,7 +2012,7 @@ export default function AdminCalls() {
                                     {selectedCall.recordingAFile && (
                                         <div className="bg-neutral-700 p-4 rounded-lg flex flex-col justify-between">
                                             <div>
-                                                <div className="text-white font-semibold mb-2">{selectedCall.userA?.username}</div>
+                                                <div className="text-white font-semibold mb-2">{userAName}</div>
                                                 <div className="mb-3">
                                                     <div className="text-xs text-neutral-400 mb-1">Status</div>
                                                     {getRecordingStatusBadge(selectedCall.recordingAStatus)}
@@ -1483,16 +2029,16 @@ export default function AdminCalls() {
                                                 {/* Audio Visualizer & Player */}
                                                 <div className="mb-3">
                                                     <label className="block text-[10px] text-neutral-400 mb-1 uppercase font-bold">Listen Recording</label>
-                                                    {audioUrls[`${selectedCall.callId}_${selectedCall.userA._id}`] ? (
+                                                    {audioUrls[`${selectedCall.callId}_${userAId}`] ? (
                                                         <div className="space-y-2">
                                                             <AudioVisualizer 
-                                                                url={audioUrls[`${selectedCall.callId}_${selectedCall.userA._id}`]}
-                                                                audioRef={{ current: audioRefs.current[`${selectedCall.callId}_${selectedCall.userA._id}`] }} 
+                                                                url={audioUrls[`${selectedCall.callId}_${userAId}`]}
+                                                                audioRef={{ current: audioRefs.current[`${selectedCall.callId}_${userAId}`] }} 
                                                             />
                                                             <audio 
-                                                                ref={(el) => (audioRefs.current[`${selectedCall.callId}_${selectedCall.userA._id}`] = el)}
+                                                                ref={(el) => (audioRefs.current[`${selectedCall.callId}_${userAId}`] = el)}
                                                                 controls 
-                                                                src={audioUrls[`${selectedCall.callId}_${selectedCall.userA._id}`]} 
+                                                                src={audioUrls[`${selectedCall.callId}_${userAId}`]} 
                                                                 className="w-full h-9 rounded" 
                                                                 controlsList="nodownload noplaybackrate" 
                                                                 onContextMenu={(e) => e.preventDefault()}
@@ -1500,11 +2046,11 @@ export default function AdminCalls() {
                                                         </div>
                                                     ) : (
                                                         <button 
-                                                            onClick={() => loadCallAudio(selectedCall.callId, selectedCall.userA._id)} 
-                                                            disabled={loadingAudio[`${selectedCall.callId}_${selectedCall.userA._id}`]} 
+                                                            onClick={() => loadCallAudio(selectedCall.callId, userAId)} 
+                                                            disabled={loadingAudio[`${selectedCall.callId}_${userAId}`]} 
                                                             className="w-full py-2 bg-neutral-800 hover:bg-neutral-600 border border-neutral-600 text-white text-xs font-semibold rounded-lg disabled:opacity-50 transition-colors"
                                                         >
-                                                            {loadingAudio[`${selectedCall.callId}_${selectedCall.userA._id}`] ? "Loading WAV..." : "▶ Load Audio Waveform"}
+                                                            {loadingAudio[`${selectedCall.callId}_${userAId}`] ? "Loading WAV..." : "▶ Load Audio Waveform"}
                                                         </button>
                                                     )}
                                                 </div>
@@ -1512,40 +2058,40 @@ export default function AdminCalls() {
                                                 {/* Audio QC Analyzer Card */}
                                                 <div className="mb-4 pt-3 border-t border-neutral-600">
                                                     <button
-                                                        onClick={() => runAudioQC(selectedCall.callId, selectedCall.userA._id)}
-                                                        disabled={qcLoading[selectedCall.userA._id]}
+                                                        onClick={() => runAudioQC(selectedCall.callId, userAId)}
+                                                        disabled={qcLoading[userAId]}
                                                         className="w-full inline-flex items-center justify-center px-4 py-2 bg-neutral-800 hover:bg-neutral-600 disabled:opacity-50 text-white rounded-lg text-xs font-bold border border-neutral-600 transition-colors"
                                                     >
-                                                        {qcLoading[selectedCall.userA._id] ? (
+                                                        {qcLoading[userAId] ? (
                                                             <span className="flex items-center gap-1.5">
                                                                 <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                                                                 Running QC Analysis...
                                                             </span>
-                                                        ) : (qcResults[selectedCall.userA._id] ? "🔄 Re-run QC Analyzer" : "📊 Run Audio QC Analyzer")}
+                                                        ) : (qcResults[userAId] ? "🔄 Re-run QC Analyzer" : "📊 Run Audio QC Analyzer")}
                                                     </button>
                                                     
-                                                    {qcErrors[selectedCall.userA._id] && (
+                                                    {qcErrors[userAId] && (
                                                         <div className="mt-2 text-xs text-error-400 font-medium">
-                                                            ⚠️ {qcErrors[selectedCall.userA._id]}
+                                                             ⚠️ {qcErrors[userAId]}
                                                         </div>
                                                     )}
 
-                                                    {qcResults[selectedCall.userA._id] && (
+                                                    {qcResults[userAId] && (
                                                         <div className="mt-3 space-y-3 bg-neutral-900/40 p-3 rounded-lg border border-neutral-700/50">
                                                             <div className="flex justify-between text-xs">
                                                                 <span className="text-neutral-400">YAMNet Noise:</span>
-                                                                <span className={`font-bold ${qcResults[selectedCall.userA._id].yamnet.suspicion_rating === 10 ? 'text-error-400' : qcResults[selectedCall.userA._id].yamnet.suspicion_rating === 5 ? 'text-warning-400' : 'text-success-400'}`}>
-                                                                    {qcResults[selectedCall.userA._id].yamnet.rating_label}
+                                                                <span className={`font-bold ${qcResults[userAId].yamnet.suspicion_rating === 10 ? 'text-error-400' : qcResults[userAId].yamnet.suspicion_rating === 5 ? 'text-warning-400' : 'text-success-400'}`}>
+                                                                    {qcResults[userAId].yamnet.rating_label}
                                                                 </span>
                                                             </div>
-                                                                                               {qcResults[selectedCall.userA._id].yamnet.events && qcResults[selectedCall.userA._id].yamnet.events.length > 0 ? (
+                                                            {qcResults[userAId].yamnet.events && qcResults[userAId].yamnet.events.length > 0 ? (
                                                                 <div className="space-y-1.5">
                                                                     <div className="text-[10px] text-neutral-400 font-bold uppercase tracking-wider">Spotcheck Noise Events (Click to play 8s)</div>
                                                                     <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto pr-1">
-                                                                        {filterOverlappingEvents(qcResults[selectedCall.userA._id].yamnet.events).map((e, idx) => (
+                                                                        {filterOverlappingEvents(qcResults[userAId].yamnet.events).map((e, idx) => (
                                                                             <button
                                                                                 key={idx}
-                                                                                onClick={() => playSpotcheck(selectedCall.callId, selectedCall.userA._id, e.timestamp_sec)}
+                                                                                onClick={() => playSpotcheck(selectedCall.callId, userAId, e.timestamp_sec)}
                                                                                 className={`inline-flex items-center gap-1 px-2 py-1 text-[10px] font-medium rounded border transition-all ${
                                                                                     e.severity === 'heavy' 
                                                                                         ? 'bg-error-950/40 text-error-300 border-error-800 hover:bg-error-900/60' 
@@ -1561,34 +2107,34 @@ export default function AdminCalls() {
                                                                     </div>
                                                                 </div>
                                                             ) : (
-                                                                qcResults[selectedCall.userA._id].yamnet.top_noise_events !== "None" && (
+                                                                qcResults[userAId].yamnet.top_noise_events !== "None" && (
                                                                     <div className="text-[10px] text-error-300/80 bg-error-950/20 px-2 py-1 rounded border border-error-900/30">
-                                                                        Events: {qcResults[selectedCall.userA._id].yamnet.top_noise_events}
+                                                                        Events: {qcResults[userAId].yamnet.top_noise_events}
                                                                     </div>
                                                                 )
                                                             )}                                 
                                                             <div className="grid grid-cols-2 gap-2 text-[10px] text-neutral-300">
-                                                                <div>Bit Verdict: <span className="font-bold">{qcResults[selectedCall.userA._id].freq.bit_verdict}</span></div>
-                                                                <div>Noise Floor: <span className="font-bold">{qcResults[selectedCall.userA._id].freq.noise_floor_db} dBFS</span></div>
-                                                                <div>Crest Factor: <span className="font-bold">{qcResults[selectedCall.userA._id].freq.crest_factor} dB</span></div>
-                                                                <div>Processing: <span className="font-bold">{qcResults[selectedCall.userA._id].freq.processing_verdict}</span></div>
+                                                                <div>Bit Verdict: <span className="font-bold">{qcResults[userAId].freq.bit_verdict}</span></div>
+                                                                <div>Noise Floor: <span className="font-bold">{qcResults[userAId].freq.noise_floor_db} dBFS</span></div>
+                                                                <div>Crest Factor: <span className="font-bold">{qcResults[userAId].freq.crest_factor} dB</span></div>
+                                                                <div>Processing: <span className="font-bold">{qcResults[userAId].freq.processing_verdict}</span></div>
                                                             </div>
-                                                            {(qcResults[selectedCall.userA._id].spectrogram || qcResults[selectedCall.userA._id].spectrogramS3Key) && (
+                                                            {(qcResults[userAId].spectrogram || qcResults[userAId].spectrogramS3Key) && (
                                                                 <div className="mt-2 bg-black/40 rounded p-1 border border-neutral-800">
                                                                     <div className="text-[9px] text-neutral-500 mb-1 font-bold tracking-wider uppercase text-center">Nyquist Spectrogram (Click to zoom)</div>
                                                                     <img 
-                                                                        src={qcResults[selectedCall.userA._id].spectrogram 
-                                                                             ? `data:image/png;base64,${qcResults[selectedCall.userA._id].spectrogram}`
-                                                                             : `${BACKEND_URL}/api/admin/qa/calls/${selectedCall.callId}/spectrogram/${selectedCall.userA._id}`
+                                                                        src={qcResults[userAId].spectrogram 
+                                                                             ? `data:image/png;base64,${qcResults[userAId].spectrogram}`
+                                                                             : `${BACKEND_URL}/api/admin/qa/calls/${selectedCall.callId}/spectrogram/${userAId}`
                                                                          }
                                                                         alt="Spectrogram"
                                                                         crossOrigin="use-credentials"
                                                                         className="w-full rounded border border-neutral-900 cursor-zoom-in hover:opacity-80 transition-opacity"
                                                                         onClick={() => {
-                                                                            const src = qcResults[selectedCall.userA._id].spectrogram 
-                                                                                ? `data:image/png;base64,${qcResults[selectedCall.userA._id].spectrogram}`
-                                                                                : `${BACKEND_URL}/api/admin/qa/calls/${selectedCall.callId}/spectrogram/${selectedCall.userA._id}`;
-                                                                            setZoomedImage({ src, title: `${selectedCall.userA.username}'s Spectrogram` });
+                                                                            const src = qcResults[userAId].spectrogram 
+                                                                                ? `data:image/png;base64,${qcResults[userAId].spectrogram}`
+                                                                                : `${BACKEND_URL}/api/admin/qa/calls/${selectedCall.callId}/spectrogram/${userAId}`;
+                                                                            setZoomedImage({ src, title: `${userAName}'s Spectrogram` });
                                                                         }}
                                                                     />
                                                                 </div>
@@ -1601,8 +2147,8 @@ export default function AdminCalls() {
                                                     <label className="block text-[10px] text-neutral-500 mb-1 uppercase font-bold">Review Note</label>
                                                     <textarea
                                                         rows={2}
-                                                        value={recordingNotes[selectedCall.userA._id] || ""}
-                                                        onChange={(e) => setRecordingNotes(prev => ({ ...prev, [selectedCall.userA._id]: e.target.value }))}
+                                                        value={recordingNotes[userAId] || ""}
+                                                        onChange={(e) => setRecordingNotes(prev => ({ ...prev, [userAId]: e.target.value }))}
                                                         placeholder="Enter review notes..."
                                                         className="w-full bg-neutral-800 border border-neutral-600 text-white text-xs rounded-lg px-2 py-1.5 resize-none focus:border-warning-500 outline-none"
                                                     />
@@ -1617,11 +2163,11 @@ export default function AdminCalls() {
                                                         <label className="inline-flex items-center gap-1.5 text-xs text-neutral-200 cursor-pointer select-none">
                                                             <input
                                                                 type="radio"
-                                                                name={`rejectReason_${selectedCall.userA._id}`}
+                                                                name={`rejectReason_${userAId}`}
                                                                 value="Off-Topic Conversation"
-                                                                checked={rejectionReasons[selectedCall.userA._id] === "Off-Topic Conversation"}
+                                                                checked={rejectionReasons[userAId] === "Off-Topic Conversation"}
                                                                 onChange={(e) => {
-                                                                    setRejectionReasons(prev => ({ ...prev, [selectedCall.userA._id]: e.target.value }));
+                                                                    setRejectionReasons(prev => ({ ...prev, [userAId]: e.target.value }));
                                                                 }}
                                                                 className="w-4 h-4 accent-error-500 cursor-pointer"
                                                             />
@@ -1630,11 +2176,11 @@ export default function AdminCalls() {
                                                         <label className="inline-flex items-center gap-1.5 text-xs text-neutral-200 cursor-pointer select-none">
                                                             <input
                                                                 type="radio"
-                                                                name={`rejectReason_${selectedCall.userA._id}`}
+                                                                name={`rejectReason_${userAId}`}
                                                                 value="Noisy"
-                                                                checked={rejectionReasons[selectedCall.userA._id] === "Noisy"}
+                                                                checked={rejectionReasons[userAId] === "Noisy"}
                                                                 onChange={(e) => {
-                                                                    setRejectionReasons(prev => ({ ...prev, [selectedCall.userA._id]: e.target.value }));
+                                                                    setRejectionReasons(prev => ({ ...prev, [userAId]: e.target.value }));
                                                                 }}
                                                                 className="w-4 h-4 accent-error-500 cursor-pointer"
                                                             />
@@ -1642,20 +2188,54 @@ export default function AdminCalls() {
                                                         </label>
                                                     </div>
                                                 </div>
-                                            <div className="flex items-center gap-2 mt-4">
-                                                <button
-                                                    onClick={() => approveRecording(selectedCall.callId, selectedCall.userA._id, selectedCall.userA.username)}
-                                                    className="flex-1 px-3 py-2 bg-success-600 hover:bg-success-700 text-white rounded-lg text-xs font-medium transition-all"
-                                                >
-                                                    ✓ Approve
-                                                </button>
-                                                <button
-                                                    onClick={() => rejectRecording(selectedCall.callId, selectedCall.userA._id, selectedCall.userA.username)}
-                                                    className="flex-1 px-3 py-2 bg-error-600 hover:bg-error-700 text-white rounded-lg text-xs font-medium transition-all"
-                                                >
-                                                    ✗ Reject
-                                                </button>
                                             </div>
+
+                                            <div>
+                                                <div className="flex items-center gap-2 mt-4">
+                                                    <button
+                                                        onClick={() => approveRecording(selectedCall.callId, userAId, userAName)}
+                                                        className="flex-1 px-3 py-2 bg-success-600 hover:bg-success-700 text-white rounded-lg text-xs font-medium transition-all"
+                                                    >
+                                                        ✓ Approve
+                                                    </button>
+                                                    <button
+                                                        onClick={() => rejectRecording(selectedCall.callId, userAId, userAName)}
+                                                        className="flex-1 px-3 py-2 bg-error-600 hover:bg-error-700 text-white rounded-lg text-xs font-medium transition-all"
+                                                    >
+                                                        ✗ Reject
+                                                    </button>
+                                                </div>
+                                                {isAdmin && (
+                                                    <div className="mt-3 pt-2.5 border-t border-neutral-600 space-y-1.5">
+                                                        <div className="text-[10px] text-purple-400 font-bold uppercase tracking-wider">Monologue Action</div>
+                                                        {selectedCall.recordingAMonologueStatus === 'transcribed' ? (
+                                                            <div className="w-full py-1.5 px-3 bg-purple-950/60 border border-purple-600/50 rounded-lg text-center text-xs font-bold text-purple-300">
+                                                                ✓ Transcribed as Monologue
+                                                            </div>
+                                                        ) : selectedCall.recordingAMonologueStatus === 'rejected' ? (
+                                                            <div className="w-full py-1.5 px-3 bg-neutral-800 border border-neutral-600 rounded-lg text-center text-xs font-medium text-neutral-400">
+                                                                ✗ Rejected as Monologue
+                                                            </div>
+                                                        ) : (
+                                                            <div className="grid grid-cols-2 gap-2">
+                                                                <button
+                                                                    onClick={() => handleSendAsMonologue(selectedCall.callId, 'userA', userAName)}
+                                                                    disabled={isTranscribingMonologue[`${selectedCall.callId}_userA`]}
+                                                                    className="px-2.5 py-1.5 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white rounded-lg text-xs font-semibold shadow transition-all border border-purple-500/30 truncate"
+                                                                >
+                                                                    {isTranscribingMonologue[`${selectedCall.callId}_userA`] ? "Sending..." : "🎙️ Transcribe Monologue"}
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => handleRejectAsMonologue(selectedCall.callId, 'userA', userAName)}
+                                                                    disabled={isTranscribingMonologue[`${selectedCall.callId}_userA`]}
+                                                                    className="px-2.5 py-1.5 bg-neutral-800 hover:bg-neutral-600 border border-neutral-600 text-neutral-300 hover:text-white rounded-lg text-xs font-semibold transition-all truncate"
+                                                                >
+                                                                    ✗ Reject Monologue
+                                                                </button>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                )}
                                             </div>
                                         </div>
                                     )}
@@ -1663,7 +2243,7 @@ export default function AdminCalls() {
                                     {selectedCall.recordingBFile && (
                                         <div className="bg-neutral-700 p-4 rounded-lg flex flex-col justify-between">
                                             <div>
-                                                <div className="text-white font-semibold mb-2">{selectedCall.userB?.username}</div>
+                                                <div className="text-white font-semibold mb-2">{userBName}</div>
                                                 <div className="mb-3">
                                                     <div className="text-xs text-neutral-400 mb-1">Status</div>
                                                     {getRecordingStatusBadge(selectedCall.recordingBStatus)}
@@ -1680,16 +2260,16 @@ export default function AdminCalls() {
                                                 {/* Audio Visualizer & Player */}
                                                 <div className="mb-3">
                                                     <label className="block text-[10px] text-neutral-400 mb-1 uppercase font-bold">Listen Recording</label>
-                                                    {audioUrls[`${selectedCall.callId}_${selectedCall.userB._id}`] ? (
+                                                    {audioUrls[`${selectedCall.callId}_${userBId}`] ? (
                                                         <div className="space-y-2">
                                                             <AudioVisualizer 
-                                                                url={audioUrls[`${selectedCall.callId}_${selectedCall.userB._id}`]}
-                                                                audioRef={{ current: audioRefs.current[`${selectedCall.callId}_${selectedCall.userB._id}`] }} 
+                                                                url={audioUrls[`${selectedCall.callId}_${userBId}`]}
+                                                                audioRef={{ current: audioRefs.current[`${selectedCall.callId}_${userBId}`] }} 
                                                             />
                                                             <audio 
-                                                                ref={(el) => (audioRefs.current[`${selectedCall.callId}_${selectedCall.userB._id}`] = el)}
+                                                                ref={(el) => (audioRefs.current[`${selectedCall.callId}_${userBId}`] = el)}
                                                                 controls 
-                                                                src={audioUrls[`${selectedCall.callId}_${selectedCall.userB._id}`]} 
+                                                                src={audioUrls[`${selectedCall.callId}_${userBId}`]} 
                                                                 className="w-full h-9 rounded" 
                                                                 controlsList="nodownload noplaybackrate" 
                                                                 onContextMenu={(e) => e.preventDefault()}
@@ -1697,11 +2277,11 @@ export default function AdminCalls() {
                                                         </div>
                                                     ) : (
                                                         <button 
-                                                            onClick={() => loadCallAudio(selectedCall.callId, selectedCall.userB._id)} 
-                                                            disabled={loadingAudio[`${selectedCall.callId}_${selectedCall.userB._id}`]} 
+                                                            onClick={() => loadCallAudio(selectedCall.callId, userBId)} 
+                                                            disabled={loadingAudio[`${selectedCall.callId}_${userBId}`]} 
                                                             className="w-full py-2 bg-neutral-800 hover:bg-neutral-600 border border-neutral-600 text-white text-xs font-semibold rounded-lg disabled:opacity-50 transition-colors"
                                                         >
-                                                            {loadingAudio[`${selectedCall.callId}_${selectedCall.userB._id}`] ? "Loading WAV..." : "▶ Load Audio Waveform"}
+                                                            {loadingAudio[`${selectedCall.callId}_${userBId}`] ? "Loading WAV..." : "▶ Load Audio Waveform"}
                                                         </button>
                                                     )}
                                                 </div>
@@ -1709,40 +2289,40 @@ export default function AdminCalls() {
                                                 {/* Audio QC Analyzer Card */}
                                                 <div className="mb-4 pt-3 border-t border-neutral-600">
                                                     <button
-                                                        onClick={() => runAudioQC(selectedCall.callId, selectedCall.userB._id)}
-                                                        disabled={qcLoading[selectedCall.userB._id]}
+                                                        onClick={() => runAudioQC(selectedCall.callId, userBId)}
+                                                        disabled={qcLoading[userBId]}
                                                         className="w-full inline-flex items-center justify-center px-4 py-2 bg-neutral-800 hover:bg-neutral-600 disabled:opacity-50 text-white rounded-lg text-xs font-bold border border-neutral-600 transition-colors"
                                                     >
-                                                        {qcLoading[selectedCall.userB._id] ? (
+                                                        {qcLoading[userBId] ? (
                                                             <span className="flex items-center gap-1.5">
                                                                 <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                                                                 Running QC Analysis...
                                                             </span>
-                                                        ) : (qcResults[selectedCall.userB._id] ? "🔄 Re-run QC Analyzer" : "📊 Run Audio QC Analyzer")}
+                                                        ) : (qcResults[userBId] ? "🔄 Re-run QC Analyzer" : "📊 Run Audio QC Analyzer")}
                                                     </button>
                                                     
-                                                    {qcErrors[selectedCall.userB._id] && (
+                                                    {qcErrors[userBId] && (
                                                         <div className="mt-2 text-xs text-error-400 font-medium">
-                                                            ⚠️ {qcErrors[selectedCall.userB._id]}
+                                                            ⚠️ {qcErrors[userBId]}
                                                         </div>
                                                     )}
 
-                                                    {qcResults[selectedCall.userB._id] && (
+                                                    {qcResults[userBId] && (
                                                         <div className="mt-3 space-y-3 bg-neutral-900/40 p-3 rounded-lg border border-neutral-700/50">
                                                             <div className="flex justify-between text-xs">
                                                                 <span className="text-neutral-400">YAMNet Noise:</span>
-                                                                <span className={`font-bold ${qcResults[selectedCall.userB._id].yamnet.suspicion_rating === 10 ? 'text-error-400' : qcResults[selectedCall.userB._id].yamnet.suspicion_rating === 5 ? 'text-warning-400' : 'text-success-400'}`}>
-                                                                    {qcResults[selectedCall.userB._id].yamnet.rating_label}
+                                                                <span className={`font-bold ${qcResults[userBId].yamnet.suspicion_rating === 10 ? 'text-error-400' : qcResults[userBId].yamnet.suspicion_rating === 5 ? 'text-warning-400' : 'text-success-400'}`}>
+                                                                    {qcResults[userBId].yamnet.rating_label}
                                                                 </span>
                                                             </div>
-                                                            {qcResults[selectedCall.userB._id].yamnet.events && qcResults[selectedCall.userB._id].yamnet.events.length > 0 ? (
+                                                            {qcResults[userBId].yamnet.events && qcResults[userBId].yamnet.events.length > 0 ? (
                                                                 <div className="space-y-1.5">
                                                                     <div className="text-[10px] text-neutral-400 font-bold uppercase tracking-wider">Spotcheck Noise Events (Click to play 8s)</div>
                                                                     <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto pr-1">
-                                                                        {filterOverlappingEvents(qcResults[selectedCall.userB._id].yamnet.events).map((e, idx) => (
+                                                                        {filterOverlappingEvents(qcResults[userBId].yamnet.events).map((e, idx) => (
                                                                             <button
                                                                                 key={idx}
-                                                                                onClick={() => playSpotcheck(selectedCall.callId, selectedCall.userB._id, e.timestamp_sec)}
+                                                                                onClick={() => playSpotcheck(selectedCall.callId, userBId, e.timestamp_sec)}
                                                                                 className={`inline-flex items-center gap-1 px-2 py-1 text-[10px] font-medium rounded border transition-all ${
                                                                                     e.severity === 'heavy' 
                                                                                         ? 'bg-error-950/40 text-error-300 border-error-800 hover:bg-error-900/60' 
@@ -1758,34 +2338,34 @@ export default function AdminCalls() {
                                                                     </div>
                                                                 </div>
                                                             ) : (
-                                                                qcResults[selectedCall.userB._id].yamnet.top_noise_events !== "None" && (
+                                                                qcResults[userBId].yamnet.top_noise_events !== "None" && (
                                                                     <div className="text-[10px] text-error-300/80 bg-error-950/20 px-2 py-1 rounded border border-error-900/30">
-                                                                        Events: {qcResults[selectedCall.userB._id].yamnet.top_noise_events}
+                                                                        Events: {qcResults[userBId].yamnet.top_noise_events}
                                                                     </div>
                                                                 )
                                                             )}
                                                             <div className="grid grid-cols-2 gap-2 text-[10px] text-neutral-300">
-                                                                <div>Bit Verdict: <span className="font-bold">{qcResults[selectedCall.userB._id].freq.bit_verdict}</span></div>
-                                                                <div>Noise Floor: <span className="font-bold">{qcResults[selectedCall.userB._id].freq.noise_floor_db} dBFS</span></div>
-                                                                <div>Crest Factor: <span className="font-bold">{qcResults[selectedCall.userB._id].freq.crest_factor} dB</span></div>
-                                                                <div>Processing: <span className="font-bold">{qcResults[selectedCall.userB._id].freq.processing_verdict}</span></div>
+                                                                <div>Bit Verdict: <span className="font-bold">{qcResults[userBId].freq.bit_verdict}</span></div>
+                                                                <div>Noise Floor: <span className="font-bold">{qcResults[userBId].freq.noise_floor_db} dBFS</span></div>
+                                                                <div>Crest Factor: <span className="font-bold">{qcResults[userBId].freq.crest_factor} dB</span></div>
+                                                                <div>Processing: <span className="font-bold">{qcResults[userBId].freq.processing_verdict}</span></div>
                                                             </div>
-                                                            {(qcResults[selectedCall.userB._id].spectrogram || qcResults[selectedCall.userB._id].spectrogramS3Key) && (
+                                                            {(qcResults[userBId].spectrogram || qcResults[userBId].spectrogramS3Key) && (
                                                                 <div className="mt-2 bg-black/40 rounded p-1 border border-neutral-800">
                                                                     <div className="text-[9px] text-neutral-500 mb-1 font-bold tracking-wider uppercase text-center">Nyquist Spectrogram (Click to zoom)</div>
                                                                     <img 
-                                                                        src={qcResults[selectedCall.userB._id].spectrogram 
-                                                                             ? `data:image/png;base64,${qcResults[selectedCall.userB._id].spectrogram}`
-                                                                             : `${BACKEND_URL}/api/admin/qa/calls/${selectedCall.callId}/spectrogram/${selectedCall.userB._id}`
+                                                                        src={qcResults[userBId].spectrogram 
+                                                                             ? `data:image/png;base64,${qcResults[userBId].spectrogram}`
+                                                                             : `${BACKEND_URL}/api/admin/qa/calls/${selectedCall.callId}/spectrogram/${userBId}`
                                                                          }
                                                                         alt="Spectrogram"
                                                                         crossOrigin="use-credentials"
                                                                         className="w-full rounded border border-neutral-900 cursor-zoom-in hover:opacity-80 transition-opacity"
                                                                         onClick={() => {
-                                                                            const src = qcResults[selectedCall.userB._id].spectrogram 
-                                                                                ? `data:image/png;base64,${qcResults[selectedCall.userB._id].spectrogram}`
-                                                                                : `${BACKEND_URL}/api/admin/qa/calls/${selectedCall.callId}/spectrogram/${selectedCall.userB._id}`;
-                                                                            setZoomedImage({ src, title: `${selectedCall.userB.username}'s Spectrogram` });
+                                                                            const src = qcResults[userBId].spectrogram 
+                                                                                ? `data:image/png;base64,${qcResults[userBId].spectrogram}`
+                                                                                : `${BACKEND_URL}/api/admin/qa/calls/${selectedCall.callId}/spectrogram/${userBId}`;
+                                                                            setZoomedImage({ src, title: `${userBName}'s Spectrogram` });
                                                                         }}
                                                                     />
                                                                 </div>
@@ -1798,8 +2378,8 @@ export default function AdminCalls() {
                                                     <label className="block text-[10px] text-neutral-500 mb-1 uppercase font-bold">Review Note</label>
                                                     <textarea
                                                         rows={2}
-                                                        value={recordingNotes[selectedCall.userB._id] || ""}
-                                                        onChange={(e) => setRecordingNotes(prev => ({ ...prev, [selectedCall.userB._id]: e.target.value }))}
+                                                        value={recordingNotes[userBId] || ""}
+                                                        onChange={(e) => setRecordingNotes(prev => ({ ...prev, [userBId]: e.target.value }))}
                                                         placeholder="Enter review notes..."
                                                         className="w-full bg-neutral-800 border border-neutral-600 text-white text-xs rounded-lg px-2 py-1.5 resize-none focus:border-warning-500 outline-none"
                                                     />
@@ -1814,11 +2394,11 @@ export default function AdminCalls() {
                                                         <label className="inline-flex items-center gap-1.5 text-xs text-neutral-200 cursor-pointer select-none">
                                                             <input
                                                                 type="radio"
-                                                                name={`rejectReason_${selectedCall.userB._id}`}
+                                                                name={`rejectReason_${userBId}`}
                                                                 value="Off-Topic Conversation"
-                                                                checked={rejectionReasons[selectedCall.userB._id] === "Off-Topic Conversation"}
+                                                                checked={rejectionReasons[userBId] === "Off-Topic Conversation"}
                                                                 onChange={(e) => {
-                                                                    setRejectionReasons(prev => ({ ...prev, [selectedCall.userB._id]: e.target.value }));
+                                                                    setRejectionReasons(prev => ({ ...prev, [userBId]: e.target.value }));
                                                                 }}
                                                                 className="w-4 h-4 accent-error-500 cursor-pointer"
                                                             />
@@ -1827,11 +2407,11 @@ export default function AdminCalls() {
                                                         <label className="inline-flex items-center gap-1.5 text-xs text-neutral-200 cursor-pointer select-none">
                                                             <input
                                                                 type="radio"
-                                                                name={`rejectReason_${selectedCall.userB._id}`}
+                                                                name={`rejectReason_${userBId}`}
                                                                 value="Noisy"
-                                                                checked={rejectionReasons[selectedCall.userB._id] === "Noisy"}
+                                                                checked={rejectionReasons[userBId] === "Noisy"}
                                                                 onChange={(e) => {
-                                                                    setRejectionReasons(prev => ({ ...prev, [selectedCall.userB._id]: e.target.value }));
+                                                                    setRejectionReasons(prev => ({ ...prev, [userBId]: e.target.value }));
                                                                 }}
                                                                 className="w-4 h-4 accent-error-500 cursor-pointer"
                                                             />
@@ -1842,18 +2422,49 @@ export default function AdminCalls() {
                                             </div>
                                             <div className="flex items-center gap-2 mt-4">
                                                 <button
-                                                    onClick={() => approveRecording(selectedCall.callId, selectedCall.userB._id, selectedCall.userB.username)}
+                                                    onClick={() => approveRecording(selectedCall.callId, userBId, userBName)}
                                                     className="flex-1 px-3 py-2 bg-success-600 hover:bg-success-700 text-white rounded-lg text-xs font-medium transition-all"
                                                 >
                                                     ✓ Approve
                                                 </button>
                                                 <button
-                                                    onClick={() => rejectRecording(selectedCall.callId, selectedCall.userB._id, selectedCall.userB.username)}
+                                                    onClick={() => rejectRecording(selectedCall.callId, userBId, userBName)}
                                                     className="flex-1 px-3 py-2 bg-error-600 hover:bg-error-700 text-white rounded-lg text-xs font-medium transition-all"
                                                 >
                                                     ✗ Reject
                                                 </button>
                                             </div>
+                                            {isAdmin && (
+                                                <div className="mt-3 pt-2.5 border-t border-neutral-600 space-y-1.5">
+                                                    <div className="text-[10px] text-purple-400 font-bold uppercase tracking-wider">Monologue Action</div>
+                                                    {selectedCall.recordingBMonologueStatus === 'transcribed' ? (
+                                                        <div className="w-full py-1.5 px-3 bg-purple-950/60 border border-purple-600/50 rounded-lg text-center text-xs font-bold text-purple-300">
+                                                            ✓ Transcribed as Monologue
+                                                        </div>
+                                                    ) : selectedCall.recordingBMonologueStatus === 'rejected' ? (
+                                                        <div className="w-full py-1.5 px-3 bg-neutral-800 border border-neutral-600 rounded-lg text-center text-xs font-medium text-neutral-400">
+                                                            ✗ Rejected as Monologue
+                                                        </div>
+                                                    ) : (
+                                                        <div className="grid grid-cols-2 gap-2">
+                                                            <button
+                                                                onClick={() => handleSendAsMonologue(selectedCall.callId, 'userB', userBName)}
+                                                                disabled={isTranscribingMonologue[`${selectedCall.callId}_userB`]}
+                                                                className="px-2.5 py-1.5 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white rounded-lg text-xs font-semibold shadow transition-all border border-purple-500/30 truncate"
+                                                            >
+                                                                {isTranscribingMonologue[`${selectedCall.callId}_userB`] ? "Sending..." : "🎙️ Transcribe Monologue"}
+                                                            </button>
+                                                            <button
+                                                                onClick={() => handleRejectAsMonologue(selectedCall.callId, 'userB', userBName)}
+                                                                disabled={isTranscribingMonologue[`${selectedCall.callId}_userB`]}
+                                                                className="px-2.5 py-1.5 bg-neutral-800 hover:bg-neutral-600 border border-neutral-600 text-neutral-300 hover:text-white rounded-lg text-xs font-semibold transition-all truncate"
+                                                            >
+                                                                ✗ Reject Monologue
+                                                            </button>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
                                         </div>
                                     )}
                                 </div>
@@ -1864,7 +2475,8 @@ export default function AdminCalls() {
                         </div>
                     </div>
                 </div>
-            )}
+                );
+            })()}
             {/* Spectrogram Zoom Modal (Lightbox) */}
             {zoomedImage && (
                 <div 

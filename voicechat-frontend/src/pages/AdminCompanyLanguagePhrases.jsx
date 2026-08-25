@@ -48,8 +48,11 @@ export default function AdminCompanyLanguagePhrases() {
 
   const [company, setCompany] = useState(null);
   const [phrases, setPhrases] = useState([]);
+  const [summary, setSummary] = useState(null);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [allocationFilter, setAllocationFilter] = useState("all"); // "all", "reserved", "open"
+  const [statusFilter, setStatusFilter] = useState("all");
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [totalPhrases, setTotalPhrases] = useState(0);
@@ -160,11 +163,13 @@ export default function AdminCompanyLanguagePhrases() {
     });
   };
 
-  const fetchPhrases = async (pageNum = page, searchQuery = search) => {
+  const fetchPhrases = async (pageNum = page, searchQuery = search, alloc = allocationFilter, st = statusFilter) => {
     setLoading(true);
     try {
       const params = new URLSearchParams();
       if (searchQuery) params.append("search", searchQuery);
+      if (alloc && alloc !== "all") params.append("allocation", alloc);
+      if (st && st !== "all") params.append("status", st);
       params.append("page", pageNum);
       params.append("limit", "50");
 
@@ -174,6 +179,7 @@ export default function AdminCompanyLanguagePhrases() {
       setPhrases(data.phrases || []);
       setTotalPhrases(data.totalPhrases || 0);
       setTotalPages(data.totalPages || 1);
+      setSummary(data.summary || null);
     } catch (err) {
       Swal.fire({
         icon: "error",
@@ -187,13 +193,13 @@ export default function AdminCompanyLanguagePhrases() {
   };
 
   useEffect(() => {
-    fetchPhrases(1, search);
-  }, [id, language]);
+    fetchPhrases(1, search, allocationFilter, statusFilter);
+  }, [id, language, allocationFilter, statusFilter]);
 
   const handleSearchSubmit = (e) => {
     e.preventDefault();
     setPage(1);
-    fetchPhrases(1, search);
+    fetchPhrases(1, search, allocationFilter, statusFilter);
   };
 
   const handleSetSample = async (phrase) => {
@@ -382,44 +388,121 @@ export default function AdminCompanyLanguagePhrases() {
           </div>
         </div>
 
-        {/* Search & Stats Bar */}
-        <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
-          <form onSubmit={handleSearchSubmit} className="flex-1 max-w-md relative">
-            <input
-              type="text"
-              placeholder="Search phrases by ID, text, emotion, style..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="input w-full pl-10 pr-4 py-2 text-sm bg-neutral-800 border-neutral-700 text-white placeholder-neutral-500 focus:border-primary-500"
-            />
-            <Search className="w-4 h-4 text-neutral-400 absolute left-3 top-3" />
-          </form>
+        {/* Language Allocation & Workload Summary Banner */}
+        {summary && summary.totalCount > 0 && (
+          <div className="mb-6 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+            <div className="bg-neutral-800/90 border border-neutral-700 p-3.5 rounded-xl shadow-sm">
+              <div className="text-[10px] font-bold uppercase tracking-wider text-neutral-400">Total Phrases</div>
+              <div className="text-xl font-black text-white mt-0.5">{summary.totalCount}</div>
+              <div className="text-[10px] text-neutral-400 mt-0.5">{language.toUpperCase()} Workload</div>
+            </div>
 
-          <div className="flex items-center gap-3">
+            <div className="bg-indigo-950/40 border border-indigo-700/60 p-3.5 rounded-xl shadow-sm">
+              <div className="text-[10px] font-bold uppercase tracking-wider text-indigo-300 flex items-center gap-1">
+                <span>🔒</span> Reserved
+              </div>
+              <div className="text-xl font-black text-indigo-200 mt-0.5">{summary.reservedCount}</div>
+              <div className="text-[10px] text-indigo-400 mt-0.5">
+                {summary.totalCount > 0 ? Math.round((summary.reservedCount / summary.totalCount) * 100) : 0}% of lang
+              </div>
+            </div>
+
+            <div className="bg-teal-950/40 border border-teal-700/60 p-3.5 rounded-xl shadow-sm">
+              <div className="text-[10px] font-bold uppercase tracking-wider text-teal-300 flex items-center gap-1">
+                <span>🌐</span> Open Pool
+              </div>
+              <div className="text-xl font-black text-teal-200 mt-0.5">{summary.openPoolCount}</div>
+              <div className="text-[10px] text-teal-400 mt-0.5">
+                {summary.totalCount > 0 ? Math.round((summary.openPoolCount / summary.totalCount) * 100) : 0}% of lang
+              </div>
+            </div>
+
+            <div className="bg-neutral-800/90 border border-neutral-700 p-3.5 rounded-xl shadow-sm">
+              <div className="text-[10px] font-bold uppercase tracking-wider text-neutral-400">Pending</div>
+              <div className="text-xl font-black text-amber-400 mt-0.5">{summary.pendingCount}</div>
+              <div className="text-[10px] text-neutral-400 mt-0.5">Unrecorded</div>
+            </div>
+
+            <div className="bg-neutral-800/90 border border-neutral-700 p-3.5 rounded-xl shadow-sm">
+              <div className="text-[10px] font-bold uppercase tracking-wider text-neutral-400">Recorded</div>
+              <div className="text-xl font-black text-blue-400 mt-0.5">{summary.recordedCount}</div>
+              <div className="text-[10px] text-neutral-400 mt-0.5">In QA Queue</div>
+            </div>
+
+            <div className="bg-neutral-800/90 border border-neutral-700 p-3.5 rounded-xl shadow-sm">
+              <div className="text-[10px] font-bold uppercase tracking-wider text-neutral-400">Approved</div>
+              <div className="text-xl font-black text-emerald-400 mt-0.5">{summary.approvedCount}</div>
+              <div className="text-[10px] text-neutral-400 mt-0.5">QA Approved</div>
+            </div>
+          </div>
+        )}
+
+        {/* Search & Filters Bar */}
+        <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
+          <div className="flex flex-wrap items-center gap-2.5 flex-1 max-w-2xl">
+            <form onSubmit={handleSearchSubmit} className="flex-1 min-w-[200px] relative">
+              <input
+                type="text"
+                placeholder="Search phrases by ID, text, spk_..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="input w-full pl-9 pr-3 py-1.5 text-xs bg-neutral-800 border-neutral-700 text-white placeholder-neutral-500 focus:border-primary-500 rounded-lg"
+              />
+              <Search className="w-3.5 h-3.5 text-neutral-400 absolute left-3 top-2.5" />
+            </form>
+
+            <select
+              value={allocationFilter}
+              onChange={(e) => {
+                setAllocationFilter(e.target.value);
+                setPage(1);
+              }}
+              className="input input-sm text-xs bg-neutral-800 border border-neutral-700 text-white px-2.5 py-1.5 rounded-lg font-medium"
+            >
+              <option value="all">All Allocations</option>
+              <option value="reserved">🔒 Reserved Only ({summary?.reservedCount ?? 0})</option>
+              <option value="open">🌐 Open Pool Only ({summary?.openPoolCount ?? 0})</option>
+            </select>
+
+            <select
+              value={statusFilter}
+              onChange={(e) => {
+                setStatusFilter(e.target.value);
+                setPage(1);
+              }}
+              className="input input-sm text-xs bg-neutral-800 border border-neutral-700 text-white px-2.5 py-1.5 rounded-lg capitalize"
+            >
+              <option value="all">All Statuses</option>
+              <option value="pending">Pending</option>
+              <option value="locked">Locked</option>
+              <option value="recorded">Recorded</option>
+              <option value="approved">Approved</option>
+              <option value="rejected">Rejected</option>
+            </select>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2.5">
             <button
               onClick={openExportModal}
-              className="px-3.5 py-1.5 bg-primary-600 hover:bg-primary-500 text-white font-medium text-xs rounded-lg transition-colors flex items-center gap-1.5 shadow-md"
+              className="px-3 py-1.5 bg-primary-600 hover:bg-primary-500 text-white font-medium text-xs rounded-lg transition-colors flex items-center gap-1.5 shadow-md"
               title="Download JSON data of this company workload with customized tags"
             >
               <Download className="w-3.5 h-3.5" /> Download JSON Data
             </button>
             <button
               onClick={handleDeduplicate}
-              className="px-3.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-medium text-xs rounded-lg transition-colors flex items-center gap-1.5 shadow-md"
+              className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-medium text-xs rounded-lg transition-colors flex items-center gap-1.5 shadow-md"
               title="Remove duplicate phrases for this company"
             >
               🧹 Remove Duplicates
             </button>
             <button
               onClick={handleDeletePending}
-              className="px-3.5 py-1.5 bg-red-600 hover:bg-red-700 text-white font-medium text-xs rounded-lg transition-colors flex items-center gap-1.5 shadow-md"
+              className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white font-medium text-xs rounded-lg transition-colors flex items-center gap-1.5 shadow-md"
               title="Delete all pending unrecorded phrases for this language"
             >
               <Trash2 className="w-3.5 h-3.5" /> Delete Pending Phrases
             </button>
-            <div className="text-sm font-medium text-neutral-400">
-              Total Phrases for <span className="font-bold text-white">{language.toUpperCase()}</span>: {totalPhrases}
-            </div>
           </div>
         </div>
 
@@ -434,7 +517,9 @@ export default function AdminCompanyLanguagePhrases() {
             <FileText className="w-12 h-12 text-neutral-500 mx-auto mb-4" />
             <h3 className="text-xl font-semibold mb-2 text-white">No Phrases Found</h3>
             <p className="text-neutral-400">
-              {search ? "No phrases match your search query." : `No phrases available for ${language.toUpperCase()}.`}
+              {search || allocationFilter !== "all" || statusFilter !== "all" 
+                ? "No phrases match your selected filter or search query." 
+                : `No phrases available for ${language.toUpperCase()}.`}
             </p>
           </div>
         ) : (
@@ -442,8 +527,9 @@ export default function AdminCompanyLanguagePhrases() {
             <div className="overflow-x-auto rounded-2xl border border-neutral-700 bg-neutral-800 shadow-xl">
               <table className="w-full text-left text-sm border-collapse">
                 <thead>
-                  <tr className="bg-neutral-900/90 border-b border-neutral-700 text-neutral-300 font-semibold">
+                  <tr className="bg-neutral-900/90 border-b border-neutral-700 text-neutral-300 font-semibold text-xs uppercase tracking-wider">
                     <th className="p-3.5">Phrase ID</th>
+                    <th className="p-3.5">Allocation</th>
                     <th className="p-3.5 min-w-[240px]">Phrase Content / Text</th>
                     <th className="p-3.5">Emotion / Domain</th>
                     <th className="p-3.5">Style / Intent</th>
@@ -457,6 +543,7 @@ export default function AdminCompanyLanguagePhrases() {
                     const isSample = phrase.isSample;
                     const sampleLoading = actionLoading[`sample_${phrase._id}`];
                     const deleteLoading = actionLoading[`delete_${phrase._id}`];
+                    const assignedSpk = phrase.assigned_speaker_id || (phrase.status === 'pending' ? phrase.speaker_id : null);
 
                     return (
                       <tr
@@ -475,6 +562,21 @@ export default function AdminCompanyLanguagePhrases() {
                               </span>
                             )}
                           </div>
+                        </td>
+
+                        {/* Allocation Badge */}
+                        <td className="p-3.5 align-top">
+                          {assignedSpk ? (
+                            <span className="px-2.5 py-1 rounded-md bg-indigo-950/90 text-indigo-300 border border-indigo-700/60 font-mono text-xs font-bold inline-flex items-center gap-1 whitespace-nowrap">
+                              <span>🔒</span>
+                              <span>{assignedSpk}</span>
+                            </span>
+                          ) : (
+                            <span className="px-2.5 py-1 rounded-md bg-neutral-900 text-neutral-400 border border-neutral-700 font-mono text-xs inline-flex items-center gap-1 whitespace-nowrap">
+                              <span>🌐</span>
+                              <span>Open Pool</span>
+                            </span>
+                          )}
                         </td>
 
                         {/* Phrase Text */}
