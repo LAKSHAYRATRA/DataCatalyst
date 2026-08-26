@@ -562,11 +562,11 @@ export default function AdminQA() {
                                                     <div className="space-y-1">
                                                         <div className="flex items-center gap-2">
                                                             <span className="text-white text-xs font-mono">{getParticipantLabel(call.userA, "A")}</span>
-                                                            <StatusBadge status={call.recordingAStatus || "pending"} />
+                                                            {statusFilter !== "pending" && <StatusBadge status={call.recordingAStatus || "pending"} />}
                                                         </div>
                                                         <div className="flex items-center gap-2">
                                                             <span className="text-neutral-300 text-xs font-mono">{getParticipantLabel(call.userB, "B")}</span>
-                                                            <StatusBadge status={call.recordingBStatus || "pending"} />
+                                                            {statusFilter !== "pending" && <StatusBadge status={call.recordingBStatus || "pending"} />}
                                                         </div>
                                                     </div>
                                                 </td>
@@ -722,10 +722,12 @@ export default function AdminQA() {
                                             <div key={key} className="bg-neutral-700 p-4 rounded-lg flex flex-col justify-between">
                                                 <div>
                                                     <div className="text-white font-semibold mb-2">{getParticipantLabel(user, side)}</div>
-                                                    <div className="mb-3">
-                                                        <div className="text-xs text-neutral-400 mb-1">Status</div>
-                                                        {getRecordingStatusBadge(status)}
-                                                    </div>
+                                                    {statusFilter !== "pending" && (
+                                                        <div className="mb-3">
+                                                            <div className="text-xs text-neutral-400 mb-1">Status</div>
+                                                            {getRecordingStatusBadge(status)}
+                                                        </div>
+                                                    )}
                                                     <div className="mb-3 text-xs text-neutral-400">
                                                         {formatPayout(payoutUsd, durMins)}
                                                     </div>
