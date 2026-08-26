@@ -6009,9 +6009,16 @@ router.get("/phrases/download-company", requireAuth(JWT_SECRET), async (req, res
         const filterValue = req.query.filterValue ? String(req.query.filterValue).trim() : "";
 
         let approvedPhrases = rawPhrases;
+
+        // Language filter if requested
+        const reqLanguage = req.query.language ? String(req.query.language).trim().toLowerCase() : "";
+        if (reqLanguage && reqLanguage !== "all") {
+            approvedPhrases = approvedPhrases.filter(p => String(p.language || "").trim().toLowerCase() === reqLanguage);
+        }
+
         if (filterKey && filterValue) {
             const cleanTargetVal = filterValue.toLowerCase();
-            approvedPhrases = rawPhrases.filter(p => {
+            approvedPhrases = approvedPhrases.filter(p => {
                 const contributor = p.contributorId || {};
                 if (filterKey === "recording_date") {
                     if (!p.recordedAt) return false;
@@ -6076,13 +6083,14 @@ router.get("/phrases/download-company", requireAuth(JWT_SECRET), async (req, res
         }
 
         if (approvedPhrases.length === 0) {
-            return res.status(404).json({ error: `No matching ${isFreshOnly ? 'newly approved ' : ''}${targetStatus} phrases found for "${companyFolder}"${filterKey ? ` with ${filterKey}=${filterValue}` : ''}${maxSpeakerSecs ? ` (within ${limitPerSpeakerMinutes} min/speaker limit)` : ''}.` });
+            return res.status(404).json({ error: `No matching ${isFreshOnly ? 'newly approved ' : ''}${targetStatus} phrases found for "${companyFolder}"${reqLanguage ? ` in language "${reqLanguage}"` : ''}${filterKey ? ` with ${filterKey}=${filterValue}` : ''}${maxSpeakerSecs ? ` (within ${limitPerSpeakerMinutes} min/speaker limit)` : ''}.` });
         }
 
-        let zipFilename = `${companyFolder}_${isFreshOnly ? 'newly_' : ''}${targetStatus}_phrases.zip`;
+        const langTag = (reqLanguage && reqLanguage !== "all") ? `_${reqLanguage}` : '';
+        let zipFilename = `${companyFolder}${langTag}_${isFreshOnly ? 'newly_' : ''}${targetStatus}_phrases.zip`;
         if (filterKey && filterValue) {
             const cleanVal = filterValue.replace(/[^a-zA-Z0-9_\-]/g, "_");
-            zipFilename = `${companyFolder}_${isFreshOnly ? 'newly_' : ''}${targetStatus}_${filterKey}_${cleanVal}.zip`;
+            zipFilename = `${companyFolder}${langTag}_${isFreshOnly ? 'newly_' : ''}${targetStatus}_${filterKey}_${cleanVal}.zip`;
         }
         if (maxSpeakerSecs > 0) {
             zipFilename = zipFilename.replace(/\.zip$/i, `_${limitPerSpeakerMinutes}m_per_spk.zip`);
@@ -6334,6 +6342,85 @@ router.get("/phrases/download-company", requireAuth(JWT_SECRET), async (req, res
         // Combined metadata JSON files at root
         archive.append(JSON.stringify(combinedUtterances, null, 2), { name: `combined_utterances.json` });
         archive.append(JSON.stringify(Object.values(combinedSpeakers), null, 2), { name: `combined_speaker_metadata.json` });
+
+        // Generate info.txt manifest containing dataset summary and per-speaker duration breakdown
+        try {
+            const speakerSummaryMap = {};
+            let grandTotalDurationSecs = 0;
+
+            for (const { phrase } of successfullyProcessed) {
+                const contributor = phrase.contributorId || {};
+                const spkId = String(contributor.speaker_id || phrase.speaker_id || `spk_${contributor._id || "unknown"}`).trim();
+                const spkName = [contributor.firstname, contributor.lastname].filter(Boolean).join(" ").trim() || contributor.username || "Unknown";
+                const spkGender = contributor.gender || "unknown";
+                const pDur = Number(phrase.duration) > 0 ? Number(phrase.duration) : 0;
+                const pLang = String(phrase.language || "other").toLowerCase().trim();
+
+                grandTotalDurationSecs += pDur;
+
+                if (!speakerSummaryMap[spkId]) {
+                    speakerSummaryMap[spkId] = {
+                        speakerId: spkId,
+                        name: spkName,
+                        gender: spkGender,
+                        language: pLang,
+                        phraseCount: 0,
+                        totalDurationSecs: 0
+                    };
+                }
+                speakerSummaryMap[spkId].phraseCount += 1;
+                speakerSummaryMap[spkId].totalDurationSecs += pDur;
+            }
+
+            const formatHMS = (secs) => {
+                const s = Math.round(secs || 0);
+                const hrs = Math.floor(s / 3600);
+                const mins = Math.floor((s % 3600) / 60);
+                const remainderSecs = s % 60;
+                return `${String(hrs).padStart(2, "0")}:${String(mins).padStart(2, "0")}:${String(remainderSecs).padStart(2, "0")}`;
+            };
+
+            let infoText = `================================================================================
+                    DATACATALYST / VOCLARA DATASET MANIFEST
+================================================================================
+Project / Company : ${companyFolder}
+Language          : ${reqLanguage && reqLanguage !== "all" ? reqLanguage.toUpperCase() : "ALL LANGUAGES"}
+Status            : ${targetStatus.toUpperCase()} PHRASES
+Export Date & Time: ${new Date().toISOString().replace("T", " ").substring(0, 19)} UTC
+Filter Applied    : ${filterKey && filterValue ? `${filterKey} = ${filterValue}` : "None (All Matching)"}
+Speaker Cap       : ${limitPerSpeakerMinutes ? `${limitPerSpeakerMinutes} minutes per speaker` : "No Limit"}
+
+================================================================================
+                              SUMMARY TOTALS
+================================================================================
+Total Audio Files : ${successfullyProcessed.length}
+Total Duration    : ${formatHMS(grandTotalDurationSecs)} (${(grandTotalDurationSecs / 60).toFixed(2)} mins / ${(grandTotalDurationSecs / 3600).toFixed(3)} hrs)
+Unique Speakers   : ${Object.keys(speakerSummaryMap).length}
+
+================================================================================
+                         SPEAKER BREAKDOWN & DURATION
+================================================================================
+${"SPEAKER ID".padEnd(16)} | ${"NAME".padEnd(24)} | ${"GENDER".padEnd(8)} | ${"PHRASES".padEnd(8)} | ${"DURATION (HH:MM:SS)".padEnd(20)} | ${"DURATION (MINS)".padEnd(16)} | ${"AVG / PHRASE"}
+------------------------------------------------------------------------------------------------------------------------
+`;
+
+            const sortedSpeakers = Object.values(speakerSummaryMap).sort((a, b) => b.totalDurationSecs - a.totalDurationSecs);
+            for (const spk of sortedSpeakers) {
+                const spkDurStr = formatHMS(spk.totalDurationSecs);
+                const spkMinsStr = `${(spk.totalDurationSecs / 60).toFixed(2)} mins`;
+                const avgSecs = spk.phraseCount > 0 ? (spk.totalDurationSecs / spk.phraseCount).toFixed(1) + "s" : "0.0s";
+                
+                infoText += `${spk.speakerId.padEnd(16)} | ${spk.name.substring(0, 24).padEnd(24)} | ${spk.gender.padEnd(8)} | ${String(spk.phraseCount).padEnd(8)} | ${spkDurStr.padEnd(20)} | ${spkMinsStr.padEnd(16)} | ${avgSecs}\n`;
+            }
+
+            infoText += `------------------------------------------------------------------------------------------------------------------------
+================================================================================
+`;
+
+            archive.append(infoText, { name: "info.txt" });
+        } catch (infoErr) {
+            console.error("Failed to generate info.txt:", infoErr);
+        }
 
         // Wait for archive to finalize
         await archive.finalize();
@@ -6682,33 +6769,46 @@ router.get("/phrases/download-stats", requireAuth(JWT_SECRET), async (req, res) 
         const stats = await Phrase.aggregate([
             {
                 $group: {
-                    _id: { companyId: "$companyId", status: "$status" },
+                    _id: { companyId: "$companyId", language: "$language", status: "$status" },
                     count: { $sum: 1 }
                 }
             }
         ]);
 
         const companyStats = {};
+        const companyLanguageStats = {};
+
         for (const item of stats) {
             const rawCompanyId = item._id.companyId || "Unknown";
             const isDownloaded = rawCompanyId.endsWith("_downloaded");
             const companyId = isDownloaded ? rawCompanyId.replace(/_downloaded$/, "") : rawCompanyId;
+            const language = String(item._id.language || "other").toLowerCase().trim();
             const status = item._id.status;
 
             if (!companyStats[companyId]) {
                 companyStats[companyId] = { pending: 0, recorded: 0, approved: 0, rejected: 0, freshApproved: 0 };
             }
+            if (!companyLanguageStats[companyId]) {
+                companyLanguageStats[companyId] = {};
+            }
+            if (!companyLanguageStats[companyId][language]) {
+                companyLanguageStats[companyId][language] = { pending: 0, recorded: 0, approved: 0, rejected: 0, freshApproved: 0 };
+            }
             
-            // Add to total status count
+            // Add to company totals
             companyStats[companyId][status] = (companyStats[companyId][status] || 0) + item.count;
-            
-            // Count fresh approved separately
             if (status === "approved" && !isDownloaded) {
                 companyStats[companyId].freshApproved = (companyStats[companyId].freshApproved || 0) + item.count;
             }
+
+            // Add to language totals
+            companyLanguageStats[companyId][language][status] = (companyLanguageStats[companyId][language][status] || 0) + item.count;
+            if (status === "approved" && !isDownloaded) {
+                companyLanguageStats[companyId][language].freshApproved = (companyLanguageStats[companyId][language].freshApproved || 0) + item.count;
+            }
         }
 
-        res.json({ success: true, stats: companyStats });
+        res.json({ success: true, stats: companyStats, languageStats: companyLanguageStats });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
@@ -6730,11 +6830,17 @@ router.get("/phrases/download-filter-options", requireAuth(JWT_SECRET), async (r
             `${companyFolder.toLowerCase()}_downloaded`
         ];
 
-        const phrases = await Phrase.find({
+        const reqLanguage = req.query.language ? String(req.query.language).trim().toLowerCase() : "";
+        const queryFilter = {
             companyId: { $in: targetCompanyIds },
             status: targetStatus,
             audioFile: { $ne: null }
-        }).populate("contributorId").lean();
+        };
+        if (reqLanguage && reqLanguage !== "all") {
+            queryFilter.language = new RegExp(`^${reqLanguage.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')}$`, "i");
+        }
+
+        const phrases = await Phrase.find(queryFilter).populate("contributorId").lean();
 
         const reqDateFormat = String(req.query.dateFormat || "DD-MM-YYYY").toUpperCase().trim();
         const dateLabel = reqDateFormat === "YYYY-MM-DD" ? "Recording Date (YYYY-MM-DD)" : "Recording Date (DD-MM-YYYY)";

@@ -12,7 +12,10 @@ import {
   Loader2, 
   Sparkles,
   ChevronRight,
-  FolderArchive
+  ChevronDown,
+  ChevronUp,
+  FolderArchive,
+  Globe
 } from "lucide-react";
 import Swal from "sweetalert2";
 import { apiGet } from "../lib/api.js";
@@ -20,12 +23,15 @@ import { apiGet } from "../lib/api.js";
 export default function AdminPhraseDownloads() {
   const [companies, setCompanies] = useState([]);
   const [stats, setStats] = useState({});
+  const [languageStats, setLanguageStats] = useState({});
+  const [expandedCompanies, setExpandedCompanies] = useState({});
   const [loading, setLoading] = useState(true);
 
   // Filter Dialog Modal State
   const [dialogOpen, setDialogOpen] = useState(false);
   const [dialogCompany, setDialogCompany] = useState("");
   const [dialogStatus, setDialogStatus] = useState("approved"); // 'approved' | 'recorded'
+  const [dialogLanguage, setDialogLanguage] = useState("");
   const [loadingOptions, setLoadingOptions] = useState(false);
   const [filterOptionsData, setFilterOptionsData] = useState([]);
   const [dialogTotalCount, setDialogTotalCount] = useState(0);
@@ -51,6 +57,7 @@ export default function AdminPhraseDownloads() {
       ]);
       setCompanies(compRes.companies || []);
       setStats(statsRes.stats || {});
+      setLanguageStats(statsRes.languageStats || {});
     } catch (e) {
       Swal.fire("Error", e.message || "Failed to load download dashboard", "error");
     } finally {
@@ -62,10 +69,21 @@ export default function AdminPhraseDownloads() {
     loadData();
   }, []);
 
-  const fetchFilterOptions = async (companyName, status = dialogStatus, format = dateFormat) => {
+  const toggleExpandCompany = (companyName) => {
+    setExpandedCompanies((prev) => ({
+      ...prev,
+      [companyName]: !prev[companyName]
+    }));
+  };
+
+  const fetchFilterOptions = async (companyName, status = dialogStatus, format = dateFormat, language = dialogLanguage) => {
     setLoadingOptions(true);
     try {
-      const res = await apiGet(`/api/admin/phrases/download-filter-options?company=${encodeURIComponent(companyName)}&status=${status}&dateFormat=${encodeURIComponent(format)}`);
+      let url = `/api/admin/phrases/download-filter-options?company=${encodeURIComponent(companyName)}&status=${status}&dateFormat=${encodeURIComponent(format)}`;
+      if (language && language !== "all") {
+        url += `&language=${encodeURIComponent(language)}`;
+      }
+      const res = await apiGet(url);
       const options = res.filterOptions || [];
       setFilterOptionsData(options);
       setDialogTotalCount(res.totalCount || 0);
@@ -88,9 +106,10 @@ export default function AdminPhraseDownloads() {
     }
   };
 
-  const openDownloadModal = async (companyName, status = "approved") => {
+  const openDownloadModal = async (companyName, status = "approved", language = "") => {
     setDialogCompany(companyName);
     setDialogStatus(status);
+    setDialogLanguage(language);
     setDialogOpen(true);
     setDownloadMode("all");
     setSelectedFilterKey("");
@@ -99,7 +118,7 @@ export default function AdminPhraseDownloads() {
     setFilterOptionsData([]);
     setDialogTotalCount(0);
     setDialogFreshCount(0);
-    await fetchFilterOptions(companyName, status, dateFormat);
+    await fetchFilterOptions(companyName, status, dateFormat, language);
   };
 
   const handleKeyChange = (newKey) => {
@@ -121,6 +140,10 @@ export default function AdminPhraseDownloads() {
 
     const backendUrl = import.meta.env.VITE_BACKEND_URL || "http://localhost:3001";
     let url = `${backendUrl}/api/admin/phrases/download-company?company=${encodeURIComponent(dialogCompany)}&status=${dialogStatus}&dateFormat=${encodeURIComponent(dateFormat)}`;
+
+    if (dialogLanguage && dialogLanguage !== "all") {
+      url += `&language=${encodeURIComponent(dialogLanguage)}`;
+    }
 
     if (isFresh) {
       url += `&type=fresh_phrases&isFresh=true`;
@@ -337,7 +360,7 @@ export default function AdminPhraseDownloads() {
                   </div>
 
                   {/* Counts Grid */}
-                  <div className="grid grid-cols-2 gap-3 mb-6">
+                  <div className="grid grid-cols-2 gap-3 mb-4">
                     <div className="bg-neutral-50 dark:bg-neutral-850 p-3 rounded-xl border border-neutral-100 dark:border-neutral-750 flex items-center gap-3">
                       <CheckCircle className="w-5 h-5 text-success-500" />
                       <div>
@@ -371,14 +394,110 @@ export default function AdminPhraseDownloads() {
                       </div>
                     </div>
                   </div>
+
+                  {/* Languages Breakdown Section (Clickable Drill-Down) */}
+                  {(() => {
+                    const cLangs = Array.from(new Set([
+                      ...(Array.isArray(c.languages) ? c.languages : []),
+                      ...Object.keys(languageStats[c.name] || {})
+                    ])).filter(Boolean);
+                    const isExpanded = !!expandedCompanies[c.name];
+
+                    if (cLangs.length === 0) return null;
+
+                    return (
+                      <div className="mb-4 bg-neutral-50 dark:bg-neutral-850 rounded-xl border border-neutral-200 dark:border-neutral-700 overflow-hidden">
+                        <button
+                          type="button"
+                          onClick={() => toggleExpandCompany(c.name)}
+                          className="w-full px-4 py-2.5 flex items-center justify-between hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors text-left"
+                        >
+                          <div className="flex items-center gap-2">
+                            <Globe className="w-4 h-4 text-primary-500" />
+                            <span className="text-xs font-bold text-neutral-800 dark:text-neutral-200 uppercase tracking-wider">
+                              Languages Active ({cLangs.length})
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-1 text-xs text-primary-600 dark:text-primary-400 font-semibold">
+                            <span>{isExpanded ? "Hide Languages" : "View Language-Wise"}</span>
+                            {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                          </div>
+                        </button>
+
+                        {isExpanded && (
+                          <div className="p-3 border-t border-neutral-200 dark:border-neutral-750 space-y-2 bg-neutral-100/60 dark:bg-neutral-900/60">
+                            {cLangs.map((lang) => {
+                              const lStat = (languageStats[c.name] && languageStats[c.name][lang.toLowerCase()]) || { approved: 0, recorded: 0, pending: 0, rejected: 0 };
+                              const lTotal = (lStat.approved || 0) + (lStat.recorded || 0) + (lStat.rejected || 0);
+                              const hasLangApproved = (lStat.approved || 0) > 0;
+                              const hasLangRecorded = (lStat.recorded || 0) > 0;
+
+                              return (
+                                <div
+                                  key={lang}
+                                  className="bg-white dark:bg-neutral-800 p-2.5 rounded-lg border border-neutral-200 dark:border-neutral-700 flex flex-col sm:flex-row sm:items-center justify-between gap-2 shadow-xs"
+                                >
+                                  <div>
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-xs font-bold text-neutral-900 dark:text-white capitalize">{lang}</span>
+                                      <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-neutral-100 dark:bg-neutral-700 text-neutral-600 dark:text-neutral-300">
+                                        {lTotal} phrases
+                                      </span>
+                                    </div>
+                                    <div className="flex items-center gap-2.5 mt-1 text-[11px]">
+                                      <span className="text-emerald-600 dark:text-emerald-400 font-medium">✓ {lStat.approved || 0} app</span>
+                                      <span className="text-amber-600 dark:text-amber-400 font-medium">⏳ {lStat.recorded || 0} rec</span>
+                                      {lStat.rejected > 0 && <span className="text-rose-500 font-medium">✗ {lStat.rejected}</span>}
+                                    </div>
+                                  </div>
+
+                                  <div className="flex items-center gap-1.5">
+                                    <button
+                                      type="button"
+                                      onClick={() => openDownloadModal(c.name, "approved", lang.toLowerCase())}
+                                      disabled={!hasLangApproved}
+                                      className={`px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1 transition-all ${
+                                        hasLangApproved
+                                          ? "bg-emerald-600 hover:bg-emerald-500 text-white shadow-xs"
+                                          : "bg-neutral-100 dark:bg-neutral-750 text-neutral-400 dark:text-neutral-500 cursor-not-allowed"
+                                      }`}
+                                      title={hasLangApproved ? `Download ${lStat.approved} approved phrases in ${lang}` : `No approved phrases in ${lang}`}
+                                    >
+                                      <Download className="w-3 h-3" />
+                                      <span>Approved ({lStat.approved || 0})</span>
+                                    </button>
+
+                                    <button
+                                      type="button"
+                                      onClick={() => openDownloadModal(c.name, "recorded", lang.toLowerCase())}
+                                      disabled={!hasLangRecorded}
+                                      className={`px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1 transition-all ${
+                                        hasLangRecorded
+                                          ? "bg-amber-600 hover:bg-amber-500 text-white shadow-xs"
+                                          : "bg-neutral-100 dark:bg-neutral-750 text-neutral-400 dark:text-neutral-500 cursor-not-allowed"
+                                      }`}
+                                      title={hasLangRecorded ? `Download ${lStat.recorded} recorded phrases in ${lang}` : `No recorded phrases in ${lang}`}
+                                    >
+                                      <Clock className="w-3 h-3" />
+                                      <span>Pending ({lStat.recorded || 0})</span>
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </div>
 
-                <div className="space-y-2 mt-4 pt-4 border-t border-neutral-100 dark:border-neutral-700">
-                  <span className="block text-xs font-semibold text-neutral-400 uppercase tracking-wider mb-2">Download Packages</span>
+                <div className="space-y-2 mt-2 pt-4 border-t border-neutral-100 dark:border-neutral-700">
+                  <span className="block text-xs font-semibold text-neutral-400 uppercase tracking-wider mb-2">Download All Languages</span>
                   <div className="flex flex-col gap-2">
                     {/* Download Approved Phrases with Filter Dialog */}
                     <button
-                      onClick={() => openDownloadModal(c.name, "approved")}
+                      onClick={() => openDownloadModal(c.name, "approved", "")}
                       disabled={!hasApproved}
                       className={`w-full py-2.5 rounded-xl font-bold flex items-center justify-center gap-2 transition-all ${
                         hasApproved
@@ -387,12 +506,12 @@ export default function AdminPhraseDownloads() {
                       }`}
                     >
                       <Download className="w-4 h-4" />
-                      {hasApproved ? `Download Approved Phrases (${cStats.approved})` : "No Approved Phrases"}
+                      {hasApproved ? `Download All Approved Phrases (${cStats.approved})` : "No Approved Phrases"}
                     </button>
 
                     {/* Download Pending (Recorded) Phrases with Filter Dialog */}
                     <button
-                      onClick={() => openDownloadModal(c.name, "recorded")}
+                      onClick={() => openDownloadModal(c.name, "recorded", "")}
                       disabled={!hasRecorded}
                       className={`w-full py-2.5 rounded-xl font-bold flex items-center justify-center gap-2 transition-all ${
                         hasRecorded
@@ -401,7 +520,7 @@ export default function AdminPhraseDownloads() {
                       }`}
                     >
                       <Clock className="w-4 h-4" />
-                      {hasRecorded ? `Download Pending (Recorded) Phrases (${cStats.recorded})` : "No Pending (Recorded) Phrases"}
+                      {hasRecorded ? `Download All Pending (Recorded) Phrases (${cStats.recorded})` : "No Pending (Recorded) Phrases"}
                     </button>
                     
                     <button
@@ -445,8 +564,14 @@ export default function AdminPhraseDownloads() {
                   <FolderArchive className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                  <h3 className="text-lg font-bold text-white flex items-center gap-2 flex-wrap">
                     <span>{dialogCompany}</span>
+                    {dialogLanguage && dialogLanguage !== "all" && (
+                      <span className="text-xs px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wider bg-indigo-950/80 text-indigo-300 border border-indigo-600/50 flex items-center gap-1">
+                        <Globe className="w-3 h-3" />
+                        {dialogLanguage}
+                      </span>
+                    )}
                     <span className={`text-xs px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wider ${
                       dialogStatus === "approved" 
                         ? "bg-emerald-900/60 text-emerald-300 border border-emerald-600/50" 
@@ -457,8 +582,8 @@ export default function AdminPhraseDownloads() {
                   </h3>
                   <p className="text-xs text-neutral-400 mt-0.5">
                     {dialogStatus === "approved" 
-                      ? "Download QA-Approved phrases packaged as WAVs and metadata JSON" 
-                      : "Download phrases recorded by contributors awaiting QA review"}
+                      ? `Download QA-Approved phrases${dialogLanguage ? ` in ${dialogLanguage}` : ''} packaged as WAVs with info.txt manifest` 
+                      : `Download phrases recorded by contributors${dialogLanguage ? ` in ${dialogLanguage}` : ''} awaiting QA review`}
                   </p>
                 </div>
               </div>
