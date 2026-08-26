@@ -6806,6 +6806,30 @@ router.get("/phrases/download-stats", requireAuth(JWT_SECRET), async (req, res) 
             if (status === "approved" && !isDownloaded) {
                 companyLanguageStats[companyId][language].freshApproved = (companyLanguageStats[companyId][language].freshApproved || 0) + item.count;
             }
+
+            // Also index by lowercase for case-insensitive frontend matching
+            const lowerId = companyId.toLowerCase();
+            if (lowerId !== companyId) {
+                if (!companyStats[lowerId]) {
+                    companyStats[lowerId] = { pending: 0, recorded: 0, approved: 0, rejected: 0, freshApproved: 0 };
+                }
+                if (!companyLanguageStats[lowerId]) {
+                    companyLanguageStats[lowerId] = {};
+                }
+                if (!companyLanguageStats[lowerId][language]) {
+                    companyLanguageStats[lowerId][language] = { pending: 0, recorded: 0, approved: 0, rejected: 0, freshApproved: 0 };
+                }
+
+                companyStats[lowerId][status] = (companyStats[lowerId][status] || 0) + item.count;
+                if (status === "approved" && !isDownloaded) {
+                    companyStats[lowerId].freshApproved = (companyStats[lowerId].freshApproved || 0) + item.count;
+                }
+
+                companyLanguageStats[lowerId][language][status] = (companyLanguageStats[lowerId][language][status] || 0) + item.count;
+                if (status === "approved" && !isDownloaded) {
+                    companyLanguageStats[lowerId][language].freshApproved = (companyLanguageStats[lowerId][language].freshApproved || 0) + item.count;
+                }
+            }
         }
 
         res.json({ success: true, stats: companyStats, languageStats: companyLanguageStats });
