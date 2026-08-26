@@ -145,14 +145,29 @@ export default function AdminLanguageApps() {
         }
     }
 
-    async function loadAudio(userId, appId) {
+    async function loadAudio(userId, appId, autoPlay = true) {
         const key = appId;
-        if (audioSrc[key] || loadingAudio[key]) return;
+        if (audioSrc[key]) {
+            const audioEl = audioRefs.current[key];
+            if (audioEl) {
+                if (audioEl.paused) audioEl.play().catch(() => {});
+                else audioEl.pause();
+            }
+            return;
+        }
+        if (loadingAudio[key]) return;
         setLoadingAudio(prev => ({ ...prev, [key]: true }));
         try {
             const url = `${BASE}/api/language-applications/${userId}/${appId}/recording`;
             const wavBlob = await fetchAndConvertToWav(url);
-            setAudioSrc(prev => ({ ...prev, [key]: URL.createObjectURL(wavBlob) }));
+            const blobUrl = URL.createObjectURL(wavBlob);
+            setAudioSrc(prev => ({ ...prev, [key]: blobUrl }));
+            if (autoPlay) {
+                setTimeout(() => {
+                    const audioEl = audioRefs.current[key];
+                    if (audioEl) audioEl.play().catch(() => {});
+                }, 100);
+            }
         } catch (e) {
             setError("Failed to convert audio: " + e.message);
         } finally {
@@ -319,11 +334,11 @@ export default function AdminLanguageApps() {
                                                                 <div className="flex items-center gap-2">
                                                                     {!audioSrc[key] ? (
                                                                         <button
-                                                                            onClick={() => loadAudio(app.userId, app.appId)}
+                                                                            onClick={() => loadAudio(app.userId, app.appId, true)}
                                                                             disabled={loadingAudio[key]}
-                                                                            className="px-2.5 py-1.5 bg-neutral-700 hover:bg-neutral-600 text-warning-400 text-xs font-semibold rounded-lg transition-colors disabled:opacity-50 flex items-center gap-1"
+                                                                            className="px-2.5 py-1.5 bg-neutral-700 hover:bg-neutral-600 text-warning-400 hover:text-warning-300 text-xs font-semibold rounded-lg transition-colors disabled:opacity-50 flex items-center gap-1"
                                                                         >
-                                                                            {loadingAudio[key] ? "Converting..." : "▶ Load"}
+                                                                            {loadingAudio[key] ? "Loading..." : "▶ Play"}
                                                                         </button>
                                                                     ) : (
                                                                         <audio ref={el => audioRefs.current[key] = el} src={audioSrc[key]} controls controlsList="nodownload noplaybackrate" onContextMenu={(e) => e.preventDefault()} className="h-8 w-52" />
