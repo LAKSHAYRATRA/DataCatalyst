@@ -104,15 +104,11 @@ export default function AdminCompanyUserCustomizations() {
     );
   }
 
-  // Standard metadata keys available across phrase datasets
-  const STANDARD_TAGS = ['emotion', 'style', 'speed', 'intent', 'pitch', 'volume', 'instructions', 'script_type', 'speaker_id', 'freq'];
-
-  // Combine standard keys, already configured keys, and automatically detected tags to list them all
+  // Only display checkboxes for keys that actually exist in this project's phrases!
   const allAvailableKeys = Array.from(new Set([
-    ...STANDARD_TAGS,
     ...(company.availableTags || []),
     ...selectedKeys
-  ])).sort();
+  ])).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
 
   return (
     <div className="min-h-screen bg-neutral-50 dark:bg-neutral-900 flex transition-colors duration-300">
@@ -164,7 +160,7 @@ export default function AdminCompanyUserCustomizations() {
                 onChange={(e) => setChronologicalTag(e.target.value)}
                 className="input w-full font-semibold capitalize border-primary-500/40"
               >
-                {Array.from(new Set(['emotion', 'style', 'speed', 'intent', 'pitch', 'volume', ...selectedKeys])).map(tag => (
+                {allAvailableKeys.map(tag => (
                   <option key={tag} value={tag}>{tag}</option>
                 ))}
               </select>

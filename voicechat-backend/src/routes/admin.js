@@ -966,16 +966,20 @@ router.get("/companies/:id", requireAuth(JWT_SECRET), async (req, res) => {
         if (!company) return res.status(404).json({ error: "Company not found" });
 
         // Compute available tags for this company
-        const samplePhrases = await Phrase.find({ companyId: company.name })
-            .limit(100)
+        const companyFolder = company.name.replace(/[^a-zA-Z0-9_\-\ ]/g, "").trim();
+        const companyRegex = new RegExp(`^${companyFolder}(_downloaded)?$`, "i");
+
+        const samplePhrases = await Phrase.find({ companyId: { $regex: companyRegex } })
             .select("tags emotion style intent pitch speed volume instructions script_type")
             .lean();
         const tagKeys = new Set();
         const standardFields = ["emotion", "style", "intent", "pitch", "speed", "volume", "instructions", "script_type"];
         for (const p of samplePhrases) {
-            if (p.tags) {
+            if (p.tags && typeof p.tags === "object") {
                 for (const k of Object.keys(p.tags)) {
-                    tagKeys.add(k);
+                    if (p.tags[k] !== undefined && p.tags[k] !== null && p.tags[k] !== "") {
+                        tagKeys.add(k);
+                    }
                 }
             }
             for (const f of standardFields) {
@@ -5622,7 +5626,7 @@ router.get("/s3-download-wav", async (req, res) => {
     }
 });
 
-router.get("/phrases/download-company", async (req, res) => {
+router.get("/phrases/download-company", requireAuth(JWT_SECRET), async (req, res) => {
     try {
         const { company, type = "phrases" } = req.query;
         if (!company) return res.status(400).json({ error: "Company name is required" });
@@ -5815,24 +5819,24 @@ router.get("/phrases/download-company", async (req, res) => {
             zipFilename = `${companyFolder}_${isFreshOnly ? 'newly_' : ''}${targetStatus}_${filterKey}_${cleanVal}.zip`;
         }
 
-        res.setHeader("Content-Type", "application/zip");
-        res.setHeader("Content-Disposition", `attachment; filename="${zipFilename}"`);
-
-        let ZipArchive;
+        let archive;
         try {
             const archiverModule = await import("archiver");
-            ZipArchive = archiverModule.ZipArchive || archiverModule.default?.ZipArchive;
-            if (!ZipArchive) {
-                const { createRequire } = await import("module");
-                const require = createRequire(import.meta.url);
-                ZipArchive = require("archiver").ZipArchive;
+            const archiverFn = archiverModule.default || archiverModule;
+            if (typeof archiverFn === "function") {
+                archive = archiverFn("zip", { zlib: { level: 0 } });
+            } else if (archiverModule.ZipArchive) {
+                archive = new archiverModule.ZipArchive({ zlib: { level: 0 } });
+            } else {
+                throw new Error("Could not initialize ZIP archiver engine.");
             }
         } catch (err) {
-            console.error("Archiver package not found.", err);
-            return res.status(500).json({ error: "Server missing 'archiver' dependency." });
+            console.error("Archiver error:", err);
+            return res.status(500).json({ error: "Server missing or failed 'archiver' dependency: " + err.message });
         }
 
-        const archive = new ZipArchive({ zlib: { level: 0 } });
+        res.setHeader("Content-Type", "application/zip");
+        res.setHeader("Content-Disposition", `attachment; filename="${zipFilename}"`);
 
         archive.on("error", (err) => {
             console.error("Archiver Error:", err);
@@ -5882,7 +5886,15 @@ router.get("/phrases/download-company", async (req, res) => {
             // Compute flexible/custom filename from namingPattern
             const firstName = contributor.firstname ? String(contributor.firstname).trim() : (contributor.username || "");
             const lastName = contributor.lastname ? String(contributor.lastname).trim() : "";
-            const recordingDate = phrase.recordedAt ? new Date(phrase.recordedAt).toISOString().split("T")[0] : "";
+            const reqDateFormat = String(req.query.dateFormat || (filterValue && filterValue.match(/^\d{2}-\d{2}-\d{4}$/) ? "DD-MM-YYYY" : "YYYY-MM-DD")).toUpperCase().trim();
+            let recordingDate = "";
+            if (phrase.recordedAt) {
+                const d = new Date(phrase.recordedAt);
+                const day = String(d.getDate()).padStart(2, "0");
+                const month = String(d.getMonth() + 1).padStart(2, "0");
+                const year = d.getFullYear();
+                recordingDate = reqDateFormat === "DD-MM-YYYY" ? `${day}-${month}-${year}` : `${year}-${month}-${day}`;
+            }
             const genderVal = contributor.gender || "unknown";
 
             let computedName = filenamePattern
@@ -6455,8 +6467,11 @@ router.get("/phrases/download-filter-options", requireAuth(JWT_SECRET), async (r
             audioFile: { $ne: null }
         }).populate("contributorId").lean();
 
+        const reqDateFormat = String(req.query.dateFormat || "DD-MM-YYYY").toUpperCase().trim();
+        const dateLabel = reqDateFormat === "YYYY-MM-DD" ? "Recording Date (YYYY-MM-DD)" : "Recording Date (DD-MM-YYYY)";
+
         const filterKeysMap = {
-            recording_date: { label: "Recording Date (DD-MM-YYYY)", values: new Map() },
+            recording_date: { label: dateLabel, values: new Map() },
             first_name: { label: "First Name", values: new Map() },
             last_name: { label: "Last Name", values: new Map() },
             speaker_id: { label: "Speaker ID", values: new Map() },
@@ -6495,8 +6510,8 @@ router.get("/phrases/download-filter-options", requireAuth(JWT_SECRET), async (r
                     const day = String(d.getDate()).padStart(2, "0");
                     const month = String(d.getMonth() + 1).padStart(2, "0");
                     const year = d.getFullYear();
-                    const ddmmyyyy = `${day}-${month}-${year}`;
-                    addVal("recording_date", ddmmyyyy);
+                    const formattedDate = reqDateFormat === "YYYY-MM-DD" ? `${year}-${month}-${day}` : `${day}-${month}-${year}`;
+                    addVal("recording_date", formattedDate);
                 }
             }
 

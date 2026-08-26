@@ -33,6 +33,7 @@ export default function AdminPhraseDownloads() {
   const [selectedFilterKey, setSelectedFilterKey] = useState("");
   const [selectedFilterValue, setSelectedFilterValue] = useState("");
   const [downloadMode, setDownloadMode] = useState("all"); // 'all' | 'custom'
+  const [dateFormat, setDateFormat] = useState("DD-MM-YYYY"); // 'DD-MM-YYYY' | 'YYYY-MM-DD'
 
   const getClientToken = () => {
     const vcCookie = document.cookie.split("; ").find((row) => row.startsWith("vc_token="));
@@ -60,36 +61,43 @@ export default function AdminPhraseDownloads() {
     loadData();
   }, []);
 
+  const fetchFilterOptions = async (companyName, status = dialogStatus, format = dateFormat) => {
+    setLoadingOptions(true);
+    try {
+      const res = await apiGet(`/api/admin/phrases/download-filter-options?company=${encodeURIComponent(companyName)}&status=${status}&dateFormat=${encodeURIComponent(format)}`);
+      const options = res.filterOptions || [];
+      setFilterOptionsData(options);
+      setDialogTotalCount(res.totalCount || 0);
+      setDialogFreshCount(res.freshCount || 0);
+
+      setSelectedFilterKey((prevKey) => {
+        const keyToUse = prevKey && options.some(opt => opt.key === prevKey) ? prevKey : (options.length > 0 ? options[0].key : "");
+        const found = options.find((opt) => opt.key === keyToUse);
+        if (found && found.values && found.values.length > 0) {
+          setSelectedFilterValue(found.values[0].value);
+        } else {
+          setSelectedFilterValue("");
+        }
+        return keyToUse;
+      });
+    } catch (e) {
+      Swal.fire("Error", e.message || "Failed to fetch filter options", "error");
+    } finally {
+      setLoadingOptions(false);
+    }
+  };
+
   const openDownloadModal = async (companyName, status = "approved") => {
     setDialogCompany(companyName);
     setDialogStatus(status);
     setDialogOpen(true);
-    setLoadingOptions(true);
     setDownloadMode("all");
     setSelectedFilterKey("");
     setSelectedFilterValue("");
     setFilterOptionsData([]);
     setDialogTotalCount(0);
     setDialogFreshCount(0);
-
-    try {
-      const res = await apiGet(`/api/admin/phrases/download-filter-options?company=${encodeURIComponent(companyName)}&status=${status}`);
-      const options = res.filterOptions || [];
-      setFilterOptionsData(options);
-      setDialogTotalCount(res.totalCount || 0);
-      setDialogFreshCount(res.freshCount || 0);
-
-      if (options.length > 0) {
-        setSelectedFilterKey(options[0].key);
-        if (options[0].values && options[0].values.length > 0) {
-          setSelectedFilterValue(options[0].values[0].value);
-        }
-      }
-    } catch (e) {
-      Swal.fire("Error", e.message || "Failed to fetch filter options", "error");
-    } finally {
-      setLoadingOptions(false);
-    }
+    await fetchFilterOptions(companyName, status, dateFormat);
   };
 
   const handleKeyChange = (newKey) => {
@@ -102,16 +110,15 @@ export default function AdminPhraseDownloads() {
     }
   };
 
-  const executeDownload = (isAll = false, isFresh = false) => {
+  const executeDownload = async (isAll = false, isFresh = false) => {
     const targetCount = isFresh ? dialogFreshCount : dialogTotalCount;
     if (targetCount === 0) {
       Swal.fire("No Phrases", isFresh ? "There are no newly approved phrases available for download." : "There are no phrases available for download matching this selection.", "warning");
       return;
     }
 
-    const token = getClientToken();
     const backendUrl = import.meta.env.VITE_BACKEND_URL || "http://localhost:3001";
-    let url = `${backendUrl}/api/admin/phrases/download-company?company=${encodeURIComponent(dialogCompany)}&status=${dialogStatus}`;
+    let url = `${backendUrl}/api/admin/phrases/download-company?company=${encodeURIComponent(dialogCompany)}&status=${dialogStatus}&dateFormat=${encodeURIComponent(dateFormat)}`;
 
     if (isFresh) {
       url += `&type=fresh_phrases&isFresh=true`;
@@ -120,26 +127,62 @@ export default function AdminPhraseDownloads() {
     if (!isAll && selectedFilterKey && selectedFilterValue) {
       url += `&filterKey=${encodeURIComponent(selectedFilterKey)}&filterValue=${encodeURIComponent(selectedFilterValue)}`;
     }
-    if (token) {
-      url += `&token=${encodeURIComponent(token)}`;
-    }
-
-    // Trigger download in browser
-    window.location.href = url;
 
     setDialogOpen(false);
     Swal.fire({
-      toast: true,
-      position: "top-end",
-      icon: "success",
-      title: `${isFresh ? "Newly approved" : "ZIP"} compilation started. Your download will begin shortly.`,
-      timer: 3500,
-      showConfirmButton: false
+      title: "Generating ZIP Package...",
+      text: "Packaging audio files and metadata catalog...",
+      allowOutsideClick: false,
+      didOpen: () => {
+        Swal.showLoading();
+      }
     });
 
-    setTimeout(() => {
+    try {
+      const res = await fetch(url, { credentials: "include" });
+      if (!res.ok) {
+        let errText = "Failed to download ZIP";
+        try {
+          const json = await res.json();
+          errText = json.error || errText;
+        } catch {}
+        throw new Error(errText);
+      }
+
+      const disposition = res.headers.get("content-disposition") || "";
+      let filename = `${dialogCompany}_${dialogStatus}_phrases.zip`;
+      const match = disposition.match(/filename="?([^"]+)"?/);
+      if (match && match[1]) {
+        filename = match[1];
+      }
+
+      const blob = await res.blob();
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = downloadUrl;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(downloadUrl);
+      document.body.removeChild(a);
+
+      Swal.fire({
+        icon: "success",
+        title: "Download Complete!",
+        text: `Successfully downloaded ${filename}`,
+        timer: 3000,
+        showConfirmButton: false
+      });
+
       loadData();
-    }, 4000);
+    } catch (err) {
+      Swal.fire({
+        icon: "error",
+        title: "Download Failed",
+        text: err.message,
+        confirmButtonColor: "#ea580c"
+      });
+    }
   };
 
   const handleAppDownload = async (companyName, type = "approved_apps") => {
@@ -157,19 +200,60 @@ export default function AdminPhraseDownloads() {
 
     if (!confirm.isConfirmed) return;
 
-    const token = getClientToken();
-    const backendUrl = import.meta.env.VITE_BACKEND_URL || "http://localhost:3001";
-    const url = `${backendUrl}/api/admin/phrases/download-company?company=${encodeURIComponent(companyName)}&type=${type}${token ? `&token=${encodeURIComponent(token)}` : ""}`;
-    window.location.href = url;
-
     Swal.fire({
-      toast: true,
-      position: "top-end",
-      icon: "success",
-      title: "ZIP archive download initiated.",
-      timer: 3000,
-      showConfirmButton: false
+      title: "Packaging Applications...",
+      text: "Generating application recordings ZIP...",
+      allowOutsideClick: false,
+      didOpen: () => {
+        Swal.showLoading();
+      }
     });
+
+    try {
+      const backendUrl = import.meta.env.VITE_BACKEND_URL || "http://localhost:3001";
+      const url = `${backendUrl}/api/admin/phrases/download-company?company=${encodeURIComponent(companyName)}&type=${type}`;
+      const res = await fetch(url, { credentials: "include" });
+      if (!res.ok) {
+        let errText = "Failed to download ZIP";
+        try {
+          const json = await res.json();
+          errText = json.error || errText;
+        } catch {}
+        throw new Error(errText);
+      }
+
+      const disposition = res.headers.get("content-disposition") || "";
+      let filename = `${companyName}_${type}.zip`;
+      const match = disposition.match(/filename="?([^"]+)"?/);
+      if (match && match[1]) {
+        filename = match[1];
+      }
+
+      const blob = await res.blob();
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = downloadUrl;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(downloadUrl);
+      document.body.removeChild(a);
+
+      Swal.fire({
+        icon: "success",
+        title: "Download Complete!",
+        text: `Successfully downloaded ${filename}`,
+        timer: 3000,
+        showConfirmButton: false
+      });
+    } catch (err) {
+      Swal.fire({
+        icon: "error",
+        title: "Download Failed",
+        text: err.message,
+        confirmButtonColor: "#ea580c"
+      });
+    }
   };
 
   const currentKeyOption = filterOptionsData.find((opt) => opt.key === selectedFilterKey);
@@ -471,6 +555,46 @@ export default function AdminPhraseDownloads() {
                           ))}
                         </select>
                       </div>
+
+                      {/* Date Format Order Toggle (DD-MM-YYYY vs YYYY-MM-DD) */}
+                      {selectedFilterKey === "recording_date" && (
+                        <div className="bg-neutral-900/90 border border-neutral-700/70 rounded-xl p-3 flex items-center justify-between">
+                          <div>
+                            <span className="block text-xs font-bold text-neutral-300">Date Format Order</span>
+                            <span className="text-[11px] text-neutral-400">Choose date structure for filtering & downloaded filenames</span>
+                          </div>
+                          <div className="flex items-center gap-1.5 bg-neutral-950 p-1 rounded-lg border border-neutral-800">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setDateFormat("DD-MM-YYYY");
+                                fetchFilterOptions(dialogCompany, dialogStatus, "DD-MM-YYYY");
+                              }}
+                              className={`px-3 py-1.5 text-xs font-mono font-bold rounded-md transition-all ${
+                                dateFormat === "DD-MM-YYYY"
+                                  ? "bg-primary-600 text-white shadow-sm"
+                                  : "text-neutral-400 hover:text-white"
+                              }`}
+                            >
+                              DD-MM-YYYY
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setDateFormat("YYYY-MM-DD");
+                                fetchFilterOptions(dialogCompany, dialogStatus, "YYYY-MM-DD");
+                              }}
+                              className={`px-3 py-1.5 text-xs font-mono font-bold rounded-md transition-all ${
+                                dateFormat === "YYYY-MM-DD"
+                                  ? "bg-primary-600 text-white shadow-sm"
+                                  : "text-neutral-400 hover:text-white"
+                              }`}
+                            >
+                              YYYY-MM-DD
+                            </button>
+                          </div>
+                        </div>
+                      )}
 
                       {/* Dropdown 2: Select Filter Value */}
                       <div>
