@@ -6051,14 +6051,41 @@ router.get("/phrases/download-company", requireAuth(JWT_SECRET), async (req, res
             });
         }
 
+        // Limit per speaker filter (duration cap in minutes)
+        const limitPerSpeakerMinutes = req.query.limitPerSpeakerMinutes 
+            ? parseFloat(req.query.limitPerSpeakerMinutes) 
+            : (req.query.maxSpeakerMinutes ? parseFloat(req.query.maxSpeakerMinutes) : null);
+        const maxSpeakerSecs = (limitPerSpeakerMinutes && limitPerSpeakerMinutes > 0) ? (limitPerSpeakerMinutes * 60) : null;
+
+        if (maxSpeakerSecs > 0) {
+            // Sort chronologically so we take the earliest recordings up to the limit
+            approvedPhrases.sort((a, b) => new Date(a.recordedAt || a.createdAt || 0) - new Date(b.recordedAt || b.createdAt || 0));
+
+            const speakerDurationSecs = {};
+            approvedPhrases = approvedPhrases.filter(p => {
+                const contributor = p.contributorId || {};
+                const spkId = String(contributor.speaker_id || p.speaker_id || contributor._id || "unknown").trim();
+                const dur = Number(p.duration) > 0 ? Number(p.duration) : 5;
+                const currentSecs = speakerDurationSecs[spkId] || 0;
+                if (currentSecs >= maxSpeakerSecs) {
+                    return false; // Skip phrase as speaker has hit limit
+                }
+                speakerDurationSecs[spkId] = currentSecs + dur;
+                return true;
+            });
+        }
+
         if (approvedPhrases.length === 0) {
-            return res.status(404).json({ error: `No matching ${isFreshOnly ? 'newly approved ' : ''}${targetStatus} phrases found for "${companyFolder}"${filterKey ? ` with ${filterKey}=${filterValue}` : ''}.` });
+            return res.status(404).json({ error: `No matching ${isFreshOnly ? 'newly approved ' : ''}${targetStatus} phrases found for "${companyFolder}"${filterKey ? ` with ${filterKey}=${filterValue}` : ''}${maxSpeakerSecs ? ` (within ${limitPerSpeakerMinutes} min/speaker limit)` : ''}.` });
         }
 
         let zipFilename = `${companyFolder}_${isFreshOnly ? 'newly_' : ''}${targetStatus}_phrases.zip`;
         if (filterKey && filterValue) {
             const cleanVal = filterValue.replace(/[^a-zA-Z0-9_\-]/g, "_");
             zipFilename = `${companyFolder}_${isFreshOnly ? 'newly_' : ''}${targetStatus}_${filterKey}_${cleanVal}.zip`;
+        }
+        if (maxSpeakerSecs > 0) {
+            zipFilename = zipFilename.replace(/\.zip$/i, `_${limitPerSpeakerMinutes}m_per_spk.zip`);
         }
 
         let archive;

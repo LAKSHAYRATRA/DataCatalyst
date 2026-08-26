@@ -34,6 +34,7 @@ export default function AdminPhraseDownloads() {
   const [selectedFilterValue, setSelectedFilterValue] = useState("");
   const [downloadMode, setDownloadMode] = useState("all"); // 'all' | 'custom'
   const [dateFormat, setDateFormat] = useState("DD-MM-YYYY"); // 'DD-MM-YYYY' | 'YYYY-MM-DD'
+  const [limitPerSpeakerMinutes, setLimitPerSpeakerMinutes] = useState("");
 
   const getClientToken = () => {
     const vcCookie = document.cookie.split("; ").find((row) => row.startsWith("vc_token="));
@@ -94,6 +95,7 @@ export default function AdminPhraseDownloads() {
     setDownloadMode("all");
     setSelectedFilterKey("");
     setSelectedFilterValue("");
+    setLimitPerSpeakerMinutes("");
     setFilterOptionsData([]);
     setDialogTotalCount(0);
     setDialogFreshCount(0);
@@ -126,6 +128,10 @@ export default function AdminPhraseDownloads() {
 
     if (!isAll && selectedFilterKey && selectedFilterValue) {
       url += `&filterKey=${encodeURIComponent(selectedFilterKey)}&filterValue=${encodeURIComponent(selectedFilterValue)}`;
+    }
+
+    if (limitPerSpeakerMinutes && parseFloat(limitPerSpeakerMinutes) > 0) {
+      url += `&limitPerSpeakerMinutes=${encodeURIComponent(limitPerSpeakerMinutes)}`;
     }
 
     setDialogOpen(false);
@@ -624,6 +630,67 @@ export default function AdminPhraseDownloads() {
                       </div>
                     </div>
                   )}
+
+                  {/* Limit Per Speaker (Duration Cap) */}
+                  <div className="bg-neutral-800/90 border border-neutral-700/80 rounded-xl p-4 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <label className="block text-xs font-bold text-neutral-200 uppercase tracking-wider flex items-center gap-1.5">
+                          <Clock className="w-3.5 h-3.5 text-amber-400" />
+                          <span>Limit Per Speaker (Duration Cap)</span>
+                        </label>
+                        <span className="text-[11px] text-neutral-400">
+                          Caps audio to max minutes per unique speaker (e.g. 30 min per speaker). Leave blank for all.
+                        </span>
+                      </div>
+                      {limitPerSpeakerMinutes && (
+                        <span className="px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 text-xs font-mono font-bold">
+                          {limitPerSpeakerMinutes} min / speaker
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2">
+                      <div className="relative flex-1 min-w-[130px]">
+                        <input
+                          type="number"
+                          min="1"
+                          max="600"
+                          placeholder="Minutes (e.g. 30)"
+                          value={limitPerSpeakerMinutes}
+                          onChange={(e) => setLimitPerSpeakerMinutes(e.target.value)}
+                          className="w-full pl-3 pr-9 py-2 bg-neutral-900 border border-neutral-700 text-white text-xs rounded-lg focus:border-primary-500 focus:outline-none font-mono"
+                        />
+                        <span className="absolute right-2.5 top-2 text-xs text-neutral-500 font-mono">min</span>
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        {["15", "30", "45", "60"].map((mins) => (
+                          <button
+                            key={mins}
+                            type="button"
+                            onClick={() => setLimitPerSpeakerMinutes(mins)}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-mono font-semibold transition-all ${
+                              limitPerSpeakerMinutes === mins
+                                ? "bg-amber-500 text-black font-bold shadow-md shadow-amber-500/20"
+                                : "bg-neutral-750 hover:bg-neutral-700 text-neutral-300 border border-neutral-700"
+                            }`}
+                          >
+                            {mins}m
+                          </button>
+                        ))}
+                        {limitPerSpeakerMinutes && (
+                          <button
+                            type="button"
+                            onClick={() => setLimitPerSpeakerMinutes("")}
+                            className="px-2.5 py-1.5 rounded-lg text-xs text-rose-300 hover:text-white bg-rose-950/60 hover:bg-rose-900 border border-rose-800/50 transition-all font-semibold"
+                          >
+                            Clear
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
                 </>
               )}
             </div>
