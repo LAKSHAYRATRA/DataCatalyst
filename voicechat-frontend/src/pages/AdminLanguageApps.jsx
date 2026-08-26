@@ -145,18 +145,43 @@ export default function AdminLanguageApps() {
         }
     }
 
-    async function loadAudio(userId, appId) {
-        const key = appId;
-        if (audioSrc[key] || loadingAudio[key]) return;
-        setLoadingAudio(prev => ({ ...prev, [key]: true }));
+    const [downloadingApp, setDownloadingApp] = useState({});
+
+    async function handleDownloadSingleApp(app) {
+        const key = app.appId;
+        const rawSpk = app.speaker_id || app.speakerId || `spk_${app.userId}`;
+        const cleanSpk = String(rawSpk).replace(/[^a-zA-Z0-9_\-]/g, "");
+        const rawName = [app.userFirstname, app.userLastname].filter(Boolean).join("_") || app.username || "applicant";
+        const cleanName = String(rawName).trim().replace(/\s+/g, "_").replace(/[^a-zA-Z0-9_\-]/g, "");
+        const filename = `${cleanSpk}_${cleanName}.wav`;
+
+        if (audioSrc[key]) {
+            const a = document.createElement("a");
+            a.href = audioSrc[key];
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            return;
+        }
+
+        setDownloadingApp(prev => ({ ...prev, [key]: true }));
         try {
-            const url = `${BASE}/api/language-applications/${userId}/${appId}/recording`;
+            const url = `${BASE}/api/language-applications/${app.userId}/${app.appId}/recording`;
             const wavBlob = await fetchAndConvertToWav(url);
-            setAudioSrc(prev => ({ ...prev, [key]: URL.createObjectURL(wavBlob) }));
+            const blobUrl = URL.createObjectURL(wavBlob);
+            setAudioSrc(prev => ({ ...prev, [key]: blobUrl }));
+
+            const a = document.createElement("a");
+            a.href = blobUrl;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
         } catch (e) {
-            setError("Failed to convert audio: " + e.message);
+            Swal.fire("Download Failed", e.message || "Could not convert and download recording", "error");
         } finally {
-            setLoadingAudio(prev => ({ ...prev, [key]: false }));
+            setDownloadingApp(prev => ({ ...prev, [key]: false }));
         }
     }
 
@@ -276,27 +301,32 @@ export default function AdminLanguageApps() {
                                                         </td>
                                                         <td className="px-4 py-3">
                                                             {app.recordingFile ? (
-                                                                !audioSrc[key] ? (
-                                                                    <button
-                                                                        onClick={() => loadAudio(app.userId, app.appId)}
-                                                                        disabled={loadingAudio[key]}
-                                                                        className="px-3 py-1.5 bg-neutral-700 hover:bg-neutral-600 text-warning-400 text-xs font-semibold rounded-lg transition-colors disabled:opacity-50"
-                                                                    >
-                                                                        {loadingAudio[key] ? "Converting..." : "▶ Load"}
-                                                                    </button>
-                                                                ) : (
-                                                                    <div className="flex items-center gap-2">
-                                                                        <audio ref={el => audioRefs.current[key] = el} src={audioSrc[key]} controls controlsList="nodownload noplaybackrate" onContextMenu={(e) => e.preventDefault()} className="h-8 w-60" />
-                                                                        <a
-                                                                            href={audioSrc[key]}
-                                                                            download={`${([app.userFirstname, app.userLastname].filter(Boolean).join('_') || app.username || 'applicant').replace(/[^a-zA-Z0-9_\-]/g, '')}_${app.speaker_id || app.speakerId || 'spk'}.wav`}
-                                                                            className="p-1.5 bg-neutral-700 hover:bg-neutral-600 text-warning-400 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors"
-                                                                            title="Download converted WAV file"
+                                                                <div className="flex items-center gap-2">
+                                                                    {!audioSrc[key] ? (
+                                                                        <button
+                                                                            onClick={() => handleDownloadSingleApp(app)}
+                                                                            disabled={downloadingApp[key]}
+                                                                            className="px-2.5 py-1.5 bg-neutral-700 hover:bg-neutral-600 text-warning-400 text-xs font-semibold rounded-lg transition-colors disabled:opacity-50 flex items-center gap-1"
                                                                         >
+                                                                            {downloadingApp[key] ? "Converting..." : "▶ Load"}
+                                                                        </button>
+                                                                    ) : (
+                                                                        <audio ref={el => audioRefs.current[key] = el} src={audioSrc[key]} controls controlsList="nodownload noplaybackrate" onContextMenu={(e) => e.preventDefault()} className="h-8 w-52" />
+                                                                    )}
+                                                                    <button
+                                                                        onClick={() => handleDownloadSingleApp(app)}
+                                                                        disabled={downloadingApp[key]}
+                                                                        className="p-1.5 px-2.5 bg-primary-600/90 hover:bg-primary-500 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm disabled:opacity-50"
+                                                                        title={`Download ${(app.speaker_id || app.speakerId || `spk_${app.userId}`) + '_' + ([app.userFirstname, app.userLastname].filter(Boolean).join('_') || app.username || 'applicant')}.wav`}
+                                                                    >
+                                                                        {downloadingApp[key] ? (
+                                                                            <div className="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                                                                        ) : (
                                                                             <Download className="w-3.5 h-3.5" />
-                                                                        </a>
-                                                                    </div>
-                                                                )
+                                                                        )}
+                                                                        <span>WAV</span>
+                                                                    </button>
+                                                                </div>
                                                             ) : (
                                                                 <span className="text-neutral-600 text-xs">—</span>
                                                             )}

@@ -1022,7 +1022,7 @@ async function listLanguageApplications(req, res) {
         const allowedLanguages = req.user.isAdmin ? null : getReviewerLanguageCodes(req.user);
 
         const users = await User.find({ "languageApplications.0": { $exists: true } })
-            .select("firstname lastname email username languageApplications")
+            .select("firstname lastname email username speaker_id languageApplications")
             .lean();
 
         let apps = [];
@@ -1040,6 +1040,7 @@ async function listLanguageApplications(req, res) {
                     userLastname: u.lastname,
                     userEmail: u.email,
                     username: u.username,
+                    speaker_id: u.speaker_id || `spk_${u._id}`,
                     companyId: app.companyId,
                     ...app,
                 });
@@ -5332,7 +5333,7 @@ router.get("/language-applications", async (req, res) => {
         // Find users with matching language applications
         const matchStage = { "languageApplications.0": { $exists: true } };
         const users = await User.find(matchStage)
-            .select("firstname lastname email username languageApplications")
+            .select("firstname lastname email username speaker_id languageApplications")
             .lean();
 
         // Flatten to individual applications
@@ -5347,6 +5348,7 @@ router.get("/language-applications", async (req, res) => {
                         userLastname: u.lastname,
                         userEmail: u.email,
                         username: u.username,
+                        speaker_id: u.speaker_id || `spk_${u._id}`,
                         companyId: app.companyId,
                         ...app,
                     });
