@@ -145,6 +145,21 @@ export default function AdminLanguageApps() {
         }
     }
 
+    async function loadAudio(userId, appId) {
+        const key = appId;
+        if (audioSrc[key] || loadingAudio[key]) return;
+        setLoadingAudio(prev => ({ ...prev, [key]: true }));
+        try {
+            const url = `${BASE}/api/language-applications/${userId}/${appId}/recording`;
+            const wavBlob = await fetchAndConvertToWav(url);
+            setAudioSrc(prev => ({ ...prev, [key]: URL.createObjectURL(wavBlob) }));
+        } catch (e) {
+            setError("Failed to convert audio: " + e.message);
+        } finally {
+            setLoadingAudio(prev => ({ ...prev, [key]: false }));
+        }
+    }
+
     const [downloadingApp, setDownloadingApp] = useState({});
 
     async function handleDownloadSingleApp(app) {
@@ -304,11 +319,11 @@ export default function AdminLanguageApps() {
                                                                 <div className="flex items-center gap-2">
                                                                     {!audioSrc[key] ? (
                                                                         <button
-                                                                            onClick={() => handleDownloadSingleApp(app)}
-                                                                            disabled={downloadingApp[key]}
+                                                                            onClick={() => loadAudio(app.userId, app.appId)}
+                                                                            disabled={loadingAudio[key]}
                                                                             className="px-2.5 py-1.5 bg-neutral-700 hover:bg-neutral-600 text-warning-400 text-xs font-semibold rounded-lg transition-colors disabled:opacity-50 flex items-center gap-1"
                                                                         >
-                                                                            {downloadingApp[key] ? "Converting..." : "▶ Load"}
+                                                                            {loadingAudio[key] ? "Converting..." : "▶ Load"}
                                                                         </button>
                                                                     ) : (
                                                                         <audio ref={el => audioRefs.current[key] = el} src={audioSrc[key]} controls controlsList="nodownload noplaybackrate" onContextMenu={(e) => e.preventDefault()} className="h-8 w-52" />
@@ -316,7 +331,7 @@ export default function AdminLanguageApps() {
                                                                     <button
                                                                         onClick={() => handleDownloadSingleApp(app)}
                                                                         disabled={downloadingApp[key]}
-                                                                        className="p-1.5 px-2.5 bg-primary-600/90 hover:bg-primary-500 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm disabled:opacity-50"
+                                                                        className="p-1.5 px-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all shadow-md disabled:opacity-50"
                                                                         title={`Download ${(app.speaker_id || app.speakerId || `spk_${app.userId}`) + '_' + ([app.userFirstname, app.userLastname].filter(Boolean).join('_') || app.username || 'applicant')}.wav`}
                                                                     >
                                                                         {downloadingApp[key] ? (
@@ -324,7 +339,7 @@ export default function AdminLanguageApps() {
                                                                         ) : (
                                                                             <Download className="w-3.5 h-3.5" />
                                                                         )}
-                                                                        <span>WAV</span>
+                                                                        <span>Download WAV</span>
                                                                     </button>
                                                                 </div>
                                                             ) : (

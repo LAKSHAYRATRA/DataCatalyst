@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Navigate } from "react-router-dom";
+import { Download } from "lucide-react";
 import AdminNav from "../components/AdminNav.jsx";
 import { fetchAndConvertToWav } from "../lib/audioToWav.js";
 import { getUserInfo } from "../lib/auth.js";
@@ -99,6 +100,46 @@ export default function AdminCallApps() {
             setError("Failed to convert audio: " + e.message);
         } finally {
             setLoadingAudio(prev => ({ ...prev, [key]: false }));
+        }
+    }
+
+    const [downloadingApp, setDownloadingApp] = useState({});
+
+    async function handleDownloadSingleApp(app) {
+        const key = app.appId;
+        const rawSpk = app.speaker_id || app.speakerId || `spk_${app.userId}`;
+        const cleanSpk = String(rawSpk).replace(/[^a-zA-Z0-9_\-]/g, "");
+        const rawName = [app.userFirstname, app.userLastname].filter(Boolean).join("_") || app.username || "applicant";
+        const cleanName = String(rawName).trim().replace(/\s+/g, "_").replace(/[^a-zA-Z0-9_\-]/g, "");
+        const filename = `${cleanSpk}_${cleanName}.wav`;
+
+        if (audioSrc[key]) {
+            const a = document.createElement("a");
+            a.href = audioSrc[key];
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            return;
+        }
+
+        setDownloadingApp(prev => ({ ...prev, [key]: true }));
+        try {
+            const url = `${BASE}/api/language-applications/${app.userId}/${app.appId}/recording`;
+            const wavBlob = await fetchAndConvertToWav(url);
+            const blobUrl = URL.createObjectURL(wavBlob);
+            setAudioSrc(prev => ({ ...prev, [key]: blobUrl }));
+
+            const a = document.createElement("a");
+            a.href = blobUrl;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        } catch (e) {
+            alert("Could not convert and download recording: " + (e.message || "Unknown error"));
+        } finally {
+            setDownloadingApp(prev => ({ ...prev, [key]: false }));
         }
     }
 
@@ -229,17 +270,32 @@ export default function AdminCallApps() {
                                                         </td>
                                                         <td className="px-4 py-3">
                                                             {app.recordingFile ? (
-                                                                !audioSrc[key] ? (
+                                                                <div className="flex items-center gap-2">
+                                                                    {!audioSrc[key] ? (
+                                                                        <button
+                                                                            onClick={() => loadAudio(app.userId, app.appId)}
+                                                                            disabled={loadingAudio[key]}
+                                                                            className="px-2.5 py-1.5 bg-neutral-700 hover:bg-neutral-600 text-warning-400 text-xs font-semibold rounded-lg transition-colors disabled:opacity-50 flex items-center gap-1"
+                                                                        >
+                                                                            {loadingAudio[key] ? "Converting..." : "▶ Load"}
+                                                                        </button>
+                                                                    ) : (
+                                                                        <audio ref={el => audioRefs.current[key] = el} src={audioSrc[key]} controls controlsList="nodownload noplaybackrate" onContextMenu={(e) => e.preventDefault()} className="h-8 w-52" />
+                                                                    )}
                                                                     <button
-                                                                        onClick={() => loadAudio(app.userId, app.appId)}
-                                                                        disabled={loadingAudio[key]}
-                                                                        className="px-3 py-1.5 bg-neutral-700 hover:bg-neutral-600 text-warning-400 text-xs font-semibold rounded-lg transition-colors disabled:opacity-50"
+                                                                        onClick={() => handleDownloadSingleApp(app)}
+                                                                        disabled={downloadingApp[key]}
+                                                                        className="p-1.5 px-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all shadow-md disabled:opacity-50"
+                                                                        title={`Download ${(app.speaker_id || app.speakerId || `spk_${app.userId}`) + '_' + ([app.userFirstname, app.userLastname].filter(Boolean).join('_') || app.username || 'applicant')}.wav`}
                                                                     >
-                                                                        {loadingAudio[key] ? "Converting..." : "▶ Load"}
+                                                                        {downloadingApp[key] ? (
+                                                                            <div className="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                                                                        ) : (
+                                                                            <Download className="w-3.5 h-3.5" />
+                                                                        )}
+                                                                        <span>Download WAV</span>
                                                                     </button>
-                                                                ) : (
-                                                                    <audio ref={el => audioRefs.current[key] = el} src={audioSrc[key]} controls controlsList="nodownload noplaybackrate" onContextMenu={(e) => e.preventDefault()} className="h-8 w-64" />
-                                                                )
+                                                                </div>
                                                             ) : (
                                                                 <span className="text-neutral-600 text-xs">—</span>
                                                             )}
