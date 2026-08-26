@@ -365,15 +365,16 @@ export async function getAvailablePhrase(req, res) {
     const expiryTime = new Date(Date.now() - 5 * 60 * 1000); // 5 minutes ago
 
     let resolvedProjectName = projectName;
+    let compDoc = null;
     if (projectName && projectName !== "Any") {
-      const compDoc = await Company.findOne({
+      compDoc = await Company.findOne({
         $or: [
           { name: projectName },
           { projectName: projectName },
           { name: { $regex: new RegExp(`^${projectName}$`, "i") } },
           { projectName: { $regex: new RegExp(`^${projectName}$`, "i") } }
         ]
-      }).select("name").lean();
+      }).lean();
       if (compDoc) {
         resolvedProjectName = compDoc.name;
       }
@@ -504,24 +505,33 @@ export async function getAvailablePhrase(req, res) {
         (a.applicationType === "phrase" || !a.applicationType) && a.status === "approved"
       );
       if (userApprovedApps.length === 0) {
-        return res.json({ phrase: null, message: "You are not approved for any phrase projects yet. Please apply on the project application page first.", redirect: "/language-apply" });
+        return res.json({ phrase: null, phrases: [], message: "You are not approved for any phrase projects yet. Please apply on the project application page first.", redirect: "/language-apply?type=phrase" });
+      }
+      if (compDoc) {
+        if (compDoc.isHidden) {
+          return res.json({ phrase: null, phrases: [], message: "This project has been completed and hidden. Please apply for active projects.", redirect: "/language-apply?type=phrase" });
+        }
+        const hiddenLangs = (compDoc.hiddenLanguages || []).map(l => String(l).toLowerCase().trim());
+        if (hiddenLangs.includes(reqLang)) {
+          return res.json({ phrase: null, phrases: [], message: "This language is currently hidden for this project. Please apply for other projects/languages.", redirect: "/language-apply?type=phrase" });
+        }
       }
       if (resolvedProjectName && resolvedProjectName !== "Any" && !isAppApproved(resolvedProjectName)) {
-        return res.json({ phrase: null, message: "You are not approved for this project and language. Please apply on the project application page first." });
+        return res.json({ phrase: null, phrases: [], message: "You are not approved for this project and language. Please apply on the project application page first.", redirect: "/language-apply?type=phrase" });
       }
     }
 
     if (resolvedProjectName && resolvedProjectName !== "Any" && !isProjectActive) {
-      return res.json({ phrase: null, message: "No phrases available (project is currently inactive)." });
+      return res.json({ phrase: null, phrases: [], message: "No phrases available (project is currently inactive or completed).", redirect: (!user.isAdmin && !user.isQA) ? "/language-apply?type=phrase" : null });
     }
 
     if (resolvedProjectName && blockedCompanies.includes(resolvedProjectName)) {
       if (maxedOutCompanies.includes(resolvedProjectName)) {
-        return res.json({ phrase: null, message: "Project/Language limit reached, try some other project/Language" });
+        return res.json({ phrase: null, phrases: [], message: "Project/Language limit reached, try some other project/Language", redirect: (!user.isAdmin && !user.isQA) ? "/language-apply?type=phrase" : null });
       } else if (rejectedCompanyIds.includes(String(resolvedProjectName).toLowerCase())) {
-        return res.json({ phrase: null, message: "You are not approved for this company's phrases." });
+        return res.json({ phrase: null, phrases: [], message: "You are not approved for this company's phrases.", redirect: (!user.isAdmin && !user.isQA) ? "/language-apply?type=phrase" : null });
       } else {
-        return res.json({ phrase: null, message: `Your test phrase for company ${resolvedProjectName} is currently under review by QA. Please wait for approval before contributing further.` });
+        return res.json({ phrase: null, phrases: [], message: `Your test phrase for company ${resolvedProjectName} is currently under review by QA. Please wait for approval before contributing further.` });
       }
     } else {
       if (resolvedProjectName && resolvedProjectName !== "Any") {
@@ -798,7 +808,12 @@ export async function getAvailablePhrase(req, res) {
     }
 
     if (lockedPhrases.length === 0) {
-      return res.json({ phrase: null, phrases: [], message: "No phrases available" });
+      return res.json({ 
+        phrase: null, 
+        phrases: [], 
+        message: "No active phrases available for this project right now.",
+        redirect: (!user.isAdmin && !user.isQA) ? "/language-apply?type=phrase" : null
+      });
     }
 
     const firstPhrase = lockedPhrases[0];

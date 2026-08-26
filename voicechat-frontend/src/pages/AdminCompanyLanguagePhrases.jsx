@@ -17,10 +17,12 @@ import {
   CheckSquare,
   Square,
   SlidersHorizontal,
-  X
+  X,
+  Eye,
+  EyeOff
 } from "lucide-react";
 import Swal from "sweetalert2";
-import { apiGet, apiPostJson, apiDeleteJson } from "../lib/api.js";
+import { apiGet, apiPostJson, apiPatchJson, apiDeleteJson } from "../lib/api.js";
 
 const STANDARD_FIELDS = [
   { key: "phraseId", label: "Phrase ID" },
@@ -363,6 +365,42 @@ export default function AdminCompanyLanguagePhrases() {
     );
   };
 
+  const isLanguageHidden = (company?.hiddenLanguages || []).map(l => String(l).toLowerCase().trim()).includes(String(language || "").toLowerCase().trim());
+
+  const toggleHideThisLanguage = async () => {
+    const actionText = isLanguageHidden ? "Unhide" : "Hide";
+    const confirm = await Swal.fire({
+      title: `${actionText} "${language.toUpperCase()}" for ${company ? company.name : "this project"}?`,
+      text: isLanguageHidden
+        ? `This language will become visible to contributors for ${company ? company.name : "this project"}.`
+        : `This will ONLY hide "${language.toUpperCase()}" for ${company ? company.name : "this project"} without affecting other projects' "${language.toUpperCase()}".`,
+      icon: "question",
+      showCancelButton: true,
+      confirmButtonColor: isLanguageHidden ? "#10b981" : "#f59e0b",
+      confirmButtonText: `Yes, ${actionText} Language`
+    });
+
+    if (!confirm.isConfirmed) return;
+
+    try {
+      const res = await apiPatchJson(`/api/admin/companies/${id}/languages/${encodeURIComponent(language)}/toggle-hide`, {});
+      setCompany(prev => ({
+        ...prev,
+        hiddenLanguages: res.hiddenLanguages
+      }));
+      Swal.fire({
+        toast: true,
+        position: "top-end",
+        icon: "success",
+        title: res.message || `Language ${actionText.toLowerCase()}d`,
+        timer: 2500,
+        showConfirmButton: false
+      });
+    } catch (err) {
+      Swal.fire("Error", "Failed to toggle language visibility: " + err.message, "error");
+    }
+  };
+
   return (
     <div className="min-h-screen bg-neutral-900 flex text-white transition-colors duration-300">
       <AdminNav />
@@ -377,14 +415,39 @@ export default function AdminCompanyLanguagePhrases() {
               <ArrowLeft className="w-4 h-4" /> Back to Languages
             </button>
             <div>
-              <h1 className="text-2xl md:text-3xl font-bold flex items-center gap-3 text-white">
-                <Globe className="w-7 h-7 text-primary-500" />
-                {company ? company.name : "Company"} — {language.toUpperCase()} Phrases
-              </h1>
+              <div className="flex items-center gap-3">
+                <h1 className="text-2xl md:text-3xl font-bold flex items-center gap-3 text-white">
+                  <Globe className="w-7 h-7 text-primary-500" />
+                  {company ? company.name : "Company"} — {language.toUpperCase()} Phrases
+                </h1>
+                {isLanguageHidden ? (
+                  <span className="text-xs bg-rose-900/50 text-rose-300 border border-rose-600/60 px-2.5 py-0.5 rounded-full font-bold flex items-center gap-1">
+                    <EyeOff className="w-3 h-3" /> Hidden (Completed)
+                  </span>
+                ) : (
+                  <span className="text-xs bg-emerald-900/40 text-emerald-300 border border-emerald-600/50 px-2.5 py-0.5 rounded-full font-bold flex items-center gap-1">
+                    <Eye className="w-3 h-3" /> Active
+                  </span>
+                )}
+              </div>
               <p className="text-sm text-neutral-400 mt-1">
                 Viewing phrase workload database for {language.toUpperCase()}. Set application test samples and manage phrase items.
               </p>
             </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={toggleHideThisLanguage}
+              className={`px-3 py-1.5 font-bold text-xs rounded-lg transition-all flex items-center gap-1.5 shadow-md ${
+                isLanguageHidden
+                  ? "bg-emerald-600 hover:bg-emerald-500 text-white"
+                  : "bg-neutral-800 hover:bg-neutral-700 text-rose-300 border border-rose-500/40"
+              }`}
+              title={isLanguageHidden ? "Unhide this language for contributors" : "Hide this language for contributors"}
+            >
+              {isLanguageHidden ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
+              <span>{isLanguageHidden ? "Unhide Language" : "Hide Language"}</span>
+            </button>
           </div>
         </div>
 

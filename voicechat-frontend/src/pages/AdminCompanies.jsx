@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Building2, Save, Loader2, CheckCircle2, Plus, Trash2 } from 'lucide-react';
+import { Building2, Save, Loader2, CheckCircle2, Plus, Trash2, Eye, EyeOff } from 'lucide-react';
 import { apiGet, apiPostJson, apiPatchJson, apiDeleteJson } from '../lib/api';
 import AdminNav from '../components/AdminNav.jsx';
 import Swal from 'sweetalert2';
@@ -37,6 +37,42 @@ export default function AdminCompanies() {
       if (c._id !== companyId) return c;
       return { ...c, [field]: value };
     }));
+  };
+
+  const toggleHideCompany = async (companyId, companyName, currentIsHidden) => {
+    const actionText = currentIsHidden ? "Unhide" : "Hide";
+    const confirm = await Swal.fire({
+      title: `${actionText} Project?`,
+      text: currentIsHidden 
+        ? `Unhiding "${companyName}" will make it visible to contributors on Project Applications and Phrase Studio.`
+        : `Hiding "${companyName}" will hide it from contributors (e.g. if the project is completed) without deleting data.`,
+      icon: "question",
+      showCancelButton: true,
+      confirmButtonColor: currentIsHidden ? "#10b981" : "#f59e0b",
+      confirmButtonText: `Yes, ${actionText} Project`
+    });
+
+    if (!confirm.isConfirmed) return;
+
+    try {
+      const res = await apiPatchJson(`/api/admin/companies/${companyId}/toggle-hide`, {});
+      setCompanies(prev => prev.map(c => {
+        if (c._id === companyId) {
+          return { ...c, isHidden: res.isHidden };
+        }
+        return c;
+      }));
+      Swal.fire({
+        toast: true,
+        position: "top-end",
+        icon: "success",
+        title: res.message || `Project ${actionText.toLowerCase()}d`,
+        timer: 2500,
+        showConfirmButton: false
+      });
+    } catch (err) {
+      Swal.fire("Error", "Failed to toggle project visibility: " + err.message, "error");
+    }
   };
 
   const saveCompany = async (companyId) => {
@@ -135,7 +171,7 @@ export default function AdminCompanies() {
                 <Building2 className="w-8 h-8 text-primary-500" />
                 Company Configurations
               </h1>
-              <p className="text-neutral-500 dark:text-neutral-400">Manage custom contribution time limits and payrates per company.</p>
+              <p className="text-neutral-500 dark:text-neutral-400">Manage custom contribution time limits, visibility, and payrates per company.</p>
             </div>
             {message && (
               <span className="flex items-center gap-1 text-success-600 bg-success-100 dark:bg-success-900/30 px-4 py-2 rounded-lg font-medium text-sm">
@@ -193,11 +229,22 @@ export default function AdminCompanies() {
                 key={company._id}
                 initial={{ scale: 0.98, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}
-                className="card"
+                className={`card transition-all ${company.isHidden ? 'opacity-85 border-dashed border-rose-500/40 bg-rose-950/10' : ''}`}
               >
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 border-b border-neutral-100 dark:border-neutral-800 pb-4">
                   <div>
-                    <h2 className="text-xl font-bold">{company.name}</h2>
+                    <div className="flex items-center gap-3">
+                      <h2 className="text-xl font-bold">{company.name}</h2>
+                      {company.isHidden ? (
+                        <span className="text-xs bg-rose-900/50 text-rose-300 border border-rose-600/60 px-2.5 py-0.5 rounded-full font-bold flex items-center gap-1">
+                          <EyeOff className="w-3 h-3" /> Hidden (Completed)
+                        </span>
+                      ) : (
+                        <span className="text-xs bg-emerald-900/40 text-emerald-300 border border-emerald-600/50 px-2.5 py-0.5 rounded-full font-bold flex items-center gap-1">
+                          <Eye className="w-3 h-3" /> Active
+                        </span>
+                      )}
+                    </div>
                     <div className="flex flex-wrap gap-2 mt-2">
                       <button 
                         onClick={() => navigate(`/admin/companies/${company._id}/user-customizations`)}
@@ -222,6 +269,18 @@ export default function AdminCompanies() {
                         className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-lg transition-colors flex items-center gap-1 shadow-md"
                       >
                         📊 Contributors Summary
+                      </button>
+                      <button 
+                        onClick={() => toggleHideCompany(company._id, company.name, company.isHidden)}
+                        className={`px-3 py-1.5 font-bold text-xs rounded-lg transition-all flex items-center gap-1.5 shadow-sm ${
+                          company.isHidden 
+                            ? "bg-emerald-600 hover:bg-emerald-500 text-white" 
+                            : "bg-neutral-800 hover:bg-neutral-700 text-rose-300 border border-rose-500/40"
+                        }`}
+                        title={company.isHidden ? "Unhide project for contributors" : "Hide project from contributors"}
+                      >
+                        {company.isHidden ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
+                        <span>{company.isHidden ? "Unhide Project" : "Hide Project"}</span>
                       </button>
                     </div>
                   </div>

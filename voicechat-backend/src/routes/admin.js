@@ -936,15 +936,21 @@ router.get("/companies", requireAuth(JWT_SECRET), async (req, res) => {
         }
 
         const filteredCompanies = allCompanies.map(c => {
+            if (c.isHidden) return null; // Project is hidden
+
             const compKey = String(c.name || "").trim().toLowerCase();
             const activeLangs = companyActiveLangs[compKey];
 
             // If no sample phrases exist for this company, do NOT list it on the contributor apply page
             if (!activeLangs || activeLangs.size === 0) return null;
 
+            const hiddenSet = new Set((c.hiddenLanguages || []).map(l => String(l).toLowerCase().trim()));
+            const visibleLangs = Array.from(activeLangs).filter(l => !hiddenSet.has(String(l).toLowerCase().trim()));
+            if (visibleLangs.length === 0) return null;
+
             return {
                 ...c,
-                languages: Array.from(activeLangs)
+                languages: visibleLangs
             };
         }).filter(Boolean);
 
@@ -5722,12 +5728,18 @@ router.get("/phrases/download-company", async (req, res) => {
         }
         const isAlreadyDownloadedFolder = company.endsWith("_downloaded") || companyFolder.endsWith("_downloaded");
 
+        // Determine target status: "approved" (default) or "recorded" (pending QA)
+        let targetStatus = "approved";
+        if (req.query.status === "recorded" || req.query.status === "pending" || type === "recorded" || type === "pending" || type === "pending_phrases") {
+            targetStatus = "recorded";
+        }
+
         // Fetch the company config to read custom namingPattern
         const baseCompanyName = companyFolder.replace(/_downloaded$/, "");
         const companyDoc = await Company.findOne({ name: { $regex: new RegExp(`^${baseCompanyName}$`, "i") } }).lean();
         const filenamePattern = companyDoc?.namingPattern || "{phraseId}";
 
-        // Filter ONLY QA-approved phrases
+        // Target company IDs
         const targetCompanyIds = (type === "fresh_phrases")
             ? [companyFolder, companyFolder.toLowerCase()]
             : [
@@ -5737,18 +5749,73 @@ router.get("/phrases/download-company", async (req, res) => {
                 `${companyFolder.toLowerCase()}_downloaded`
               ];
 
-        const approvedPhrases = await Phrase.find({
+        let phrasesQuery = {
             companyId: { $in: targetCompanyIds },
-            status: "approved",
+            status: targetStatus,
             audioFile: { $ne: null }
-        }).populate("contributorId").lean();
+        };
+
+        const rawPhrases = await Phrase.find(phrasesQuery).populate("contributorId").lean();
+
+        // Custom filtering by key & value if provided
+        const filterKey = req.query.filterKey ? String(req.query.filterKey).trim() : "";
+        const filterValue = req.query.filterValue ? String(req.query.filterValue).trim() : "";
+
+        let approvedPhrases = rawPhrases;
+        if (filterKey && filterValue) {
+            const cleanTargetVal = filterValue.toLowerCase();
+            approvedPhrases = rawPhrases.filter(p => {
+                const contributor = p.contributorId || {};
+                if (filterKey === "recording_date") {
+                    if (!p.recordedAt) return false;
+                    const d = new Date(p.recordedAt);
+                    const day = String(d.getDate()).padStart(2, "0");
+                    const month = String(d.getMonth() + 1).padStart(2, "0");
+                    const year = d.getFullYear();
+                    const ddmmyyyy = `${day}-${month}-${year}`;
+                    const yyyymmdd = `${year}-${month}-${day}`;
+                    return ddmmyyyy.toLowerCase() === cleanTargetVal || yyyymmdd.toLowerCase() === cleanTargetVal;
+                }
+                if (filterKey === "first_name") {
+                    const fName = contributor.firstname ? String(contributor.firstname).trim() : (contributor.username || "");
+                    return fName.toLowerCase() === cleanTargetVal;
+                }
+                if (filterKey === "last_name") {
+                    const lName = contributor.lastname ? String(contributor.lastname).trim() : "";
+                    return lName.toLowerCase() === cleanTargetVal;
+                }
+                if (filterKey === "speaker_id") {
+                    const spk = contributor.speaker_id || p.speaker_id || "";
+                    return spk.toLowerCase() === cleanTargetVal;
+                }
+                if (filterKey === "language") {
+                    return String(p.language || "").trim().toLowerCase() === cleanTargetVal;
+                }
+                if (filterKey === "gender") {
+                    return String(contributor.gender || "").trim().toLowerCase() === cleanTargetVal;
+                }
+                if (p.tags && p.tags[filterKey] !== undefined) {
+                    return String(p.tags[filterKey]).trim().toLowerCase() === cleanTargetVal;
+                }
+                if (p[filterKey] !== undefined) {
+                    return String(p[filterKey]).trim().toLowerCase() === cleanTargetVal;
+                }
+                return false;
+            });
+        }
 
         if (approvedPhrases.length === 0) {
-            return res.status(404).json({ error: `No approved phrases found for "${companyFolder}".` });
+            return res.status(404).json({ error: `No matching ${targetStatus} phrases found for "${companyFolder}"${filterKey ? ` with ${filterKey}=${filterValue}` : ''}.` });
+        }
+
+        let zipFilename = `${companyFolder}_${targetStatus}_phrases.zip`;
+        if (filterKey && filterValue) {
+            const cleanVal = filterValue.replace(/[^a-zA-Z0-9_\-]/g, "_");
+            zipFilename = `${companyFolder}_${targetStatus}_${filterKey}_${cleanVal}.zip`;
         }
 
         res.setHeader("Content-Type", "application/zip");
-        res.setHeader("Content-Disposition", `attachment; filename="${companyFolder}_phrases.zip"`);
+        res.setHeader("Content-Disposition", `attachment; filename="${zipFilename}"`);
 
         let ZipArchive;
         try {
@@ -6365,6 +6432,125 @@ router.get("/phrases/download-stats", requireAuth(JWT_SECRET), async (req, res) 
     }
 });
 
+// ===== PHRASE DOWNLOAD FILTER OPTIONS =====
+router.get("/phrases/download-filter-options", requireAuth(JWT_SECRET), async (req, res) => {
+    try {
+        const { company, status = "approved" } = req.query;
+        if (!company) return res.status(400).json({ error: "Company name is required" });
+
+        const companyFolder = company.replace(/[^a-zA-Z0-9_\-\ ]/g, "").trim();
+        const targetStatus = (status === "recorded" || status === "pending") ? "recorded" : "approved";
+
+        const targetCompanyIds = [
+            companyFolder,
+            `${companyFolder}_downloaded`,
+            companyFolder.toLowerCase(),
+            `${companyFolder.toLowerCase()}_downloaded`
+        ];
+
+        const phrases = await Phrase.find({
+            companyId: { $in: targetCompanyIds },
+            status: targetStatus,
+            audioFile: { $ne: null }
+        }).populate("contributorId").lean();
+
+        const filterKeysMap = {
+            recording_date: { label: "Recording Date (DD-MM-YYYY)", values: new Map() },
+            first_name: { label: "First Name", values: new Map() },
+            last_name: { label: "Last Name", values: new Map() },
+            speaker_id: { label: "Speaker ID", values: new Map() },
+            language: { label: "Language", values: new Map() },
+            gender: { label: "Gender", values: new Map() },
+            emotion: { label: "Emotion", values: new Map() },
+            style: { label: "Style", values: new Map() },
+            intent: { label: "Intent", values: new Map() },
+            pitch: { label: "Pitch", values: new Map() },
+            speed: { label: "Speed", values: new Map() },
+            volume: { label: "Volume", values: new Map() },
+            script_type: { label: "Script Type", values: new Map() }
+        };
+
+        const addVal = (k, v) => {
+            if (v === undefined || v === null || String(v).trim() === "") return;
+            const strVal = String(v).trim();
+            if (!filterKeysMap[k]) {
+                filterKeysMap[k] = { label: k.charAt(0).toUpperCase() + k.slice(1), values: new Map() };
+            }
+            filterKeysMap[k].values.set(strVal, (filterKeysMap[k].values.get(strVal) || 0) + 1);
+        };
+
+        for (const p of phrases) {
+            const contributor = p.contributorId || {};
+            const spkId = contributor.speaker_id || p.speaker_id || "";
+            const fName = contributor.firstname ? String(contributor.firstname).trim() : (contributor.username || "");
+            const lName = contributor.lastname ? String(contributor.lastname).trim() : "";
+            const lang = String(p.language || "").trim().toLowerCase();
+            const gdr = contributor.gender ? String(contributor.gender).trim().toLowerCase() : "";
+            
+            // Format dates
+            if (p.recordedAt) {
+                const d = new Date(p.recordedAt);
+                if (!isNaN(d.getTime())) {
+                    const day = String(d.getDate()).padStart(2, "0");
+                    const month = String(d.getMonth() + 1).padStart(2, "0");
+                    const year = d.getFullYear();
+                    const ddmmyyyy = `${day}-${month}-${year}`;
+                    addVal("recording_date", ddmmyyyy);
+                }
+            }
+
+            if (fName) addVal("first_name", fName);
+            if (lName) addVal("last_name", lName);
+            if (spkId) addVal("speaker_id", spkId);
+            if (lang) addVal("language", lang);
+            if (gdr) addVal("gender", gdr);
+
+            if (p.emotion) addVal("emotion", p.emotion);
+            if (p.style) addVal("style", p.style);
+            if (p.intent) addVal("intent", p.intent);
+            if (p.pitch) addVal("pitch", p.pitch);
+            if (p.speed) addVal("speed", p.speed);
+            if (p.volume) addVal("volume", p.volume);
+            if (p.script_type) addVal("script_type", p.script_type);
+
+            if (p.tags && typeof p.tags === "object") {
+                for (const [tk, tv] of Object.entries(p.tags)) {
+                    if (tv && typeof tv !== "object") {
+                        addVal(tk, String(tv));
+                    }
+                }
+            }
+        }
+
+        const filterOptions = [];
+        for (const [k, meta] of Object.entries(filterKeysMap)) {
+            if (meta.values.size > 0) {
+                const valuesArr = Array.from(meta.values.entries()).map(([val, cnt]) => ({
+                    value: val,
+                    count: cnt
+                })).sort((a, b) => b.count - a.count);
+
+                filterOptions.push({
+                    key: k,
+                    label: meta.label,
+                    values: valuesArr
+                });
+            }
+        }
+
+        res.json({
+            success: true,
+            company: companyFolder,
+            status: targetStatus,
+            totalCount: phrases.length,
+            filterOptions
+        });
+    } catch (e) {
+        console.error("download-filter-options error:", e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
 // ===== COMPANY MANAGEMENT =====
 
 
@@ -6472,6 +6658,54 @@ async function syncCompanyPhraseFrequency(companyName, targetFreq) {
     }
 }
 
+router.patch("/companies/:id/toggle-hide", async (req, res) => {
+    try {
+        const company = await Company.findById(req.params.id);
+        if (!company) return res.status(404).json({ error: "Company not found" });
+
+        company.isHidden = !company.isHidden;
+        await company.save();
+
+        res.json({ 
+            message: `Project '${company.name}' is now ${company.isHidden ? 'hidden' : 'visible'}`,
+            isHidden: company.isHidden,
+            company
+        });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+router.patch("/companies/:id/languages/:language/toggle-hide", async (req, res) => {
+    try {
+        const company = await Company.findById(req.params.id);
+        if (!company) return res.status(404).json({ error: "Company not found" });
+
+        const langCode = String(req.params.language).toLowerCase().trim();
+        if (!langCode) return res.status(400).json({ error: "Language code is required" });
+
+        const hiddenLangs = (company.hiddenLanguages || []).map(l => String(l).toLowerCase().trim());
+        const isCurrentlyHidden = hiddenLangs.includes(langCode);
+
+        if (isCurrentlyHidden) {
+            company.hiddenLanguages = hiddenLangs.filter(l => l !== langCode);
+        } else {
+            company.hiddenLanguages = [...hiddenLangs, langCode];
+        }
+
+        await company.save();
+
+        res.json({
+            message: `Language '${langCode}' is now ${!isCurrentlyHidden ? 'hidden' : 'visible'} for project '${company.name}'`,
+            isHidden: !isCurrentlyHidden,
+            hiddenLanguages: company.hiddenLanguages,
+            company
+        });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 router.delete("/companies/:id", async (req, res) => {
     try {
         // Fetch the company first so we have its name (used as companyId in phrases)
@@ -6548,6 +6782,8 @@ router.get("/companies/:id/phrase-workloads", async (req, res) => {
             { $sort: { _id: 1 } }
         ]);
 
+        const hiddenSet = new Set((company.hiddenLanguages || []).map(l => String(l).toLowerCase().trim()));
+
         const languages = langStats.map(s => ({
             code: s._id,
             name: s._id.charAt(0).toUpperCase() + s._id.slice(1),
@@ -6556,7 +6792,8 @@ router.get("/companies/:id/phrase-workloads", async (req, res) => {
             openPoolCount: s.openPoolCount || 0,
             pendingCount: s.pendingCount || 0,
             recordedCount: s.recordedCount || 0,
-            approvedCount: s.approvedCount || 0
+            approvedCount: s.approvedCount || 0,
+            isHidden: hiddenSet.has(s._id)
         }));
 
         const totalPhrases = languages.reduce((sum, l) => sum + l.count, 0);

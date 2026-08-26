@@ -12,7 +12,9 @@ const companySchema = new mongoose.Schema(
     userCustomizations: { type: [String], default: [] },
     downloadCustomizations: { type: [String], default: [] },
     chronologicalTag: { type: String, default: "emotion" },
-    allowPhraseTextEdit: { type: Boolean, default: false }
+    allowPhraseTextEdit: { type: Boolean, default: false },
+    isHidden: { type: Boolean, default: false },
+    hiddenLanguages: [{ type: String, lowercase: true, trim: true, default: [] }]
   },
   { timestamps: true }
 );

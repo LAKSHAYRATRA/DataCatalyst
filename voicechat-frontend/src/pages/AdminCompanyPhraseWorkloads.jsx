@@ -8,10 +8,12 @@ import {
   Loader2, 
   FileText, 
   ChevronRight,
-  Layers
+  Layers,
+  Eye,
+  EyeOff
 } from "lucide-react";
 import Swal from "sweetalert2";
-import { apiGet } from "../lib/api.js";
+import { apiGet, apiPatchJson } from "../lib/api.js";
 
 export default function AdminCompanyPhraseWorkloads() {
   const { id } = useParams();
@@ -23,27 +25,64 @@ export default function AdminCompanyPhraseWorkloads() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const fetchLanguages = async () => {
-      setLoading(true);
-      try {
-        const data = await apiGet(`/api/admin/companies/${id}/phrase-workloads`);
-        setCompany(data.company);
-        setLanguages(data.languages || []);
-        setSummary(data.summary || null);
-      } catch (err) {
-        Swal.fire({
-          icon: "error",
-          title: "Error Loading Workloads",
-          text: err.message,
-          confirmButtonColor: "#ea580c"
-        });
-      } finally {
-        setLoading(false);
-      }
-    };
-
     fetchLanguages();
   }, [id]);
+
+  const fetchLanguages = async () => {
+    setLoading(true);
+    try {
+      const data = await apiGet(`/api/admin/companies/${id}/phrase-workloads`);
+      setCompany(data.company);
+      setLanguages(data.languages || []);
+      setSummary(data.summary || null);
+    } catch (err) {
+      Swal.fire({
+        icon: "error",
+        title: "Error Loading Workloads",
+        text: err.message,
+        confirmButtonColor: "#ea580c"
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const toggleHideLanguage = async (e, langCode, currentIsHidden) => {
+    e.stopPropagation();
+    const actionText = currentIsHidden ? "Unhide" : "Hide";
+    const confirm = await Swal.fire({
+      title: `${actionText} "${langCode}" for ${company ? company.name : "this project"}?`,
+      text: currentIsHidden
+        ? `This language will become visible to contributors for ${company ? company.name : "this project"}.`
+        : `This will ONLY hide "${langCode}" for ${company ? company.name : "this project"} without affecting other projects' "${langCode}".`,
+      icon: "question",
+      showCancelButton: true,
+      confirmButtonColor: currentIsHidden ? "#10b981" : "#f59e0b",
+      confirmButtonText: `Yes, ${actionText} Language`
+    });
+
+    if (!confirm.isConfirmed) return;
+
+    try {
+      const res = await apiPatchJson(`/api/admin/companies/${id}/languages/${encodeURIComponent(langCode)}/toggle-hide`, {});
+      setLanguages(prev => prev.map(l => {
+        if (l.code.toLowerCase() === langCode.toLowerCase()) {
+          return { ...l, isHidden: res.isHidden };
+        }
+        return l;
+      }));
+      Swal.fire({
+        toast: true,
+        position: "top-end",
+        icon: "success",
+        title: res.message || `Language ${actionText.toLowerCase()}d`,
+        timer: 2500,
+        showConfirmButton: false
+      });
+    } catch (err) {
+      Swal.fire("Error", "Failed to toggle language visibility: " + err.message, "error");
+    }
+  };
 
   return (
     <div className="min-h-screen bg-neutral-900 flex text-white transition-colors duration-300">
@@ -69,7 +108,7 @@ export default function AdminCompanyPhraseWorkloads() {
                 )}
               </h1>
               <p className="text-sm text-neutral-400 mt-1">
-                Inspect phrase databases by language, monitor speaker allocations (Reserved vs Open Pool), and manage workload inventory.
+                Inspect phrase databases by language, hide completed languages, monitor speaker allocations, and manage inventory.
               </p>
             </div>
           </div>
@@ -107,13 +146,13 @@ export default function AdminCompanyPhraseWorkloads() {
             <div className="bg-neutral-800/90 border border-neutral-700 p-4 rounded-xl shadow-sm">
               <div className="text-[11px] font-bold uppercase tracking-wider text-neutral-400">Pending</div>
               <div className="text-2xl font-black text-amber-400 mt-1">{summary.totalPending}</div>
-              <div className="text-[11px] text-neutral-400 mt-0.5">Awaiting recording</div>
+              <div className="text-[11px] text-neutral-400 mt-0.5">Unrecorded</div>
             </div>
 
             <div className="bg-neutral-800/90 border border-neutral-700 p-4 rounded-xl shadow-sm">
               <div className="text-[11px] font-bold uppercase tracking-wider text-neutral-400">Recorded</div>
-              <div className="text-2xl font-black text-blue-400 mt-1">{summary.totalRecorded}</div>
-              <div className="text-[11px] text-neutral-400 mt-0.5">In QA review queue</div>
+              <div className="text-2xl font-black text-cyan-400 mt-1">{summary.totalRecorded}</div>
+              <div className="text-[11px] text-neutral-400 mt-0.5">Waiting QA</div>
             </div>
 
             <div className="bg-neutral-800/90 border border-neutral-700 p-4 rounded-xl shadow-sm">
@@ -157,21 +196,32 @@ export default function AdminCompanyPhraseWorkloads() {
                 <div
                   key={lang.code}
                   onClick={() => navigate(`/admin/companies/${id}/phrase-workloads/${lang.code}`)}
-                  className="bg-neutral-800 hover:bg-neutral-750 border border-neutral-700 hover:border-primary-500/60 transition-all cursor-pointer group flex flex-col justify-between p-6 rounded-2xl shadow-xl space-y-4"
+                  className={`bg-neutral-800 hover:bg-neutral-750 border transition-all cursor-pointer group flex flex-col justify-between p-6 rounded-2xl shadow-xl space-y-4 ${
+                    lang.isHidden 
+                      ? 'border-rose-600/50 bg-rose-950/20' 
+                      : 'border-neutral-700 hover:border-primary-500/60'
+                  }`}
                 >
                   <div>
                     <div className="flex items-center justify-between mb-4">
                       <div className="w-12 h-12 rounded-xl bg-neutral-700 text-warning-400 flex items-center justify-center font-bold text-lg group-hover:scale-110 transition-transform border border-neutral-600">
                         {lang.code.substring(0, 2).toUpperCase()}
                       </div>
-                      <span className="text-xs font-semibold px-3 py-1 rounded-full bg-neutral-900/80 border border-neutral-700 text-neutral-300 flex items-center gap-1.5">
-                        <Layers className="w-3.5 h-3.5 text-primary-500" />
-                        {lang.count} {lang.count === 1 ? "Phrase" : "Phrases"}
-                      </span>
+                      <div className="flex items-center gap-1.5">
+                        {lang.isHidden && (
+                          <span className="text-[11px] font-bold px-2 py-0.5 rounded bg-rose-900/60 text-rose-300 border border-rose-600/50 flex items-center gap-1">
+                            <EyeOff className="w-3 h-3" /> Hidden
+                          </span>
+                        )}
+                        <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-neutral-900/80 border border-neutral-700 text-neutral-300 flex items-center gap-1.5">
+                          <Layers className="w-3.5 h-3.5 text-primary-500" />
+                          {lang.count} {lang.count === 1 ? "Phrase" : "Phrases"}
+                        </span>
+                      </div>
                     </div>
 
-                    <h3 className="text-xl font-bold text-white group-hover:text-primary-400 transition-colors">
-                      {lang.name}
+                    <h3 className="text-xl font-bold text-white group-hover:text-primary-400 transition-colors flex items-center justify-between">
+                      <span>{lang.name}</span>
                     </h3>
                     <p className="text-xs text-neutral-400 mt-1">
                       Language Code: <span className="font-mono text-neutral-300">{lang.code}</span>
@@ -188,9 +238,25 @@ export default function AdminCompanyPhraseWorkloads() {
                     </div>
                   </div>
 
-                  <div className="pt-3 border-t border-neutral-700/80 flex items-center justify-between text-xs font-semibold text-primary-400 group-hover:text-primary-300">
-                    <span>View Phrase Database</span>
-                    <ChevronRight className="w-4 h-4 transform group-hover:translate-x-1 transition-transform" />
+                  <div className="pt-3 border-t border-neutral-700/80 flex items-center justify-between">
+                    <button
+                      type="button"
+                      onClick={(e) => toggleHideLanguage(e, lang.code, lang.isHidden)}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 shadow-sm ${
+                        lang.isHidden
+                          ? "bg-emerald-600 hover:bg-emerald-500 text-white"
+                          : "bg-neutral-700 hover:bg-neutral-600 text-rose-300 border border-rose-500/30"
+                      }`}
+                      title={lang.isHidden ? "Unhide language for this project" : "Hide language for this project"}
+                    >
+                      {lang.isHidden ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
+                      <span>{lang.isHidden ? "Unhide" : "Hide"}</span>
+                    </button>
+
+                    <div className="flex items-center gap-1 text-xs font-semibold text-primary-400 group-hover:text-primary-300">
+                      <span>View Phrases</span>
+                      <ChevronRight className="w-4 h-4 transform group-hover:translate-x-1 transition-transform" />
+                    </div>
                   </div>
                 </div>
               ))}

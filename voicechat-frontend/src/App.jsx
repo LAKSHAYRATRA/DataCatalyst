@@ -127,7 +127,7 @@ function RequirePhraseAccess({ children }) {
   );
 
   if (!hasApprovedPhraseApp) {
-    return <Navigate to="/language-apply" replace />;
+    return <Navigate to="/language-apply?type=phrase" replace />;
   }
 
   return children;

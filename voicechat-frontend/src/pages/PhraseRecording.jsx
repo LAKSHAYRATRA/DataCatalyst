@@ -458,11 +458,27 @@ export default function PhraseRecording() {
       const isUserQA = appsData.isQA === true;
       setServerUserRoles({ isAdmin: isUserAdmin, isQA: isUserQA, loaded: true });
 
-      const approved = myApps.filter(app => app.status === 'approved' && (app.applicationType === 'phrase' || !app.applicationType));
+      const rawApproved = myApps.filter(app => app.status === 'approved' && (app.applicationType === 'phrase' || !app.applicationType));
+      const allComps = companiesData.companies || [];
+      const hiddenCompNames = new Set(allComps.filter(c => c.isHidden).map(c => String(c.name || '').toLowerCase().trim()));
+
+      const approved = (!isUserAdmin && !isUserQA)
+        ? rawApproved.filter(app => {
+            const compKey = String(app.companyId || '').toLowerCase().trim();
+            if (hiddenCompNames.has(compKey)) return false;
+            const compObj = allComps.find(c => String(c.name || '').toLowerCase().trim() === compKey);
+            if (compObj) {
+              const hiddenLangs = new Set((compObj.hiddenLanguages || []).map(l => String(l).toLowerCase().trim()));
+              if (hiddenLangs.has(String(app.languageCode || '').toLowerCase().trim())) return false;
+            }
+            return true;
+          })
+        : rawApproved;
+
       setApprovedApps(approved);
 
       if (approved.length === 0 && !isUserAdmin && !isUserQA) {
-        navigate('/language-apply', { replace: true });
+        navigate('/language-apply?type=phrase', { replace: true });
         return;
       }
 
@@ -536,7 +552,7 @@ export default function PhraseRecording() {
     const isAdminOrQA = serverUserRoles.loaded ? (serverUserRoles.isAdmin || serverUserRoles.isQA) : (userInfo?.isAdmin || userInfo?.isQA);
     if (!isAdminOrQA) {
       if (!approvedApps || approvedApps.length === 0) {
-        navigate('/language-apply', { replace: true });
+        navigate('/language-apply?type=phrase', { replace: true });
         return;
       }
       const isApprovedForSelection = approvedApps.some(a => 
@@ -603,6 +619,18 @@ export default function PhraseRecording() {
 
       if (fetchedPhrases.length === 0) {
         setError(data.message || 'No phrases available for this language right now.');
+        if (!isAdminOrQA) {
+          Swal.fire({
+            toast: true,
+            position: "top-end",
+            icon: "info",
+            title: data.message || "No active phrases available. Redirecting to phrase projects...",
+            timer: 3000,
+            showConfirmButton: false
+          });
+          navigate('/language-apply?type=phrase', { replace: true });
+          return;
+        }
       }
     } catch (err) {
       console.error('Failed to fetch 5 phrases', err);
