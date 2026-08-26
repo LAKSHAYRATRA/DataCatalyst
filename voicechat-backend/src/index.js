@@ -7,6 +7,7 @@ process.on("unhandledRejection", (reason, promise) => {
   console.error("Unhandled Rejection at:", promise, "reason:", reason);
 });
 import http from "http";
+import fs from "fs";
 import path from "path";
 import crypto from "crypto";
 import express from "express";
@@ -237,13 +238,12 @@ const langUpload = multer({
       cb(null, dir);
     },
     filename: (req, file, cb) => {
-      cb(null, `lang_${req.user._id}_${Date.now()}.wav`);
+      cb(null, `lang_${req.user?._id || 'user'}_${Date.now()}.wav`);
     }
   }),
   limits: { fileSize: 60 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
-    if (file.mimetype.startsWith("audio/")) return cb(null, true);
-    cb(new Error("Only audio files are allowed"));
+    cb(null, true);
   },
 });
 
@@ -369,7 +369,7 @@ app.use((err, req, res, next) => {
   if (res.headersSent) {
     return next(err);
   }
-  res.status(500).json({ error: "Internal Server Error" });
+  res.status(err.status || 500).json({ error: err.message || "Internal Server Error" });
 });
 // ------------------------------------
 

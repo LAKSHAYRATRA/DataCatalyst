@@ -19,7 +19,8 @@ import {
   SlidersHorizontal,
   X,
   Eye,
-  EyeOff
+  EyeOff,
+  Upload
 } from "lucide-react";
 import Swal from "sweetalert2";
 import { apiGet, apiPostJson, apiPatchJson, apiDeleteJson } from "../lib/api.js";
@@ -67,6 +68,72 @@ export default function AdminCompanyLanguagePhrases() {
   const [availableStdKeys, setAvailableStdKeys] = useState([]);
   const [availableTagKeys, setAvailableTagKeys] = useState([]);
   const [selectedKeysMap, setSelectedKeysMap] = useState({});
+
+  // Upload Phrases Modal State
+  const [showUploadModal, setShowUploadModal] = useState(false);
+  const [uploadFile, setUploadFile] = useState(null);
+  const [uploadPastedJson, setUploadPastedJson] = useState("");
+  const [uploadSpeakerId, setUploadSpeakerId] = useState("");
+  const [uploadLoading, setUploadLoading] = useState(false);
+
+  const extractPhrases = (json) => {
+    if (Array.isArray(json)) return json;
+    if (typeof json === 'object' && json !== null) {
+      for (const key in json) {
+        if (Array.isArray(json[key])) return json[key];
+      }
+      return [json];
+    }
+    return [];
+  };
+
+  const handleUploadSubmit = async () => {
+    if (!uploadFile && !uploadPastedJson.trim()) {
+      Swal.fire("Missing Data", "Please select a JSON file or paste JSON payload.", "warning");
+      return;
+    }
+
+    setUploadLoading(true);
+    try {
+      let rawJson = null;
+      if (uploadPastedJson.trim()) {
+        rawJson = JSON.parse(uploadPastedJson);
+      } else if (uploadFile) {
+        const text = await uploadFile.text();
+        rawJson = JSON.parse(text);
+      }
+
+      const extracted = extractPhrases(rawJson);
+      if (extracted.length === 0) {
+        throw new Error("No phrases found in JSON.");
+      }
+
+      const res = await apiPostJson('/api/phrases/admin/upload', {
+        companyId: company ? company.name : id,
+        language: language,
+        speakerId: uploadSpeakerId ? uploadSpeakerId.trim() : "",
+        phrases: extracted
+      });
+
+      setShowUploadModal(false);
+      setUploadFile(null);
+      setUploadPastedJson("");
+      setUploadSpeakerId("");
+
+      Swal.fire({
+        icon: "success",
+        title: "Phrases Uploaded!",
+        text: `Successfully ingested ${res.inserted} phrases${uploadSpeakerId.trim() ? ` (Allocated to ${uploadSpeakerId.trim()})` : " into Open Pool"}.`,
+        timer: 3000
+      });
+
+      fetchPhrases(1, search, allocationFilter, statusFilter);
+    } catch (e) {
+      Swal.fire("Upload Failed", e.message || "Failed to parse or upload phrases", "error");
+    } finally {
+      setUploadLoading(false);
+    }
+  };
 
   const openExportModal = async () => {
     setShowExportModal(true);
@@ -309,6 +376,63 @@ export default function AdminCompanyLanguagePhrases() {
     }
   };
 
+  const handleAllocateToSpeaker = async () => {
+    const { value: formValues } = await Swal.fire({
+      title: `Allocate ${language.toUpperCase()} Phrases to Speaker`,
+      html: `
+        <div class="text-left space-y-3 text-sm">
+          <p class="text-neutral-400 text-xs">Target phrases from the open pool will be reserved exclusively for this speaker ID.</p>
+          <div>
+            <label class="block text-xs font-bold text-neutral-300 uppercase mb-1">Speaker ID (e.g. spk_129)</label>
+            <input id="swal-spk-id" class="swal2-input !m-0 !w-full !text-sm !font-mono" placeholder="spk_129 (or leave blank to unallocate)" />
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-neutral-300 uppercase mb-1">Number of Phrases to Allocate</label>
+            <input id="swal-spk-count" type="number" class="swal2-input !m-0 !w-full !text-sm" placeholder="e.g. 700 (or leave blank for all unallocated)" />
+          </div>
+        </div>
+      `,
+      focusConfirm: false,
+      showCancelButton: true,
+      confirmButtonText: "Apply Allocation",
+      confirmButtonColor: "#4f46e5",
+      preConfirm: () => {
+        const spkInput = document.getElementById("swal-spk-id").value;
+        const countInput = document.getElementById("swal-spk-count").value;
+        return {
+          speakerId: spkInput ? spkInput.trim() : "",
+          count: countInput ? Number(countInput) : null
+        };
+      }
+    });
+
+    if (!formValues) return;
+
+    try {
+      const res = await apiPostJson(`/api/admin/companies/${id}/phrase-workloads/${encodeURIComponent(language)}/allocate-speaker`, {
+        speakerId: formValues.speakerId,
+        count: formValues.count,
+        target: "open"
+      });
+
+      Swal.fire({
+        icon: "success",
+        title: "Allocation Updated!",
+        text: res.message,
+        timer: 3000
+      });
+
+      fetchPhrases(1, search, allocationFilter, statusFilter);
+    } catch (err) {
+      Swal.fire({
+        icon: "error",
+        title: "Allocation Failed",
+        text: err.message,
+        confirmButtonColor: "#ea580c"
+      });
+    }
+  };
+
   const handleDeletePending = async () => {
     const confirm = await Swal.fire({
       title: "Delete Pending Phrases?",
@@ -545,6 +669,20 @@ export default function AdminCompanyLanguagePhrases() {
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5">
+            <button
+              onClick={() => setShowUploadModal(true)}
+              className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-lg transition-colors flex items-center gap-1.5 shadow-md shadow-emerald-600/20"
+              title="Upload new JSON phrase batch for this language with optional speaker allocation"
+            >
+              <Upload className="w-3.5 h-3.5" /> + Upload Phrases
+            </button>
+            <button
+              onClick={handleAllocateToSpeaker}
+              className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-lg transition-colors flex items-center gap-1.5 shadow-md shadow-indigo-600/20"
+              title="Allocate phrases from the open pool to a specific speaker ID"
+            >
+              <span>🔒</span> Allocate to Speaker
+            </button>
             <button
               onClick={openExportModal}
               className="px-3 py-1.5 bg-primary-600 hover:bg-primary-500 text-white font-medium text-xs rounded-lg transition-colors flex items-center gap-1.5 shadow-md"
@@ -945,6 +1083,123 @@ export default function AdminCompanyLanguagePhrases() {
                   </div>
                 </>
               )}
+            </div>
+          </div>
+        )}
+        {/* Upload Phrases Modal */}
+        {showUploadModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+            <div 
+              className="bg-neutral-900 border border-neutral-700 rounded-3xl w-full max-w-xl shadow-2xl overflow-hidden text-white"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Modal Header */}
+              <div className="p-6 flex items-center justify-between border-b border-neutral-800 bg-neutral-950/60">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 rounded-2xl bg-emerald-600/20 text-emerald-400 border border-emerald-500/30">
+                    <Upload className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                      <span>Upload {language.toUpperCase()} Phrases</span>
+                      <span className="text-xs px-2 py-0.5 rounded-full font-bold uppercase tracking-wider bg-emerald-950 text-emerald-400 border border-emerald-700">
+                        {company ? company.name : "Company"}
+                      </span>
+                    </h3>
+                    <p className="text-xs text-neutral-400 mt-0.5">
+                      Ingest a JSON batch into this workload with optional speaker pre-allocation.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowUploadModal(false)}
+                  className="text-neutral-400 hover:text-white p-2 rounded-xl hover:bg-neutral-800 transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Modal Body */}
+              <div className="p-6 space-y-4">
+                {/* Speaker Allocation Input */}
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-neutral-300 mb-1.5 flex items-center justify-between">
+                    <span>Allocate to Speaker ID (Optional)</span>
+                    <span className="text-xs text-indigo-400 font-mono font-normal">🔒 Reserved specifically for this contributor</span>
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. spk_129 (Leave blank for Open Pool)"
+                    value={uploadSpeakerId}
+                    onChange={(e) => setUploadSpeakerId(e.target.value)}
+                    className="input w-full text-xs font-mono bg-neutral-950 border-neutral-700 text-white rounded-xl p-3 focus:border-emerald-500"
+                  />
+                  <p className="text-[11px] text-neutral-400 mt-1">
+                    {uploadSpeakerId.trim() 
+                      ? `All phrases in this uploaded batch will be locked exclusively to ${uploadSpeakerId.trim()}.`
+                      : "Phrases will enter the open pool for any approved contributor."}
+                  </p>
+                </div>
+
+                {/* File Upload */}
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-neutral-300 mb-1.5">
+                    Select JSON File
+                  </label>
+                  <input
+                    type="file"
+                    accept=".json,application/json"
+                    onChange={(e) => {
+                      if (e.target.files?.[0]) {
+                        setUploadFile(e.target.files[0]);
+                        setUploadPastedJson("");
+                      }
+                    }}
+                    className="file-input file-input-bordered file-input-sm w-full bg-neutral-950 border-neutral-700 text-neutral-300 rounded-xl"
+                  />
+                </div>
+
+                <div className="relative flex py-1 items-center">
+                  <div className="flex-grow border-t border-neutral-800"></div>
+                  <span className="flex-shrink mx-3 text-[10px] uppercase font-bold text-neutral-500">or paste json</span>
+                  <div className="flex-grow border-t border-neutral-800"></div>
+                </div>
+
+                {/* Paste JSON */}
+                <div>
+                  <textarea
+                    rows={4}
+                    placeholder='[ { "phraseId": "PHR_001", "text": "Sample phrase text..." } ]'
+                    value={uploadPastedJson}
+                    onChange={(e) => {
+                      setUploadPastedJson(e.target.value);
+                      if (e.target.value.trim()) setUploadFile(null);
+                    }}
+                    className="textarea w-full text-xs font-mono bg-neutral-950 border-neutral-700 text-white rounded-xl p-3 focus:border-emerald-500"
+                  />
+                </div>
+              </div>
+
+              {/* Modal Footer */}
+              <div className="p-5 border-t border-neutral-800 bg-neutral-950/60 flex items-center justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowUploadModal(false)}
+                  disabled={uploadLoading}
+                  className="px-4 py-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 text-xs font-bold rounded-xl transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleUploadSubmit}
+                  disabled={uploadLoading || (!uploadFile && !uploadPastedJson.trim())}
+                  className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-bold rounded-xl transition-colors flex items-center gap-2 shadow-lg shadow-emerald-600/20 active:scale-95"
+                >
+                  {uploadLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+                  <span>{uploadLoading ? "Ingesting..." : "Upload & Ingest"}</span>
+                </button>
+              </div>
             </div>
           </div>
         )}

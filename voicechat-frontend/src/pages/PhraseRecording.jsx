@@ -403,18 +403,82 @@ export default function PhraseRecording() {
   const timerRef = useRef(null);
 
   useEffect(() => {
-    fetchInitialData();
+    let isMounted = true;
 
-    const handleBeforeUnload = () => {
-      const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:3001";
-      navigator.sendBeacon(`${BACKEND_URL}/api/phrases/unlock-my-phrases`);
-    };
+    async function init() {
+      try {
+        const [statsData, projectsData, languagesData, appsData, companiesData] = await Promise.all([
+          apiGet('/api/phrases/my-stats'),
+          apiGet('/api/projects'),
+          apiGet('/api/languages'),
+          apiGet('/api/language-applications/my'),
+          apiGet('/api/admin/companies').catch(() => ({ companies: [] }))
+        ]);
 
-    window.addEventListener("beforeunload", handleBeforeUnload);
+        if (!isMounted) return;
+
+        const myApps = appsData.applications || [];
+        const isUserAdmin = appsData.isAdmin === true;
+        const isUserQA = appsData.isQA === true;
+        setServerUserRoles({ isAdmin: isUserAdmin, isQA: isUserQA, loaded: true });
+
+        const rawApproved = myApps.filter(app => app.status === 'approved' && (app.applicationType === 'phrase' || !app.applicationType));
+        const allComps = companiesData.companies || [];
+        const hiddenCompNames = new Set(allComps.filter(c => c.isHidden).map(c => String(c.name || '').toLowerCase().trim()));
+
+        const approved = (!isUserAdmin && !isUserQA)
+          ? rawApproved.filter(app => {
+              const compKey = String(app.companyId || '').toLowerCase().trim();
+              if (hiddenCompNames.has(compKey)) return false;
+              const compObj = allComps.find(c => String(c.name || '').toLowerCase().trim() === compKey);
+              if (compObj) {
+                const hiddenLangs = new Set((compObj.hiddenLanguages || []).map(l => String(l).toLowerCase().trim()));
+                if (hiddenLangs.has(String(app.languageCode || '').toLowerCase().trim())) return false;
+              }
+              return true;
+            })
+          : rawApproved;
+
+        setApprovedApps(approved);
+
+        const uniqueCompanyIds = Array.from(new Set(approved.map(a => a.companyId).filter(Boolean)));
+        let companies = uniqueCompanyIds.map(id => {
+          const app = approved.find(a => a.companyId === id);
+          return {
+            id: id,
+            label: app?.projectName || id
+          };
+        });
+
+        if (companies.length === 0 && (isUserAdmin || isUserQA)) {
+          companies = (companiesData.companies || []).map(c => ({ id: c.name, label: c.projectName || c.name }));
+          if (companies.length === 0) companies = [{ id: 'General Phrases', label: 'General Phrases' }];
+        }
+
+        setApprovedCompanies(companies);
+        setProjectName(companies[0]?.id || '');
+
+        setStats({ 
+            totalSeconds: statsData.totalSeconds || 0, 
+            history: statsData.history || [],
+            dailyPhraseLimit: statsData.dailyPhraseLimit !== undefined ? statsData.dailyPhraseLimit : 1000,
+            phrasesRecordedToday: statsData.phrasesRecordedToday || 0,
+            overallPhraseLimit: statsData.overallPhraseLimit !== undefined ? statsData.overallPhraseLimit : -1,
+            totalPhrasesRecorded: statsData.totalPhrasesRecorded || 0
+        });
+        setProjects(projectsData.projects || []);
+        setAllLanguages(languagesData.languages || []);
+        setAllCompanies(companiesData.companies || []);
+      } catch (err) {
+        console.error('Failed to fetch initial data', err);
+      }
+    }
+
+    init();
 
     return () => {
-      handleBeforeUnload();
-      window.removeEventListener("beforeunload", handleBeforeUnload);
+      isMounted = false;
+      apiPostJson('/api/phrases/unlock-my-phrases', {}).catch(() => {});
       if (timerRef.current) clearInterval(timerRef.current);
     };
   }, []);
@@ -440,78 +504,6 @@ export default function PhraseRecording() {
       });
     } catch (err) {
       console.error('Failed to fetch phrase stats', err);
-    }
-  }
-
-  async function fetchInitialData() {
-    try {
-      const [statsData, projectsData, languagesData, appsData, companiesData] = await Promise.all([
-        apiGet('/api/phrases/my-stats'),
-        apiGet('/api/projects'),
-        apiGet('/api/languages'),
-        apiGet('/api/language-applications/my'),
-        apiGet('/api/admin/companies').catch(() => ({ companies: [] }))
-      ]);
-
-      const myApps = appsData.applications || [];
-      const isUserAdmin = appsData.isAdmin === true;
-      const isUserQA = appsData.isQA === true;
-      setServerUserRoles({ isAdmin: isUserAdmin, isQA: isUserQA, loaded: true });
-
-      const rawApproved = myApps.filter(app => app.status === 'approved' && (app.applicationType === 'phrase' || !app.applicationType));
-      const allComps = companiesData.companies || [];
-      const hiddenCompNames = new Set(allComps.filter(c => c.isHidden).map(c => String(c.name || '').toLowerCase().trim()));
-
-      const approved = (!isUserAdmin && !isUserQA)
-        ? rawApproved.filter(app => {
-            const compKey = String(app.companyId || '').toLowerCase().trim();
-            if (hiddenCompNames.has(compKey)) return false;
-            const compObj = allComps.find(c => String(c.name || '').toLowerCase().trim() === compKey);
-            if (compObj) {
-              const hiddenLangs = new Set((compObj.hiddenLanguages || []).map(l => String(l).toLowerCase().trim()));
-              if (hiddenLangs.has(String(app.languageCode || '').toLowerCase().trim())) return false;
-            }
-            return true;
-          })
-        : rawApproved;
-
-      setApprovedApps(approved);
-
-      if (approved.length === 0 && !isUserAdmin && !isUserQA) {
-        navigate('/language-apply?type=phrase', { replace: true });
-        return;
-      }
-
-      const uniqueCompanyIds = Array.from(new Set(approved.map(a => a.companyId).filter(Boolean)));
-      let companies = uniqueCompanyIds.map(id => {
-        const app = approved.find(a => a.companyId === id);
-        return {
-          id: id,
-          label: app?.projectName || id
-        };
-      });
-
-      if (companies.length === 0 && (isUserAdmin || isUserQA)) {
-        companies = (companiesData.companies || []).map(c => ({ id: c.name, label: c.projectName || c.name }));
-        if (companies.length === 0) companies = [{ id: 'General Phrases', label: 'General Phrases' }];
-      }
-
-      setApprovedCompanies(companies);
-      setProjectName(companies[0]?.id || '');
-
-      setStats({ 
-          totalSeconds: statsData.totalSeconds || 0, 
-          history: statsData.history || [],
-          dailyPhraseLimit: statsData.dailyPhraseLimit !== undefined ? statsData.dailyPhraseLimit : 1000,
-          phrasesRecordedToday: statsData.phrasesRecordedToday || 0,
-          overallPhraseLimit: statsData.overallPhraseLimit !== undefined ? statsData.overallPhraseLimit : -1,
-          totalPhrasesRecorded: statsData.totalPhrasesRecorded || 0
-      });
-      setProjects(projectsData.projects || []);
-      setAllLanguages(languagesData.languages || []);
-      setAllCompanies(companiesData.companies || []);
-    } catch (err) {
-      console.error('Failed to fetch initial data', err);
     }
   }
 
@@ -552,7 +544,7 @@ export default function PhraseRecording() {
     const isAdminOrQA = serverUserRoles.loaded ? (serverUserRoles.isAdmin || serverUserRoles.isQA) : (userInfo?.isAdmin || userInfo?.isQA);
     if (!isAdminOrQA) {
       if (!approvedApps || approvedApps.length === 0) {
-        navigate('/language-apply?type=phrase', { replace: true });
+        setSlots(prev => prev.map(s => ({ ...s, phrase: null })));
         return;
       }
       const isApprovedForSelection = approvedApps.some(a => 
@@ -618,19 +610,16 @@ export default function PhraseRecording() {
       })));
 
       if (fetchedPhrases.length === 0) {
-        setError(data.message || 'No phrases available for this language right now.');
-        if (!isAdminOrQA) {
-          Swal.fire({
-            toast: true,
-            position: "top-end",
-            icon: "info",
-            title: data.message || "No active phrases available. Redirecting to phrase projects...",
-            timer: 3000,
-            showConfirmButton: false
-          });
-          navigate('/language-apply?type=phrase', { replace: true });
-          return;
-        }
+        setError(data.message || 'No phrases available to record for your account right now.');
+        Swal.fire({
+          toast: true,
+          position: "top-end",
+          icon: "info",
+          title: "No phrases available to record",
+          text: "There are no unallocated or assigned phrases available for your speaker account in this project.",
+          timer: 3500,
+          showConfirmButton: false
+        });
       }
     } catch (err) {
       console.error('Failed to fetch 5 phrases', err);
@@ -1248,6 +1237,37 @@ export default function PhraseRecording() {
 
           {/* 5 Independent Stationary Phrase Containers */}
           <div className="space-y-6">
+            {slots.every(s => !s.phrase) && !loading && (
+              <div className="card text-center py-12 px-6 border border-neutral-200 dark:border-neutral-800 bg-neutral-100 dark:bg-neutral-900/60 rounded-2xl shadow-xl">
+                {approvedApps.length === 0 && !serverUserRoles.isAdmin && !serverUserRoles.isQA ? (
+                  <>
+                    <div className="w-12 h-12 rounded-full bg-indigo-500/20 text-indigo-400 flex items-center justify-center mx-auto mb-3 text-xl font-bold">
+                      📝
+                    </div>
+                    <h3 className="text-lg font-bold text-neutral-900 dark:text-white mb-1">No Approved Phrase Projects Yet</h3>
+                    <p className="text-sm text-neutral-500 dark:text-neutral-400 max-w-md mx-auto mb-4">
+                      You need at least one approved phrase project application to record phrases. If you recently applied, your submission is pending QA review.
+                    </p>
+                    <button
+                      onClick={() => navigate('/language-apply?type=phrase')}
+                      className="btn btn-primary px-6 py-2.5 text-sm font-bold shadow-lg shadow-primary-500/20"
+                    >
+                      View / Apply for Projects →
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <div className="w-12 h-12 rounded-full bg-neutral-200 dark:bg-neutral-800 text-neutral-500 dark:text-neutral-300 flex items-center justify-center mx-auto mb-3 text-xl">
+                      🔒
+                    </div>
+                    <h3 className="text-lg font-bold text-neutral-900 dark:text-white mb-1">No Phrases Available to Record</h3>
+                    <p className="text-sm text-neutral-500 dark:text-neutral-400 max-w-md mx-auto">
+                      There are no unallocated phrases in the open pool or phrases reserved for your speaker ID (<strong>{userInfo?.speaker_id || 'your account'}</strong>) in this project right now.
+                    </p>
+                  </>
+                )}
+              </div>
+            )}
             {slots.map((slot, index) => {
               const phrase = slot.phrase;
               if (!phrase) return null;

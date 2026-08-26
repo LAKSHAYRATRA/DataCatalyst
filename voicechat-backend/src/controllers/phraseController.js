@@ -204,7 +204,8 @@ async function calculateLufsFromAudioFile(filePath) {
  */
 export async function uploadPhrases(req, res) {
   try {
-    const { companyId, projectName, language, phrases, metadataKeys } = req.body;
+    const { companyId, projectName, language, phrases, metadataKeys, speakerId, assigned_speaker_id } = req.body;
+    const batchSpeaker = speakerId ? String(speakerId).trim() : (assigned_speaker_id ? String(assigned_speaker_id).trim() : null);
     if (!companyId || !companyId.trim()) {
       return res.status(400).json({ error: "Company is required when uploading a phrase batch." });
     }
@@ -233,24 +234,31 @@ export async function uploadPhrases(req, res) {
       { upsert: true }
     );
 
-    // Natively index new unique companies seamlessly during the bulk ingest
-    let targetCompanyName = companyId ? companyId.trim() : null;
+    // Resolve target company name (handling both ObjectId and name string)
+    let targetCompanyName = companyId ? String(companyId).trim() : null;
     if (targetCompanyName) {
-      const companyDoc = await Company.findOneAndUpdate(
-        { name: { $regex: new RegExp(`^${targetCompanyName}$`, "i") } },
-        { 
-          $setOnInsert: { name: targetCompanyName },
-          $addToSet: { languages: cleanLanguage }
-        },
-        { upsert: true, new: true }
-      );
-      if (companyDoc && companyDoc.name) {
-        targetCompanyName = companyDoc.name;
+      let comp = null;
+      if (targetCompanyName.match(/^[0-9a-fA-F]{24}$/)) {
+        comp = await Company.findById(targetCompanyName);
+      }
+      if (!comp) {
+        comp = await Company.findOne({ name: { $regex: new RegExp(`^${targetCompanyName}$`, "i") } });
+      }
+      if (comp) {
+        targetCompanyName = comp.name;
+        const compLangs = (comp.languages || []).map(l => String(l).toLowerCase());
+        if (!compLangs.includes(cleanLanguage)) {
+          comp.languages.push(cleanLanguage);
+          await comp.save();
+        }
+      } else {
+        const newComp = await Company.create({ name: targetCompanyName, languages: [cleanLanguage] });
+        targetCompanyName = newComp.name;
       }
     }
 
     // Find the current highest freq index for this company
-    const highestFreqPhrase = await Phrase.findOne({ companyId: targetCompanyName })
+    const highestFreqPhrase = await Phrase.findOne({ companyId: targetCompanyName, language: cleanLanguage })
       .sort({ freq: -1 })
       .select("freq")
       .lean();
@@ -260,8 +268,8 @@ export async function uploadPhrases(req, res) {
     const companyConfig = await Company.findOne({ name: targetCompanyName }).select("singlePhraseFrequency").lean();
     const targetFreq = companyConfig && Number.isInteger(companyConfig.singlePhraseFrequency) && companyConfig.singlePhraseFrequency >= 1 ? companyConfig.singlePhraseFrequency : 1;
 
-    // Single query to fetch existing phrase IDs and texts for this company
-    const existingDocs = await Phrase.find({ companyId: targetCompanyName }).select("phraseId text").lean();
+    // Scope existing phrase IDs and texts strictly to this target company and language
+    const existingDocs = await Phrase.find({ companyId: targetCompanyName, language: cleanLanguage }).select("phraseId text").lean();
     const existingIds = new Set(existingDocs.map(d => d.phraseId));
     const existingTexts = new Set(existingDocs.map(d => d.text));
 
@@ -319,7 +327,7 @@ export async function uploadPhrases(req, res) {
         currentFreq++;
         const copyPhraseId = cIdx === 1 ? cleanId : `${cleanId}_c${cIdx}`;
 
-        const targetSpeaker = p.speaker_id ? String(p.speaker_id).trim() : (p.speakerId ? String(p.speakerId).trim() : (p.speaker ? String(p.speaker).trim() : null));
+        const targetSpeaker = batchSpeaker ? String(batchSpeaker).trim() : null;
 
         docsToInsert.push({
           phraseId: copyPhraseId,
@@ -618,20 +626,19 @@ export async function getAvailablePhrase(req, res) {
 
     // Enforce Target Speaker ID restriction:
     // If a phrase is targeted to a specific speaker (assigned_speaker_id or speaker_id), only that exact contributor can receive it.
-    // If assigned_speaker_id / speaker_id is null/empty/omitted, it is in the open pool for any contributor.
+    // If assigned_speaker_id and speaker_id are unassigned (open pool), any approved contributor can receive it.
     const userSpkId = user.speaker_id ? String(user.speaker_id).trim() : null;
-    const speakerCondition = [
-      { assigned_speaker_id: null, speaker_id: null },
-      { assigned_speaker_id: "", speaker_id: "" },
-      { assigned_speaker_id: { $exists: false }, speaker_id: { $exists: false } },
-      { assigned_speaker_id: null, speaker_id: "" },
-      { assigned_speaker_id: "", speaker_id: null },
-      { assigned_speaker_id: null, speaker_id: { $exists: false } },
-      { assigned_speaker_id: { $exists: false }, speaker_id: null }
-    ];
+    const openPoolCondition = {
+      $and: [
+        { $or: [{ assigned_speaker_id: null }, { assigned_speaker_id: "" }, { assigned_speaker_id: { $exists: false } }] },
+        { $or: [{ speaker_id: null }, { speaker_id: "" }, { speaker_id: { $exists: false } }] }
+      ]
+    };
+    const speakerCondition = [openPoolCondition];
     if (userSpkId) {
-      speakerCondition.push({ assigned_speaker_id: userSpkId });
-      speakerCondition.push({ speaker_id: userSpkId });
+      const escapedSpk = userSpkId.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+      speakerCondition.push({ assigned_speaker_id: { $regex: new RegExp(`^${escapedSpk}$`, "i") } });
+      speakerCondition.push({ speaker_id: { $regex: new RegExp(`^${escapedSpk}$`, "i") } });
     }
     baseQuery.$and = baseQuery.$and || [];
     baseQuery.$and.push({ $or: speakerCondition });
@@ -811,8 +818,8 @@ export async function getAvailablePhrase(req, res) {
       return res.json({ 
         phrase: null, 
         phrases: [], 
-        message: "No active phrases available for this project right now.",
-        redirect: (!user.isAdmin && !user.isQA) ? "/language-apply?type=phrase" : null
+        message: "No phrases available to record for your account right now.",
+        redirect: null
       });
     }
 
@@ -887,6 +894,16 @@ export async function submitPhraseRecording(req, res) {
     if (phrase.status === "locked" && phrase.lockedBy && phrase.lockedBy.toString() !== req.user._id.toString()) {
       fs.unlinkSync(req.file.path);
       return res.status(400).json({ error: "Phrase is currently checked out by another contributor. Please refresh." });
+    }
+
+    // Verify speaker allocation if phrase is reserved for a specific speaker ID
+    const targetSpk = phrase.assigned_speaker_id || phrase.speaker_id;
+    if (targetSpk && String(targetSpk).trim()) {
+      const userSpk = req.user.speaker_id ? String(req.user.speaker_id).trim().toLowerCase() : "";
+      if (String(targetSpk).trim().toLowerCase() !== userSpk) {
+        fs.unlinkSync(req.file.path);
+        return res.status(403).json({ error: `This phrase is allocated to speaker ${targetSpk}. You cannot record it.` });
+      }
     }
 
     // Enforce limits strictly at submission time
@@ -1779,11 +1796,10 @@ export async function getSamplePhrase(req, res) {
     }
 
     const query = { 
-      companyId: targetCompany,
-      status: { $in: ["pending", "locked", "rejected"] }
+      companyId: { $regex: new RegExp(`^${targetCompany}$`, "i") }
     };
     if (language) {
-      query.language = language.trim().toLowerCase();
+      query.language = { $regex: new RegExp(`^${language.trim()}$`, "i") };
     }
 
     let phrase = await Phrase.findOne({ ...query, isSample: true }).select("phraseId text language emotion style speed intent pitch volume instructions tags").lean();

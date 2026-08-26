@@ -247,26 +247,47 @@ export async function submitLanguageApplication(req, res) {
       } catch (e) {}
 
       const activePhrase = await Phrase.findOne({
-        companyId: targetCompany,
-        language: languageCode,
-        status: { $in: ["pending", "locked", "rejected"] }
+        companyId: { $regex: new RegExp(`^${targetCompany}$`, "i") },
+        language: { $regex: new RegExp(`^${languageCode}$`, "i") }
       });
       if (!activePhrase) {
-        try { fs.unlinkSync(req.file.path); } catch (e) {}
-        return res.status(400).json({ error: "No sample phrase available for this company and language." });
+        // Fallback check on company existence
+        const companyExists = await Company.findOne({ name: { $regex: new RegExp(`^${targetCompany}$`, "i") } });
+        if (!companyExists) {
+          try { fs.unlinkSync(req.file.path); } catch (e) {}
+          return res.status(400).json({ error: "No sample phrase available for this company and language." });
+        }
       }
     }
+
     let lang;
     if (languageCode) {
       const filter = applicationType === "call"
-        ? { code: languageCode, enabled: true }
-        : { code: languageCode };
+        ? { code: { $regex: new RegExp(`^${languageCode}$`, "i") }, enabled: true }
+        : { code: { $regex: new RegExp(`^${languageCode}$`, "i") } };
       lang = await Language.findOne(filter);
       if (!lang) {
-        try { fs.unlinkSync(req.file.path); } catch (e) {}
-        return res.status(404).json({
-          error: applicationType === "call" ? "Language not found or disabled for calls" : "Language not found"
-        });
+        if (applicationType === "phrase") {
+          const formattedLangName = languageCode.charAt(0).toUpperCase() + languageCode.slice(1);
+          lang = await Language.findOneAndUpdate(
+            { code: languageCode.toLowerCase() },
+            {
+              $setOnInsert: {
+                code: languageCode.toLowerCase(),
+                name: formattedLangName,
+                hourlyPayout: 0,
+                enabled: true,
+                isPhrase: true
+              }
+            },
+            { upsert: true, new: true }
+          );
+        } else {
+          try { fs.unlinkSync(req.file.path); } catch (e) {}
+          return res.status(404).json({
+            error: "Language not found or disabled for calls"
+          });
+        }
       }
     }
 
@@ -276,8 +297,10 @@ export async function submitLanguageApplication(req, res) {
       return res.status(404).json({ error: "User not found" });
     }
 
-    const existing = user.languageApplications.find(
-      (a) => a.languageCode === languageCode && (applicationType === 'phrase' ? a.companyId === companyId : true) && a.applicationType === applicationType
+    const existing = (user.languageApplications || []).find(
+      (a) => String(a.languageCode || "").toLowerCase() === languageCode.toLowerCase() && 
+             (applicationType === 'phrase' ? String(a.companyId || "").toLowerCase() === String(companyId || "").toLowerCase() : true) && 
+             (a.applicationType || 'phrase') === applicationType
     );
     if (existing && existing.status === "pending") {
       try { fs.unlinkSync(req.file.path); } catch (e) {}
@@ -291,16 +314,31 @@ export async function submitLanguageApplication(req, res) {
       try { fs.unlinkSync(req.file.path); } catch (e) {}
       return res.status(403).json({ error: "blacklisted" });
     }
-    const flacPath = req.file.path.replace(".wav", ".flac");
-    await new Promise((resolve, reject) => {
-      ffmpeg(req.file.path)
-        .audioChannels(1)
-        .audioCodec('flac')
-        .output(flacPath)
-        .on("end", resolve)
-        .on("error", reject)
-        .run();
-    });
+    let flacPath = req.file.path.replace(/\.[^/.]+$/, "") + ".flac";
+    if (flacPath === req.file.path) {
+      flacPath = req.file.path + "_converted.flac";
+    }
+
+    try {
+      await new Promise((resolve, reject) => {
+        ffmpeg(req.file.path)
+          .audioChannels(1)
+          .audioCodec('flac')
+          .output(flacPath)
+          .on("end", resolve)
+          .on("error", (err) => {
+            console.warn("FFmpeg conversion error in language app, falling back to original:", err.message);
+            resolve();
+          })
+          .run();
+      });
+    } catch (ffmpegErr) {
+      console.warn("FFmpeg exception, using original file:", ffmpegErr.message);
+    }
+
+    const finalAudioPath = fs.existsSync(flacPath) ? flacPath : req.file.path;
+    const isFlac = finalAudioPath.endsWith(".flac");
+    const ext = isFlac ? ".flac" : (path.extname(req.file.path) || ".wav");
 
     // Generate speaker_id if not present
     if (!user.speaker_id) {
@@ -315,8 +353,8 @@ export async function submitLanguageApplication(req, res) {
 
     const companyFolder = companyId ? companyId.replace(/[^a-zA-Z0-9_\-\ ]/g, "").trim() : "No_Company";
     const baseFileName = applicationType === "phrase"
-      ? `${user.speaker_id}__${companyFolder}__${languageCode}.flac`
-      : `${user._id}_${languageCode}_${Date.now()}.flac`;
+      ? `${user.speaker_id}__${companyFolder}__${languageCode}${ext}`
+      : `${user._id}_${languageCode}_${Date.now()}${ext}`;
     
     let s3Key;
     if (applicationType === "phrase" && companyId) {
@@ -336,13 +374,13 @@ export async function submitLanguageApplication(req, res) {
           params: {
             Bucket: BUCKET_NAME,
             Key: s3Key,
-            Body: fs.createReadStream(flacPath),
-            ContentType: "audio/flac",
+            Body: fs.createReadStream(finalAudioPath),
+            ContentType: isFlac ? "audio/flac" : "audio/wav",
           },
         });
         await Promise.race([
           uploader.done(),
-          new Promise((_, reject) => setTimeout(() => reject(new Error("S3 Upload Timeout")), 2500))
+          new Promise((_, reject) => setTimeout(() => reject(new Error("S3 Upload Timeout")), 3000))
         ]);
         s3Uploaded = true;
       } catch (s3Err) {
@@ -357,12 +395,14 @@ export async function submitLanguageApplication(req, res) {
       }
       const localFileName = baseFileName;
       const targetLocalPath = path.join(localDir, localFileName);
-      fs.copyFileSync(flacPath, targetLocalPath);
+      fs.copyFileSync(finalAudioPath, targetLocalPath);
       recordingFileRef = `local:${localFileName}`;
     }
 
     try { fs.unlinkSync(req.file.path); } catch (e) {}
-    try { fs.unlinkSync(flacPath); } catch (e) {}
+    if (finalAudioPath !== req.file.path) {
+      try { fs.unlinkSync(finalAudioPath); } catch (e) {}
+    }
 
     if (existing) {
       existing.status = "pending";
@@ -394,8 +434,8 @@ export async function submitLanguageApplication(req, res) {
     res.json({ ok: true, message: "Application submitted" });
   } catch (err) {
     console.error("Language app error:", err);
-    try { if (req.file.path) fs.unlinkSync(req.file.path); } catch (e) {}
-    res.status(500).json({ error: "server error" });
+    try { if (req.file?.path) fs.unlinkSync(req.file.path); } catch (e) {}
+    res.status(500).json({ error: err.message || "server error" });
   }
 }
 

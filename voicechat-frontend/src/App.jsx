@@ -92,14 +92,13 @@ function RedirectIfAuthenticated({ children }) {
   return <Navigate to="/call" replace />;
 }
 
-// Guard platform pages — must be logged-in AND approved (account + agreement), NOT QA-only/admin-only
+// Guard platform pages — must be logged-in AND approved (account + agreement)
 function RequireAuth({ children }) {
   const userInfo = getUserInfo();
   if (!userInfo) return <Navigate to="/login" replace />;
   if (isUserDisabled(userInfo)) return <DisabledUser />;
-  // QA-only and admin users don't belong on user-facing pages
-  if (userInfo.isQA && !userInfo.isAdmin) return <Navigate to="/admin/qa" replace />;
-  if (userInfo.isAdmin) return <Navigate to="/admin/dashboard" replace />;
+  if (userInfo.isAdmin || userInfo.isQA) return children;
+
   const s = userInfo.accountStatus;
   if (s === "pending_intro" || s === "rejected") return <Navigate to="/intro-recording" replace />;
   if (s === "pending_approval") return <Navigate to="/pending-approval" replace />;
@@ -108,7 +107,7 @@ function RequireAuth({ children }) {
   return children;
 }
 
-// Guard Phrase Studio — requires at least 1 approved phrase application (unless Admin/QA)
+// Guard Phrase Studio — ensures authentication & completed onboarding
 function RequirePhraseAccess({ children }) {
   const userInfo = getUserInfo();
   if (!userInfo) return <Navigate to="/login" replace />;
@@ -121,15 +120,6 @@ function RequirePhraseAccess({ children }) {
   if (needsAgreementSigning(userInfo)) return <Navigate to="/contributor-agreement" replace />;
   if (awaitingAgreementReview(userInfo)) return <Navigate to="/dashboard" replace />;
 
-  const myApps = userInfo.languageApplications || [];
-  const hasApprovedPhraseApp = myApps.some(app => 
-    app.status === "approved" && (app.applicationType === "phrase" || !app.applicationType)
-  );
-
-  if (!hasApprovedPhraseApp) {
-    return <Navigate to="/language-apply?type=phrase" replace />;
-  }
-
   return children;
 }
 
@@ -138,8 +128,8 @@ function RequireDashboardAccess({ children }) {
   const userInfo = getUserInfo();
   if (!userInfo) return <Navigate to="/login" replace />;
   if (isUserDisabled(userInfo)) return <DisabledUser />;
-  if (userInfo.isQA && !userInfo.isAdmin) return <Navigate to="/admin/qa" replace />;
-  if (userInfo.isAdmin) return <Navigate to="/admin/dashboard" replace />;
+  if (userInfo.isAdmin || userInfo.isQA) return children;
+
   const s = userInfo.accountStatus;
   if (s === "pending_intro" || s === "rejected") return <Navigate to="/intro-recording" replace />;
   if (s === "pending_approval") return <Navigate to="/pending-approval" replace />;
@@ -240,7 +230,15 @@ function ProfileCompletionOverlay({ userInfo, onComplete }) {
 
   return (
     <div className="fixed inset-0 bg-neutral-900/90 backdrop-blur-md flex items-center justify-center p-4 z-[9999]">
-      <div className="bg-white dark:bg-neutral-800 rounded-2xl p-8 max-w-md w-full shadow-2xl border border-neutral-200 dark:border-neutral-700 animate-slide-up">
+      <div className="bg-white dark:bg-neutral-800 rounded-2xl p-8 max-w-md w-full shadow-2xl border border-neutral-200 dark:border-neutral-700 animate-slide-up relative">
+        <button
+          type="button"
+          onClick={() => onComplete({ ...userInfo, accent: userInfo.accent || "Standard", dialect: userInfo.dialect || "Standard" })}
+          className="absolute top-4 right-4 text-neutral-400 hover:text-neutral-600 dark:hover:text-white p-1.5 rounded-lg hover:bg-neutral-100 dark:hover:bg-neutral-700 transition-colors"
+          title="Dismiss"
+        >
+          ✕
+        </button>
         <div className="text-center mb-6">
           <div className="inline-flex items-center justify-center w-12 h-12 bg-primary-100 dark:bg-primary-900/30 rounded-xl mb-3 text-primary-600">
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -303,17 +301,17 @@ function RequireProfileFields({ children }) {
   if (!user) return <Navigate to="/login" replace />;
   if (user.isQA || user.isAdmin) return children;
 
-  // Gate check for accent/dialect profile completion
-  if (!user.accent || !user.dialect) {
-    return (
-      <ProfileCompletionOverlay 
-        userInfo={user} 
-        onComplete={(updated) => setUser(updated)} 
-      />
-    );
-  }
-
-  return children;
+  return (
+    <>
+      {children}
+      {(!user.accent || !user.dialect) && (
+        <ProfileCompletionOverlay 
+          userInfo={user} 
+          onComplete={(updated) => setUser(updated)} 
+        />
+      )}
+    </>
+  );
 }
 
 export default function App() {
@@ -359,10 +357,10 @@ export default function App() {
         <Route path="/contributor-agreement" element={<RequireAgreementAccess><ContributorAgreement /></RequireAgreementAccess>} />
 
         {/* Protected platform routes */}
-        <Route path="/call" element={<RequireAuth><RequireProfileFields><Call /></RequireProfileFields></RequireAuth>} />
-        <Route path="/dashboard" element={<RequireDashboardAccess><RequireProfileFields><Dashboard /></RequireProfileFields></RequireDashboardAccess>} />
-        <Route path="/payouts" element={<RequireAuth><RequireProfileFields><UserPayouts /></RequireProfileFields></RequireAuth>} />
-        <Route path="/kyc/pan" element={<RequireAuth><RequireProfileFields><KycPan /></RequireProfileFields></RequireAuth>} />
+        <Route path="/call" element={<RequireAuth><Call /></RequireAuth>} />
+        <Route path="/dashboard" element={<RequireDashboardAccess><Dashboard /></RequireDashboardAccess>} />
+        <Route path="/payouts" element={<RequireAuth><UserPayouts /></RequireAuth>} />
+        <Route path="/kyc/pan" element={<RequireAuth><KycPan /></RequireAuth>} />
 
         {/* Admin Routes */}
         <Route path="/admin/dashboard" element={<RequireAdmin><AdminDashboard /></RequireAdmin>} />
@@ -394,8 +392,8 @@ export default function App() {
         <Route path="/admin/qa-flags" element={<RequireAdminOrQA><QaFlags /></RequireAdminOrQA>} />
         <Route path="/admin/ambiguity" element={<RequireAdmin><AdminAmbiguity /></RequireAdmin>} />
         <Route path="/admin/media" element={<RequireAdmin><AdminMedia /></RequireAdmin>} />
-        <Route path="/language-apply" element={<RequireAuth><RequireProfileFields><LanguageApply /></RequireProfileFields></RequireAuth>} />
-        <Route path="/phrases" element={<RequirePhraseAccess><RequireProfileFields><PhraseRecording /></RequireProfileFields></RequirePhraseAccess>} />
+        <Route path="/language-apply" element={<RequireAuth><LanguageApply /></RequireAuth>} />
+        <Route path="/phrases" element={<RequirePhraseAccess><PhraseRecording /></RequirePhraseAccess>} />
 
         <Route path="/admin" element={<Navigate to="/admin/dashboard" replace />} />
         <Route path="/admin/login" element={<Navigate to="/login" replace />} />

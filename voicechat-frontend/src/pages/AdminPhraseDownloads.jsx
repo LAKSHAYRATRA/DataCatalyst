@@ -29,6 +29,7 @@ export default function AdminPhraseDownloads() {
   const [loadingOptions, setLoadingOptions] = useState(false);
   const [filterOptionsData, setFilterOptionsData] = useState([]);
   const [dialogTotalCount, setDialogTotalCount] = useState(0);
+  const [dialogFreshCount, setDialogFreshCount] = useState(0);
   const [selectedFilterKey, setSelectedFilterKey] = useState("");
   const [selectedFilterValue, setSelectedFilterValue] = useState("");
   const [downloadMode, setDownloadMode] = useState("all"); // 'all' | 'custom'
@@ -69,12 +70,14 @@ export default function AdminPhraseDownloads() {
     setSelectedFilterValue("");
     setFilterOptionsData([]);
     setDialogTotalCount(0);
+    setDialogFreshCount(0);
 
     try {
       const res = await apiGet(`/api/admin/phrases/download-filter-options?company=${encodeURIComponent(companyName)}&status=${status}`);
       const options = res.filterOptions || [];
       setFilterOptionsData(options);
       setDialogTotalCount(res.totalCount || 0);
+      setDialogFreshCount(res.freshCount || 0);
 
       if (options.length > 0) {
         setSelectedFilterKey(options[0].key);
@@ -99,15 +102,20 @@ export default function AdminPhraseDownloads() {
     }
   };
 
-  const executeDownload = (isAll = false) => {
-    if (dialogTotalCount === 0) {
-      Swal.fire("No Phrases", "There are no phrases available for download matching this selection.", "warning");
+  const executeDownload = (isAll = false, isFresh = false) => {
+    const targetCount = isFresh ? dialogFreshCount : dialogTotalCount;
+    if (targetCount === 0) {
+      Swal.fire("No Phrases", isFresh ? "There are no newly approved phrases available for download." : "There are no phrases available for download matching this selection.", "warning");
       return;
     }
 
     const token = getClientToken();
     const backendUrl = import.meta.env.VITE_BACKEND_URL || "http://localhost:3001";
     let url = `${backendUrl}/api/admin/phrases/download-company?company=${encodeURIComponent(dialogCompany)}&status=${dialogStatus}`;
+
+    if (isFresh) {
+      url += `&type=fresh_phrases&isFresh=true`;
+    }
 
     if (!isAll && selectedFilterKey && selectedFilterValue) {
       url += `&filterKey=${encodeURIComponent(selectedFilterKey)}&filterValue=${encodeURIComponent(selectedFilterValue)}`;
@@ -124,7 +132,7 @@ export default function AdminPhraseDownloads() {
       toast: true,
       position: "top-end",
       icon: "success",
-      title: "ZIP compilation started. Your download will begin shortly.",
+      title: `${isFresh ? "Newly approved" : "ZIP"} compilation started. Your download will begin shortly.`,
       timer: 3500,
       showConfirmButton: false
     });
@@ -415,13 +423,32 @@ export default function AdminPhraseDownloads() {
                   </div>
 
                   {downloadMode === "all" ? (
-                    <div className="bg-neutral-800/80 border border-neutral-700/80 rounded-xl p-5 space-y-3">
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm font-semibold text-neutral-300">Total Phrases to Bundle:</span>
+                    <div className="bg-neutral-800/80 border border-neutral-700/80 rounded-xl p-5 space-y-4">
+                      <div className="flex items-center justify-between border-b border-neutral-700/60 pb-3">
+                        <span className="text-sm font-semibold text-neutral-300">Total {dialogStatus === "approved" ? "Approved" : "Pending"} Phrases:</span>
                         <span className="text-base font-mono font-bold text-primary-400">{dialogTotalCount} Phrases</span>
                       </div>
+
+                      {dialogStatus === "approved" && (
+                        <div className="flex items-center justify-between border-b border-neutral-700/60 pb-3">
+                          <div>
+                            <span className="text-sm font-semibold text-neutral-300 block">Newly Approved (Undownloaded):</span>
+                            <span className="text-[11px] text-neutral-400">Approved phrases not downloaded in any previous batch</span>
+                          </div>
+                          <span className={`text-base font-mono font-bold px-2.5 py-0.5 rounded-full ${
+                            dialogFreshCount > 0 
+                              ? "text-cyan-300 bg-cyan-950/80 border border-cyan-700/50" 
+                              : "text-neutral-500 bg-neutral-850"
+                          }`}>
+                            {dialogFreshCount} Phrases
+                          </span>
+                        </div>
+                      )}
+
                       <p className="text-xs text-neutral-400">
-                        Will generate complete ZIP archive with all {dialogTotalCount} {dialogStatus} audio files and complete JSON metadata catalogs.
+                        {dialogStatus === "approved"
+                          ? "Download all approved phrases or only the newly approved batch. Bundles audio WAVs and metadata JSON catalogs."
+                          : `Will generate complete ZIP archive with all ${dialogTotalCount} pending audio files and complete JSON metadata catalogs.`}
                       </p>
                     </div>
                   ) : (
@@ -488,23 +515,42 @@ export default function AdminPhraseDownloads() {
               </button>
 
               {downloadMode === "all" ? (
-                <button
-                  type="button"
-                  onClick={() => executeDownload(true)}
-                  disabled={loadingOptions || dialogTotalCount === 0}
-                  className={`btn btn-sm font-bold flex items-center gap-2 px-5 shadow-lg ${
-                    dialogStatus === "approved"
-                      ? "bg-emerald-600 hover:bg-emerald-500 text-white"
-                      : "bg-amber-600 hover:bg-amber-500 text-white"
-                  }`}
-                >
-                  <Download className="w-4 h-4" />
-                  <span>Download All ({dialogTotalCount})</span>
-                </button>
+                <div className="flex items-center gap-2">
+                  {dialogStatus === "approved" && (
+                    <button
+                      type="button"
+                      onClick={() => executeDownload(true, true)}
+                      disabled={loadingOptions || dialogFreshCount === 0}
+                      className={`btn btn-sm font-bold flex items-center gap-2 px-4 shadow-lg transition-all ${
+                        dialogFreshCount > 0
+                          ? "bg-cyan-600 hover:bg-cyan-500 text-white shadow-cyan-600/20"
+                          : "bg-neutral-800 text-neutral-500 cursor-not-allowed border border-neutral-700"
+                      }`}
+                      title={dialogFreshCount === 0 ? "No newly approved phrases available" : `Download ${dialogFreshCount} newly approved phrases`}
+                    >
+                      <Sparkles className="w-4 h-4" />
+                      <span>Download Newly Approved ({dialogFreshCount})</span>
+                    </button>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => executeDownload(true, false)}
+                    disabled={loadingOptions || dialogTotalCount === 0}
+                    className={`btn btn-sm font-bold flex items-center gap-2 px-5 shadow-lg ${
+                      dialogStatus === "approved"
+                        ? "bg-emerald-600 hover:bg-emerald-500 text-white"
+                        : "bg-amber-600 hover:bg-amber-500 text-white"
+                    }`}
+                  >
+                    <Download className="w-4 h-4" />
+                    <span>Download All ({dialogTotalCount})</span>
+                  </button>
+                </div>
               ) : (
                 <button
                   type="button"
-                  onClick={() => executeDownload(false)}
+                  onClick={() => executeDownload(false, false)}
                   disabled={loadingOptions || !selectedFilterKey || !selectedFilterValue || selectedCount === 0}
                   className={`btn btn-sm font-bold flex items-center gap-2 px-5 shadow-lg ${
                     dialogStatus === "approved"

@@ -10,6 +10,7 @@ export default function AdminPhrases() {
   const [phraseLanguagesList, setPhraseLanguagesList] = useState([]);
   const [companyId, setCompanyId] = useState('');
   const [language, setLanguage] = useState('');
+  const [speakerId, setSpeakerId] = useState('');
   const [file, setFile] = useState(null);
   const [pastedJson, setPastedJson] = useState('');
   const [loading, setLoading] = useState(false);
@@ -105,14 +106,16 @@ export default function AdminPhrases() {
         const res = await apiPostJson('/api/phrases/admin/upload', {
           companyId: companyId.trim(),
           language: language.trim(),
+          speakerId: speakerId.trim(),
           phrases: extractPhrasesArray(json),
           metadataKeys,
         });
         const dupMsg = res.duplicates > 0 ? ` (${res.duplicates} duplicate ID${res.duplicates !== 1 ? 's' : ''} found, not uploaded and ignored)` : '';
-        setMessage(`Success! Inserted: ${res.inserted}${dupMsg}`);
+        setMessage(`Success! Inserted: ${res.inserted}${dupMsg}${speakerId.trim() ? ` (Allocated to ${speakerId.trim()})` : ''}`);
         setPastedJson('');
         setCompanyId('');
         setLanguage('');
+        setSpeakerId('');
         setMetadataKeys([]);
         fetchPhrases();
         fetchCompanies();
@@ -132,14 +135,16 @@ export default function AdminPhrases() {
         const res = await apiPostJson('/api/phrases/admin/upload', {
           companyId: companyId.trim(),
           language: language.trim(),
+          speakerId: speakerId.trim(),
           phrases: extractPhrasesArray(json),
           metadataKeys,
         });
         const dupMsg = res.duplicates > 0 ? ` (${res.duplicates} duplicate ID${res.duplicates !== 1 ? 's' : ''} found, not uploaded and ignored)` : '';
-        setMessage(`Success! Inserted: ${res.inserted}${dupMsg}`);
+        setMessage(`Success! Inserted: ${res.inserted}${dupMsg}${speakerId.trim() ? ` (Allocated to ${speakerId.trim()})` : ''}`);
         setFile(null);
         setCompanyId('');
         setLanguage('');
+        setSpeakerId('');
         setMetadataKeys([]);
         fetchPhrases();
         fetchCompanies();
@@ -264,6 +269,23 @@ export default function AdminPhrases() {
                   No phrase languages created yet. Add a phrase language first under Phrase Languages in the sidebar.
                 </p>
               )}
+            </div>
+
+            <div className="mb-4">
+              <label className="block text-sm font-medium mb-2 opacity-80 flex items-center justify-between">
+                <span>Allocate to Speaker ID (Optional)</span>
+                <span className="text-xs text-indigo-400 font-mono">🔒 Reserved for Speaker</span>
+              </label>
+              <input 
+                type="text" 
+                className="input w-full bg-white dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 text-neutral-900 dark:text-neutral-100 font-mono text-sm" 
+                placeholder="e.g. spk_129 (Leave blank for Open Pool)" 
+                value={speakerId}
+                onChange={(e) => setSpeakerId(e.target.value)}
+              />
+              <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
+                If specified, all phrases in this uploaded batch will be reserved exclusively for this speaker ID.
+              </p>
             </div>
 
             <div className="mb-4">

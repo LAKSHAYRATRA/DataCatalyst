@@ -5740,7 +5740,8 @@ router.get("/phrases/download-company", async (req, res) => {
         const filenamePattern = companyDoc?.namingPattern || "{phraseId}";
 
         // Target company IDs
-        const targetCompanyIds = (type === "fresh_phrases")
+        const isFreshOnly = type === "fresh_phrases" || req.query.isFresh === "true" || req.query.scope === "fresh";
+        const targetCompanyIds = isFreshOnly
             ? [companyFolder, companyFolder.toLowerCase()]
             : [
                 companyFolder,
@@ -5805,13 +5806,13 @@ router.get("/phrases/download-company", async (req, res) => {
         }
 
         if (approvedPhrases.length === 0) {
-            return res.status(404).json({ error: `No matching ${targetStatus} phrases found for "${companyFolder}"${filterKey ? ` with ${filterKey}=${filterValue}` : ''}.` });
+            return res.status(404).json({ error: `No matching ${isFreshOnly ? 'newly approved ' : ''}${targetStatus} phrases found for "${companyFolder}"${filterKey ? ` with ${filterKey}=${filterValue}` : ''}.` });
         }
 
-        let zipFilename = `${companyFolder}_${targetStatus}_phrases.zip`;
+        let zipFilename = `${companyFolder}_${isFreshOnly ? 'newly_' : ''}${targetStatus}_phrases.zip`;
         if (filterKey && filterValue) {
             const cleanVal = filterValue.replace(/[^a-zA-Z0-9_\-]/g, "_");
-            zipFilename = `${companyFolder}_${targetStatus}_${filterKey}_${cleanVal}.zip`;
+            zipFilename = `${companyFolder}_${isFreshOnly ? 'newly_' : ''}${targetStatus}_${filterKey}_${cleanVal}.zip`;
         }
 
         res.setHeader("Content-Type", "application/zip");
@@ -6538,11 +6539,17 @@ router.get("/phrases/download-filter-options", requireAuth(JWT_SECRET), async (r
             }
         }
 
+        let freshCount = 0;
+        if (targetStatus === "approved") {
+            freshCount = phrases.filter(p => !String(p.companyId || "").endsWith("_downloaded")).length;
+        }
+
         res.json({
             success: true,
             company: companyFolder,
             status: targetStatus,
             totalCount: phrases.length,
+            freshCount: freshCount,
             filterOptions
         });
     } catch (e) {
@@ -6837,8 +6844,8 @@ router.get("/companies/:id/phrase-workloads/:language", async (req, res) => {
 
         if (req.query.allocation === "reserved") {
             filter.$or = [
-                { assigned_speaker_id: { $ne: null, $ne: "" } },
-                { status: "pending", speaker_id: { $ne: null, $ne: "" } }
+                { assigned_speaker_id: { $nin: [null, ""] } },
+                { status: "pending", speaker_id: { $nin: [null, ""] } }
             ];
         } else if (req.query.allocation === "open") {
             filter.$and = filter.$and || [];
@@ -7014,6 +7021,72 @@ router.post("/companies/:id/phrase-workloads/:language/delete-pending", async (r
             success: true,
             deletedCount: result.deletedCount,
             message: `Deleted ${result.deletedCount} pending phrases for ${company.name} (${language.toUpperCase()}).`
+        });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+router.post("/companies/:id/phrase-workloads/:language/allocate-speaker", async (req, res) => {
+    try {
+        const company = await Company.findById(req.params.id);
+        if (!company) return res.status(404).json({ error: "Company not found" });
+
+        const companyFolder = company.name.replace(/[^a-zA-Z0-9_\-\ ]/g, "").trim();
+        const companyRegex = new RegExp(`^${companyFolder}(_downloaded)?$`, "i");
+        const language = String(req.params.language).trim().toLowerCase();
+        const { speakerId, count, target = "open" } = req.body;
+
+        const cleanSpeakerId = speakerId ? String(speakerId).trim() : null;
+
+        const filter = {
+            companyId: { $regex: companyRegex },
+            language: { $regex: new RegExp(`^${language}$`, "i") },
+            status: "pending"
+        };
+
+        if (target === "open") {
+            filter.$and = [
+                {
+                    $or: [
+                        { assigned_speaker_id: null },
+                        { assigned_speaker_id: "" },
+                        { assigned_speaker_id: { $exists: false } }
+                    ]
+                },
+                {
+                    $or: [
+                        { speaker_id: null },
+                        { speaker_id: "" },
+                        { speaker_id: { $exists: false } }
+                    ]
+                }
+            ];
+        }
+
+        let phrasesToUpdate = await Phrase.find(filter).select("_id").limit(count ? Number(count) : 0);
+        const ids = phrasesToUpdate.map(p => p._id);
+
+        if (ids.length === 0) {
+            return res.json({
+                success: true,
+                updatedCount: 0,
+                message: "No matching pending phrases found to allocate."
+            });
+        }
+
+        const updateDoc = cleanSpeakerId 
+            ? { $set: { assigned_speaker_id: cleanSpeakerId, speaker_id: cleanSpeakerId } }
+            : { $unset: { assigned_speaker_id: "", speaker_id: "" } };
+
+        const updateResult = await Phrase.updateMany({ _id: { $in: ids } }, updateDoc);
+
+        res.json({
+            success: true,
+            updatedCount: updateResult.modifiedCount,
+            message: cleanSpeakerId 
+                ? `Allocated ${updateResult.modifiedCount} phrases to ${cleanSpeakerId}.` 
+                : `Reset ${updateResult.modifiedCount} phrases back to the open pool.`
         });
     } catch (e) {
         res.status(500).json({ error: e.message });
