@@ -272,24 +272,76 @@ export default function AdminCompanyLanguagePhrases() {
   };
 
   const handleSetSample = async (phrase) => {
+    const maxSamples = company?.numberOfSamples && Number(company.numberOfSamples) >= 1 ? Number(company.numberOfSamples) : 1;
+    const currentSlot = phrase.sampleSlot || (phrase.isSample ? 1 : null);
+
+    let optionsHtml = '';
+    for (let i = 1; i <= maxSamples; i++) {
+      const isSelected = currentSlot === i;
+      optionsHtml += `<option value="${i}" ${isSelected ? 'selected' : ''}>★ Set as Sample #${i}</option>`;
+    }
+    if (phrase.isSample) {
+      optionsHtml += `<option value="remove" style="color: #ef4444;">✕ Remove Sample Designation</option>`;
+    }
+
+    const { value: selectedSlot } = await Swal.fire({
+      title: `Assign Sample Slot for "${phrase.phraseId}"`,
+      html: `
+        <div class="text-left space-y-3 text-sm">
+          <p class="text-neutral-300">
+            Select which sample position (1 to ${maxSamples}) this phrase should be in the applicant test for <b>${company?.projectName || company?.name}</b> (${language.toUpperCase()}).
+          </p>
+          <div class="bg-neutral-900/90 border border-neutral-700 p-3 rounded-lg text-xs text-neutral-300 italic mb-2">
+            "${phrase.text}"
+          </div>
+          <div>
+            <label class="block font-semibold mb-1 text-neutral-200">Sample Position (1 to ${maxSamples}):</label>
+            <select id="swal-sample-slot" class="w-full p-2.5 bg-neutral-800 border border-neutral-700 text-white rounded-lg text-sm focus:ring-2 focus:ring-amber-500">
+              ${optionsHtml}
+            </select>
+          </div>
+        </div>
+      `,
+      focusConfirm: false,
+      showCancelButton: true,
+      confirmButtonText: "Save Sample Slot",
+      confirmButtonColor: "#f59e0b",
+      cancelButtonText: "Cancel",
+      preConfirm: () => {
+        return document.getElementById("swal-sample-slot").value;
+      }
+    });
+
+    if (!selectedSlot) return;
+
     const key = `sample_${phrase._id}`;
     setActionLoading((prev) => ({ ...prev, [key]: true }));
 
     try {
-      await apiPostJson(`/api/admin/phrases/${phrase._id}/set-sample`, {});
+      const slotVal = selectedSlot === "remove" ? null : parseInt(selectedSlot, 10);
+      const res = await apiPostJson(`/api/admin/phrases/${phrase._id}/set-sample`, {
+        sampleSlot: slotVal
+      });
 
+      // Update phrases state: update this phrase, and if another phrase had this slot, unset it
       setPhrases((prev) =>
-        prev.map((p) => ({
-          ...p,
-          isSample: p._id === phrase._id
-        }))
+        prev.map((p) => {
+          if (p._id === phrase._id) {
+            return { ...p, isSample: res.isSample, sampleSlot: res.sampleSlot };
+          }
+          if (slotVal && p.sampleSlot === slotVal) {
+            return { ...p, isSample: false, sampleSlot: null };
+          }
+          return p;
+        })
       );
 
       Swal.fire({
+        toast: true,
+        position: "top-end",
         icon: "success",
-        title: "Sample Phrase Updated!",
-        text: `"${phrase.text.slice(0, 40)}..." is now set as the application test sample for ${language.toUpperCase()}.`,
-        timer: 2000,
+        title: res.message || "Sample slot assigned!",
+        timer: 2500,
         showConfirmButton: false
       });
     } catch (err) {
@@ -759,7 +811,8 @@ export default function AdminCompanyLanguagePhrases() {
                             <span>{phrase.phraseId}</span>
                             {isSample && (
                               <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500 text-white w-max shadow-sm">
-                                <Star className="w-3 h-3 fill-current" /> Sample Phrase
+                                <Star className="w-3 h-3 fill-current" />
+                                <span>{phrase.sampleSlot ? `Sample #${phrase.sampleSlot}` : 'Sample Phrase'}</span>
                               </span>
                             )}
                           </div>
@@ -855,20 +908,20 @@ export default function AdminCompanyLanguagePhrases() {
                             {/* Set as Sample Button */}
                             <button
                               onClick={() => handleSetSample(phrase)}
-                              disabled={isSample || sampleLoading}
+                              disabled={sampleLoading}
                               className={`btn btn-xs px-3 py-1.5 flex items-center gap-1.5 font-semibold transition-all ${
                                 isSample
-                                  ? "bg-amber-900/50 text-amber-300 border border-amber-700/50 cursor-default"
+                                  ? "bg-amber-900/60 hover:bg-amber-800 text-amber-200 border border-amber-600/60 shadow-sm"
                                   : "bg-amber-500 hover:bg-amber-600 text-white shadow-sm hover:shadow"
                               }`}
-                              title={isSample ? "Currently active sample phrase for applications" : "Set as sample phrase for contributor application"}
+                              title={isSample ? `Assigned as Sample #${phrase.sampleSlot || 1}. Click to change slot or remove.` : "Click to assign a sample slot (1 to X)"}
                             >
                               {sampleLoading ? (
                                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
                               ) : (
-                                <Star className={`w-3.5 h-3.5 ${isSample ? "fill-current" : ""}`} />
+                                <Star className={`w-3.5 h-3.5 ${isSample ? "fill-current text-amber-300" : ""}`} />
                               )}
-                              {isSample ? "Sample Set" : "Set as Sample"}
+                              {isSample ? `Slot #${phrase.sampleSlot || 1} (Change)` : "Set Sample"}
                             </button>
 
                             {/* Delete Phrase Button */}

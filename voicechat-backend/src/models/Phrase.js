@@ -52,6 +52,7 @@ const phraseSchema = new mongoose.Schema(
     qaLockedAt: { type: Date, default: null },
     isTestPhrase: { type: Boolean, default: false },
     isSample: { type: Boolean, default: false },
+    sampleSlot: { type: Number, default: null }, // e.g. 1, 2, 3... for multi-sample order
     qcResult: { type: mongoose.Schema.Types.Mixed, default: null },
 
     // Dual-QA Cross Audit & Ambiguity Tracking

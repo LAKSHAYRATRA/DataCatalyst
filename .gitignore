@@ -72,3 +72,5 @@ extract_call.py
 inspect_zip.py
 test_stream_download.py
 reset-call.js
+*.csv
+ROW717*

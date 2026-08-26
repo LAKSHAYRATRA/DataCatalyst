@@ -35,6 +35,7 @@ import PhraseRecording from "./pages/PhraseRecording.jsx";
 import AdminMedia from "./pages/AdminMedia.jsx";
 import AdminProjects from "./pages/AdminProjects.jsx";
 import AdminCompanies from "./pages/AdminCompanies.jsx";
+import AdminCompanyConfig from "./pages/AdminCompanyConfig.jsx";
 import AdminCompanyUserCustomizations from "./pages/AdminCompanyUserCustomizations.jsx";
 import AdminCompanyDownloadCustomizations from "./pages/AdminCompanyDownloadCustomizations.jsx";
 import AdminCompanyPhraseWorkloads from "./pages/AdminCompanyPhraseWorkloads.jsx";
@@ -382,6 +383,7 @@ export default function App() {
         <Route path="/admin/phrases/downloads" element={<RequireAdmin><AdminPhraseDownloads /></RequireAdmin>} />
         <Route path="/admin/projects" element={<RequireAdmin><AdminProjects /></RequireAdmin>} />
         <Route path="/admin/companies" element={<RequireAdmin><AdminCompanies /></RequireAdmin>} />
+        <Route path="/admin/companies/:id/config" element={<RequireAdmin><AdminCompanyConfig /></RequireAdmin>} />
         <Route path="/admin/companies/:id/user-customizations" element={<RequireAdmin><AdminCompanyUserCustomizations /></RequireAdmin>} />
         <Route path="/admin/companies/:id/download-customizations" element={<RequireAdmin><AdminCompanyDownloadCustomizations /></RequireAdmin>} />
         <Route path="/admin/companies/:id/phrase-workloads" element={<RequireAdmin><AdminCompanyPhraseWorkloads /></RequireAdmin>} />

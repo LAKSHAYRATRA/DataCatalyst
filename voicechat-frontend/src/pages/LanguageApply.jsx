@@ -116,6 +116,9 @@ export default function LanguageApply() {
         return (t === "phrase" || t === "call") ? t : "call";
     }); // 'call' or 'phrase'
     const [samplePhrase, setSamplePhrase] = useState(null);
+    const [samplePhrases, setSamplePhrases] = useState([]);
+    const [sampleIndex, setSampleIndex] = useState(0);
+    const [sampleRecordings, setSampleRecordings] = useState({});
     const [userCustomizations, setUserCustomizations] = useState([]);
     const [phase, setPhase] = useState("select"); // select | record | done
     const [recording, setRecording] = useState(false);
@@ -303,12 +306,18 @@ export default function LanguageApply() {
         try {
             const langQuery = languageCode ? `&language=${encodeURIComponent(languageCode)}` : '';
             const data = await apiGet(`/api/phrases/sample?companyId=${encodeURIComponent(companyId)}${langQuery}`);
-            if (data.phrase) {
-                setSamplePhrase(data.phrase);
+            const phrases = data.phrases || (data.phrase ? [data.phrase] : []);
+            if (phrases.length > 0) {
+                setSamplePhrases(phrases);
+                setSampleIndex(0);
+                setSampleRecordings({});
+                setSamplePhrase(phrases[0]);
                 setUserCustomizations(data.userCustomizations || []);
                 setPhase("record");
                 setAudioBlob(null);
                 setAudioUrl(null);
+                setRecordedLufs(null);
+                setRawPcm(null);
             } else {
                 setError("No sample phrase found for this project and language.");
             }
@@ -318,6 +327,56 @@ export default function LanguageApply() {
             setLoading(false);
         }
     }
+
+    const handleNextSample = () => {
+        if (!audioBlob || !rawPcm) return;
+        const updated = {
+            ...sampleRecordings,
+            [sampleIndex]: { pcm: rawPcm, blob: audioBlob, url: audioUrl, lufs: recordedLufs }
+        };
+        setSampleRecordings(updated);
+
+        const nextIdx = sampleIndex + 1;
+        if (nextIdx < samplePhrases.length) {
+            setSampleIndex(nextIdx);
+            setSamplePhrase(samplePhrases[nextIdx]);
+            if (updated[nextIdx]) {
+                setRawPcm(updated[nextIdx].pcm);
+                setAudioBlob(updated[nextIdx].blob);
+                setAudioUrl(updated[nextIdx].url);
+                setRecordedLufs(updated[nextIdx].lufs);
+            } else {
+                setRawPcm(null);
+                setAudioBlob(null);
+                setAudioUrl(null);
+                setRecordedLufs(null);
+            }
+        }
+    };
+
+    const handlePrevSample = () => {
+        if (sampleIndex === 0) return;
+        const updated = {
+            ...sampleRecordings,
+            ...(audioBlob && rawPcm ? { [sampleIndex]: { pcm: rawPcm, blob: audioBlob, url: audioUrl, lufs: recordedLufs } } : {})
+        };
+        setSampleRecordings(updated);
+
+        const prevIdx = sampleIndex - 1;
+        setSampleIndex(prevIdx);
+        setSamplePhrase(samplePhrases[prevIdx]);
+        if (updated[prevIdx]) {
+            setRawPcm(updated[prevIdx].pcm);
+            setAudioBlob(updated[prevIdx].blob);
+            setAudioUrl(updated[prevIdx].url);
+            setRecordedLufs(updated[prevIdx].lufs);
+        } else {
+            setRawPcm(null);
+            setAudioBlob(null);
+            setAudioUrl(null);
+            setRecordedLufs(null);
+        }
+    };
 
     async function startRecording() {
         try {
@@ -494,7 +553,50 @@ export default function LanguageApply() {
                 form.append("companyId", selectedCompany);
             }
             form.append("languageCode", selectedLanguage);
-            form.append("recording", audioBlob, `app_${applicationType}_${selectedCompany || 'call'}_${selectedLanguage}.wav`);
+
+            if (applicationType === 'phrase' && samplePhrases.length > 1) {
+                const allRecordings = {
+                    ...sampleRecordings,
+                    [sampleIndex]: { pcm: rawPcm, blob: audioBlob, url: audioUrl, lufs: recordedLufs }
+                };
+
+                // Check all samples are recorded
+                for (let i = 0; i < samplePhrases.length; i++) {
+                    if (!allRecordings[i] || !allRecordings[i].blob) {
+                        setLoading(false);
+                        Swal.fire("Incomplete Samples", `Please record Sample Phrase ${i + 1} of ${samplePhrases.length} before submitting.`, "warning");
+                        setSampleIndex(i);
+                        setSamplePhrase(samplePhrases[i]);
+                        return;
+                    }
+                }
+
+                // Append metadata
+                const metadata = samplePhrases.map((p, idx) => ({
+                    sampleIndex: idx,
+                    phraseId: p.phraseId,
+                    text: p.text,
+                    emotion: p.emotion,
+                    style: p.style,
+                    speed: p.speed,
+                    intent: p.intent,
+                    pitch: p.pitch,
+                    volume: p.volume,
+                    instructions: p.instructions,
+                    tags: p.tags,
+                    lufs: allRecordings[idx]?.lufs !== undefined ? allRecordings[idx].lufs : null
+                }));
+                form.append("samplesMetadata", JSON.stringify(metadata));
+
+                // Append each sample file
+                for (let i = 0; i < samplePhrases.length; i++) {
+                    const sampleItem = samplePhrases[i];
+                    form.append("recording", allRecordings[i].blob, `sample_${i + 1}_${sampleItem.phraseId || i}.wav`);
+                }
+            } else {
+                form.append("recording", audioBlob, `app_${applicationType}_${selectedCompany || 'call'}_${selectedLanguage}.wav`);
+            }
+
             const res = await fetch(`${BACKEND}/api/language-applications`, {
                 method: "POST", body: form, credentials: "include",
             });
@@ -946,6 +1048,62 @@ export default function LanguageApply() {
                             )}
                         </AnimatePresence>
 
+                        {/* Multi-sample Step Tracker */}
+                        {applicationType === 'phrase' && samplePhrases.length > 1 && (
+                            <div className="mb-5 bg-neutral-100 dark:bg-neutral-800/80 p-3.5 rounded-xl border border-neutral-200 dark:border-neutral-700">
+                                <div className="flex items-center justify-between text-xs font-bold mb-2">
+                                    <span className="text-primary-600 dark:text-primary-400">
+                                        Sample Phrase {sampleIndex + 1} of {samplePhrases.length}
+                                    </span>
+                                    <span className="text-neutral-500 font-mono">
+                                        {Object.keys(sampleRecordings).length + (audioBlob && !sampleRecordings[sampleIndex] ? 1 : 0)} / {samplePhrases.length} Recorded
+                                    </span>
+                                </div>
+                                <div className="flex gap-1.5">
+                                    {samplePhrases.map((_, idx) => {
+                                        const isRecorded = (idx === sampleIndex && audioBlob) || sampleRecordings[idx];
+                                        const isCurrent = idx === sampleIndex;
+                                        return (
+                                            <div 
+                                                key={idx}
+                                                onClick={() => {
+                                                    if (!recording) {
+                                                        if (audioBlob && rawPcm) {
+                                                            setSampleRecordings(prev => ({
+                                                                ...prev,
+                                                                [sampleIndex]: { pcm: rawPcm, blob: audioBlob, url: audioUrl, lufs: recordedLufs }
+                                                            }));
+                                                        }
+                                                        setSampleIndex(idx);
+                                                        setSamplePhrase(samplePhrases[idx]);
+                                                        if (sampleRecordings[idx]) {
+                                                            setRawPcm(sampleRecordings[idx].pcm);
+                                                            setAudioBlob(sampleRecordings[idx].blob);
+                                                            setAudioUrl(sampleRecordings[idx].url);
+                                                            setRecordedLufs(sampleRecordings[idx].lufs);
+                                                        } else if (idx !== sampleIndex) {
+                                                            setRawPcm(null);
+                                                            setAudioBlob(null);
+                                                            setAudioUrl(null);
+                                                            setRecordedLufs(null);
+                                                        }
+                                                    }
+                                                }}
+                                                className={`h-2 flex-1 rounded-full cursor-pointer transition-all ${
+                                                    isCurrent 
+                                                        ? 'bg-primary-500 ring-2 ring-primary-400' 
+                                                        : isRecorded 
+                                                        ? 'bg-emerald-500' 
+                                                        : 'bg-neutral-300 dark:bg-neutral-700'
+                                                }`}
+                                                title={`Sample ${idx + 1}`}
+                                            />
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        )}
+
                         {/* Sample Phrase Box */}
                         {applicationType === 'phrase' && samplePhrase && (
                             <>
@@ -961,10 +1119,10 @@ export default function LanguageApply() {
                                     {samplePhrase.volume && (!userCustomizations || userCustomizations.length === 0 || userCustomizations.some(uk => uk.toLowerCase() === 'volume')) && <div><span className="block text-xs uppercase opacity-60 mb-1">Volume</span><span className="font-medium">{samplePhrase.volume}</span></div>}
                                     {samplePhrase.tags && Object.entries(samplePhrase.tags)
                                         .filter(([key]) => {
-                                            if (userCustomizations && userCustomizations.length > 0) {
-                                                return userCustomizations.some(uk => uk.toLowerCase() === key.toLowerCase());
-                                            }
-                                            return true;
+                                             if (userCustomizations && userCustomizations.length > 0) {
+                                                 return userCustomizations.some(uk => uk.toLowerCase() === key.toLowerCase());
+                                             }
+                                             return true;
                                         })
                                         .map(([key, val]) => (
                                             <div key={key}>
@@ -1027,19 +1185,39 @@ export default function LanguageApply() {
                                     )}
 
                                     <div className="flex gap-3 w-full">
+                                        {sampleIndex > 0 && applicationType === 'phrase' && samplePhrases.length > 1 && (
+                                            <button
+                                                onClick={handlePrevSample}
+                                                disabled={recording || loading}
+                                                className="px-4 py-2.5 border border-neutral-300 dark:border-neutral-700 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-800 rounded-xl text-sm font-semibold transition-colors"
+                                            >
+                                                ← Prev
+                                            </button>
+                                        )}
                                         <button
                                             onClick={() => { setAudioBlob(null); setAudioUrl(null); setRecordedLufs(null); setRawPcm(null); }}
                                             className="flex-1 py-2.5 border border-neutral-300 dark:border-neutral-700 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-800 rounded-xl text-sm font-semibold transition-colors"
                                         >
                                             Re-record
                                         </button>
-                                        <button
-                                            onClick={submit}
-                                            disabled={loading}
-                                            className="flex-1 btn-primary py-2.5 text-sm font-semibold disabled:opacity-50"
-                                        >
-                                            {loading ? "Submitting…" : "Submit Application"}
-                                        </button>
+                                        {applicationType === 'phrase' && samplePhrases.length > 1 && sampleIndex < samplePhrases.length - 1 ? (
+                                            <button
+                                                onClick={handleNextSample}
+                                                disabled={!audioBlob || loading}
+                                                className="flex-1 btn-primary py-2.5 text-sm font-semibold disabled:opacity-50 flex items-center justify-center gap-1.5"
+                                            >
+                                                <span>Next Sample ({sampleIndex + 2}/{samplePhrases.length})</span>
+                                                <span>→</span>
+                                            </button>
+                                        ) : (
+                                            <button
+                                                onClick={submit}
+                                                disabled={loading}
+                                                className="flex-1 btn-primary py-2.5 text-sm font-semibold disabled:opacity-50"
+                                            >
+                                                {loading ? "Submitting…" : samplePhrases.length > 1 ? `Submit Application (${samplePhrases.length} Samples)` : "Submit Application"}
+                                            </button>
+                                        )}
                                     </div>
                                 </>
                             )}

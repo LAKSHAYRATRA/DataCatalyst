@@ -1028,8 +1028,30 @@ async function listLanguageApplications(req, res) {
         const limit = parseInt(req.query.limit) || 20;
         const statusFilter = req.query.status;
         const typeFilter = req.query.type; // 'call' or 'phrase'
+        const companyFilter = (req.query.company || req.query.companyId || "").trim();
+        const languageFilter = (req.query.language || req.query.languageCode || "").trim().toLowerCase();
+        const search = (req.query.search || "").trim().toLowerCase();
         const skip = (page - 1) * limit;
         const allowedLanguages = req.user.isAdmin ? null : getReviewerLanguageCodes(req.user);
+
+        // Resolve company identifiers if companyFilter is passed
+        let targetCompanyIdentifiers = [];
+        if (companyFilter) {
+            targetCompanyIdentifiers.push(companyFilter.toLowerCase());
+            const compDoc = await Company.findOne({
+                $or: [
+                    { name: { $regex: new RegExp(`^${companyFilter.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&')}$`, 'i') } },
+                    { projectName: { $regex: new RegExp(`^${companyFilter.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&')}$`, 'i') } },
+                    mongoose.Types.ObjectId.isValid(companyFilter) ? { _id: companyFilter } : null
+                ].filter(Boolean)
+            }).lean();
+
+            if (compDoc) {
+                targetCompanyIdentifiers.push(String(compDoc._id).toLowerCase());
+                if (compDoc.name) targetCompanyIdentifiers.push(String(compDoc.name).toLowerCase().trim());
+                if (compDoc.projectName) targetCompanyIdentifiers.push(String(compDoc.projectName).toLowerCase().trim());
+            }
+        }
 
         const users = await User.find({ "languageApplications.0": { $exists: true } })
             .select("firstname lastname email username speaker_id languageApplications")
@@ -1043,6 +1065,25 @@ async function listLanguageApplications(req, res) {
                 if (statusFilter && app.status !== statusFilter) return;
                 if (typeFilter && appType !== typeFilter) return;
                 if (allowedLanguages && !allowedLanguages.includes(languageCode)) return;
+                if (languageFilter && languageCode !== languageFilter) return;
+
+                if (targetCompanyIdentifiers.length > 0) {
+                    const appComp = String(app.companyId || app.projectName || "").toLowerCase().trim();
+                    const matchesComp = targetCompanyIdentifiers.some(id => id === appComp);
+                    if (!matchesComp) return;
+                }
+
+                if (search) {
+                    const fn = (u.firstname || "").toLowerCase();
+                    const ln = (u.lastname || "").toLowerCase();
+                    const un = (u.username || "").toLowerCase();
+                    const em = (u.email || "").toLowerCase();
+                    const spk = (u.speaker_id || `spk_${u._id}`).toLowerCase();
+                    if (!fn.includes(search) && !ln.includes(search) && !un.includes(search) && !em.includes(search) && !spk.includes(search)) {
+                        return;
+                    }
+                }
+
                 apps.push({
                     appId: app._id,
                     userId: u._id,
@@ -1063,6 +1104,203 @@ async function listLanguageApplications(req, res) {
 
         res.json({ applications: apps, total, page, pages: Math.ceil(total / limit) });
     } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+}
+
+async function getPhraseApplicationsHierarchy(req, res) {
+    try {
+        const allowedLanguages = req.user.isAdmin ? null : getReviewerLanguageCodes(req.user);
+        
+        // 1. Fetch all companies
+        const companies = await Company.find({}).sort({ name: 1 }).lean();
+        
+        // 2. Fetch all known languages
+        const allLanguages = await Language.find({}).lean();
+        const langMap = {};
+        allLanguages.forEach(l => {
+            if (l.code) {
+                langMap[l.code.toLowerCase()] = l.name || l.code;
+            }
+        });
+
+        // 3. Find active languages in Phrase collection per company
+        const phraseCombos = await Phrase.aggregate([
+            {
+                $group: {
+                    _id: { companyId: "$companyId", language: { $toLower: "$language" } },
+                    phraseCount: { $sum: 1 }
+                }
+            }
+        ]);
+        
+        // Map company -> Map of languages with phrase count
+        const companyPhraseLangs = {};
+        phraseCombos.forEach(c => {
+            if (c._id && c._id.companyId && c._id.language) {
+                const compKey = String(c._id.companyId).replace(/_downloaded$/, "").trim().toLowerCase();
+                const lang = String(c._id.language).trim().toLowerCase();
+                if (!companyPhraseLangs[compKey]) {
+                    companyPhraseLangs[compKey] = {};
+                }
+                companyPhraseLangs[compKey][lang] = (companyPhraseLangs[compKey][lang] || 0) + (c.phraseCount || 0);
+            }
+        });
+
+        // 4. Find all users with phrase language applications
+        const users = await User.find({ "languageApplications.0": { $exists: true } })
+            .select("firstname lastname email username speaker_id languageApplications")
+            .lean();
+
+        // Aggregate application counts by company and language
+        // companyKey -> { originalName, languages: { langCode: { pending, approved, rejected, total } } }
+        const appStats = {};
+
+        users.forEach(u => {
+            (u.languageApplications || []).forEach(app => {
+                const appType = app.applicationType || 'phrase';
+                if (appType !== 'phrase') return;
+
+                const langCode = String(app.languageCode || "").trim().toLowerCase();
+                if (allowedLanguages && !allowedLanguages.includes(langCode)) return;
+
+                const compName = String(app.companyId || app.projectName || "General Phrases").trim();
+                const compKey = compName.toLowerCase();
+
+                if (!appStats[compKey]) {
+                    appStats[compKey] = {
+                        originalName: compName,
+                        languages: {}
+                    };
+                }
+                if (!appStats[compKey].languages[langCode]) {
+                    appStats[compKey].languages[langCode] = {
+                        pending: 0,
+                        approved: 0,
+                        rejected: 0,
+                        total: 0
+                    };
+                }
+                const st = app.status || "pending";
+                if (st === "approved") appStats[compKey].languages[langCode].approved++;
+                else if (st === "rejected") appStats[compKey].languages[langCode].rejected++;
+                else appStats[compKey].languages[langCode].pending++;
+                appStats[compKey].languages[langCode].total++;
+            });
+        });
+
+        // 5. Assemble hierarchy for each company
+        const matchedCompKeys = new Set();
+        const projectList = companies.map(comp => {
+            const cName = String(comp.name || "").trim();
+            const cKey = cName.toLowerCase();
+            const cId = String(comp._id).toLowerCase();
+            const pName = String(comp.projectName || "").trim();
+            const pKey = pName.toLowerCase();
+
+            matchedCompKeys.add(cKey);
+            if (pKey) matchedCompKeys.add(pKey);
+            matchedCompKeys.add(cId);
+
+            // Combine stats from name, projectName, or _id
+            const relevantStats = [
+                appStats[cKey],
+                appStats[pKey],
+                appStats[cId]
+            ].filter(Boolean);
+
+            // All languages for this company: from phrases + from applications
+            const phraseLangs = {
+                ...(companyPhraseLangs[cKey] || {}),
+                ...(companyPhraseLangs[pKey] || {})
+            };
+
+            const allLangsForComp = new Set([
+                ...Object.keys(phraseLangs),
+                ...relevantStats.flatMap(s => Object.keys(s.languages || {}))
+            ]);
+
+            const languageList = Array.from(allLangsForComp).map(langCode => {
+                let pending = 0, approved = 0, rejected = 0, total = 0;
+                relevantStats.forEach(s => {
+                    if (s.languages && s.languages[langCode]) {
+                        pending += s.languages[langCode].pending;
+                        approved += s.languages[langCode].approved;
+                        rejected += s.languages[langCode].rejected;
+                        total += s.languages[langCode].total;
+                    }
+                });
+
+                return {
+                    code: langCode,
+                    name: langMap[langCode] || (langCode.charAt(0).toUpperCase() + langCode.slice(1)),
+                    phraseCount: phraseLangs[langCode] || 0,
+                    pendingApplicants: pending,
+                    approvedApplicants: approved,
+                    rejectedApplicants: rejected,
+                    totalApplicants: total
+                };
+            });
+
+            // Sort languages: those with pending applicants first, then alphabetical
+            languageList.sort((a, b) => b.pendingApplicants - a.pendingApplicants || b.totalApplicants - a.totalApplicants || a.code.localeCompare(b.code));
+
+            const totalPending = languageList.reduce((acc, l) => acc + l.pendingApplicants, 0);
+            const totalApproved = languageList.reduce((acc, l) => acc + l.approvedApplicants, 0);
+            const totalRejected = languageList.reduce((acc, l) => acc + l.rejectedApplicants, 0);
+            const totalApps = languageList.reduce((acc, l) => acc + l.totalApplicants, 0);
+
+            return {
+                id: comp._id,
+                name: comp.name,
+                projectName: comp.projectName || comp.name,
+                description: comp.description || "",
+                languages: languageList,
+                totalLanguages: languageList.length,
+                pendingApplicants: totalPending,
+                approvedApplicants: totalApproved,
+                rejectedApplicants: totalRejected,
+                totalApplicants: totalApps
+            };
+        });
+
+        // Also check if any unmatched applications exist (e.g. legacy company names)
+        Object.keys(appStats).forEach(key => {
+            if (!matchedCompKeys.has(key) && key) {
+                const s = appStats[key];
+                const languageList = Object.keys(s.languages).map(langCode => {
+                    const lStat = s.languages[langCode];
+                    return {
+                        code: langCode,
+                        name: langMap[langCode] || (langCode.charAt(0).toUpperCase() + langCode.slice(1)),
+                        phraseCount: 0,
+                        pendingApplicants: lStat.pending,
+                        approvedApplicants: lStat.approved,
+                        rejectedApplicants: lStat.rejected,
+                        totalApplicants: lStat.total
+                    };
+                });
+                projectList.push({
+                    id: key,
+                    name: s.originalName || key,
+                    projectName: s.originalName || key,
+                    description: "",
+                    languages: languageList,
+                    totalLanguages: languageList.length,
+                    pendingApplicants: languageList.reduce((acc, l) => acc + l.pendingApplicants, 0),
+                    approvedApplicants: languageList.reduce((acc, l) => acc + l.approvedApplicants, 0),
+                    rejectedApplicants: languageList.reduce((acc, l) => acc + l.rejectedApplicants, 0),
+                    totalApplicants: languageList.reduce((acc, l) => acc + l.totalApplicants, 0)
+                });
+            }
+        });
+
+        // Sort projects: those with pending applicants first, then by total applicants, then by name
+        projectList.sort((a, b) => b.pendingApplicants - a.pendingApplicants || b.totalApplicants - a.totalApplicants || a.name.localeCompare(b.name));
+
+        res.json({ projects: projectList });
+    } catch (e) {
+        console.error("Error in getPhraseApplicationsHierarchy:", e);
         res.status(500).json({ error: e.message });
     }
 }
@@ -2108,6 +2346,8 @@ qaCallRouter.get("/calls/:callId/recording/:userId", async (req, res) => {
     }
 });
 
+qaCallRouter.get("/language-applications/hierarchy", getPhraseApplicationsHierarchy);
+qaCallRouter.get("/phrase-apps/hierarchy", getPhraseApplicationsHierarchy);
 qaCallRouter.get("/language-applications", listLanguageApplications);
 qaCallRouter.patch("/language-applications/:userId/:appId/approve", approveLanguageApplication);
 qaCallRouter.patch("/language-applications/:userId/:appId/reject", rejectLanguageApplication);
@@ -2536,6 +2776,8 @@ router.use("/qa", qaCallRouter);
 const sharedLanguageReviewRouter = express.Router();
 sharedLanguageReviewRouter.use(requireAuth(JWT_SECRET));
 sharedLanguageReviewRouter.use(isAdminOrQA);
+sharedLanguageReviewRouter.get("/language-applications/hierarchy", getPhraseApplicationsHierarchy);
+sharedLanguageReviewRouter.get("/phrase-apps/hierarchy", getPhraseApplicationsHierarchy);
 sharedLanguageReviewRouter.get("/language-applications", listLanguageApplications);
 sharedLanguageReviewRouter.patch("/language-applications/:userId/:appId/approve", approveLanguageApplication);
 sharedLanguageReviewRouter.patch("/language-applications/:userId/:appId/reject", rejectLanguageApplication);
@@ -6578,7 +6820,7 @@ router.get("/phrases/download-filter-options", requireAuth(JWT_SECRET), async (r
 
 router.post("/companies", requireAuth(JWT_SECRET), async (req, res) => {
     try {
-        const { name, maxContributionMinutes, hourlyPayout, projectName, namingPattern, singlePhraseFrequency } = req.body;
+        const { name, maxContributionMinutes, hourlyPayout, projectName, namingPattern, singlePhraseFrequency, numberOfSamples } = req.body;
         if (!name || !name.trim()) return res.status(400).json({ error: "Company name is required" });
 
         const cleanName = name.trim();
@@ -6592,6 +6834,7 @@ router.post("/companies", requireAuth(JWT_SECRET), async (req, res) => {
             maxContributionMinutes: Number.isFinite(Number(maxContributionMinutes)) ? Number(maxContributionMinutes) : 195, 
             hourlyPayout: Number.isFinite(Number(hourlyPayout)) ? Number(hourlyPayout) : 0, 
             singlePhraseFrequency: Number.isInteger(Number(singlePhraseFrequency)) && Number(singlePhraseFrequency) >= 1 ? Number(singlePhraseFrequency) : 1,
+            numberOfSamples: Number.isInteger(Number(numberOfSamples)) && Number(numberOfSamples) >= 1 ? Number(numberOfSamples) : 1,
             projectName: projectName && projectName.trim() ? projectName.trim() : cleanName,
             namingPattern: namingPattern && namingPattern.trim() ? namingPattern.trim() : "{phraseId}",
             allowPhraseTextEdit: Boolean(req.body.allowPhraseTextEdit)
@@ -6605,11 +6848,12 @@ router.post("/companies", requireAuth(JWT_SECRET), async (req, res) => {
 
 router.patch("/companies/:id", async (req, res) => {
     try {
-        const { maxContributionMinutes, hourlyPayout, singlePhraseFrequency, projectName, namingPattern, userCustomizations, downloadCustomizations, chronologicalTag, allowPhraseTextEdit } = req.body;
+        const { maxContributionMinutes, hourlyPayout, singlePhraseFrequency, numberOfSamples, projectName, namingPattern, userCustomizations, downloadCustomizations, chronologicalTag, allowPhraseTextEdit } = req.body;
         const updateData = {};
         if (maxContributionMinutes !== undefined) updateData.maxContributionMinutes = Number(maxContributionMinutes);
         if (hourlyPayout !== undefined) updateData.hourlyPayout = Number(hourlyPayout);
         if (singlePhraseFrequency !== undefined) updateData.singlePhraseFrequency = Math.max(1, Number(singlePhraseFrequency) || 1);
+        if (numberOfSamples !== undefined) updateData.numberOfSamples = Math.max(1, Number(numberOfSamples) || 1);
         if (projectName !== undefined) updateData.projectName = String(projectName).trim();
         if (namingPattern !== undefined) updateData.namingPattern = String(namingPattern).trim();
         if (userCustomizations !== undefined) updateData.userCustomizations = userCustomizations;
@@ -6626,6 +6870,30 @@ router.patch("/companies/:id", async (req, res) => {
         }
 
         res.json({ message: "Company updated", company });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+router.patch("/companies/:id/languages/:language/phrases/:phraseId/toggle-sample", async (req, res) => {
+    try {
+        const { phraseId } = req.params;
+        const phrase = await Phrase.findOne({
+            $or: [
+                { phraseId },
+                mongoose.Types.ObjectId.isValid(phraseId) ? { _id: phraseId } : null
+            ].filter(Boolean)
+        });
+        if (!phrase) return res.status(404).json({ error: "Phrase not found" });
+
+        phrase.isSample = !phrase.isSample;
+        await phrase.save();
+
+        res.json({
+            message: `Phrase '${phrase.phraseId}' is now ${phrase.isSample ? 'designated as a test sample' : 'standard phrase'}`,
+            isSample: phrase.isSample,
+            phrase
+        });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
@@ -6987,20 +7255,51 @@ router.post("/phrases/:phraseId/set-sample", async (req, res) => {
         const targetPhrase = await Phrase.findById(req.params.phraseId);
         if (!targetPhrase) return res.status(404).json({ error: "Phrase not found" });
 
+        const slotInput = req.body?.sampleSlot !== undefined ? req.body.sampleSlot : null;
+
+        if (slotInput === null || slotInput === 0 || slotInput === false || slotInput === "" || slotInput === "remove") {
+            targetPhrase.isSample = false;
+            targetPhrase.sampleSlot = null;
+            await targetPhrase.save();
+
+            return res.json({
+                message: `Phrase "${targetPhrase.phraseId}" removed from application samples`,
+                isSample: false,
+                sampleSlot: null,
+                phrase: targetPhrase
+            });
+        }
+
+        const slotNumber = parseInt(slotInput, 10);
+        if (isNaN(slotNumber) || slotNumber < 1) {
+            return res.status(400).json({ error: "Sample slot must be a positive integer (e.g. 1, 2, 3...)" });
+        }
+
+        // If another phrase for the same company & language has this slot, reset it
         if (targetPhrase.companyId && targetPhrase.language) {
             await Phrase.updateMany(
-                { 
-                    companyId: targetPhrase.companyId, 
-                    language: { $regex: new RegExp(`^${targetPhrase.language}$`, "i") } 
+                {
+                    _id: { $ne: targetPhrase._id },
+                    companyId: targetPhrase.companyId,
+                    language: { $regex: new RegExp(`^${targetPhrase.language}$`, "i") },
+                    sampleSlot: slotNumber
                 },
-                { $set: { isSample: false } }
+                {
+                    $set: { isSample: false, sampleSlot: null }
+                }
             );
         }
 
         targetPhrase.isSample = true;
+        targetPhrase.sampleSlot = slotNumber;
         await targetPhrase.save();
 
-        res.json({ message: "Sample phrase set successfully", phrase: targetPhrase });
+        res.json({
+            message: `Phrase "${targetPhrase.phraseId}" designated as Sample #${slotNumber}`,
+            isSample: true,
+            sampleSlot: slotNumber,
+            phrase: targetPhrase
+        });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }

@@ -1783,10 +1783,11 @@ export async function getSamplePhrase(req, res) {
     }
 
     let targetCompany = companyId.trim();
+    let companyDoc = null;
     // Resolve Company Name if companyId is a MongoDB ObjectId
     try {
       if (targetCompany.match(/^[0-9a-fA-F]{24}$/)) {
-        const companyDoc = await Company.findById(targetCompany);
+        companyDoc = await Company.findById(targetCompany).lean();
         if (companyDoc) {
           targetCompany = companyDoc.name;
         }
@@ -1795,6 +1796,13 @@ export async function getSamplePhrase(req, res) {
       // Fallback to query as-is
     }
 
+    if (!companyDoc) {
+      companyDoc = await Company.findOne({ name: { $regex: new RegExp(`^${targetCompany}$`, "i") } }).lean();
+    }
+
+    const numberOfSamples = companyDoc?.numberOfSamples && Number(companyDoc.numberOfSamples) >= 1 ? Number(companyDoc.numberOfSamples) : 1;
+    const userCustomizations = companyDoc ? (companyDoc.userCustomizations || []) : [];
+
     const query = { 
       companyId: { $regex: new RegExp(`^${targetCompany}$`, "i") }
     };
@@ -1802,19 +1810,50 @@ export async function getSamplePhrase(req, res) {
       query.language = { $regex: new RegExp(`^${language.trim()}$`, "i") };
     }
 
-    let phrase = await Phrase.findOne({ ...query, isSample: true }).select("phraseId text language emotion style speed intent pitch volume instructions tags").lean();
-    if (!phrase) {
-      phrase = await Phrase.findOne(query).sort({ _id: 1 }).select("phraseId text language emotion style speed intent pitch volume instructions tags").lean();
+    // 1. Fetch any phrases explicitly designated as samples (isSample: true), ordered by sampleSlot
+    let samplePhrases = await Phrase.find({ ...query, isSample: true })
+      .select("phraseId text language emotion style speed intent pitch volume instructions tags isSample sampleSlot")
+      .sort({ sampleSlot: 1, _id: 1 })
+      .limit(numberOfSamples)
+      .lean();
+
+    // 2. If we need more sample phrases to reach numberOfSamples, pick from remaining phrases
+    if (samplePhrases.length < numberOfSamples) {
+      const needed = numberOfSamples - samplePhrases.length;
+      const existingIds = samplePhrases.map(p => p._id);
+      
+      const remainingPhrases = await Phrase.aggregate([
+        { $match: { ...query, _id: { $nin: existingIds } } },
+        { $sample: { size: needed } },
+        { $project: { phraseId: 1, text: 1, language: 1, emotion: 1, style: 1, speed: 1, intent: 1, pitch: 1, volume: 1, instructions: 1, tags: 1, isSample: 1, sampleSlot: 1 } }
+      ]);
+
+      if (remainingPhrases && remainingPhrases.length > 0) {
+        samplePhrases = [...samplePhrases, ...remainingPhrases];
+      }
     }
 
-    if (!phrase) {
+    // 3. Fallback: If still no phrases, query first available
+    if (samplePhrases.length === 0) {
+      const fallbackPhrases = await Phrase.find(query)
+        .sort({ _id: 1 })
+        .limit(numberOfSamples)
+        .select("phraseId text language emotion style speed intent pitch volume instructions tags isSample sampleSlot")
+        .lean();
+      samplePhrases = fallbackPhrases || [];
+    }
+
+    if (!samplePhrases || samplePhrases.length === 0) {
       return res.status(404).json({ error: "No sample phrase found for this project and language." });
     }
 
-    const companyDoc = await Company.findOne({ name: targetCompany }).select("userCustomizations").lean();
-    const userCustomizations = companyDoc ? companyDoc.userCustomizations : [];
-
-    res.json({ phrase, userCustomizations });
+    res.json({
+      phrase: samplePhrases[0],
+      phrases: samplePhrases,
+      numberOfSamples,
+      count: samplePhrases.length,
+      userCustomizations
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

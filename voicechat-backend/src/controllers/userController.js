@@ -224,7 +224,12 @@ export async function getMyLanguageApplications(req, res) {
 // ─── POST /api/language-applications ─────────────────────────────────────────
 export async function submitLanguageApplication(req, res) {
   if (!req.user) return res.status(401).json({ error: "unauthorized" });
-  if (!req.file) return res.status(400).json({ error: "no_file" });
+  
+  const uploadedFiles = req.files && req.files.length > 0 
+    ? req.files 
+    : (req.file ? [req.file] : []);
+
+  if (uploadedFiles.length === 0) return res.status(400).json({ error: "no_file" });
 
   const applicationType = String(req.body?.applicationType || "phrase").trim();
   const languageCode = String(req.body?.languageCode || "").trim().toLowerCase();
@@ -234,9 +239,16 @@ export async function submitLanguageApplication(req, res) {
     return res.status(400).json({ error: "companyId is required for phrase applications" });
   }
 
+  let samplesMetadata = [];
   try {
+    if (req.body?.samplesMetadata) {
+      samplesMetadata = JSON.parse(req.body.samplesMetadata);
+    }
+  } catch (e) {}
+
+  try {
+    let targetCompany = companyId;
     if (applicationType === "phrase") {
-      let targetCompany = companyId;
       try {
         if (targetCompany.match(/^[0-9a-fA-F]{24}$/)) {
           const companyDoc = await Company.findById(targetCompany);
@@ -251,10 +263,9 @@ export async function submitLanguageApplication(req, res) {
         language: { $regex: new RegExp(`^${languageCode}$`, "i") }
       });
       if (!activePhrase) {
-        // Fallback check on company existence
         const companyExists = await Company.findOne({ name: { $regex: new RegExp(`^${targetCompany}$`, "i") } });
         if (!companyExists) {
-          try { fs.unlinkSync(req.file.path); } catch (e) {}
+          uploadedFiles.forEach(f => { try { fs.unlinkSync(f.path); } catch (e) {} });
           return res.status(400).json({ error: "No sample phrase available for this company and language." });
         }
       }
@@ -283,7 +294,7 @@ export async function submitLanguageApplication(req, res) {
             { upsert: true, new: true }
           );
         } else {
-          try { fs.unlinkSync(req.file.path); } catch (e) {}
+          uploadedFiles.forEach(f => { try { fs.unlinkSync(f.path); } catch (e) {} });
           return res.status(404).json({
             error: "Language not found or disabled for calls"
           });
@@ -293,7 +304,7 @@ export async function submitLanguageApplication(req, res) {
 
     const user = await User.findById(req.user._id);
     if (!user) {
-      try { fs.unlinkSync(req.file.path); } catch (e) {}
+      uploadedFiles.forEach(f => { try { fs.unlinkSync(f.path); } catch (e) {} });
       return res.status(404).json({ error: "User not found" });
     }
 
@@ -303,42 +314,17 @@ export async function submitLanguageApplication(req, res) {
              (a.applicationType || 'phrase') === applicationType
     );
     if (existing && existing.status === "pending") {
-      try { fs.unlinkSync(req.file.path); } catch (e) {}
+      uploadedFiles.forEach(f => { try { fs.unlinkSync(f.path); } catch (e) {} });
       return res.status(409).json({ error: "already_pending" });
     }
     if (existing && existing.status === "approved") {
-      try { fs.unlinkSync(req.file.path); } catch (e) {}
+      uploadedFiles.forEach(f => { try { fs.unlinkSync(f.path); } catch (e) {} });
       return res.status(409).json({ error: "already_approved" });
     }
     if (existing && existing.status === "blacklisted") {
-      try { fs.unlinkSync(req.file.path); } catch (e) {}
+      uploadedFiles.forEach(f => { try { fs.unlinkSync(f.path); } catch (e) {} });
       return res.status(403).json({ error: "blacklisted" });
     }
-    let flacPath = req.file.path.replace(/\.[^/.]+$/, "") + ".flac";
-    if (flacPath === req.file.path) {
-      flacPath = req.file.path + "_converted.flac";
-    }
-
-    try {
-      await new Promise((resolve, reject) => {
-        ffmpeg(req.file.path)
-          .audioChannels(1)
-          .audioCodec('flac')
-          .output(flacPath)
-          .on("end", resolve)
-          .on("error", (err) => {
-            console.warn("FFmpeg conversion error in language app, falling back to original:", err.message);
-            resolve();
-          })
-          .run();
-      });
-    } catch (ffmpegErr) {
-      console.warn("FFmpeg exception, using original file:", ffmpegErr.message);
-    }
-
-    const finalAudioPath = fs.existsSync(flacPath) ? flacPath : req.file.path;
-    const isFlac = finalAudioPath.endsWith(".flac");
-    const ext = isFlac ? ".flac" : (path.extname(req.file.path) || ".wav");
 
     // Generate speaker_id if not present
     if (!user.speaker_id) {
@@ -351,62 +337,116 @@ export async function submitLanguageApplication(req, res) {
       await user.save();
     }
 
-    const companyFolder = companyId ? companyId.replace(/[^a-zA-Z0-9_\-\ ]/g, "").trim() : "No_Company";
-    const baseFileName = applicationType === "phrase"
-      ? `${user.speaker_id}__${companyFolder}__${languageCode}${ext}`
-      : `${user._id}_${languageCode}_${Date.now()}${ext}`;
-    
-    let s3Key;
-    if (applicationType === "phrase" && companyId) {
-      s3Key = `phrases/${companyFolder}/phrase apps/${baseFileName}`;
-    } else {
-      s3Key = `language-apps/${baseFileName}`;
-    }
+    const companyFolder = targetCompany ? targetCompany.replace(/[^a-zA-Z0-9_\-\ ]/g, "").trim() : "No_Company";
+    const sampleRecordingsList = [];
+    let primaryRecordingRef = null;
 
-    let recordingFileRef = s3Key;
-    let s3Uploaded = false;
+    // Process each uploaded sample file
+    for (let i = 0; i < uploadedFiles.length; i++) {
+      const f = uploadedFiles[i];
+      let flacPath = f.path.replace(/\.[^/.]+$/, "") + ".flac";
+      if (flacPath === f.path) {
+        flacPath = f.path + "_converted.flac";
+      }
 
-    // Only attempt S3 upload if S3 keys and bucket are properly configured
-    if (process.env.AWS_ACCESS_KEY_ID && process.env.S3_BUCKET_NAME) {
       try {
-        const uploader = new Upload({
-          client: s3Client,
-          params: {
-            Bucket: BUCKET_NAME,
-            Key: s3Key,
-            Body: fs.createReadStream(finalAudioPath),
-            ContentType: isFlac ? "audio/flac" : "audio/wav",
-          },
+        await new Promise((resolve) => {
+          ffmpeg(f.path)
+            .audioChannels(1)
+            .audioCodec('flac')
+            .output(flacPath)
+            .on("end", resolve)
+            .on("error", (err) => {
+              console.warn("FFmpeg conversion error in sample app:", err.message);
+              resolve();
+            })
+            .run();
         });
-        await Promise.race([
-          uploader.done(),
-          new Promise((_, reject) => setTimeout(() => reject(new Error("S3 Upload Timeout")), 3000))
-        ]);
-        s3Uploaded = true;
-      } catch (s3Err) {
-        console.warn("S3 upload skipped/failed for language application, saving locally:", s3Err.message);
+      } catch (ffmpegErr) {
+        console.warn("FFmpeg exception in sample, using original file:", ffmpegErr.message);
       }
-    }
 
-    if (!s3Uploaded) {
-      const localDir = path.join(process.cwd(), "recordings", "language-apps");
-      if (!fs.existsSync(localDir)) {
-        fs.mkdirSync(localDir, { recursive: true });
+      const finalAudioPath = fs.existsSync(flacPath) ? flacPath : f.path;
+      const isFlac = finalAudioPath.endsWith(".flac");
+      const ext = isFlac ? ".flac" : (path.extname(f.path) || ".wav");
+
+      const meta = samplesMetadata[i] || {};
+      const sampleLabel = uploadedFiles.length > 1 ? `__sample_${i + 1}` : "";
+      const baseFileName = applicationType === "phrase"
+        ? `${user.speaker_id}__${companyFolder}__${languageCode}${sampleLabel}${ext}`
+        : `${user._id}_${languageCode}_${Date.now()}${sampleLabel}${ext}`;
+      
+      let s3Key;
+      if (applicationType === "phrase" && targetCompany) {
+        s3Key = `phrases/${companyFolder}/phrase apps/${baseFileName}`;
+      } else {
+        s3Key = `language-apps/${baseFileName}`;
       }
-      const localFileName = baseFileName;
-      const targetLocalPath = path.join(localDir, localFileName);
-      fs.copyFileSync(finalAudioPath, targetLocalPath);
-      recordingFileRef = `local:${localFileName}`;
-    }
 
-    try { fs.unlinkSync(req.file.path); } catch (e) {}
-    if (finalAudioPath !== req.file.path) {
-      try { fs.unlinkSync(finalAudioPath); } catch (e) {}
+      let recordingFileRef = s3Key;
+      let s3Uploaded = false;
+
+      if (process.env.AWS_ACCESS_KEY_ID && process.env.S3_BUCKET_NAME) {
+        try {
+          const uploader = new Upload({
+            client: s3Client,
+            params: {
+              Bucket: BUCKET_NAME,
+              Key: s3Key,
+              Body: fs.createReadStream(finalAudioPath),
+              ContentType: isFlac ? "audio/flac" : "audio/wav",
+            },
+          });
+          await Promise.race([
+            uploader.done(),
+            new Promise((_, reject) => setTimeout(() => reject(new Error("S3 Upload Timeout")), 3000))
+          ]);
+          s3Uploaded = true;
+        } catch (s3Err) {
+          console.warn("S3 upload failed for sample, saving locally:", s3Err.message);
+        }
+      }
+
+      if (!s3Uploaded) {
+        const localDir = path.join(process.cwd(), "recordings", "language-apps");
+        if (!fs.existsSync(localDir)) {
+          fs.mkdirSync(localDir, { recursive: true });
+        }
+        const targetLocalPath = path.join(localDir, baseFileName);
+        fs.copyFileSync(finalAudioPath, targetLocalPath);
+        recordingFileRef = `local:${baseFileName}`;
+      }
+
+      try { fs.unlinkSync(f.path); } catch (e) {}
+      if (finalAudioPath !== f.path) {
+        try { fs.unlinkSync(finalAudioPath); } catch (e) {}
+      }
+
+      if (!primaryRecordingRef) {
+        primaryRecordingRef = recordingFileRef;
+      }
+
+      sampleRecordingsList.push({
+        sampleIndex: i,
+        phraseId: meta.phraseId || `sample_${i + 1}`,
+        text: meta.text || '',
+        emotion: meta.emotion || '',
+        style: meta.style || '',
+        speed: meta.speed || '',
+        intent: meta.intent || '',
+        pitch: meta.pitch || '',
+        volume: meta.volume || '',
+        instructions: meta.instructions || '',
+        tags: meta.tags || {},
+        lufs: meta.lufs !== undefined ? meta.lufs : null,
+        recordingFile: recordingFileRef
+      });
     }
 
     if (existing) {
       existing.status = "pending";
-      existing.recordingFile = recordingFileRef;
+      existing.recordingFile = primaryRecordingRef;
+      existing.sampleRecordings = sampleRecordingsList;
       existing.appliedAt = new Date();
       existing.reviewedBy = null;
       existing.reviewedAt = null;
@@ -416,7 +456,8 @@ export async function submitLanguageApplication(req, res) {
         companyId,
         languageCode,
         status: "pending",
-        recordingFile: recordingFileRef,
+        recordingFile: primaryRecordingRef,
+        sampleRecordings: sampleRecordingsList,
         appliedAt: new Date(),
       });
     }
@@ -431,10 +472,10 @@ export async function submitLanguageApplication(req, res) {
       console.error("Failed to send project application received email:", mailErr.message);
     }
 
-    res.json({ ok: true, message: "Application submitted" });
+    res.json({ ok: true, message: "Application submitted", sampleCount: sampleRecordingsList.length });
   } catch (err) {
     console.error("Language app error:", err);
-    try { if (req.file?.path) fs.unlinkSync(req.file.path); } catch (e) {}
+    uploadedFiles.forEach(f => { try { fs.unlinkSync(f.path); } catch (e) {} });
     res.status(500).json({ error: err.message || "server error" });
   }
 }
@@ -467,13 +508,22 @@ export async function streamLanguageRecording(req, res) {
     return res.status(403).json({ error: "Language access required" });
   }
 
-  if (!application.recordingFile)
+  let recordingTarget = application.recordingFile;
+  if (req.query.sampleIndex !== undefined && application.sampleRecordings && application.sampleRecordings.length > 0) {
+    const sIdx = Number(req.query.sampleIndex);
+    const foundSample = application.sampleRecordings.find(s => s.sampleIndex === sIdx) || application.sampleRecordings[sIdx];
+    if (foundSample && foundSample.recordingFile) {
+      recordingTarget = foundSample.recordingFile;
+    }
+  }
+
+  if (!recordingTarget)
     return res.status(404).json({ error: "Recording not found" });
 
   const localDir = path.join(process.cwd(), "recordings", "language-apps");
-  const exactLocalName = application.recordingFile.startsWith("local:") 
-    ? application.recordingFile.replace("local:", "") 
-    : path.basename(application.recordingFile);
+  const exactLocalName = recordingTarget.startsWith("local:") 
+    ? recordingTarget.replace("local:", "") 
+    : path.basename(recordingTarget);
   
   let resolvedFilePath = null;
   const exactPath = path.join(localDir, exactLocalName);
@@ -550,6 +600,86 @@ export async function streamLanguageRecording(req, res) {
     }).pipe(res);
   } catch (err) {
     return res.status(404).json({ error: "File not found on AWS S3" });
+  }
+}
+
+// ─── GET /api/language-applications/:userId/:appId/download-zip ───────────
+export async function downloadApplicantSamplesZip(req, res) {
+  try {
+    const { userId, appId } = req.params;
+    const user = await User.findById(userId).lean();
+    if (!user) return res.status(404).json({ error: "User not found" });
+
+    const application = (user.languageApplications || []).find(a => String(a._id) === String(appId));
+    if (!application) return res.status(404).json({ error: "Application not found" });
+
+    const speakerId = user.speaker_id || `spk_${user._id}`;
+    const company = application.companyId || "Call";
+    const language = application.languageCode || "lang";
+    const zipName = `${speakerId}_${company}_${language}_samples.zip`;
+
+    res.setHeader("Content-Type", "application/zip");
+    res.setHeader("Content-Disposition", `attachment; filename="${zipName}"`);
+
+    const archiverModule = await import("archiver");
+    const archiverFn = archiverModule.default || archiverModule;
+    let archive;
+    if (typeof archiverFn === "function") {
+      archive = archiverFn("zip", { zlib: { level: 9 } });
+    } else if (archiverModule.ZipArchive) {
+      archive = new archiverModule.ZipArchive({ zlib: { level: 9 } });
+    } else {
+      throw new Error("Could not initialize archiver engine");
+    }
+    archive.pipe(res);
+
+    const localDir = path.join(process.cwd(), "recordings", "language-apps");
+
+    const samples = application.sampleRecordings && application.sampleRecordings.length > 0
+      ? application.sampleRecordings
+      : [{ sampleIndex: 0, phraseId: "sample_1", recordingFile: application.recordingFile }];
+
+    for (let i = 0; i < samples.length; i++) {
+      const sample = samples[i];
+      const recFile = sample.recordingFile || application.recordingFile;
+      if (!recFile) continue;
+
+      const phraseName = String(sample.phraseId || `sample_${i + 1}`).replace(/[^a-zA-Z0-9_\-]/g, "_");
+      const entryName = `${speakerId}_${company}_${language}_sample_${i + 1}_${phraseName}.wav`;
+
+      try {
+        let buffer = null;
+        if (recFile.startsWith("local:")) {
+          const localPath = path.join(localDir, recFile.replace("local:", ""));
+          if (fs.existsSync(localPath)) {
+            buffer = fs.readFileSync(localPath);
+          }
+        } else if (process.env.AWS_ACCESS_KEY_ID && process.env.S3_BUCKET_NAME) {
+          try {
+            const cmd = new GetObjectCommand({ Bucket: BUCKET_NAME, Key: recFile });
+            const s3Res = await s3Client.send(cmd);
+            const chunks = [];
+            for await (const chunk of s3Res.Body) {
+              chunks.push(chunk);
+            }
+            buffer = Buffer.concat(chunks);
+          } catch (e) {
+            console.warn("Failed to fetch S3 audio for applicant zip:", e.message);
+          }
+        }
+
+        if (buffer) {
+          archive.append(buffer, { name: entryName });
+        }
+      } catch (err) {
+        console.error("Error adding sample to zip:", err);
+      }
+    }
+
+    await archive.finalize();
+  } catch (err) {
+    console.error("downloadApplicantSamplesZip error:", err);
+    if (!res.headersSent) res.status(500).json({ error: err.message });
   }
 }
 

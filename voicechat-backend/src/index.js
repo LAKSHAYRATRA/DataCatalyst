@@ -77,6 +77,7 @@ import {
   getMyLanguageApplications,
   submitLanguageApplication,
   streamLanguageRecording,
+  downloadApplicantSamplesZip,
   getTodayCallCount,
   getCallHistory,
   getMyPayout,
@@ -314,13 +315,18 @@ app.post(
   "/api/language-applications",
   requireAuth(JWT_SECRET),
   requireSignedAgreement,
-  langUpload.single("recording"),
+  langUpload.any(),
   submitLanguageApplication
 );
 app.get(
   "/api/language-applications/:userId/:appId/recording",
   requireAuth(JWT_SECRET),
   streamLanguageRecording
+);
+app.get(
+  "/api/language-applications/:userId/:appId/download-zip",
+  requireAuth(JWT_SECRET),
+  downloadApplicantSamplesZip
 );
 app.post(
   "/api/language-applications/noise-gate",

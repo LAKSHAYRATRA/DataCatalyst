@@ -108,6 +108,7 @@ const userSchema = new mongoose.Schema(
         languageCode: { type: String, required: true, lowercase: true, trim: true },
         status: { type: String, enum: ["pending", "approved", "rejected"], default: "pending" },
         recordingFile: { type: String, default: null },
+        sampleRecordings: [{ type: mongoose.Schema.Types.Mixed, default: [] }],
         appliedAt: { type: Date, default: Date.now },
         reviewedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
         reviewedAt: { type: Date, default: null },

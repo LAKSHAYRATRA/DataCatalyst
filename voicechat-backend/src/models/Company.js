@@ -9,6 +9,7 @@ const companySchema = new mongoose.Schema(
     singlePhraseFrequency: { type: Number, default: 1, min: 1 }, // Number of unique contributors per phrase before retiring
     languages: [{ type: String, lowercase: true, trim: true }],
     namingPattern: { type: String, default: "{phraseId}" },
+    numberOfSamples: { type: Number, default: 1, min: 1 },
     userCustomizations: { type: [String], default: [] },
     downloadCustomizations: { type: [String], default: [] },
     chronologicalTag: { type: String, default: "emotion" },
