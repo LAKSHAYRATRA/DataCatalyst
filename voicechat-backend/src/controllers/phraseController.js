@@ -570,11 +570,11 @@ export async function getAvailablePhrase(req, res) {
       );
     }
 
-    // Ensure the contributor is never assigned a phrase text or phrase copy they have already recorded, locked, or been rejected for
-    const [userRecordedDocs, userRejectionDocs] = await Promise.all([
-      Phrase.find({ contributorId: user._id }).select("text phraseId").lean(),
-      PhraseRejection.find({ contributorId: user._id }).select("phraseId").lean()
-    ]);
+    // Ensure the contributor is never assigned a phrase they currently have recorded, locked, or approved
+    const userRecordedDocs = await Phrase.find({
+      contributorId: user._id,
+      status: { $in: ["recorded", "approved", "locked"] }
+    }).select("text phraseId").lean();
 
     const userDoneTexts = new Set();
     const userDoneBaseIds = new Set();
@@ -593,7 +593,6 @@ export async function getAvailablePhrase(req, res) {
     };
 
     for (const d of userRecordedDocs) addDoneItem(d.text, d.phraseId);
-    for (const r of userRejectionDocs) addDoneItem(null, r.phraseId);
 
     if (req.query.excludeBaseIds) {
       const extraBaseIds = String(req.query.excludeBaseIds).split(',').map(id => id.trim().toLowerCase()).filter(Boolean);
