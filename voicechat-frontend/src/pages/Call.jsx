@@ -486,8 +486,9 @@ export default function Call() {
 
       if (socket && socket.connected && activeCallId) {
         try {
+          const clientMax = currentSeqRef.current > 0 ? currentSeqRef.current - 1 : 0;
           await new Promise((resolve) => {
-            socket.emit("verify_call_chunks", { callId: activeCallId }, async (res) => {
+            socket.emit("verify_call_chunks", { callId: activeCallId, clientMaxSeq: clientMax }, async (res) => {
               if (res && res.complete === false && Array.isArray(res.missingRanges)) {
                 const missingChunks = await getMissingAudioChunks(activeCallId, res.missingRanges);
                 if (missingChunks.length > 0) {
@@ -924,9 +925,6 @@ export default function Call() {
           });
         }, 1000);
         // Ensure interval is cleared if component unmounts or call ends (cleanupCallUi logic handles nav away)
-      } else {
-        // Legacy/Fallback: Start immediatley if no negotiation mode
-        await startCallRecording(payload.callId);
       }
 
       if (payload.role === "offerer") {

@@ -639,13 +639,50 @@ export async function downloadApplicantSamplesZip(req, res) {
       ? application.sampleRecordings
       : [{ sampleIndex: 0, phraseId: "sample_1", recordingFile: application.recordingFile }];
 
+    const pattern = req.query.namingPattern || req.query.pattern || "";
+    const nameCounts = {};
+
     for (let i = 0; i < samples.length; i++) {
       const sample = samples[i];
       const recFile = sample.recordingFile || application.recordingFile;
       if (!recFile) continue;
 
-      const phraseName = String(sample.phraseId || `sample_${i + 1}`).replace(/[^a-zA-Z0-9_\-]/g, "_");
-      const entryName = `${speakerId}_${company}_${language}_sample_${i + 1}_${phraseName}.wav`;
+      let entryBaseName = "";
+      if (pattern) {
+        entryBaseName = pattern
+          .replace(/\{speakerId\}/gi, speakerId)
+          .replace(/\{company\}/gi, company)
+          .replace(/\{language\}/gi, language)
+          .replace(/\{phraseId\}/gi, sample.phraseId || `sample_${i + 1}`)
+          .replace(/\{id\}/gi, sample.phraseId || `sample_${i + 1}`)
+          .replace(/\{emotion\}/gi, sample.emotion || sample.tags?.emotion || `sample_${i + 1}`)
+          .replace(/\{style\}/gi, sample.style || sample.tags?.style || "")
+          .replace(/\{intent\}/gi, sample.intent || sample.tags?.intent || "")
+          .replace(/\{speed\}/gi, sample.speed || sample.tags?.speed || "")
+          .replace(/\{pitch\}/gi, sample.pitch || sample.tags?.pitch || "")
+          .replace(/\{volume\}/gi, sample.volume || sample.tags?.volume || "")
+          .replace(/\{sampleIndex\}/gi, String(i + 1))
+          .replace(/\{index\}/gi, String(i + 1));
+      }
+
+      if (!entryBaseName || entryBaseName.trim() === "") {
+        const phraseName = String(sample.phraseId || `sample_${i + 1}`).replace(/[^a-zA-Z0-9_\-]/g, "_");
+        entryBaseName = `${speakerId}_${company}_${language}_sample_${i + 1}_${phraseName}`;
+      }
+
+      // Remove invalid filename characters
+      let cleanEntryName = entryBaseName.replace(/[^a-zA-Z0-9_\-]/g, "_").replace(/_{2,}/g, "_").replace(/^_+|_+$/g, "");
+      if (!cleanEntryName) cleanEntryName = `sample_${i + 1}`;
+
+      // Disambiguate if duplicate names exist (e.g. multiple "shocked.wav")
+      if (nameCounts[cleanEntryName] !== undefined) {
+        nameCounts[cleanEntryName]++;
+        cleanEntryName = `${cleanEntryName}_${nameCounts[cleanEntryName]}`;
+      } else {
+        nameCounts[cleanEntryName] = 1;
+      }
+
+      const entryName = `${cleanEntryName}.wav`;
 
       try {
         let buffer = null;

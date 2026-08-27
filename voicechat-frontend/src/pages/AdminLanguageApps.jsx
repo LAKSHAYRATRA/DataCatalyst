@@ -22,7 +22,8 @@ import {
     Play,
     Pause,
     Check,
-    AlertCircle
+    AlertCircle,
+    Tag
 } from "lucide-react";
 import Swal from "sweetalert2";
 import AdminNav from "../components/AdminNav.jsx";
@@ -92,6 +93,13 @@ export default function AdminLanguageApps() {
     const [lightboxSrc, setLightboxSrc] = useState(null);
     const [selectedApplicantModal, setSelectedApplicantModal] = useState(null);
     const audioRefs = useRef({});
+
+    // Naming Dialog State
+    const [namingModalOpen, setNamingModalOpen] = useState(false);
+    const [namingTarget, setNamingTarget] = useState(null); // { type: 'single' | 'zip', app, sampleIndex, sample, phraseId }
+    const [namingPreset, setNamingPreset] = useState("emotion"); // 'emotion' | 'phraseId' | 'speaker_emotion' | 'speaker_phraseId' | 'full' | 'custom'
+    const [customPattern, setCustomPattern] = useState(localStorage.getItem("phrase_app_naming_pattern") || "{emotion}");
+    const [isExecutingDownload, setIsExecutingDownload] = useState(false);
 
     // Load hierarchy on mount
     useEffect(() => {
@@ -276,24 +284,91 @@ export default function AdminLanguageApps() {
         }
     }
 
-    async function handleDownloadSingleApp(app, sampleIndex = null, phraseId = null) {
-        const key = sampleIndex !== null ? `${app.appId}_s_${sampleIndex}` : app.appId;
+    function getPatternForPreset(preset, customVal = customPattern) {
+        switch (preset) {
+            case "emotion":
+                return "{emotion}";
+            case "phraseId":
+                return "{phraseId}";
+            case "speaker_emotion":
+                return "{speakerId}_{emotion}";
+            case "speaker_phraseId":
+                return "{speakerId}_{phraseId}";
+            case "full":
+                return "{speakerId}_{company}_{language}_sample_{sampleIndex}_{emotion}";
+            case "custom":
+                return customVal || "{emotion}";
+            default:
+                return "{emotion}";
+        }
+    }
+
+    function formatSampleFilename(pattern, app, sample, sampleIndex = 0) {
+        if (!app) return "sample.wav";
         const rawSpk = app.speaker_id || app.speakerId || `spk_${app.userId}`;
         const cleanSpk = String(rawSpk).replace(/[^a-zA-Z0-9_\-]/g, "");
         const rawName = [app.userFirstname, app.userLastname].filter(Boolean).join("_") || app.username || "applicant";
         const cleanName = String(rawName).trim().replace(/\s+/g, "_").replace(/[^a-zA-Z0-9_\-]/g, "");
-        const sampleSuffix = sampleIndex !== null ? `_sample_${sampleIndex + 1}_${phraseId || 'wav'}` : '';
-        const filename = `${cleanSpk}_${cleanName}${sampleSuffix}.wav`;
+        const comp = app.companyId || selectedProject?.projectName || selectedProject?.name || "Project";
+        const lang = app.languageCode || selectedLanguage?.code || "lang";
+        const phraseId = sample?.phraseId || `sample_${sampleIndex + 1}`;
+        const emotion = sample?.emotion || sample?.tags?.emotion || phraseId;
+        const style = sample?.style || sample?.tags?.style || "";
+        const intent = sample?.intent || sample?.tags?.intent || "";
+        const speed = sample?.speed || sample?.tags?.speed || "";
+        const pitch = sample?.pitch || sample?.tags?.pitch || "";
+        const volume = sample?.volume || sample?.tags?.volume || "";
+        const idx = String(sampleIndex + 1);
 
-        if (audioSrc[key]) {
-            const a = document.createElement("a");
-            a.href = audioSrc[key];
-            a.download = filename;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            return;
+        let formatted = (pattern || "{emotion}")
+            .replace(/\{speakerId\}/gi, cleanSpk)
+            .replace(/\{name\}/gi, cleanName)
+            .replace(/\{company\}/gi, comp)
+            .replace(/\{language\}/gi, lang)
+            .replace(/\{phraseId\}/gi, phraseId)
+            .replace(/\{id\}/gi, phraseId)
+            .replace(/\{emotion\}/gi, emotion)
+            .replace(/\{style\}/gi, style)
+            .replace(/\{intent\}/gi, intent)
+            .replace(/\{speed\}/gi, speed)
+            .replace(/\{pitch\}/gi, pitch)
+            .replace(/\{volume\}/gi, volume)
+            .replace(/\{sampleIndex\}/gi, idx)
+            .replace(/\{index\}/gi, idx);
+
+        let clean = formatted.replace(/[^a-zA-Z0-9_\-]/g, "_").replace(/_{2,}/g, "_").replace(/^_+|_+$/g, "");
+        if (!clean) clean = `sample_${idx}`;
+        return `${clean}.wav`;
+    }
+
+    function openNamingModal(type, app, sampleIndex = null, sample = null, phraseId = null) {
+        setNamingTarget({ type, app, sampleIndex, sample, phraseId });
+        setNamingModalOpen(true);
+    }
+
+    async function handleConfirmDownload() {
+        if (!namingTarget) return;
+        const pattern = getPatternForPreset(namingPreset, customPattern);
+        localStorage.setItem("phrase_app_naming_pattern", pattern);
+
+        setIsExecutingDownload(true);
+        try {
+            if (namingTarget.type === "single") {
+                await executeSingleDownload(namingTarget.app, namingTarget.sampleIndex, namingTarget.sample, pattern);
+            } else {
+                await executeZipDownload(namingTarget.app, pattern);
+            }
+            setNamingModalOpen(false);
+        } catch (e) {
+            Swal.fire("Download Error", e.message || "Failed to download audio", "error");
+        } finally {
+            setIsExecutingDownload(false);
         }
+    }
+
+    async function executeSingleDownload(app, sampleIndex, sample, pattern) {
+        const key = sampleIndex !== null ? `${app.appId}_s_${sampleIndex}` : app.appId;
+        const filename = formatSampleFilename(pattern, app, sample, sampleIndex !== null ? sampleIndex : 0);
 
         setDownloadingApp(prev => ({ ...prev, [key]: true }));
         try {
@@ -308,18 +383,27 @@ export default function AdminLanguageApps() {
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
+
+            Swal.fire({
+                toast: true,
+                position: "top-end",
+                icon: "success",
+                title: `Downloaded: ${filename}`,
+                timer: 2500,
+                showConfirmButton: false
+            });
         } catch (e) {
-            Swal.fire("Download Failed", e.message || "Failed to download recording.", "error");
+            throw e;
         } finally {
             setDownloadingApp(prev => ({ ...prev, [key]: false }));
         }
     }
 
-    async function handleDownloadApplicantZip(app) {
+    async function executeZipDownload(app, pattern) {
         const key = app.appId;
         setDownloadingZip(prev => ({ ...prev, [key]: true }));
         try {
-            const url = `${BASE}/api/language-applications/${app.userId}/${app.appId}/download-zip`;
+            const url = `${BASE}/api/language-applications/${app.userId}/${app.appId}/download-zip?namingPattern=${encodeURIComponent(pattern)}`;
             const res = await fetch(url, { credentials: "include" });
             if (!res.ok) throw new Error("Failed to generate zip file");
             const blob = await res.blob();
@@ -341,12 +425,12 @@ export default function AdminLanguageApps() {
                 toast: true,
                 position: "top-end",
                 icon: "success",
-                title: "Samples ZIP downloaded!",
+                title: "Samples ZIP downloaded with custom naming!",
                 timer: 2500,
                 showConfirmButton: false
             });
         } catch (err) {
-            Swal.fire("ZIP Download Error", err.message || "Could not download samples zip", "error");
+            throw err;
         } finally {
             setDownloadingZip(prev => ({ ...prev, [key]: false }));
         }
@@ -848,7 +932,7 @@ export default function AdminLanguageApps() {
                                                                             <span>Inspect</span>
                                                                         </button>
                                                                         <button
-                                                                            onClick={() => handleDownloadApplicantZip(app)}
+                                                                            onClick={() => openNamingModal("zip", app)}
                                                                             disabled={downloadingZip[key]}
                                                                             className="px-2.5 py-1.5 bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-500 hover:to-amber-500 text-white rounded-lg text-xs font-bold flex items-center gap-1 transition-all shadow-sm disabled:opacity-50"
                                                                             title="Download all sample WAV recordings in a ZIP"
@@ -948,7 +1032,7 @@ export default function AdminLanguageApps() {
 
                             <div className="flex items-center gap-2">
                                 <button
-                                    onClick={() => handleDownloadApplicantZip(selectedApplicantModal)}
+                                    onClick={() => openNamingModal("zip", selectedApplicantModal)}
                                     disabled={downloadingZip[selectedApplicantModal.appId]}
                                     className="px-4 py-2 bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-500 hover:to-amber-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-lg disabled:opacity-50"
                                 >
@@ -1087,7 +1171,7 @@ export default function AdminLanguageApps() {
                                                         <span>{expandedApp === sampleKey ? "Close QC" : "QC Analysis"}</span>
                                                     </button>
                                                     <button
-                                                        onClick={() => handleDownloadSingleApp(selectedApplicantModal, idx, sample.phraseId)}
+                                                        onClick={() => openNamingModal("single", selectedApplicantModal, idx, sample, sample.phraseId)}
                                                         disabled={downloadingApp[sampleKey]}
                                                         className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-md disabled:opacity-50"
                                                     >
@@ -1214,6 +1298,178 @@ export default function AdminLanguageApps() {
                         />
                         <div className="mt-4 text-xs font-semibold text-neutral-300 bg-neutral-900/90 px-4 py-2 rounded-full border border-neutral-800 uppercase tracking-wider flex items-center gap-1.5 shadow-lg">
                             <span>📊 Zoomed Spectrogram Plot (Click anywhere to close)</span>
+                        </div>
+                    </div>
+                </div>
+            )}
+            {/* ========================================================================= */}
+            {/* AUDIO FILE NAMING DIALOG MODAL                                           */}
+            {/* ========================================================================= */}
+            {namingModalOpen && namingTarget && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in">
+                    <div className="bg-neutral-900 border border-neutral-700 rounded-3xl w-full max-w-xl shadow-2xl overflow-hidden flex flex-col space-y-0">
+                        {/* Header */}
+                        <div className="p-6 bg-gradient-to-r from-neutral-800 to-neutral-850 border-b border-neutral-700 flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-xl bg-warning-500/20 border border-warning-500/40 flex items-center justify-center text-warning-400">
+                                    <Tag className="w-5 h-5" />
+                                </div>
+                                <div>
+                                    <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                                        <span>Audio Naming Format</span>
+                                        <span className="text-xs bg-neutral-800 text-neutral-300 font-mono px-2 py-0.5 rounded border border-neutral-700">
+                                            {namingTarget.type === "zip" ? "ZIP Archive" : "Single WAV"}
+                                        </span>
+                                    </h3>
+                                    <p className="text-xs text-neutral-400 mt-0.5">
+                                        Choose how to name the audio file(s) via sample metadata keys
+                                    </p>
+                                </div>
+                            </div>
+                            <button
+                                onClick={() => setNamingModalOpen(false)}
+                                className="p-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-400 hover:text-white rounded-xl transition-colors"
+                            >
+                                <X className="w-4 h-4" />
+                            </button>
+                        </div>
+
+                        {/* Body */}
+                        <div className="p-6 space-y-5 overflow-y-auto max-h-[70vh]">
+                            {/* Presets Grid */}
+                            <div className="space-y-2">
+                                <label className="text-xs font-bold text-neutral-300 uppercase tracking-wider">
+                                    Naming Preset
+                                </label>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                                    {[
+                                        { id: "emotion", label: "By Emotion Tag", desc: "e.g. shocked.wav, surprised.wav", pattern: "{emotion}" },
+                                        { id: "phraseId", label: "By Phrase / ID Tag", desc: "e.g. sample_1.wav, PHR_101.wav", pattern: "{phraseId}" },
+                                        { id: "speaker_emotion", label: "Speaker + Emotion", desc: "e.g. SPK001_shocked.wav", pattern: "{speakerId}_{emotion}" },
+                                        { id: "speaker_phraseId", label: "Speaker + Phrase ID", desc: "e.g. SPK001_sample_1.wav", pattern: "{speakerId}_{phraseId}" },
+                                        { id: "full", label: "Full System Metadata", desc: "e.g. SPK_Comp_Lang_1_shocked.wav", pattern: "{speakerId}_{company}_{language}_sample_{sampleIndex}_{emotion}" },
+                                        { id: "custom", label: "Custom Template", desc: "Build your own pattern", pattern: customPattern },
+                                    ].map((p) => (
+                                        <button
+                                            key={p.id}
+                                            onClick={() => {
+                                                setNamingPreset(p.id);
+                                                if (p.id !== "custom") {
+                                                    setCustomPattern(p.pattern);
+                                                }
+                                            }}
+                                            className={`text-left p-3 rounded-2xl border transition-all ${
+                                                namingPreset === p.id
+                                                    ? "bg-warning-500/15 border-warning-500 text-white shadow-lg shadow-warning-500/10"
+                                                    : "bg-neutral-800/60 border-neutral-700/80 text-neutral-300 hover:bg-neutral-800 hover:border-neutral-600"
+                                            }`}
+                                        >
+                                            <div className="flex items-center justify-between mb-1">
+                                                <span className="text-xs font-bold">{p.label}</span>
+                                                {namingPreset === p.id && (
+                                                    <Check className="w-3.5 h-3.5 text-warning-400" />
+                                                )}
+                                            </div>
+                                            <div className="text-[11px] text-neutral-400 font-mono truncate">
+                                                {p.desc}
+                                            </div>
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Custom Template Input & Variable Pills */}
+                            {namingPreset === "custom" && (
+                                <div className="space-y-2 bg-neutral-950 p-4 rounded-2xl border border-neutral-800">
+                                    <label className="text-xs font-bold text-neutral-300">
+                                        Custom Template Expression
+                                    </label>
+                                    <input
+                                        type="text"
+                                        value={customPattern}
+                                        onChange={(e) => setCustomPattern(e.target.value)}
+                                        placeholder="{emotion} or {speakerId}_{emotion}"
+                                        className="w-full bg-neutral-900 border border-neutral-700 rounded-xl px-3.5 py-2 text-sm text-white font-mono focus:border-warning-500 focus:outline-none"
+                                    />
+                                    <div className="pt-2">
+                                        <span className="text-[11px] text-neutral-400 block mb-1.5 font-medium">Click tag variables to insert:</span>
+                                        <div className="flex flex-wrap gap-1.5">
+                                            {["{emotion}", "{phraseId}", "{speakerId}", "{name}", "{company}", "{language}", "{style}", "{intent}", "{speed}", "{index}"].map((v) => (
+                                                <button
+                                                    key={v}
+                                                    type="button"
+                                                    onClick={() => setCustomPattern((prev) => `${prev ? prev + "_" : ""}${v}`)}
+                                                    className="px-2 py-1 bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 text-warning-400 text-[11px] font-mono rounded-lg transition-colors"
+                                                >
+                                                    +{v}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Live Output Preview */}
+                            <div className="bg-neutral-950 p-4 rounded-2xl border border-neutral-800 space-y-2">
+                                <div className="flex items-center justify-between text-xs text-neutral-400 font-bold uppercase tracking-wider">
+                                    <span>Live Output Preview</span>
+                                    <span className="text-warning-400 font-mono lowercase">.wav format</span>
+                                </div>
+
+                                <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
+                                    {namingTarget.type === "single" ? (
+                                        <div className="flex items-center gap-2 text-xs font-mono text-emerald-400 bg-neutral-900/90 border border-neutral-800 px-3 py-2 rounded-xl">
+                                            <FileAudio className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                                            <span className="truncate">{formatSampleFilename(getPatternForPreset(namingPreset, customPattern), namingTarget.app, namingTarget.sample, namingTarget.sampleIndex || 0)}</span>
+                                        </div>
+                                    ) : (
+                                        (() => {
+                                            const samples = namingTarget.app?.sampleRecordings && namingTarget.app.sampleRecordings.length > 0
+                                                ? namingTarget.app.sampleRecordings
+                                                : [{ sampleIndex: 0, phraseId: "sample_1" }];
+
+                                            return samples.map((s, idx) => {
+                                                const previewName = formatSampleFilename(getPatternForPreset(namingPreset, customPattern), namingTarget.app, s, idx);
+                                                return (
+                                                    <div key={idx} className="flex items-center gap-2 text-xs font-mono text-neutral-300 bg-neutral-900/90 border border-neutral-800/80 px-3 py-1.5 rounded-xl">
+                                                        <span className="text-neutral-500 text-[10px]">#{idx + 1}</span>
+                                                        <FileAudio className="w-3.5 h-3.5 text-warning-400 flex-shrink-0" />
+                                                        <span className="text-white truncate">{previewName}</span>
+                                                    </div>
+                                                );
+                                            });
+                                        })()
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Footer Actions */}
+                        <div className="p-6 bg-neutral-850 border-t border-neutral-700 flex items-center justify-end gap-3">
+                            <button
+                                onClick={() => setNamingModalOpen(false)}
+                                disabled={isExecutingDownload}
+                                className="px-4 py-2.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 rounded-xl text-xs font-bold transition-colors disabled:opacity-50"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleConfirmDownload}
+                                disabled={isExecutingDownload}
+                                className="px-6 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded-xl text-xs font-bold flex items-center gap-2 shadow-lg shadow-emerald-900/30 transition-all disabled:opacity-50"
+                            >
+                                {isExecutingDownload ? (
+                                    <>
+                                        <div className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                                        <span>Downloading...</span>
+                                    </>
+                                ) : (
+                                    <>
+                                        <Download className="w-4 h-4" />
+                                        <span>Download {namingTarget.type === "zip" ? "ZIP Archive" : "WAV File"}</span>
+                                    </>
+                                )}
+                            </button>
                         </div>
                     </div>
                 </div>

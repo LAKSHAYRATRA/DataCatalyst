@@ -1473,10 +1473,10 @@ io.on("connection", (socket) => {
     }
   });
 
-  // SACK: End-of-call 2-second handshake to verify 100% chunk completeness
-  socket.on("verify_call_chunks", (payload, callback) => {
+  // SACK: End-of-call handshake to verify 100% chunk completeness across both speakers
+  socket.on("verify_call_chunks", async (payload, callback) => {
     try {
-      const { callId } = payload || {};
+      const { callId, clientMaxSeq } = payload || {};
       if (!callId) {
         if (callback) callback({ complete: true, totalChunks: 0 });
         return;
@@ -1489,10 +1489,34 @@ io.on("connection", (socket) => {
         return;
       }
 
+      const call = calls.get(callId);
+      let peerStreamObj = null;
+      if (call) {
+        const peerUserId = String(call.userAId) === String(socket.data.userId) ? call.userBId : call.userAId;
+        if (peerUserId) {
+          peerStreamObj = activeStreams.get(`${callId}_${peerUserId}`);
+        }
+      }
+
+      // Calculate master target sequence based on client reported max, server stream max, peer stream max, and elapsed call duration
+      let durationMaxSeq = 0;
+      const callStart = call?.actualCallStartedAt;
+      if (callStart) {
+        const elapsedSec = Math.max(0, (Date.now() - new Date(callStart).getTime()) / 1000);
+        durationMaxSeq = Math.max(0, Math.floor(elapsedSec * 2) - 1);
+      }
+
+      const targetMaxSeq = Math.max(
+        streamObj.maxSeq || 0,
+        peerStreamObj?.maxSeq || 0,
+        clientMaxSeq !== undefined ? Number(clientMaxSeq) : 0,
+        durationMaxSeq
+      );
+
       const missingRanges = [];
       let rangeStart = null;
 
-      for (let s = 0; s <= (streamObj.maxSeq || 0); s++) {
+      for (let s = 0; s <= targetMaxSeq; s++) {
         if (!streamObj.receivedSeqs.has(s)) {
           if (rangeStart === null) rangeStart = s;
         } else {
@@ -1503,13 +1527,13 @@ io.on("connection", (socket) => {
         }
       }
       if (rangeStart !== null) {
-        missingRanges.push({ start: rangeStart, end: streamObj.maxSeq });
+        missingRanges.push({ start: rangeStart, end: targetMaxSeq });
       }
 
       if (missingRanges.length === 0) {
-        if (callback) callback({ complete: true, totalChunks: streamObj.receivedSeqs.size });
+        if (callback) callback({ complete: true, totalChunks: targetMaxSeq + 1, receivedChunks: streamObj.receivedSeqs.size });
       } else {
-        if (callback) callback({ complete: false, missingRanges, totalChunks: streamObj.receivedSeqs.size });
+        if (callback) callback({ complete: false, missingRanges, targetMaxSeq, totalChunks: targetMaxSeq + 1, receivedChunks: streamObj.receivedSeqs.size });
       }
     } catch (e) {
       console.error("Error in verify_call_chunks:", e);
