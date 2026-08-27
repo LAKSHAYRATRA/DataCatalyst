@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Nav from '../components/Nav.jsx';
-import { setSystemCheckPassed } from '../lib/auth.js';
+import { setSystemCheckPassed, getUserInfo } from '../lib/auth.js';
 import AudioVisualizer from '../components/AudioVisualizer';
 import { getMediaStream } from '../utils/audioHelper';
 import { analyzeNoiseYAMNet } from '../utils/yamnetAnalysis';
@@ -18,6 +18,8 @@ const MicState = {
 
 const SystemCheck = () => {
     const navigate = useNavigate();
+    const userInfo = getUserInfo();
+    const isAdmin = Boolean(userInfo?.isAdmin || userInfo?.role === 'admin');
 
     // Steps: 'start', 'internet', 'mic', 'hearing'
     const [currentStep, setCurrentStep] = useState('start');
@@ -302,11 +304,13 @@ const SystemCheck = () => {
                                 >
                                     Start Test
                                 </button>
-                                <div className="mt-4">
-                                    <button onClick={skipTest} className="text-sm text-gray-400 hover:underline">
-                                        Skip (Testing Only)
-                                    </button>
-                                </div>
+                                {isAdmin && (
+                                    <div className="mt-4">
+                                        <button onClick={skipTest} className="text-xs font-semibold text-warning-500 hover:text-warning-400 bg-warning-500/10 hover:bg-warning-500/20 border border-warning-500/30 px-4 py-2 rounded-xl transition-all">
+                                            ⚡ Skip Test (Admin Only)
+                                        </button>
+                                    </div>
+                                )}
                             </div>
                         )}
 

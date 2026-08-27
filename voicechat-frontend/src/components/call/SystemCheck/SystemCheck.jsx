@@ -1,10 +1,13 @@
 import React, { useState } from 'react';
+import { getUserInfo } from '../../../lib/auth';
 import InternetTest from './InternetTest';
 import MicrophoneTest from './MicrophoneTest';
 import HearingTest from './HearingTest';
 
-export default function SystemCheck({ onComplete, noisy = false }) {
+export default function SystemCheck({ onComplete, onSkip, noisy = false }) {
     const [currentStep, setCurrentStep] = useState('start');
+    const userInfo = getUserInfo();
+    const isAdmin = Boolean(userInfo?.isAdmin || userInfo?.role === 'admin');
 
     const startInternetCheck = () => {
         setCurrentStep('internet');
@@ -42,23 +45,65 @@ export default function SystemCheck({ onComplete, noisy = false }) {
                             <button onClick={startInternetCheck} className="btn btn-primary w-full sm:w-auto">
                                 Start System Check
                             </button>
+                            {isAdmin && (
+                                <button 
+                                    onClick={onSkip} 
+                                    className="px-4 py-2 text-xs font-semibold text-warning-500 hover:text-warning-400 bg-warning-500/10 hover:bg-warning-500/20 border border-warning-500/30 rounded-xl transition-all flex items-center gap-1.5 shadow-sm active:scale-95"
+                                >
+                                    <span>⚡</span>
+                                    <span>Skip Test (Admin Only)</span>
+                                </button>
+                            )}
                         </div>
                     </div>
                 )}
 
                 {/* Internet Test */}
                 {currentStep === 'internet' && (
-                    <InternetTest onSuccess={handleInternetSuccess} />
+                    <div className="w-full flex flex-col items-center">
+                        <InternetTest onSuccess={handleInternetSuccess} />
+                        {isAdmin && (
+                            <button 
+                                onClick={onSkip} 
+                                className="mt-6 px-4 py-2 text-xs font-semibold text-warning-500 hover:text-warning-400 bg-warning-500/10 hover:bg-warning-500/20 border border-warning-500/30 rounded-xl transition-all flex items-center gap-1.5"
+                            >
+                                <span>⚡</span>
+                                <span>Skip Test (Admin Only)</span>
+                            </button>
+                        )}
+                    </div>
                 )}
 
                 {/* Mic Test */}
                 {currentStep === 'mic' && (
-                    <MicrophoneTest onSuccess={handleMicSuccess} />
+                    <div className="w-full flex flex-col items-center">
+                        <MicrophoneTest onSuccess={handleMicSuccess} />
+                        {isAdmin && (
+                            <button 
+                                onClick={onSkip} 
+                                className="mt-6 px-4 py-2 text-xs font-semibold text-warning-500 hover:text-warning-400 bg-warning-500/10 hover:bg-warning-500/20 border border-warning-500/30 rounded-xl transition-all flex items-center gap-1.5"
+                            >
+                                <span>⚡</span>
+                                <span>Skip Test (Admin Only)</span>
+                            </button>
+                        )}
+                    </div>
                 )}
 
                 {/* Hearing Test */}
                 {currentStep === 'hearing' && (
-                    <HearingTest onSuccess={handleHearingSuccess} />
+                    <div className="w-full flex flex-col items-center">
+                        <HearingTest onSuccess={handleHearingSuccess} />
+                        {isAdmin && (
+                            <button 
+                                onClick={onSkip} 
+                                className="mt-6 px-4 py-2 text-xs font-semibold text-warning-500 hover:text-warning-400 bg-warning-500/10 hover:bg-warning-500/20 border border-warning-500/30 rounded-xl transition-all flex items-center gap-1.5"
+                            >
+                                <span>⚡</span>
+                                <span>Skip Test (Admin Only)</span>
+                            </button>
+                        )}
+                    </div>
                 )}
             </div>
         </div>

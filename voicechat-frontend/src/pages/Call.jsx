@@ -81,6 +81,8 @@ export default function Call() {
   const [callEndTime, setCallEndTime] = useState(null);
   const [remoteStream, setRemoteStream] = useState(null);
   const [isFindingMatch, setIsFindingMatch] = useState(false);
+  const [syncingRecording, setSyncingRecording] = useState(false);
+  const [syncProgress, setSyncProgress] = useState({ current: 0, total: 0, status: "" });
 
   // Auto-play remote audio stream whenever remoteStream state changes
   useEffect(() => {
@@ -438,13 +440,16 @@ export default function Call() {
     }
   }
 
-  async function uploadMissingChunksInBatches(socket, callId, missingChunks) {
+  async function uploadMissingChunksInBatches(socket, callId, missingChunks, onProgress) {
     if (!socket || !callId || !Array.isArray(missingChunks) || missingChunks.length === 0) return;
     const BATCH_SIZE = 10; // Exactly 10 chunks (~960 KB) per payload to stay strictly under Socket.IO 1MB limit
+    let uploadedCount = 0;
     for (let i = 0; i < missingChunks.length; i += BATCH_SIZE) {
       const batch = missingChunks.slice(i, i + BATCH_SIZE);
       await new Promise((resolve) => {
         socket.emit("upload_missing_chunks", { callId, chunks: batch }, () => {
+          uploadedCount += batch.length;
+          if (onProgress) onProgress(uploadedCount, missingChunks.length);
           resolve();
         });
       });
@@ -455,47 +460,75 @@ export default function Call() {
     const socket = socketRef.current;
     const activeCallId = callRef.current?.callId;
 
-    if (workletNodeRef.current) {
-      try {
-        workletNodeRef.current.port.postMessage("flush");
-      } catch {}
-      // Give AudioWorklet 80ms to flush the last 500ms audio frame to main thread & IndexedDB
-      await new Promise((r) => setTimeout(r, 80));
-      if (workletNodeRef.current) {
-        try { workletNodeRef.current.disconnect(); } catch {}
-        workletNodeRef.current = null;
-      }
-    }
+    setSyncingRecording(true);
+    setSyncProgress({ current: 0, total: 0, status: "Verifying call recording completeness...", isFinalizing: false });
 
-    if (socket && socket.connected && activeCallId) {
-      try {
-        await new Promise((resolve) => {
-          socket.emit("verify_call_chunks", { callId: activeCallId }, async (res) => {
-            if (res && res.complete === false && Array.isArray(res.missingRanges)) {
-              const missingChunks = await getMissingAudioChunks(activeCallId, res.missingRanges);
-              if (missingChunks.length > 0) {
-                await uploadMissingChunksInBatches(socket, activeCallId, missingChunks);
+    try {
+      if (workletNodeRef.current) {
+        try {
+          workletNodeRef.current.port.postMessage("flush");
+        } catch {}
+        // Give AudioWorklet 80ms to flush the last 500ms audio frame to main thread & IndexedDB
+        await new Promise((r) => setTimeout(r, 80));
+        if (workletNodeRef.current) {
+          try { workletNodeRef.current.disconnect(); } catch {}
+          workletNodeRef.current = null;
+        }
+      }
+
+      if (socket && socket.connected && activeCallId) {
+        try {
+          await new Promise((resolve) => {
+            socket.emit("verify_call_chunks", { callId: activeCallId }, async (res) => {
+              if (res && res.complete === false && Array.isArray(res.missingRanges)) {
+                const missingChunks = await getMissingAudioChunks(activeCallId, res.missingRanges);
+                if (missingChunks.length > 0) {
+                  setSyncProgress({ 
+                    current: 0, 
+                    total: missingChunks.length, 
+                    status: `Uploading missing audio chunks (0/${missingChunks.length})...`,
+                    isFinalizing: false
+                  });
+                  await uploadMissingChunksInBatches(socket, activeCallId, missingChunks, (curr, tot) => {
+                    setSyncProgress({ 
+                      current: curr, 
+                      total: tot, 
+                      status: `Uploading missing audio chunks (${curr}/${tot})...`,
+                      isFinalizing: false
+                    });
+                  });
+                }
               }
-            }
-            try { socket.emit("record_stop"); } catch {}
-            clearCallAudioChunks(activeCallId);
-            resolve();
+              const totalCount = res?.totalChunks || 0;
+              setSyncProgress({ 
+                current: totalCount || 1, 
+                total: totalCount || 1, 
+                status: totalCount > 0 ? `✓ All ${totalCount.toLocaleString()} audio chunks verified! Finalizing...` : "✓ All audio chunks verified! Finalizing...",
+                isFinalizing: true 
+              });
+              try { socket.emit("record_stop"); } catch {}
+              clearCallAudioChunks(activeCallId);
+              // Brief 600ms smooth confirmation before transitioning to feedback
+              setTimeout(resolve, 600);
+            });
+            // Allow up to 15 seconds if lots of missing chunks need uploading
+            setTimeout(resolve, 15000);
           });
-          setTimeout(resolve, 3000);
-        });
-      } catch (err) {
-        console.error("Error in stopCallRecording:", err);
-        try { socket.emit("record_stop"); } catch {}
+        } catch (err) {
+          console.error("Error in stopCallRecording:", err);
+          try { socket.emit("record_stop"); } catch {}
+          if (activeCallId) clearCallAudioChunks(activeCallId);
+        }
+      } else {
+        try { if (socket) socket.emit("record_stop"); } catch {}
         if (activeCallId) clearCallAudioChunks(activeCallId);
       }
-    } else {
-      try { if (socket) socket.emit("record_stop"); } catch {}
-      if (activeCallId) clearCallAudioChunks(activeCallId);
-    }
-    
-    if (audioContextRef.current) {
-      try { await audioContextRef.current.close(); } catch {}
-      audioContextRef.current = null;
+    } finally {
+      setSyncingRecording(false);
+      if (audioContextRef.current) {
+        try { await audioContextRef.current.close(); } catch {}
+        audioContextRef.current = null;
+      }
     }
   }
 
@@ -1091,6 +1124,53 @@ export default function Call() {
       {/* Permanent top-level WebRTC remote audio playback element */}
       <audio ref={remoteAudioRef} autoPlay playsInline style={{ position: "absolute", width: 1, height: 1, opacity: 0, pointerEvents: "none" }} />
       <Nav disabled={!!callId && !showFeedback} />
+
+      {/* Fullscreen Recording Sync & Upload Overlay */}
+      {syncingRecording && (
+        <div className="fixed inset-0 z-[99999] bg-neutral-950/95 backdrop-blur-md flex flex-col items-center justify-center p-6 text-center animate-fade-in">
+          <div className="bg-neutral-900 border border-warning-500/40 p-8 rounded-3xl max-w-md w-full shadow-2xl shadow-black/80 space-y-6">
+            <div className="w-16 h-16 rounded-2xl bg-warning-500/10 border border-warning-500/30 flex items-center justify-center mx-auto">
+              <div className="w-8 h-8 border-3 border-warning-400 border-t-transparent rounded-full animate-spin" />
+            </div>
+            
+            <div>
+              <h2 className="text-xl font-bold text-white mb-2">
+                Syncing & Uploading Recording
+              </h2>
+              <p className="text-xs text-neutral-400 leading-relaxed">
+                Please wait while your call audio is verified and saved to the server. Do not close or refresh this page.
+              </p>
+            </div>
+
+            <div className="space-y-2 text-left bg-neutral-950 p-4 rounded-xl border border-neutral-800">
+              <div className="flex justify-between text-xs text-neutral-300 font-medium">
+                <span>{syncProgress.status || "Finalizing recording..."}</span>
+                <span className="font-mono font-bold text-warning-400">
+                  {syncProgress.isFinalizing ? "100%" : syncProgress.total > 0 ? `${Math.round((syncProgress.current / syncProgress.total) * 100)}%` : "..."}
+                </span>
+              </div>
+              <div className="w-full h-2.5 bg-neutral-800 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-gradient-to-r from-warning-600 to-amber-400 transition-all duration-300 rounded-full"
+                  style={{
+                    width: syncProgress.isFinalizing
+                      ? "100%"
+                      : syncProgress.total > 0
+                        ? `${Math.min(100, Math.round((syncProgress.current / syncProgress.total) * 100))}%`
+                        : "20%"
+                  }}
+                />
+              </div>
+              {syncProgress.total > 0 && !syncProgress.isFinalizing && (
+                <div className="text-[11px] text-neutral-500 text-right font-mono">
+                  {syncProgress.current} / {syncProgress.total} chunks uploaded
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {!connected && callId && (
         <div className="fixed top-16 right-4 z-50 bg-amber-500 text-white px-4 py-2 rounded-lg shadow-lg flex items-center gap-2 text-sm font-medium animate-pulse">
           <span className="w-2 h-2 rounded-full bg-white animate-ping" />

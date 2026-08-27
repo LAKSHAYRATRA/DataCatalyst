@@ -98,7 +98,8 @@ function RequireAuth({ children }) {
   const userInfo = getUserInfo();
   if (!userInfo) return <Navigate to="/login" replace />;
   if (isUserDisabled(userInfo)) return <DisabledUser />;
-  if (userInfo.isAdmin || userInfo.isQA) return children;
+  if (userInfo.isQA && !userInfo.isAdmin) return <Navigate to="/admin/qa" replace />;
+  if (userInfo.isAdmin) return children;
 
   const s = userInfo.accountStatus;
   if (s === "pending_intro" || s === "rejected") return <Navigate to="/intro-recording" replace />;
@@ -113,7 +114,8 @@ function RequirePhraseAccess({ children }) {
   const userInfo = getUserInfo();
   if (!userInfo) return <Navigate to="/login" replace />;
   if (isUserDisabled(userInfo)) return <DisabledUser />;
-  if (userInfo.isAdmin || userInfo.isQA) return children;
+  if (userInfo.isQA && !userInfo.isAdmin) return <Navigate to="/admin/qaphrase" replace />;
+  if (userInfo.isAdmin) return children;
 
   const s = userInfo.accountStatus;
   if (s === "pending_intro" || s === "rejected") return <Navigate to="/intro-recording" replace />;
@@ -129,7 +131,8 @@ function RequireDashboardAccess({ children }) {
   const userInfo = getUserInfo();
   if (!userInfo) return <Navigate to="/login" replace />;
   if (isUserDisabled(userInfo)) return <DisabledUser />;
-  if (userInfo.isAdmin || userInfo.isQA) return children;
+  if (userInfo.isQA && !userInfo.isAdmin) return <Navigate to="/admin/qa" replace />;
+  if (userInfo.isAdmin) return children;
 
   const s = userInfo.accountStatus;
   if (s === "pending_intro" || s === "rejected") return <Navigate to="/intro-recording" replace />;
