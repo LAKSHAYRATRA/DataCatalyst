@@ -582,14 +582,14 @@ export async function streamLanguageRecording(req, res) {
     return fs.createReadStream(resolvedFilePath).pipe(res);
   }
 
-  if (application.recordingFile.startsWith("local:")) {
+  if (recordingTarget.startsWith("local:")) {
     return res.status(404).json({ error: "Local recording file not found" });
   }
 
   try {
     const command = new GetObjectCommand({
       Bucket: BUCKET_NAME,
-      Key: application.recordingFile, 
+      Key: recordingTarget, 
     });
     const s3Doc = await s3Client.send(command);
     res.setHeader("Content-Disposition", "inline");

@@ -1412,15 +1412,24 @@ async function analyzeLanguageApplication(req, res) {
             return res.json(app.qcResult);
         }
 
-        if (!app.recordingFile) {
+        let targetRecording = app.recordingFile;
+        if (req.query.sampleIndex !== undefined && app.sampleRecordings && app.sampleRecordings.length > 0) {
+            const sIdx = Number(req.query.sampleIndex);
+            const found = app.sampleRecordings.find(s => s.sampleIndex === sIdx) || app.sampleRecordings[sIdx];
+            if (found && found.recordingFile) {
+                targetRecording = found.recordingFile;
+            }
+        }
+
+        if (!targetRecording) {
             return res.status(404).json({ error: "Recording file not found" });
         }
 
         // 1. Resolve recording file path
         const localDir = path.join(process.cwd(), "recordings", "language-apps");
-        const exactLocalName = app.recordingFile.startsWith("local:") 
-          ? app.recordingFile.replace("local:", "") 
-          : path.basename(app.recordingFile);
+        const exactLocalName = targetRecording.startsWith("local:") 
+          ? targetRecording.replace("local:", "") 
+          : path.basename(targetRecording);
         
         let resolvedFilePath = null;
         const exactPath = path.join(localDir, exactLocalName);
@@ -1517,12 +1526,12 @@ async function analyzeLanguageApplication(req, res) {
             };
         } else {
             // Production: Invoke AWS Lambda Audio QC
-            if (app.recordingFile.startsWith("local:")) {
+            if (targetRecording.startsWith("local:")) {
                 return res.status(404).json({ error: "Local recording file not found" });
             }
             const lambdaResult = await invokeAudioQC({
                 bucket: BUCKET_NAME,
-                key: app.recordingFile,
+                key: targetRecording,
                 skip_yamnet: true,
                 return_base64_plot: true
             });

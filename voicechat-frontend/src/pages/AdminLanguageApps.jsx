@@ -368,7 +368,8 @@ export default function AdminLanguageApps() {
         const key = sampleIndex !== null ? `${appId}_s_${sampleIndex}` : appId;
         setLoadingQc(prev => ({ ...prev, [key]: true }));
         try {
-            const res = await apiFetch(`${REVIEW_BASE}/${userId}/${appId}/analyze`, {
+            const sampleQuery = sampleIndex !== null ? `?sampleIndex=${sampleIndex}` : '';
+            const res = await apiFetch(`${REVIEW_BASE}/${userId}/${appId}/analyze${sampleQuery}`, {
                 method: "POST"
             });
             setQcData(prev => ({ ...prev, [key]: res.qcResult }));
