@@ -14,6 +14,7 @@ const companySchema = new mongoose.Schema(
     downloadCustomizations: { type: [String], default: [] },
     chronologicalTag: { type: String, default: "emotion" },
     allowPhraseTextEdit: { type: Boolean, default: false },
+    enforceLufs: { type: Boolean, default: true },
     isHidden: { type: Boolean, default: false },
     hiddenLanguages: [{ type: String, lowercase: true, trim: true, default: [] }]
   },

@@ -7092,7 +7092,8 @@ router.post("/companies", requireAuth(JWT_SECRET), async (req, res) => {
             numberOfSamples: Number.isInteger(Number(numberOfSamples)) && Number(numberOfSamples) >= 1 ? Number(numberOfSamples) : 1,
             projectName: projectName && projectName.trim() ? projectName.trim() : cleanName,
             namingPattern: namingPattern && namingPattern.trim() ? namingPattern.trim() : "{phraseId}",
-            allowPhraseTextEdit: Boolean(req.body.allowPhraseTextEdit)
+            allowPhraseTextEdit: Boolean(req.body.allowPhraseTextEdit),
+            enforceLufs: req.body.enforceLufs !== undefined ? Boolean(req.body.enforceLufs) : true
         });
         res.status(201).json({ message: "Company created successfully", company });
     } catch (e) {
@@ -7103,7 +7104,7 @@ router.post("/companies", requireAuth(JWT_SECRET), async (req, res) => {
 
 router.patch("/companies/:id", async (req, res) => {
     try {
-        const { maxContributionMinutes, hourlyPayout, singlePhraseFrequency, numberOfSamples, projectName, namingPattern, userCustomizations, downloadCustomizations, chronologicalTag, allowPhraseTextEdit } = req.body;
+        const { maxContributionMinutes, hourlyPayout, singlePhraseFrequency, numberOfSamples, projectName, namingPattern, userCustomizations, downloadCustomizations, chronologicalTag, allowPhraseTextEdit, enforceLufs } = req.body;
         const updateData = {};
         if (maxContributionMinutes !== undefined) updateData.maxContributionMinutes = Number(maxContributionMinutes);
         if (hourlyPayout !== undefined) updateData.hourlyPayout = Number(hourlyPayout);
@@ -7115,6 +7116,7 @@ router.patch("/companies/:id", async (req, res) => {
         if (downloadCustomizations !== undefined) updateData.downloadCustomizations = downloadCustomizations;
         if (chronologicalTag !== undefined) updateData.chronologicalTag = String(chronologicalTag).trim().toLowerCase();
         if (allowPhraseTextEdit !== undefined) updateData.allowPhraseTextEdit = Boolean(allowPhraseTextEdit);
+        if (enforceLufs !== undefined) updateData.enforceLufs = Boolean(enforceLufs);
         
         const company = await Company.findByIdAndUpdate(req.params.id, { $set: updateData }, { new: true });
         if (!company) return res.status(404).json({ error: "Company not found" });

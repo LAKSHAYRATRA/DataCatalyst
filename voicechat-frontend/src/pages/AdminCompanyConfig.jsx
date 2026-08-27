@@ -19,7 +19,9 @@ import {
   Clock, 
   DollarSign, 
   Repeat, 
-  Sparkles 
+  Sparkles,
+  Edit3,
+  Volume2
 } from 'lucide-react';
 import { apiGet, apiPatchJson } from '../lib/api';
 import AdminNav from '../components/AdminNav.jsx';
@@ -66,7 +68,8 @@ export default function AdminCompanyConfig() {
         hourlyPayout: Number(company.hourlyPayout) || 0,
         singlePhraseFrequency: Math.max(1, Number(company.singlePhraseFrequency) || 1),
         namingPattern: company.namingPattern || '{phraseId}',
-        allowPhraseTextEdit: Boolean(company.allowPhraseTextEdit)
+        allowPhraseTextEdit: Boolean(company.allowPhraseTextEdit),
+        enforceLufs: company.enforceLufs !== false
       });
       setCompany(res.company);
       setMessage('Configuration saved successfully!');
@@ -413,25 +416,72 @@ export default function AdminCompanyConfig() {
 
           {/* Phrase Text Editing Toggle */}
           <div className="bg-neutral-800/80 border border-neutral-700/70 p-5 rounded-2xl shadow-lg flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div>
-              <label className="block text-sm font-bold text-white mb-1">
-                Editable Phrases in Review
+            <div className="space-y-1">
+              <label className="text-sm font-bold text-white flex items-center gap-2">
+                <Edit3 className="w-4 h-4 text-warning-400" />
+                <span>Editable Phrases in Review</span>
               </label>
-              <p className="text-xs text-neutral-400">
+              <p className="text-xs text-neutral-400 max-w-2xl">
                 Allow QA reviewers and Admins to edit script text during review (e.g. cleaning laughs or skipped words).
               </p>
             </div>
-            <label className="inline-flex items-center gap-3 cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={Boolean(company.allowPhraseTextEdit)}
-                onChange={(e) => handleFieldChange('allowPhraseTextEdit', e.target.checked)}
-                className="w-5 h-5 text-warning-500 bg-neutral-900 border-neutral-700 rounded focus:ring-warning-500 cursor-pointer"
-              />
-              <span className="text-xs font-bold text-neutral-200">
+            <div className="flex items-center gap-3 self-start sm:self-center">
+              <span className={`text-xs font-bold transition-colors duration-200 ${company.allowPhraseTextEdit ? 'text-warning-400' : 'text-neutral-400'}`}>
                 {company.allowPhraseTextEdit ? "✓ Editing Enabled" : "Disabled (Read-Only)"}
               </span>
-            </label>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={Boolean(company.allowPhraseTextEdit)}
+                onClick={() => handleFieldChange('allowPhraseTextEdit', !company.allowPhraseTextEdit)}
+                className={`relative inline-flex h-7 w-14 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-300 ease-in-out focus:outline-none focus:ring-2 focus:ring-warning-500 focus:ring-offset-2 focus:ring-offset-neutral-900 ${
+                  company.allowPhraseTextEdit
+                    ? 'bg-gradient-to-r from-amber-500 to-warning-500 shadow-[0_0_12px_rgba(245,158,11,0.45)]'
+                    : 'bg-neutral-700 hover:bg-neutral-600'
+                }`}
+              >
+                <span
+                  className={`pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow-md ring-0 transition duration-300 ease-in-out ${
+                    company.allowPhraseTextEdit ? 'translate-x-7' : 'translate-x-0'
+                  }`}
+                />
+              </button>
+            </div>
+          </div>
+
+          {/* LUFS Constraint Toggle */}
+          <div className="bg-neutral-800/80 border border-neutral-700/70 p-5 rounded-2xl shadow-lg flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="space-y-1">
+              <label className="text-sm font-bold text-white flex items-center gap-2">
+                <Volume2 className="w-4 h-4 text-warning-400" />
+                <span>LUFS Constraint</span>
+              </label>
+              <p className="text-xs text-neutral-400 max-w-2xl">
+                Enforce EBU R128 speech loudness constraints (-18.0 to -25.0 LUFS) during contributor recordings. If disabled, contributors can record and submit phrases for this company without loudness restrictions.
+              </p>
+            </div>
+            <div className="flex items-center gap-3 self-start sm:self-center">
+              <span className={`text-xs font-bold transition-colors duration-200 ${company.enforceLufs !== false ? 'text-warning-400' : 'text-neutral-400'}`}>
+                {company.enforceLufs !== false ? "✓ Constraint Active (-18 to -25 LUFS)" : "Disabled (Unrestricted)"}
+              </span>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={company.enforceLufs !== false}
+                onClick={() => handleFieldChange('enforceLufs', company.enforceLufs === false ? true : false)}
+                className={`relative inline-flex h-7 w-14 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-300 ease-in-out focus:outline-none focus:ring-2 focus:ring-warning-500 focus:ring-offset-2 focus:ring-offset-neutral-900 ${
+                  company.enforceLufs !== false
+                    ? 'bg-gradient-to-r from-amber-500 to-warning-500 shadow-[0_0_12px_rgba(245,158,11,0.45)]'
+                    : 'bg-neutral-700 hover:bg-neutral-600'
+                }`}
+              >
+                <span
+                  className={`pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow-md ring-0 transition duration-300 ease-in-out ${
+                    company.enforceLufs !== false ? 'translate-x-7' : 'translate-x-0'
+                  }`}
+                />
+              </button>
+            </div>
           </div>
 
           {/* Bottom Save Action */}

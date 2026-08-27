@@ -824,11 +824,12 @@ export async function getAvailablePhrase(req, res) {
 
     const firstPhrase = lockedPhrases[0];
     const companyDoc = firstPhrase?.companyId
-      ? await Company.findOne({ $or: [{ name: firstPhrase.companyId }, { _id: mongoose.Types.ObjectId.isValid(firstPhrase.companyId) ? firstPhrase.companyId : null }] }).select("userCustomizations").lean()
+      ? await Company.findOne({ $or: [{ name: firstPhrase.companyId }, { _id: mongoose.Types.ObjectId.isValid(firstPhrase.companyId) ? firstPhrase.companyId : null }] }).select("userCustomizations enforceLufs").lean()
       : null;
     const userCustomizations = companyDoc ? (companyDoc.userCustomizations || []) : [];
+    const enforceLufs = companyDoc ? (companyDoc.enforceLufs !== false) : true;
 
-    res.json({ phrase: firstPhrase, phrases: lockedPhrases, userCustomizations });
+    res.json({ phrase: firstPhrase, phrases: lockedPhrases, userCustomizations, enforceLufs });
   } catch (error) {
     console.error("getAvailablePhrase error:", error);
     res.status(500).json({ error: "Server error" });
@@ -1968,7 +1969,8 @@ export async function getSamplePhrase(req, res) {
       phrases: samplePhrases,
       numberOfSamples,
       count: samplePhrases.length,
-      userCustomizations
+      userCustomizations,
+      enforceLufs: companyDoc ? (companyDoc.enforceLufs !== false) : true
     });
   } catch (err) {
     res.status(500).json({ error: err.message });

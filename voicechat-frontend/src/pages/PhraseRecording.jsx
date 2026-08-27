@@ -265,7 +265,7 @@ export default function PhraseRecording() {
         let status = "pass";
         if (score === null) status = "no_speech";
         else if (score > -18.0) status = "too_loud";
-        else if (score < -24.0) status = "too_quiet";
+        else if (score < -25.0) status = "too_quiet";
 
         setLufsResult({ lufs: score, status });
         setIsLufsTesting(false);
@@ -345,6 +345,7 @@ export default function PhraseRecording() {
 
   const [activeSlotId, setActiveSlotId] = useState(null);
   const [userCustomizations, setUserCustomizations] = useState([]);
+  const [enforceLufs, setEnforceLufs] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
@@ -577,6 +578,7 @@ export default function PhraseRecording() {
       }
       const rawFetchedPhrases = data.phrases || (data.phrase ? [data.phrase] : []);
       setUserCustomizations(data.userCustomizations || []);
+      setEnforceLufs(data.enforceLufs !== false);
 
       // Client-side deduplication safety net
       const seenBaseIds = new Set();
@@ -786,57 +788,61 @@ export default function PhraseRecording() {
       lufsScore = calculateEbuR128Lufs(slot.rawPcm, 48000);
     }
 
-    if (lufsScore === null) {
-      Swal.fire({
-        icon: "warning",
-        title: "No Speech Found",
-        background: "#171717",
-        color: "#ffffff",
-        html: `<div class="text-left space-y-2 text-sm text-neutral-300">
-          <p class="text-amber-400 font-bold">⚠️ No speech detected in your recording!</p>
-          <p>Please make sure your microphone is unmuted, speak clearly into your mic, and re-record this phrase.</p>
-        </div>`,
-        confirmButtonText: "Adjust Mic Settings",
-        confirmButtonColor: "#3b82f6"
-      });
-      setShowMicSettingsModal(true);
-      return;
-    }
+    const isLufsEnforced = enforceLufs !== false;
 
-    if (lufsScore > -18.0) {
-      Swal.fire({
-        icon: "warning",
-        title: "Mic Calibration Required (Too Loud)",
-        background: "#171717",
-        color: "#ffffff",
-        html: `<div class="text-left space-y-2 text-sm text-neutral-300">
-          <p>Your phrase recording loudness is <b class="font-mono text-base text-rose-400">${lufsScore} LUFS</b> (Target range: <b class="text-white">-18.0 to -24.0 LUFS</b>).</p>
-          <p class="text-rose-400 font-bold">⚠️ Audio is too loud (over -18.0 LUFS)!</p>
-          <p>Please open <b>Mic Settings</b> and <b>decrease your mic gain</b> (try -10% or -20%) or speak slightly softer, then re-record this phrase.</p>
-        </div>`,
-        confirmButtonText: "Adjust Mic Settings",
-        confirmButtonColor: "#3b82f6"
-      });
-      setShowMicSettingsModal(true);
-      return;
-    }
+    if (isLufsEnforced) {
+      if (lufsScore === null) {
+        Swal.fire({
+          icon: "warning",
+          title: "No Speech Found",
+          background: "#171717",
+          color: "#ffffff",
+          html: `<div class="text-left space-y-2 text-sm text-neutral-300">
+            <p class="text-amber-400 font-bold">⚠️ No speech detected in your recording!</p>
+            <p>Please make sure your microphone is unmuted, speak clearly into your mic, and re-record this phrase.</p>
+          </div>`,
+          confirmButtonText: "Adjust Mic Settings",
+          confirmButtonColor: "#3b82f6"
+        });
+        setShowMicSettingsModal(true);
+        return;
+      }
 
-    if (lufsScore < -24.0) {
-      Swal.fire({
-        icon: "warning",
-        title: "Mic Calibration Required (Too Quiet)",
-        background: "#171717",
-        color: "#ffffff",
-        html: `<div class="text-left space-y-2 text-sm text-neutral-300">
-          <p>Your phrase recording loudness is <b class="font-mono text-base text-amber-400">${lufsScore} LUFS</b> (Target range: <b class="text-white">-18.0 to -24.0 LUFS</b>).</p>
-          <p class="text-amber-400 font-bold">⚠️ Audio is too quiet (under -24.0 LUFS)!</p>
-          <p>Please open <b>Mic Settings</b> and <b>increase your mic gain</b> (try +10% or +20%) or speak slightly louder, then re-record this phrase.</p>
-        </div>`,
-        confirmButtonText: "Adjust Mic Settings",
-        confirmButtonColor: "#3b82f6"
-      });
-      setShowMicSettingsModal(true);
-      return;
+      if (lufsScore > -18.0) {
+        Swal.fire({
+          icon: "warning",
+          title: "Mic Calibration Required (Too Loud)",
+          background: "#171717",
+          color: "#ffffff",
+          html: `<div class="text-left space-y-2 text-sm text-neutral-300">
+            <p>Your phrase recording loudness is <b class="font-mono text-base text-rose-400">${lufsScore} LUFS</b> (Target range: <b class="text-white">-18.0 to -25.0 LUFS</b>).</p>
+            <p class="text-rose-400 font-bold">⚠️ Audio is too loud (over -18.0 LUFS)!</p>
+            <p>Please open <b>Mic Settings</b> and <b>decrease your mic gain</b> (try -10% or -20%) or speak slightly softer, then re-record this phrase.</p>
+          </div>`,
+          confirmButtonText: "Adjust Mic Settings",
+          confirmButtonColor: "#3b82f6"
+        });
+        setShowMicSettingsModal(true);
+        return;
+      }
+
+      if (lufsScore < -25.0) {
+        Swal.fire({
+          icon: "warning",
+          title: "Mic Calibration Required (Too Quiet)",
+          background: "#171717",
+          color: "#ffffff",
+          html: `<div class="text-left space-y-2 text-sm text-neutral-300">
+            <p>Your phrase recording loudness is <b class="font-mono text-base text-amber-400">${lufsScore} LUFS</b> (Target range: <b class="text-white">-18.0 to -25.0 LUFS</b>).</p>
+            <p class="text-amber-400 font-bold">⚠️ Audio is too quiet (under -25.0 LUFS)!</p>
+            <p>Please open <b>Mic Settings</b> and <b>increase your mic gain</b> (try +10% or +20%) or speak slightly louder, then re-record this phrase.</p>
+          </div>`,
+          confirmButtonText: "Adjust Mic Settings",
+          confirmButtonColor: "#3b82f6"
+        });
+        setShowMicSettingsModal(true);
+        return;
+      }
     }
 
     // Mark ONLY this slot as submitting
@@ -1128,66 +1134,68 @@ export default function PhraseRecording() {
                     </div>
 
                     {/* LUFS Calibration Section */}
-                    <div className="mb-6 p-4 rounded-2xl border border-primary-500/30 bg-primary-950/20 dark:bg-neutral-800/90 text-neutral-900 dark:text-white shadow-inner">
-                      <div className="flex items-center justify-between mb-2">
-                        <label className="block text-xs font-bold text-primary-600 dark:text-primary-400 uppercase tracking-wider flex items-center gap-2">
-                          <Activity className="w-4 h-4 text-primary-500" /> Check LUFS (3s Calibration)
-                        </label>
-                        <span className="text-[10px] font-bold text-neutral-500 dark:text-neutral-300 font-mono px-2 py-0.5 rounded bg-primary-500/10 border border-primary-500/20">Target: -18 to -24 LUFS</span>
-                      </div>
-
-                      <p className="text-xs text-neutral-600 dark:text-neutral-300 mb-3 font-medium">
-                        Click below and speak naturally for 3 seconds to test your mic volume calibration.
-                      </p>
-
-                      <button
-                        type="button"
-                        onClick={runLufsTest}
-                        disabled={isLufsTesting || activeSlotId !== null || loading}
-                        className={`w-full py-3 px-4 rounded-xl font-bold text-xs transition-all flex items-center justify-center gap-2 shadow-md ${
-                          isLufsTesting 
-                            ? "bg-error-600 text-white animate-pulse" 
-                            : "bg-primary-600 hover:bg-primary-500 text-white shadow-primary-600/20"
-                        }`}
-                      >
-                        {isLufsTesting ? (
-                          <>
-                            <span className="w-2.5 h-2.5 bg-white rounded-full animate-ping"></span>
-                            Recording & Measuring... ({lufsCountdown}s)
-                          </>
-                        ) : (
-                          <>
-                            <Activity className="w-4 h-4 text-white" /> Check Mic LUFS (3s)
-                          </>
-                        )}
-                      </button>
-
-                      {/* LUFS Result Display */}
-                      {lufsResult && (
-                        <div className={`mt-3 p-3.5 rounded-xl border flex items-center justify-between text-xs font-bold shadow-sm ${
-                          lufsResult.status === "pass" 
-                            ? "bg-emerald-500/15 border-emerald-500/40 text-emerald-700 dark:text-emerald-300"
-                            : lufsResult.status === "no_speech"
-                            ? "bg-neutral-800 border-neutral-700 text-neutral-300"
-                            : lufsResult.status === "too_loud"
-                            ? "bg-rose-500/15 border-rose-500/40 text-rose-700 dark:text-rose-300"
-                            : "bg-amber-500/15 border-amber-500/40 text-amber-700 dark:text-amber-300"
-                        }`}>
-                          <span className="flex items-center gap-1.5 font-semibold">
-                            {lufsResult.status === "pass" 
-                              ? "✓ Perfect Volume (-18 to -24 LUFS)" 
-                              : lufsResult.status === "no_speech"
-                              ? "⚠️ No speech found"
-                              : lufsResult.status === "too_loud" 
-                              ? "⚠️ Too Loud (Reduce Gain)" 
-                              : "⚠️ Too Quiet (Boost Gain)"}
-                          </span>
-                          <span className="font-mono text-sm font-black px-2 py-0.5 rounded bg-neutral-900 text-white">
-                            {lufsResult.lufs !== null ? `${lufsResult.lufs} LUFS` : "No Speech"}
-                          </span>
+                    {enforceLufs !== false && (
+                      <div className="mb-6 p-4 rounded-2xl border border-primary-500/30 bg-primary-950/20 dark:bg-neutral-800/90 text-neutral-900 dark:text-white shadow-inner">
+                        <div className="flex items-center justify-between mb-2">
+                          <label className="block text-xs font-bold text-primary-600 dark:text-primary-400 uppercase tracking-wider flex items-center gap-2">
+                            <Activity className="w-4 h-4 text-primary-500" /> Check LUFS (3s Calibration)
+                          </label>
+                          <span className="text-[10px] font-bold text-neutral-500 dark:text-neutral-300 font-mono px-2 py-0.5 rounded bg-primary-500/10 border border-primary-500/20">Target: -18 to -25 LUFS</span>
                         </div>
-                      )}
-                    </div>
+
+                        <p className="text-xs text-neutral-600 dark:text-neutral-300 mb-3 font-medium">
+                          Click below and speak naturally for 3 seconds to test your mic volume calibration.
+                        </p>
+
+                        <button
+                          type="button"
+                          onClick={runLufsTest}
+                          disabled={isLufsTesting || activeSlotId !== null || loading}
+                          className={`w-full py-3 px-4 rounded-xl font-bold text-xs transition-all flex items-center justify-center gap-2 shadow-md ${
+                            isLufsTesting 
+                              ? "bg-error-600 text-white animate-pulse" 
+                              : "bg-primary-600 hover:bg-primary-500 text-white shadow-primary-600/20"
+                          }`}
+                        >
+                          {isLufsTesting ? (
+                            <>
+                              <span className="w-2.5 h-2.5 bg-white rounded-full animate-ping"></span>
+                              Recording & Measuring... ({lufsCountdown}s)
+                            </>
+                          ) : (
+                            <>
+                              <Activity className="w-4 h-4 text-white" /> Check Mic LUFS (3s)
+                            </>
+                          )}
+                        </button>
+
+                        {/* LUFS Result Display */}
+                        {lufsResult && (
+                          <div className={`mt-3 p-3.5 rounded-xl border flex items-center justify-between text-xs font-bold shadow-sm ${
+                            lufsResult.status === "pass" 
+                              ? "bg-emerald-500/15 border-emerald-500/40 text-emerald-700 dark:text-emerald-300"
+                              : lufsResult.status === "no_speech"
+                              ? "bg-neutral-800 border-neutral-700 text-neutral-300"
+                              : lufsResult.status === "too_loud"
+                              ? "bg-rose-500/15 border-rose-500/40 text-rose-700 dark:text-rose-300"
+                              : "bg-amber-500/15 border-amber-500/40 text-amber-700 dark:text-amber-300"
+                          }`}>
+                            <span className="flex items-center gap-1.5 font-semibold">
+                              {lufsResult.status === "pass" 
+                                ? "✓ Perfect Volume (-18 to -25 LUFS)" 
+                                : lufsResult.status === "no_speech"
+                                ? "⚠️ No speech found"
+                                : lufsResult.status === "too_loud" 
+                                ? "⚠️ Too Loud (Reduce Gain)" 
+                                : "⚠️ Too Quiet (Boost Gain)"}
+                            </span>
+                            <span className="font-mono text-sm font-black px-2 py-0.5 rounded bg-neutral-900 text-white">
+                              {lufsResult.lufs !== null ? `${lufsResult.lufs} LUFS` : "No Speech"}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    )}
 
                     <div className="flex justify-end pt-2">
                       <button 
@@ -1384,9 +1392,9 @@ export default function PhraseRecording() {
                             <CheckCircle2 className="w-3.5 h-3.5" /> Recorded ({formatTime(slot.duration)})
                           </span>
 
-                          {slot.recordedLufs !== null && (
+                          {slot.recordedLufs !== null && enforceLufs !== false && (
                             <span className={`px-2.5 py-0.5 rounded-full text-xs font-mono font-bold border ${
-                              slot.recordedLufs >= -24.0 && slot.recordedLufs <= -18.0
+                              slot.recordedLufs >= -25.0 && slot.recordedLufs <= -18.0
                                 ? "bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border-emerald-500/40"
                                 : slot.recordedLufs > -18.0
                                 ? "bg-rose-500/20 text-rose-700 dark:text-rose-300 border-rose-500/40"
