@@ -18,6 +18,8 @@ export default function QaPhrases() {
   const [processing, setProcessing] = useState(null);
   const [filterProject, setFilterProject] = useState('All');
   const [filterLanguage, setFilterLanguage] = useState('All');
+  const [filterSpeaker, setFilterSpeaker] = useState('All');
+  const [selectedPhrases, setSelectedPhrases] = useState(new Set());
   const [listenedOnce, setListenedOnce] = useState({});
 
   // Text Editing States
@@ -43,6 +45,74 @@ export default function QaPhrases() {
   const [trimSaving, setTrimSaving] = useState(false);
   const [trimAudioUrl, setTrimAudioUrl] = useState(null);
   const trimAudioRef = useRef(null);
+
+  const getSpeakerId = (p) => {
+    return p.speaker_id || p.assigned_speaker_id || p.contributorId?.speaker_id || (p.contributorId?.username ? `user_${p.contributorId.username}` : null);
+  };
+
+  const toggleSelectPhrase = (id) => {
+    setSelectedPhrases(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const handleBulkReview = async (action) => {
+    if (selectedPhrases.size === 0) return;
+    const count = selectedPhrases.size;
+
+    const result = await Swal.fire({
+      title: `${action === 'approve' ? 'Approve' : 'Reject'} ${count} Selected Phrases?`,
+      text: action === 'approve'
+        ? `Are you sure you want to approve all ${count} selected phrases?`
+        : `Are you sure you want to reject all ${count} selected phrases? Audio files will be removed from S3.`,
+      icon: action === 'approve' ? 'question' : 'warning',
+      showCancelButton: true,
+      confirmButtonText: `Yes, ${action === 'approve' ? 'Approve' : 'Reject'} All (${count})`,
+      cancelButtonText: 'Cancel',
+      confirmButtonColor: action === 'approve' ? '#10b981' : '#ef4444',
+      background: '#171717',
+      color: '#ffffff'
+    });
+
+    if (!result.isConfirmed) return;
+
+    setProcessing('bulk');
+    try {
+      const ids = Array.from(selectedPhrases);
+      const res = await apiPostJson('/api/phrases/admin/bulk-review', {
+        phraseIds: ids,
+        action,
+        comment: `Bulk Admin ${action === 'approve' ? 'Approval' : 'Rejection'}`
+      });
+
+      Swal.fire({
+        icon: 'success',
+        title: `Phrases ${action === 'approve' ? 'Approved' : 'Rejected'}!`,
+        text: res.message || `Successfully processed ${count} phrases.`,
+        timer: 1800,
+        showConfirmButton: false,
+        background: '#171717',
+        color: '#ffffff'
+      });
+
+      setSelectedPhrases(new Set());
+      fetchQueue(activeTab);
+    } catch (err) {
+      console.error("Bulk review error:", err);
+      Swal.fire({
+        icon: 'error',
+        title: 'Bulk Action Failed',
+        text: err.message || 'Failed to bulk review phrases',
+        background: '#171717',
+        color: '#ffffff'
+      });
+    } finally {
+      setProcessing(null);
+    }
+  };
 
   const openTrimModal = (p) => {
     setTrimmingPhrase(p);
@@ -484,6 +554,44 @@ export default function QaPhrases() {
     return [...new Set(phrasesToScan.map(q => q.language).filter(Boolean))].sort();
   }, [queue, filterProject]);
 
+  const availableSpeakers = React.useMemo(() => {
+    let phrasesToScan = queue;
+    if (filterProject !== 'All') {
+      phrasesToScan = phrasesToScan.filter(q => (q.projectName || q.companyId) === filterProject);
+    }
+    if (filterLanguage !== 'All') {
+      phrasesToScan = phrasesToScan.filter(q => q.language && q.language.toLowerCase() === filterLanguage.toLowerCase());
+    }
+    const counts = {};
+    for (const p of phrasesToScan) {
+      const spk = getSpeakerId(p) || 'Unassigned';
+      counts[spk] = (counts[spk] || 0) + 1;
+    }
+    return Object.entries(counts)
+      .map(([id, count]) => ({ id, count }))
+      .sort((a, b) => a.id.localeCompare(b.id));
+  }, [queue, filterProject, filterLanguage]);
+
+  const displayedPhrases = React.useMemo(() => {
+    return queue.filter(q => {
+      const matchProject = filterProject === 'All' || (q.projectName || q.companyId) === filterProject;
+      const matchLanguage = filterLanguage === 'All' || (q.language && q.language.toLowerCase() === filterLanguage.toLowerCase());
+      const spk = getSpeakerId(q) || 'Unassigned';
+      const matchSpeaker = filterSpeaker === 'All' || spk === filterSpeaker;
+      return matchProject && matchLanguage && matchSpeaker;
+    });
+  }, [queue, filterProject, filterLanguage, filterSpeaker]);
+
+  const selectAllDisplayed = () => {
+    const allIds = displayedPhrases.map(p => p._id);
+    const isAllSelected = allIds.length > 0 && allIds.every(id => selectedPhrases.has(id));
+    if (isAllSelected) {
+      setSelectedPhrases(new Set());
+    } else {
+      setSelectedPhrases(new Set(allIds));
+    }
+  };
+
   return (
     <div className="min-h-screen bg-neutral-50 dark:bg-neutral-900 flex transition-colors duration-300">
       <AdminNav />
@@ -501,7 +609,7 @@ export default function QaPhrases() {
           {/* Top Status Tabs */}
           <div className="flex items-center gap-2 bg-neutral-200 dark:bg-neutral-800 p-1.5 rounded-xl border border-neutral-300 dark:border-neutral-700 w-max">
             <button
-              onClick={() => setActiveTab('recorded')}
+              onClick={() => { setActiveTab('recorded'); setSelectedPhrases(new Set()); }}
               className={`px-4 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-2 ${
                 activeTab === 'recorded'
                   ? 'bg-amber-600 text-white shadow-md'
@@ -511,7 +619,7 @@ export default function QaPhrases() {
               <Clock className="w-3.5 h-3.5" /> Pending Review
             </button>
             <button
-              onClick={() => setActiveTab('approved')}
+              onClick={() => { setActiveTab('approved'); setSelectedPhrases(new Set()); }}
               className={`px-4 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-2 ${
                 activeTab === 'approved'
                   ? 'bg-emerald-600 text-white shadow-md'
@@ -522,7 +630,7 @@ export default function QaPhrases() {
             </button>
             {isAdmin && (
               <button
-                onClick={() => setActiveTab('edited')}
+                onClick={() => { setActiveTab('edited'); setSelectedPhrases(new Set()); }}
                 className={`px-4 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-2 ${
                   activeTab === 'edited'
                     ? 'bg-indigo-600 text-white shadow-md'
@@ -543,13 +651,15 @@ export default function QaPhrases() {
           <div className="space-y-6">
             {queue.length > 0 && (
               <div className="flex flex-wrap items-center gap-3 mb-6 justify-start">
-                {/* Project Dropdown (Left Aligned) */}
+                {/* Project Dropdown */}
                 <select 
-                  className="input w-full md:w-64"
+                  className="input w-full md:w-56 text-sm"
                   value={filterProject}
                   onChange={(e) => {
                     setFilterProject(e.target.value);
                     setFilterLanguage('All');
+                    setFilterSpeaker('All');
+                    setSelectedPhrases(new Set());
                   }}
                 >
                   <option value="All">All Projects</option>
@@ -558,11 +668,15 @@ export default function QaPhrases() {
                   ))}
                 </select>
 
-                {/* Dynamic Languages Dropdown (Available in Selected Project) */}
+                {/* Languages Dropdown */}
                 <select 
-                  className="input w-full md:w-64 capitalize"
+                  className="input w-full md:w-48 capitalize text-sm"
                   value={filterLanguage}
-                  onChange={(e) => setFilterLanguage(e.target.value)}
+                  onChange={(e) => {
+                    setFilterLanguage(e.target.value);
+                    setFilterSpeaker('All');
+                    setSelectedPhrases(new Set());
+                  }}
                 >
                   <option value="All">{!isAdmin ? "All Approved Languages" : "All Languages"}</option>
                   {availableLanguages.map(lang => (
@@ -571,6 +685,25 @@ export default function QaPhrases() {
                     </option>
                   ))}
                 </select>
+
+                {/* Speaker Dropdown (Admins Only) */}
+                {isAdmin && (
+                  <select 
+                    className="input w-full md:w-52 font-mono text-sm border-amber-500/40"
+                    value={filterSpeaker}
+                    onChange={(e) => {
+                      setFilterSpeaker(e.target.value);
+                      setSelectedPhrases(new Set());
+                    }}
+                  >
+                    <option value="All">All Speakers ({availableSpeakers.length})</option>
+                    {availableSpeakers.map(spk => (
+                      <option key={spk.id} value={spk.id}>
+                        {spk.id} ({spk.count} phrases)
+                      </option>
+                    ))}
+                  </select>
+                )}
 
                 {activeTab === 'edited' && isAdmin && (
                   <button
@@ -585,24 +718,78 @@ export default function QaPhrases() {
               </div>
             )}
 
+            {/* Bulk Action Toolbar for Admins */}
+            {isAdmin && activeTab === 'recorded' && displayedPhrases.length > 0 && (
+              <div className="flex flex-wrap items-center justify-between gap-3 p-3 bg-neutral-900 border border-neutral-700/80 rounded-xl shadow-md">
+                <div className="flex items-center gap-3">
+                  <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-neutral-300 select-none">
+                    <input
+                      type="checkbox"
+                      checked={displayedPhrases.length > 0 && displayedPhrases.every(p => selectedPhrases.has(p._id))}
+                      onChange={selectAllDisplayed}
+                      className="w-4 h-4 rounded border-neutral-600 bg-neutral-800 text-amber-500 focus:ring-amber-500 cursor-pointer"
+                    />
+                    <span>Select All Displayed ({displayedPhrases.length})</span>
+                  </label>
+                  {selectedPhrases.size > 0 && (
+                    <span className="px-2 py-0.5 bg-amber-500/20 text-amber-300 rounded text-xs font-mono font-bold border border-amber-500/30">
+                      {selectedPhrases.size} selected
+                    </span>
+                  )}
+                </div>
+
+                {selectedPhrases.size > 0 && (
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleBulkReview('approve')}
+                      disabled={processing === 'bulk'}
+                      className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 shadow-sm"
+                    >
+                      <Check className="w-3.5 h-3.5" /> Approve Selected ({selectedPhrases.size})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleBulkReview('reject')}
+                      disabled={processing === 'bulk'}
+                      className="px-3.5 py-1.5 bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 shadow-sm"
+                    >
+                      <X className="w-3.5 h-3.5" /> Reject Selected ({selectedPhrases.size})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedPhrases(new Set())}
+                      className="px-2.5 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-400 text-xs rounded-lg transition-all"
+                    >
+                      Clear
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
             <AnimatePresence>
-              {queue.filter(q => {
-                const matchProject = filterProject === 'All' || (q.projectName || q.companyId) === filterProject;
-                const matchLanguage = filterLanguage === 'All' || (q.language && q.language.toLowerCase() === filterLanguage.toLowerCase());
-                return matchProject && matchLanguage;
-              }).map((p) => (
+              {displayedPhrases.map((p) => (
                 <motion.div 
                   key={p._id}
                   layout
                   initial={{ opacity: 0, scale: 0.95 }}
                   animate={{ opacity: 1, scale: 1 }}
                   exit={{ opacity: 0, scale: 0.95, height: 0 }}
-                  className={`card border-l-4 ${activeTab === 'approved' ? 'border-l-emerald-500' : 'border-l-warning-500'}`}
+                  className={`card border-l-4 ${activeTab === 'approved' ? 'border-l-emerald-500' : 'border-l-warning-500'} ${selectedPhrases.has(p._id) ? 'ring-2 ring-amber-500/60 bg-amber-500/5' : ''}`}
                 >
                   <div className="flex flex-col gap-4">
                     <div className="flex flex-col md:flex-row gap-6">
                       <div className="flex-1">
-                        <div className="flex items-center gap-3 mb-2">
+                        <div className="flex flex-wrap items-center gap-3 mb-2">
+                          {isAdmin && activeTab === 'recorded' && (
+                            <input
+                              type="checkbox"
+                              checked={selectedPhrases.has(p._id)}
+                              onChange={() => toggleSelectPhrase(p._id)}
+                              className="w-4 h-4 rounded border-neutral-600 bg-neutral-800 text-amber-500 focus:ring-amber-500 cursor-pointer flex-shrink-0"
+                            />
+                          )}
                           {p.status === 'approved' ? (
                             <span className="badge bg-emerald-600 text-white font-semibold flex items-center gap-1">
                               <CheckCircle2 className="w-3 h-3" /> Approved
@@ -615,6 +802,9 @@ export default function QaPhrases() {
                               TEST PHRASE
                             </span>
                           )}
+                          <span className="text-xs font-mono font-bold bg-amber-500/10 text-amber-300 border border-amber-500/30 px-2 py-0.5 rounded">
+                            🎤 {getSpeakerId(p) || "Unassigned"}
+                          </span>
                           {(p.lufs !== undefined && p.lufs !== null) || (qcData[p._id]?.freq?.lufs !== undefined && qcData[p._id]?.freq?.lufs !== null) ? (
                             (() => {
                               const lufsVal = qcData[p._id]?.freq?.lufs !== undefined ? qcData[p._id]?.freq?.lufs : p.lufs;
@@ -807,7 +997,7 @@ export default function QaPhrases() {
                           </h4>
                           <SecureAudioPlayer 
                             url={`/api/phrases/${p._id}/audio`} 
-                            requireFullListen={activeTab === 'recorded'}
+                            requireFullListen={activeTab === 'recorded' && !isAdmin}
                             onFirstListenComplete={() => {
                               setListenedOnce(prev => ({ ...prev, [p._id]: true }));
                             }}
@@ -886,7 +1076,7 @@ export default function QaPhrases() {
 
                           {activeTab === 'recorded' && (
                             <div>
-                              {!listenedOnce[p._id] && (
+                              {!isAdmin && !listenedOnce[p._id] && (
                                 <div className="mb-2 text-xs font-semibold text-amber-500 bg-amber-500/10 border border-amber-500/20 px-2.5 py-1.5 rounded-lg text-center flex items-center justify-center gap-1.5">
                                   <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
                                   Listen to audio completely once to enable review
@@ -898,22 +1088,22 @@ export default function QaPhrases() {
                                 className="input text-sm mb-2"
                                 value={comments[p._id] || ''}
                                 onChange={(e) => setComments(prev => ({ ...prev, [p._id]: e.target.value }))}
-                                disabled={processing === p._id || !listenedOnce[p._id]}
+                                disabled={processing === p._id || (!isAdmin && !listenedOnce[p._id])}
                               />
                               <div className="flex gap-2 mb-2">
                                 <button 
                                   className="flex-1 btn btn-success flex items-center justify-center gap-2 py-2 disabled:opacity-40 disabled:cursor-not-allowed"
                                   onClick={() => handleReview(p._id, 'approve')}
-                                  disabled={processing === p._id || !listenedOnce[p._id]}
-                                  title={!listenedOnce[p._id] ? "Listen to full audio once to approve" : ""}
+                                  disabled={processing === p._id || (!isAdmin && !listenedOnce[p._id])}
+                                  title={!isAdmin && !listenedOnce[p._id] ? "Listen to full audio once to approve" : ""}
                                 >
                                   <Check className="w-4 h-4" /> Approve
                                 </button>
                                 <button 
                                   className="flex-1 btn btn-error flex items-center justify-center gap-2 py-2 disabled:opacity-40 disabled:cursor-not-allowed"
                                   onClick={() => handleReview(p._id, 'reject')}
-                                  disabled={processing === p._id || !listenedOnce[p._id]}
-                                  title={!listenedOnce[p._id] ? "Listen to full audio once to reject" : ""}
+                                  disabled={processing === p._id || (!isAdmin && !listenedOnce[p._id])}
+                                  title={!isAdmin && !listenedOnce[p._id] ? "Listen to full audio once to reject" : ""}
                                 >
                                   <X className="w-4 h-4" /> Reject
                                 </button>

@@ -1520,14 +1520,19 @@ export async function reviewPhrase(req, res) {
           // Verdict Mismatch! Create Ambiguity for Admin
           const firstQaUser = await User.findById(phrase.firstQaReview.qaId).lean();
           await Ambiguity.create({
-            type: "phrase",
-            phraseId: phrase.phraseId,
-            companyId: phrase.companyId,
+            itemType: "phrase",
+            itemId: phrase._id,
+            itemIdentifier: phrase.phraseId,
             language: phrase.language,
-            reason: "conflict",
+            companyId: phrase.companyId,
+            qa1: phrase.firstQaReview.qaId,
+            qa1Action,
+            qa1Comment: phrase.firstQaReview.comment || null,
+            qa2: req.user._id,
+            qa2Action,
+            qa2Comment: comment || null,
             audioFile: phrase.audioFile,
-            text: phrase.text,
-            duration: phrase.duration || 0,
+            scriptText: phrase.text,
             qaReviews: [
               {
                 qaId: phrase.firstQaReview.qaId,
@@ -1572,6 +1577,118 @@ export async function reviewPhrase(req, res) {
   } catch (error) {
     console.error("reviewPhrase error:", error);
     res.status(500).json({ error: "Server error" });
+  }
+}
+
+/**
+ * Admin: Bulk approve or reject a list of selected phrase IDs
+ */
+export async function bulkReviewPhrases(req, res) {
+  try {
+    const { phraseIds, action, comment } = req.body;
+    if (!Array.isArray(phraseIds) || phraseIds.length === 0) {
+      return res.status(400).json({ error: "No phrase IDs provided for bulk review." });
+    }
+    if (!["approve", "reject"].includes(action)) {
+      return res.status(400).json({ error: "Action must be 'approve' or 'reject'." });
+    }
+
+    const phrases = await Phrase.find({ _id: { $in: phraseIds } });
+    if (phrases.length === 0) {
+      return res.status(404).json({ error: "No matching phrases found." });
+    }
+
+    let processedCount = 0;
+    const now = new Date();
+
+    for (const phrase of phrases) {
+      if (action === "approve") {
+        phrase.status = "approved";
+        phrase.qaId = req.user._id;
+        phrase.qaComment = comment || "Bulk Admin Approval";
+        phrase.reviewedAt = now;
+        phrase.qaLockedBy = null;
+        phrase.qaLockedAt = null;
+
+        if (phrase.contributorId) {
+          const contributor = await User.findById(phrase.contributorId);
+          if (contributor) {
+            if (!contributor.speaker_id) {
+              const { seq } = await Counter.findOneAndUpdate(
+                { _id: "speaker_id" },
+                { $inc: { seq: 1 } },
+                { upsert: true, new: true }
+              );
+              contributor.speaker_id = `spk_${seq}`;
+              await contributor.save();
+            }
+            phrase.speaker_id = contributor.speaker_id;
+          }
+        }
+
+        await phrase.save();
+        processedCount++;
+      } else if (action === "reject") {
+        // Log rejection
+        if (phrase.contributorId) {
+          try {
+            await PhraseRejection.create({
+              phraseId: phrase.phraseId,
+              companyId: phrase.companyId,
+              language: phrase.language,
+              contributorId: phrase.contributorId,
+              qaId: req.user._id,
+              duration: phrase.duration || 0,
+              comment: comment || "Bulk Admin Rejection",
+              text: phrase.text,
+              rejectedAt: now
+            });
+          } catch (rejErr) {
+            console.error("Failed to log bulk phrase rejection:", rejErr.message);
+          }
+        }
+
+        // Delete audio from S3
+        if (phrase.audioFile) {
+          try {
+            await s3Client.send(new DeleteObjectCommand({
+              Bucket: BUCKET_NAME,
+              Key: phrase.audioFile
+            }));
+          } catch (s3err) {
+            console.error("Failed to delete rejected S3 Audio:", s3err);
+          }
+        }
+
+        // Reset phrase
+        phrase.status = "pending";
+        phrase.contributorId = null;
+        phrase.speaker_id = phrase.assigned_speaker_id || null;
+        phrase.audioFile = null;
+        phrase.duration = 0;
+        phrase.recordedAt = null;
+        phrase.reviewedAt = null;
+        phrase.qaId = null;
+        phrase.qaComment = null;
+        phrase.qcResult = null;
+        phrase.lockedAt = null;
+        phrase.lockedBy = null;
+        phrase.qaLockedBy = null;
+        phrase.qaLockedAt = null;
+
+        await phrase.save();
+        processedCount++;
+      }
+    }
+
+    res.json({
+      success: true,
+      message: `Successfully ${action === "approve" ? "approved" : "rejected"} ${processedCount} phrases.`,
+      count: processedCount
+    });
+  } catch (error) {
+    console.error("bulkReviewPhrases error:", error);
+    res.status(500).json({ error: error.message || "Failed to bulk review phrases" });
   }
 }
 

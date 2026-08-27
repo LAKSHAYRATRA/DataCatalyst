@@ -26,6 +26,7 @@ import {
   updatePhraseText,
   reviewEditedPhrase,
   approveAllEditedPhrases,
+  bulkReviewPhrases,
   downloadSinglePhraseZip,
   deletePhraseAdmin,
   clearCompanyPhrases,
@@ -85,6 +86,7 @@ router.post("/admin/clear", requireAuth(JWT_SECRET), requireAdmin, clearCompanyP
 router.post("/admin/deduplicate", requireAuth(JWT_SECRET), requireAdmin, deduplicateCompanyPhrases);
 router.post("/admin/review-edit/:phraseId", requireAuth(JWT_SECRET), requireAdmin, reviewEditedPhrase);
 router.post("/admin/review-edit-all", requireAuth(JWT_SECRET), requireAdmin, approveAllEditedPhrases);
+router.post("/admin/bulk-review", requireAuth(JWT_SECRET), requireAdmin, bulkReviewPhrases);
 
 /* -------------------------------------------------------------------------- */
 /*                                   QA Routes                                */
