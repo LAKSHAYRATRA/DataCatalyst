@@ -479,36 +479,34 @@ async function cleanupRecording(socket, endedAt, callIdOverride) {
             const callStartObj = session?.actualCallStartedAt || session?.startedAt || inMemCall?.actualCallStartedAt || inMemCall?.startedAt;
             const callEndObj = session?.endedAt || inMemCall?.endedAt || now;
 
-            const callStartTime = callStartObj ? new Date(callStartObj).getTime() : (Date.now() - 600000);
+            const callStartTime = callStartObj ? new Date(callStartObj).getTime() : 0;
             const callEndTime = new Date(callEndObj).getTime();
-            const rawDurationSec = Math.max(0, (callEndTime - callStartTime) / 1000);
+            const rawDurationSec = callStartTime > 0 ? Math.max(0, (callEndTime - callStartTime) / 1000) : 0;
 
-            // Compute master duration across both streams, DB session, and chunk count
-            const streamSeqDuration = (streamObj?.maxSeq ? (streamObj.maxSeq + 1) * 0.5 : 0);
-            const totalCallDurationSec = Math.max(rawDurationSec, streamSeqDuration, 1);
+            const currentSize = fs.existsSync(tempPath) ? fs.statSync(tempPath).size : 0;
+            const currentSizeSec = currentSize > 0 ? (currentSize / 192000) : 0;
+
+            // Compute master duration across all sources without ever clipping or truncating real speech!
+            const streamSeqDuration = (streamObj?.maxSeq !== undefined && streamObj.maxSeq >= 0 ? (streamObj.maxSeq + 1) * 0.5 : 0);
+            const totalCallDurationSec = Math.max(rawDurationSec, streamSeqDuration, currentSizeSec, 1);
 
             const sampleRate = 48000;
             const bytesPerSample = 4; // float32
             const bytesPerSec = sampleRate * bytesPerSample; // 192,000 bytes/sec
             const targetSizeBytes = Math.round(totalCallDurationSec * bytesPerSec);
 
-            if (fs.existsSync(tempPath)) {
-              const currentSize = fs.statSync(tempPath).size;
-              if (currentSize < targetSizeBytes) {
-                const endSilenceSize = targetSizeBytes - currentSize;
-                const fdEnd = fs.openSync(tempPath, "a");
-                const silenceChunk = Buffer.alloc(Math.min(endSilenceSize, 1024 * 1024), 0);
-                let remaining = endSilenceSize;
-                while (remaining > 0) {
-                  const toWrite = Math.min(remaining, silenceChunk.length);
-                  fs.writeSync(fdEnd, silenceChunk, 0, toWrite);
-                  remaining -= toWrite;
-                }
-                fs.closeSync(fdEnd);
-                console.log(`[Audio Alignment] Padded ${endSilenceSize} bytes to ${tempPath} to reach master size ${targetSizeBytes} (${totalCallDurationSec}s)`);
-              } else if (currentSize > targetSizeBytes) {
-                fs.truncateSync(tempPath, targetSizeBytes);
+            if (fs.existsSync(tempPath) && currentSize < targetSizeBytes) {
+              const endSilenceSize = targetSizeBytes - currentSize;
+              const fdEnd = fs.openSync(tempPath, "a");
+              const silenceChunk = Buffer.alloc(Math.min(endSilenceSize, 1024 * 1024), 0);
+              let remaining = endSilenceSize;
+              while (remaining > 0) {
+                const toWrite = Math.min(remaining, silenceChunk.length);
+                fs.writeSync(fdEnd, silenceChunk, 0, toWrite);
+                remaining -= toWrite;
               }
+              fs.closeSync(fdEnd);
+              console.log(`[Audio Alignment] Padded ${endSilenceSize} bytes to ${tempPath} to reach master size ${targetSizeBytes} (${totalCallDurationSec}s)`);
             }
           } catch (padErr) {
             console.error("Error padding PCM file for alignment:", padErr);

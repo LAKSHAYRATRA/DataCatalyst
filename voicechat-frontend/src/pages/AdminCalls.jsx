@@ -2033,7 +2033,7 @@ export default function AdminCalls() {
                                 </div>
                                 <div>
                                     <div className="text-sm text-neutral-400 mb-1">Call Duration</div>
-                                    <div className="text-white">{formatDuration(selectedCall.recordingAStartedAt || selectedCall.recordingBStartedAt || selectedCall.actualCallStartedAt || selectedCall.startedAt, selectedCall.endedAt)}</div>
+                                    <div className="text-white">{selectedCall.actualCallDuration ? formatSeconds(selectedCall.actualCallDuration) : formatDuration(selectedCall.actualCallStartedAt || selectedCall.startedAt, selectedCall.endedAt)}</div>
                                 </div>
                             </div>
 

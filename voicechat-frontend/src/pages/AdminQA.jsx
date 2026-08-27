@@ -703,7 +703,7 @@ export default function AdminQA() {
                                 </div>
                                 <div>
                                     <div className="text-sm text-neutral-400 mb-1">Call Duration</div>
-                                    <div className="text-white">{dur(getCallStart(reviewing), reviewing.endedAt)}</div>
+                                    <div className="text-white">{reviewing.actualCallDuration ? formatSeconds(reviewing.actualCallDuration) : dur(reviewing.actualCallStartedAt || reviewing.startedAt, reviewing.endedAt)}</div>
                                 </div>
                             </div>
 
