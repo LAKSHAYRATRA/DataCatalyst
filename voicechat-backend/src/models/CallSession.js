@@ -90,6 +90,9 @@ const callSessionSchema = new mongoose.Schema(
     recordingAQCResult: { type: mongoose.Schema.Types.Mixed, default: null },
     recordingBQCResult: { type: mongoose.Schema.Types.Mixed, default: null },
 
+    // Recording and Chunk Recovery Audit Logs
+    recordingAuditLogs: [mongoose.Schema.Types.Mixed],
+
     // Dual-QA Cross Audit & Ambiguity Tracking
     needsSecondQaReview: { type: Boolean, default: false },
     firstQaReview: {

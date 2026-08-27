@@ -2037,6 +2037,72 @@ export default function AdminCalls() {
                                 </div>
                             </div>
 
+                            {/* Recording Audit & Chunk Verification Log */}
+                            {selectedCall.recordingAuditLogs && selectedCall.recordingAuditLogs.length > 0 && (
+                                <div className="bg-neutral-900 border border-neutral-700 rounded-xl p-4 space-y-3">
+                                    <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-sm font-bold text-white">📊 Recording & Chunk Verification Log</span>
+                                            <span className="px-2 py-0.5 text-[10px] font-mono bg-emerald-500/20 text-emerald-300 rounded border border-emerald-500/30">
+                                                SACK Audited
+                                            </span>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                Swal.fire({
+                                                    title: 'Recording Audit Log',
+                                                    html: `<pre class="text-left bg-neutral-900 text-neutral-200 text-xs p-3 rounded font-mono overflow-auto max-h-96">${JSON.stringify(selectedCall.recordingAuditLogs, null, 2)}</pre>`,
+                                                    customClass: { popup: 'bg-neutral-800 text-white border border-neutral-700 max-w-2xl' },
+                                                    confirmButtonColor: '#ea580c'
+                                                });
+                                            }}
+                                            className="px-2.5 py-1 bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 text-neutral-300 text-xs rounded-lg transition-colors font-mono"
+                                        >
+                                            View Full JSON
+                                        </button>
+                                    </div>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                        {selectedCall.recordingAuditLogs.map((log, lIdx) => {
+                                            const isUserA = String(log.userId) === String(selectedCall.userA?._id || selectedCall.userA);
+                                            const speakerLabel = isUserA ? (userAName || "Speaker 1") : (userBName || "Speaker 2");
+                                            return (
+                                                <div key={lIdx} className="bg-neutral-800/80 border border-neutral-700/60 rounded-lg p-3 text-xs space-y-1.5 font-mono">
+                                                    <div className="flex items-center justify-between text-neutral-300 font-bold border-b border-neutral-700 pb-1">
+                                                        <span>{speakerLabel}</span>
+                                                        <span className="text-[11px] text-warning-400">{log.finalDurationSeconds ? `${Math.floor(log.finalDurationSeconds / 60)}m ${Math.round(log.finalDurationSeconds % 60)}s` : '-'}</span>
+                                                    </div>
+                                                    <div className="flex justify-between text-neutral-400">
+                                                        <span>Realtime Chunks:</span>
+                                                        <span className="text-white">{log.realtimeChunksReceived || 0}</span>
+                                                    </div>
+                                                    <div className="flex justify-between text-neutral-400">
+                                                        <span>SACK Recovered:</span>
+                                                        <span className={log.missingChunksPatchedViaSack > 0 ? "text-emerald-400 font-bold" : "text-neutral-300"}>
+                                                            +{log.missingChunksPatchedViaSack || 0} chunks
+                                                        </span>
+                                                    </div>
+                                                    <div className="flex justify-between text-neutral-400">
+                                                        <span>Missing Ranges:</span>
+                                                        <span className={log.missingRangesDetected?.length > 0 ? "text-amber-400" : "text-neutral-400"}>
+                                                            {log.missingRangesDetected?.length > 0 
+                                                                ? log.missingRangesDetected.map(r => `${r.start}-${r.end}`).join(", ")
+                                                                : "None (100% OK)"}
+                                                        </span>
+                                                    </div>
+                                                    <div className="flex justify-between text-neutral-400">
+                                                        <span>Silence Padded:</span>
+                                                        <span className={log.silenceSecondsPadded > 0 ? "text-blue-400" : "text-neutral-400"}>
+                                                            {log.silenceSecondsPadded > 0 ? `${log.silenceSecondsPadded}s (${(log.silenceBytesPadded / 1024).toFixed(0)} KB)` : "0s"}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            )}
+
                             <div className="pt-4 border-t border-neutral-700">
                                 <div className="flex items-center justify-between gap-3 mb-3">
                                     <div className="text-sm text-neutral-400">Recordings</div>

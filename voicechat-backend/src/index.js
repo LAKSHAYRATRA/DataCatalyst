@@ -486,9 +486,28 @@ async function cleanupRecording(socket, endedAt, callIdOverride) {
             const currentSize = fs.existsSync(tempPath) ? fs.statSync(tempPath).size : 0;
             const currentSizeSec = currentSize > 0 ? (currentSize / 192000) : 0;
 
+            // Check peer stream size and chunk count to guarantee both files expand to the longer speaker
+            let peerSizeSec = 0;
+            let peerSeqSec = 0;
+            try {
+              const isA = session 
+                ? (String(session.userA) === String(socket.data.userId))
+                : (inMemCall && String(inMemCall.userAId) === String(socket.data.userId));
+              const peerUserId = isA ? (session?.userB || inMemCall?.userBId) : (session?.userA || inMemCall?.userAId);
+              if (peerUserId) {
+                const peerStream = activeStreams.get(`${callId}_${peerUserId}`);
+                if (peerStream) {
+                  peerSeqSec = peerStream.maxSeq >= 0 ? (peerStream.maxSeq + 1) * 0.5 : 0;
+                  if (peerStream.tempLocalPath && fs.existsSync(peerStream.tempLocalPath)) {
+                    peerSizeSec = fs.statSync(peerStream.tempLocalPath).size / 192000;
+                  }
+                }
+              }
+            } catch {}
+
             // Compute master duration across all sources without ever clipping or truncating real speech!
             const streamSeqDuration = (streamObj?.maxSeq !== undefined && streamObj.maxSeq >= 0 ? (streamObj.maxSeq + 1) * 0.5 : 0);
-            const totalCallDurationSec = Math.max(rawDurationSec, streamSeqDuration, currentSizeSec, 1);
+            const totalCallDurationSec = Math.max(rawDurationSec, streamSeqDuration, currentSizeSec, peerSeqSec, peerSizeSec, 1);
 
             const sampleRate = 48000;
             const bytesPerSample = 4; // float32
@@ -497,6 +516,7 @@ async function cleanupRecording(socket, endedAt, callIdOverride) {
 
             if (fs.existsSync(tempPath) && currentSize < targetSizeBytes) {
               const endSilenceSize = targetSizeBytes - currentSize;
+              if (streamObj) streamObj.paddedBytes = endSilenceSize;
               const fdEnd = fs.openSync(tempPath, "a");
               const silenceChunk = Buffer.alloc(Math.min(endSilenceSize, 1024 * 1024), 0);
               let remaining = endSilenceSize;
@@ -541,6 +561,59 @@ async function cleanupRecording(socket, endedAt, callIdOverride) {
           },
         });
         await upload.done();
+
+        // Generate Comprehensive Recording Audit Log
+        const auditEntry = {
+          timestamp: new Date().toISOString(),
+          callId,
+          userId: socket.data.userId,
+          fileName: streamObj?.fileName || filePath.split('/').pop(),
+          s3Key: filePath,
+          realtimeChunksReceived: streamObj?.realtimeCount || (streamObj?.receivedSeqs ? streamObj.receivedSeqs.size : 0),
+          uniqueChunksCovered: streamObj?.receivedSeqs ? streamObj.receivedSeqs.size : 0,
+          maxSequenceIndex: streamObj?.maxSeq || 0,
+          missingRangesDetected: streamObj?.missingRangesIdentified || [],
+          missingChunksPatchedViaSack: streamObj?.patchedCount || 0,
+          silenceBytesPadded: streamObj?.paddedBytes || 0,
+          silenceSecondsPadded: Math.round(((streamObj?.paddedBytes || 0) / 192000) * 100) / 100,
+          finalFileSizeBytes: fs.existsSync(finalUploadPath) ? fs.statSync(finalUploadPath).size : 0,
+          finalDurationSeconds: totalCallDurationSec
+        };
+
+        console.log(`[Recording Audit Log] Call ${callId} (${socket.data.userId}):`, JSON.stringify(auditEntry));
+
+        // 1. Save audit log into MongoDB CallSession
+        CallSession.updateOne(
+          { callId },
+          { $push: { recordingAuditLogs: auditEntry } }
+        ).catch(err => console.error("Error saving audit log to MongoDB:", err));
+
+        // 2. Save audit log to local recordings/ directory
+        try {
+          const recordingsDir = path.join(process.cwd(), "recordings");
+          if (!fs.existsSync(recordingsDir)) fs.mkdirSync(recordingsDir, { recursive: true });
+          const auditFilePath = path.join(recordingsDir, `${callId}_audit.log`);
+          fs.appendFileSync(auditFilePath, JSON.stringify(auditEntry, null, 2) + "\n---\n");
+        } catch (localAuditErr) {
+          console.error("Error writing local audit log:", localAuditErr);
+        }
+
+        // 3. Upload audit log alongside audio in S3 folder
+        try {
+          const auditKey = filePath.replace(/\/[^\/]+$/, `/recording_audit_${socket.data.userId}.json`);
+          const auditUpload = new Upload({
+            client: s3Client,
+            params: {
+              Bucket: BUCKET_NAME,
+              Key: auditKey,
+              Body: JSON.stringify(auditEntry, null, 2),
+              ContentType: "application/json",
+            },
+          });
+          await auditUpload.done();
+        } catch (auditS3Err) {
+          console.error("Error uploading audit log to S3:", auditS3Err);
+        }
 
         // S3 upload succeeded - clean up temp local files
         if (fs.existsSync(tempPath)) fs.unlink(tempPath, () => {});
@@ -1464,16 +1537,29 @@ io.on("connection", (socket) => {
 
       const call = calls.get(callId);
       let peerStreamObj = null;
+      let callStart = call?.actualCallStartedAt;
+
+      let peerUserId = null;
       if (call) {
-        const peerUserId = String(call.userAId) === String(socket.data.userId) ? call.userBId : call.userAId;
-        if (peerUserId) {
-          peerStreamObj = activeStreams.get(`${callId}_${peerUserId}`);
-        }
+        peerUserId = String(call.userAId) === String(socket.data.userId) ? call.userBId : call.userAId;
+      } else {
+        try {
+          const session = await CallSession.findOne({ callId }).select("userA userB actualCallStartedAt").lean();
+          if (session) {
+            peerUserId = String(session.userA) === String(socket.data.userId) ? session.userB : session.userA;
+            if (!callStart && session.actualCallStartedAt) {
+              callStart = session.actualCallStartedAt;
+            }
+          }
+        } catch {}
+      }
+
+      if (peerUserId) {
+        peerStreamObj = activeStreams.get(`${callId}_${peerUserId}`);
       }
 
       // Calculate master target sequence based on client reported max, server stream max, peer stream max, and elapsed call duration
       let durationMaxSeq = 0;
-      const callStart = call?.actualCallStartedAt;
       if (callStart) {
         const elapsedSec = Math.max(0, (Date.now() - new Date(callStart).getTime()) / 1000);
         durationMaxSeq = Math.max(0, Math.floor(elapsedSec * 2) - 1);

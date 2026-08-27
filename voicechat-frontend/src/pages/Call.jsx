@@ -443,6 +443,11 @@ export default function Call() {
       workletNode.connect(gain);
       gain.connect(audioCtx.destination);
 
+      audioCtx.onstatechange = () => {
+        if (audioCtx.state === "suspended") {
+          audioCtx.resume().catch(() => {});
+        }
+      };
     } finally {
       isStartingRecordingRef.current = false;
     }
