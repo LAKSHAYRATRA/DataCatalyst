@@ -475,50 +475,24 @@ async function cleanupRecording(socket, endedAt, callIdOverride) {
               if (updatedSession) session = updatedSession;
             }
 
-            const callStartObj = session?.actualCallStartedAt || inMemCall?.actualCallStartedAt || session?.startedAt || inMemCall?.startedAt;
+            // Determine master call start and end timestamps unconditionally
+            const callStartObj = session?.actualCallStartedAt || session?.startedAt || inMemCall?.actualCallStartedAt || inMemCall?.startedAt;
             const callEndObj = session?.endedAt || inMemCall?.endedAt || now;
 
-            if (callStartObj && fs.existsSync(tempPath)) {
-              const isUserA = session 
-                ? (String(session.userA) === String(socket.data.userId)) 
-                : (inMemCall && String(inMemCall.userAId) === String(socket.data.userId));
+            const callStartTime = callStartObj ? new Date(callStartObj).getTime() : (Date.now() - 600000);
+            const callEndTime = new Date(callEndObj).getTime();
+            const rawDurationSec = Math.max(0, (callEndTime - callStartTime) / 1000);
 
-              const recordingStartedAt = isUserA 
-                ? (session?.recordingAStartedAt || inMemCall?.recordingAStartedAt) 
-                : (session?.recordingBStartedAt || inMemCall?.recordingBStartedAt);
+            // Compute master duration across both streams, DB session, and chunk count
+            const streamSeqDuration = (streamObj?.maxSeq ? (streamObj.maxSeq + 1) * 0.5 : 0);
+            const totalCallDurationSec = Math.max(rawDurationSec, streamSeqDuration, 1);
 
-              const callStartTime = new Date(callStartObj).getTime();
-              const callEndTime = new Date(callEndObj).getTime();
-              const recStartTime = recordingStartedAt ? new Date(recordingStartedAt).getTime() : callStartTime;
+            const sampleRate = 48000;
+            const bytesPerSample = 4; // float32
+            const bytesPerSec = sampleRate * bytesPerSample; // 192,000 bytes/sec
+            const targetSizeBytes = Math.round(totalCallDurationSec * bytesPerSec);
 
-              const sampleRate = socket.data.recordSampleRate || 48000;
-              const bytesPerSample = 4; // float32 is 4 bytes
-              const bytesPerSec = sampleRate * bytesPerSample;
-
-              // 1. Pad Start (pre-pend silence if user started after actualCallStartedAt)
-              const startOffsetSec = Math.max(0, (recStartTime - callStartTime) / 1000);
-              const startSilenceSize = Math.round(startOffsetSec * bytesPerSec);
-              if (startSilenceSize > 0) {
-                const tempPadded = tempPath + ".padded";
-                const fdPadded = fs.openSync(tempPadded, "w");
-                const silenceChunk = Buffer.alloc(Math.min(startSilenceSize, 1024 * 1024), 0);
-                let remaining = startSilenceSize;
-                while (remaining > 0) {
-                  const toWrite = Math.min(remaining, silenceChunk.length);
-                  fs.writeSync(fdPadded, silenceChunk, 0, toWrite);
-                  remaining -= toWrite;
-                }
-                const originalData = fs.readFileSync(tempPath);
-                fs.writeSync(fdPadded, originalData);
-                fs.closeSync(fdPadded);
-
-                try { fs.unlinkSync(tempPath); } catch {}
-                fs.renameSync(tempPadded, tempPath);
-              }
-
-              // 2. Pad End / Trim End (Lock both files to identical target length based on master call duration)
-              const totalCallDurationSec = Math.max(0, (callEndTime - callStartTime) / 1000);
-              const targetSizeBytes = Math.round(totalCallDurationSec * bytesPerSec);
+            if (fs.existsSync(tempPath)) {
               const currentSize = fs.statSync(tempPath).size;
               if (currentSize < targetSizeBytes) {
                 const endSilenceSize = targetSizeBytes - currentSize;
@@ -531,6 +505,7 @@ async function cleanupRecording(socket, endedAt, callIdOverride) {
                   remaining -= toWrite;
                 }
                 fs.closeSync(fdEnd);
+                console.log(`[Audio Alignment] Padded ${endSilenceSize} bytes to ${tempPath} to reach master size ${targetSizeBytes} (${totalCallDurationSec}s)`);
               } else if (currentSize > targetSizeBytes) {
                 fs.truncateSync(tempPath, targetSizeBytes);
               }
@@ -540,7 +515,7 @@ async function cleanupRecording(socket, endedAt, callIdOverride) {
           }
 
           const flacPath = tempPath.replace(".pcm", ".flac");
-          const recordSampleRate = socket.data.recordSampleRate || 48000;
+          const recordSampleRate = 48000;
           await new Promise((res, rej) => {
             ffmpeg()
               .input(tempPath)
@@ -847,8 +822,8 @@ async function endCall(callId, reason) {
     b.leave(`call_${callId}`);
   }
 
-  // Run audio conversion (FFMPEG) and AWS S3 upload asynchronously in background
-  setImmediate(async () => {
+  // Give clients 20s grace window to complete SACK audit and missing chunk upload before fallback cleanup
+  setTimeout(async () => {
     try {
       const socketA = call.a ? io.sockets.sockets.get(call.a) : null;
       const socketB = call.b ? io.sockets.sockets.get(call.b) : null;
@@ -868,7 +843,7 @@ async function endCall(callId, reason) {
     } catch (err) {
       console.error("Error in background call cleanup:", err);
     }
-  });
+  }, 20000);
 }
 
 async function startActualCall(call) {
@@ -1541,6 +1516,17 @@ io.on("connection", (socket) => {
     }
   });
 
+  socket.on("record_stop", async (payload, callback) => {
+    try {
+      const callId = payload?.callId || socket.data.callId || getCallIdForSocket(socket);
+      await cleanupRecording(socket, new Date(), callId);
+      if (callback) callback({ ok: true });
+    } catch (e) {
+      console.error("Error in record_stop:", e);
+      if (callback) callback({ ok: false, error: e.message });
+    }
+  });
+
   socket.on("topic_claim", async ({ topicId, subtopicId }) => {
     try {
       const callId = getCallIdForSocket(socket);
@@ -1632,10 +1618,6 @@ io.on("connection", (socket) => {
       () => endCall(call.callId, "timeout"),
       5000 + 20 * 60 * 1000
     );
-  });
-
-  socket.on("record_stop", () => {
-    cleanupRecording(socket);
   });
 
   socket.on("disconnect", () => {

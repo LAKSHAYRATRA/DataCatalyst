@@ -515,7 +515,7 @@ export default function Call() {
                 status: totalCount > 0 ? `✓ All ${totalCount.toLocaleString()} audio chunks verified! Finalizing...` : "✓ All audio chunks verified! Finalizing...",
                 isFinalizing: true 
               });
-              try { socket.emit("record_stop"); } catch {}
+              try { socket.emit("record_stop", { callId: activeCallId }); } catch {}
               clearCallAudioChunks(activeCallId);
               // Brief 600ms smooth confirmation before transitioning to feedback
               setTimeout(resolve, 600);
@@ -525,11 +525,11 @@ export default function Call() {
           });
         } catch (err) {
           console.error("Error in stopCallRecording:", err);
-          try { socket.emit("record_stop"); } catch {}
+          try { socket.emit("record_stop", { callId: activeCallId }); } catch {}
           if (activeCallId) clearCallAudioChunks(activeCallId);
         }
       } else {
-        try { if (socket) socket.emit("record_stop"); } catch {}
+        try { if (socket) socket.emit("record_stop", { callId: activeCallId }); } catch {}
         if (activeCallId) clearCallAudioChunks(activeCallId);
       }
     } finally {
