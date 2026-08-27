@@ -61,6 +61,7 @@ export default function Call() {
   const localStreamRef = useRef(null);
   const audioContextRef = useRef(null);
   const workletNodeRef = useRef(null);
+  const wakeLockRef = useRef(null);
   const pendingChunksRef = useRef(new Map());
   const currentSeqRef = useRef(0);
   const callRef = useRef({
@@ -384,6 +385,13 @@ export default function Call() {
       const AudioContextClass = window.AudioContext || window.webkitAudioContext;
       const audioCtx = new AudioContextClass({ sampleRate: 48000 });
       audioContextRef.current = audioCtx;
+
+      // Keep screen and CPU audio thread awake during active call
+      if ("wakeLock" in navigator) {
+        try {
+          wakeLockRef.current = await navigator.wakeLock.request("screen");
+        } catch {}
+      }
       
       await audioCtx.audioWorklet.addModule("/pcm-worklet.js");
       const workletNode = new AudioWorkletNode(audioCtx, "pcm-processor");
@@ -720,11 +728,17 @@ export default function Call() {
       peerUsername: null,
     };
 
+    if (wakeLockRef.current) {
+      try {
+        await wakeLockRef.current.release();
+      } catch {}
+      wakeLockRef.current = null;
+    }
+
     setCallId(null);
     setRole(null);
     setPeerId(null);
     setPeerUserId(null);
-    setPeerUsername(null);
     setPeerUsername(null);
     setCallEndTime(null);
   }

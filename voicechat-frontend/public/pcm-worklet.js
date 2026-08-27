@@ -1,8 +1,9 @@
 class PcmProcessor extends AudioWorkletProcessor {
   constructor() {
     super();
-    // Buffer size for 0.5 seconds at 48000 Hz = 24000 samples
-    this.bufferSize = 24000;
+    // Dynamic buffer size for exactly 0.5 seconds based on native hardware sample rate
+    const currentRate = typeof sampleRate !== "undefined" ? sampleRate : 48000;
+    this.bufferSize = Math.round(currentRate * 0.5);
     this.buffer = new Float32Array(this.bufferSize);
     this.offset = 0;
 
@@ -11,10 +12,10 @@ class PcmProcessor extends AudioWorkletProcessor {
     this.currentGain = 1.0;
     this.envelope = 0.0;
 
-    // High-pass filter state (80Hz cutoff to eliminate AC electrical hum and low-end mic rumble)
+    // High-pass filter state (80Hz cutoff adapted dynamically to hardware sample rate)
     this.hpX1 = 0;
     this.hpY1 = 0;
-    this.hpAlpha = 0.9895; // 80Hz cutoff at 48000Hz sample rate
+    this.hpAlpha = Math.exp(-2 * Math.PI * 80 / currentRate);
 
     this.port.onmessage = (e) => {
       if (typeof e.data === "object" && e.data !== null) {

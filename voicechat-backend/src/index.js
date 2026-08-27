@@ -462,65 +462,77 @@ async function cleanupRecording(socket, endedAt, callIdOverride) {
         if (tempPath.endsWith(".pcm")) {
           try {
             let session = await CallSession.findOne({ callId });
-            if (session && session.actualCallStartedAt) {
-              const now = endedAt || new Date();
-              // Atomically freeze session.endedAt so both speakers use the exact same master end timestamp
-              if (!session.endedAt) {
-                const updatedSession = await CallSession.findOneAndUpdate(
-                  { _id: session._id, $or: [{ endedAt: null }, { endedAt: { $exists: false } }] },
-                  { $set: { endedAt: now } },
-                  { new: true }
-                );
-                if (updatedSession) session = updatedSession;
-              }
+            const inMemCall = calls.get(callId);
+            const now = endedAt || inMemCall?.endedAt || new Date();
 
-              const isUserA = String(session.userA) === String(socket.data.userId);
-              const recordingStartedAt = isUserA ? session.recordingAStartedAt : session.recordingBStartedAt;
-              
-              const callStartTime = new Date(session.actualCallStartedAt).getTime();
-              const callEndTime = new Date(session.endedAt || now).getTime();
+            // Atomically freeze session.endedAt so both speakers use the exact same master end timestamp
+            if (session && !session.endedAt) {
+              const updatedSession = await CallSession.findOneAndUpdate(
+                { _id: session._id, $or: [{ endedAt: null }, { endedAt: { $exists: false } }] },
+                { $set: { endedAt: now } },
+                { new: true }
+              );
+              if (updatedSession) session = updatedSession;
+            }
+
+            const callStartObj = session?.actualCallStartedAt || inMemCall?.actualCallStartedAt || session?.startedAt || inMemCall?.startedAt;
+            const callEndObj = session?.endedAt || inMemCall?.endedAt || now;
+
+            if (callStartObj && fs.existsSync(tempPath)) {
+              const isUserA = session 
+                ? (String(session.userA) === String(socket.data.userId)) 
+                : (inMemCall && String(inMemCall.userAId) === String(socket.data.userId));
+
+              const recordingStartedAt = isUserA 
+                ? (session?.recordingAStartedAt || inMemCall?.recordingAStartedAt) 
+                : (session?.recordingBStartedAt || inMemCall?.recordingBStartedAt);
+
+              const callStartTime = new Date(callStartObj).getTime();
+              const callEndTime = new Date(callEndObj).getTime();
               const recStartTime = recordingStartedAt ? new Date(recordingStartedAt).getTime() : callStartTime;
-              
+
               const sampleRate = socket.data.recordSampleRate || 48000;
               const bytesPerSample = 4; // float32 is 4 bytes
               const bytesPerSec = sampleRate * bytesPerSample;
-              
+
               // 1. Pad Start (pre-pend silence if user started after actualCallStartedAt)
               const startOffsetSec = Math.max(0, (recStartTime - callStartTime) / 1000);
               const startSilenceSize = Math.round(startOffsetSec * bytesPerSec);
-              if (startSilenceSize > 0 && fs.existsSync(tempPath)) {
-                const tempPadded = tempPath + '.padded';
-                const wStream = fs.createWriteStream(tempPadded);
-                const silenceBuffer = Buffer.alloc(Math.min(startSilenceSize, 4 * 1024 * 1024), 0);
+              if (startSilenceSize > 0) {
+                const tempPadded = tempPath + ".padded";
+                const fdPadded = fs.openSync(tempPadded, "w");
+                const silenceChunk = Buffer.alloc(Math.min(startSilenceSize, 1024 * 1024), 0);
                 let remaining = startSilenceSize;
                 while (remaining > 0) {
-                  const chunk = remaining >= silenceBuffer.length ? silenceBuffer : Buffer.alloc(remaining, 0);
-                  wStream.write(chunk);
-                  remaining -= chunk.length;
+                  const toWrite = Math.min(remaining, silenceChunk.length);
+                  fs.writeSync(fdPadded, silenceChunk, 0, toWrite);
+                  remaining -= toWrite;
                 }
-                await new Promise((res, rej) => {
-                  const rStream = fs.createReadStream(tempPath);
-                  rStream.pipe(wStream, { end: false });
-                  rStream.on('end', () => { wStream.end(); res(); });
-                  rStream.on('error', rej);
-                  wStream.on('error', rej);
-                });
+                const originalData = fs.readFileSync(tempPath);
+                fs.writeSync(fdPadded, originalData);
+                fs.closeSync(fdPadded);
+
+                try { fs.unlinkSync(tempPath); } catch {}
                 fs.renameSync(tempPadded, tempPath);
               }
 
               // 2. Pad End / Trim End (Lock both files to identical target length based on master call duration)
               const totalCallDurationSec = Math.max(0, (callEndTime - callStartTime) / 1000);
               const targetSizeBytes = Math.round(totalCallDurationSec * bytesPerSec);
-              if (fs.existsSync(tempPath)) {
-                const currentStats = fs.statSync(tempPath);
-                const currentSize = currentStats.size;
-                if (currentSize < targetSizeBytes) {
-                  const endSilenceSize = targetSizeBytes - currentSize;
-                  const silenceBuffer = Buffer.alloc(endSilenceSize, 0);
-                  fs.appendFileSync(tempPath, silenceBuffer);
-                } else if (currentSize > targetSizeBytes) {
-                  fs.truncateSync(tempPath, targetSizeBytes);
+              const currentSize = fs.statSync(tempPath).size;
+              if (currentSize < targetSizeBytes) {
+                const endSilenceSize = targetSizeBytes - currentSize;
+                const fdEnd = fs.openSync(tempPath, "a");
+                const silenceChunk = Buffer.alloc(Math.min(endSilenceSize, 1024 * 1024), 0);
+                let remaining = endSilenceSize;
+                while (remaining > 0) {
+                  const toWrite = Math.min(remaining, silenceChunk.length);
+                  fs.writeSync(fdEnd, silenceChunk, 0, toWrite);
+                  remaining -= toWrite;
                 }
+                fs.closeSync(fdEnd);
+              } else if (currentSize > targetSizeBytes) {
+                fs.truncateSync(tempPath, targetSizeBytes);
               }
             }
           } catch (padErr) {
