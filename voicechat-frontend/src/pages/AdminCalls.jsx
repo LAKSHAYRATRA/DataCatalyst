@@ -77,6 +77,7 @@ export default function AdminCalls() {
     const [selectedCallIds, setSelectedCallIds] = useState([]);
     const [isBulkDeleting, setIsBulkDeleting] = useState(false);
     const [isTranscribingMonologue, setIsTranscribingMonologue] = useState({});
+    const [isTranscribingCall, setIsTranscribingCall] = useState({});
 
     useEffect(() => {
         setSelectedCallIds([]);
@@ -809,6 +810,52 @@ export default function AdminCalls() {
         }
     }
 
+    async function handleSendAsCall(callId) {
+        const result = await Swal.fire({
+            title: 'Transcribe as Full Call Dialogue?',
+            html: `Send the complete 2-person call recording for <strong>full call transcription</strong>?`,
+            icon: 'question',
+            showCancelButton: true,
+            confirmButtonColor: '#4f46e5',
+            cancelButtonColor: '#404040',
+            confirmButtonText: 'Yes, Transcribe as Call'
+        });
+
+        if (!result.isConfirmed) return;
+
+        try {
+            setIsTranscribingCall(prev => ({ ...prev, [callId]: true }));
+            const data = await apiPostJson(`/api/admin/calls/${callId}/transcribe-call`, {});
+            
+            Swal.fire({
+                icon: 'success',
+                title: 'Sent for Full Call Transcription!',
+                text: data.message || `Call is now in the transcription queue as a complete dialogue.`,
+                timer: 2000,
+                showConfirmButton: false
+            });
+
+            if (selectedCall?.callId === callId) {
+                setSelectedCall(prev => ({
+                    ...prev,
+                    transcribedAsCall: true,
+                    callTranscriptionStatus: 'transcribed',
+                    isMonologued: false
+                }));
+            }
+            await loadCalls();
+        } catch (err) {
+            Swal.fire({
+                icon: 'error',
+                title: 'Action Failed',
+                text: err.message || 'Could not send audio for call transcription.',
+                confirmButtonColor: '#ea580c'
+            });
+        } finally {
+            setIsTranscribingCall(prev => ({ ...prev, [callId]: false }));
+        }
+    }
+
     async function handlePurgeRejected() {
         const result = await Swal.fire({
             title: 'Purge Rejected Recordings?',
@@ -1514,7 +1561,11 @@ export default function AdminCalls() {
                                                         </td>
                                                         {isAdmin ? (
                                                             <td className="px-2.5 py-2 whitespace-nowrap">
-                                                                {call.isMonologued ? (
+                                                                {call.transcribedAsCall || call.callTranscriptionStatus === 'transcribed' ? (
+                                                                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-bold rounded-lg bg-indigo-900/70 text-indigo-200 border border-indigo-500/50 shadow-sm shadow-indigo-950/40">
+                                                                        <span>📞 Transcribed Call</span>
+                                                                    </span>
+                                                                ) : call.isMonologued ? (
                                                                     <span className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-bold rounded-lg bg-purple-900/70 text-purple-200 border border-purple-500/50 shadow-sm shadow-purple-950/40">
                                                                         <span>🎙️ Monologued</span>
                                                                         <span className="text-[10px] text-purple-300 font-normal">
@@ -1523,7 +1574,7 @@ export default function AdminCalls() {
                                                                     </span>
                                                                 ) : (
                                                                     <span className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-lg bg-amber-950/40 text-amber-300 border border-amber-800/40">
-                                                                        ⏳ Pending Monologue
+                                                                        ⏳ Pending Action
                                                                     </span>
                                                                 )}
                                                             </td>
@@ -2470,6 +2521,54 @@ export default function AdminCalls() {
                                 </div>
                                 {!selectedCall.recordingAFile && !selectedCall.recordingBFile && (
                                     <div className="text-neutral-500 text-sm">No recordings available</div>
+                                )}
+
+                                {/* Combined Transcribe as Call Button (Admin Only) */}
+                                {isAdmin && (selectedCall.recordingAFile || selectedCall.recordingBFile) && (
+                                    <div className="mt-6 pt-5 border-t border-neutral-700 bg-neutral-900/80 p-4.5 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4 border border-indigo-500/30 shadow-2xl">
+                                        <div className="flex items-center gap-3">
+                                            <div className="w-10 h-10 rounded-xl bg-indigo-600/20 border border-indigo-500/40 text-indigo-300 flex items-center justify-center text-lg font-bold shrink-0">
+                                                📞
+                                            </div>
+                                            <div>
+                                                <div className="text-white text-xs font-bold uppercase tracking-wider flex items-center gap-2">
+                                                    <span>Transcribe as Call</span>
+                                                    <span className="text-[10px] bg-indigo-500/20 text-indigo-300 px-2 py-0.5 rounded-full border border-indigo-500/30 font-semibold">
+                                                        Admin Only
+                                                    </span>
+                                                </div>
+                                                <p className="text-neutral-400 text-[11px] mt-0.5">
+                                                    Transcribe complete 2-person dialogue, irrespective of individual speaker rejection states.
+                                                </p>
+                                            </div>
+                                        </div>
+
+                                        <div className="flex items-center gap-2 w-full sm:w-auto shrink-0">
+                                            {selectedCall.transcribedAsCall || selectedCall.callTranscriptionStatus === 'transcribed' ? (
+                                                <div className="w-full sm:w-auto px-4 py-2 bg-indigo-950/80 border border-indigo-500/50 rounded-xl text-center text-xs font-bold text-indigo-300 shadow-md">
+                                                    ✓ Transcribed as Call
+                                                </div>
+                                            ) : (
+                                                <button
+                                                    onClick={() => handleSendAsCall(selectedCall.callId)}
+                                                    disabled={isTranscribingCall[selectedCall.callId]}
+                                                    className="w-full sm:w-auto px-5 py-2.5 bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 disabled:opacity-50 text-white rounded-xl text-xs font-bold shadow-lg shadow-indigo-900/30 transition-all flex items-center justify-center gap-2 border border-indigo-400/30 active:scale-95"
+                                                >
+                                                    {isTranscribingCall[selectedCall.callId] ? (
+                                                        <>
+                                                            <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                                            <span>Sending to Pipeline...</span>
+                                                        </>
+                                                    ) : (
+                                                        <>
+                                                            <span>📞</span>
+                                                            <span>Transcribe as Call</span>
+                                                        </>
+                                                    )}
+                                                </button>
+                                            )}
+                                        </div>
+                                    </div>
                                 )}
                             </div>
                         </div>

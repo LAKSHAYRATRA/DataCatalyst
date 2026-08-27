@@ -138,7 +138,19 @@ router.get("/qa/calls/:callId/recording/:speaker", async (req, res) => {
     const call = await CallSession.findOne({ callId });
     if (!call) return res.status(404).json({ error: "Call not found" });
 
-    const key = speaker === "speaker1" ? call.recordingAFile : call.recordingBFile;
+    const userAStr = (call.userA?._id || call.userA || "").toString();
+    const userBStr = (call.userB?._id || call.userB || "").toString();
+    const speakerStr = String(speaker).trim();
+
+    let key;
+    if (speakerStr === "speaker1" || speakerStr === "userA" || speakerStr === userAStr) {
+      key = call.recordingAFile;
+    } else if (speakerStr === "speaker2" || speakerStr === "userB" || speakerStr === userBStr) {
+      key = call.recordingBFile;
+    } else {
+      key = call.recordingAFile || call.recordingBFile;
+    }
+
     if (!key) return res.status(404).json({ error: "Recording file not found" });
 
     if (key.startsWith("local:")) {
@@ -190,10 +202,22 @@ router.get("/qa/segmentation-calls", requireAuth(JWT_SECRET), async (req, res) =
     const tab = req.query.tab || 'pending'; // pending, approved, rejected, logs, all
     const search = (req.query.search || '').trim();
 
-    // Fetch all approved call sessions
-    let callSessionQuery = { callStatus: "approved" };
+    // Fetch all approved or force-transcribed call sessions
+    let callSessionQuery = {
+      $or: [
+        { callStatus: "approved" },
+        { transcribedAsCall: true },
+        { callTranscriptionStatus: "transcribed" },
+        { isApprovedForTranscription: true }
+      ]
+    };
     if (search) {
-      callSessionQuery.callId = { $regex: search, $options: 'i' };
+      callSessionQuery = {
+        $and: [
+          callSessionQuery,
+          { callId: { $regex: search, $options: 'i' } }
+        ]
+      };
     }
 
     const approvedCalls = await CallSession.find(callSessionQuery)
@@ -585,9 +609,21 @@ router.get("/qa/transcription-calls", requireAuth(JWT_SECRET), async (req, res) 
     const search = (req.query.search || '').trim();
     const filterStatus = req.query.status || 'all';
 
-    let callSessionQuery = { callStatus: "approved" };
+    let callSessionQuery = {
+      $or: [
+        { callStatus: "approved" },
+        { transcribedAsCall: true },
+        { callTranscriptionStatus: "transcribed" },
+        { isApprovedForTranscription: true }
+      ]
+    };
     if (search) {
-      callSessionQuery.callId = { $regex: search, $options: 'i' };
+      callSessionQuery = {
+        $and: [
+          callSessionQuery,
+          { callId: { $regex: search, $options: 'i' } }
+        ]
+      };
     }
 
     const approvedCalls = await CallSession.find(callSessionQuery)
@@ -2062,7 +2098,7 @@ qaCallRouter.get("/calls/:callId/spectrogram/:userId", async (req, res) => {
         const call = await CallSession.findOne({ callId }).lean();
         if (!call) return res.status(404).json({ error: "Call not found" });
 
-        const isUserA = String(call.userA) === String(userId);
+        const isUserA = (call.userA?._id || call.userA || "").toString() === String(userId);
         const qcResult = isUserA ? call.recordingAQCResult : call.recordingBQCResult;
         
         if (!qcResult || !qcResult.spectrogramS3Key) {
@@ -2270,7 +2306,7 @@ qaCallRouter.post("/calls/:callId/analyze/:userId", async (req, res) => {
             plotBase64 = lambdaResult.freq.spectrogram_img || "";
         }
 
-        const isUserA = String(call.userA) === String(userId);
+        const isUserA = (call.userA?._id || call.userA || "").toString() === String(userId);
         const updateField = isUserA ? "recordingAQCResult" : "recordingBQCResult";
 
         await CallSession.updateOne(
@@ -3404,6 +3440,59 @@ router.post("/calls/:callId/reject-monologue", async (req, res) => {
         });
     } catch (error) {
         console.error("Error rejecting monologue recording:", error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// ===== TRANSCRIBE REJECTED/ANY CALL AS FULL CALL DIALOGUE (ADMIN ONLY) =====
+router.post("/calls/:callId/transcribe-call", async (req, res) => {
+    try {
+        const { callId } = req.params;
+
+        const call = await CallSession.findOne({ callId })
+            .populate("userA", "firstname lastname username email speaker_id")
+            .populate("userB", "firstname lastname username email speaker_id");
+
+        if (!call) return res.status(404).json({ error: "Call not found" });
+
+        if (!call.recordingAFile && !call.recordingBFile) {
+            return res.status(400).json({ error: "No audio recordings found for this call." });
+        }
+
+        // Mark CallSession as transcribed as full call
+        call.transcribedAsCall = true;
+        call.callTranscriptionStatus = 'transcribed';
+        call.isMonologued = false; // ensure it's treated as full call
+        await call.save();
+
+        // Create or update TranscriptionCall record for full call queue
+        let transDoc = await TranscriptionCall.findOne({ call_id: call.callId });
+        if (!transDoc) {
+            transDoc = new TranscriptionCall({
+                call_id: call.callId,
+                audio1Name: call.recordingAFile || '',
+                audio2Name: call.recordingBFile || '',
+                isMonologue: false,
+                ready_for_transcription: true,
+                transcription_status: 'PENDING_TRANSCRIPTION',
+                Segmentation_Done: false,
+            });
+            await transDoc.save();
+        } else {
+            transDoc.audio1Name = call.recordingAFile || transDoc.audio1Name || '';
+            transDoc.audio2Name = call.recordingBFile || transDoc.audio2Name || '';
+            transDoc.isMonologue = false;
+            transDoc.ready_for_transcription = true;
+            await transDoc.save();
+        }
+
+        res.json({
+            success: true,
+            message: `Call ${call.callId} successfully sent for full call transcription!`,
+            call
+        });
+    } catch (error) {
+        console.error("Error sending call transcription:", error);
         res.status(500).json({ error: error.message });
     }
 });

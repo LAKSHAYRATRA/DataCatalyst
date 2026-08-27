@@ -116,6 +116,10 @@ const callSessionSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.Mixed,
       default: {}
     },
+
+    // Full Call Dialogue transcription tracking (irrespective of individual speaker rejection)
+    transcribedAsCall: { type: Boolean, default: false },
+    callTranscriptionStatus: { type: String, enum: ['pending', 'transcribed', 'rejected'], default: 'pending' },
   },
   { timestamps: true }
 );
