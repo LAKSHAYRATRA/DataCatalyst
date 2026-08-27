@@ -322,6 +322,21 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const { pathname } = useLocation();
 
+  const publicRoutes = [
+    "/login",
+    "/signup",
+    "/forgot-password",
+    "/reset-password",
+    "/",
+    "/about",
+    "/terms",
+    "/privacy",
+    "/support",
+    "/earnings",
+    "/community"
+  ];
+  const isPublicRoute = publicRoutes.includes(pathname);
+
   useEffect(() => {
     window.scrollTo(0, 0);
   }, [pathname]);
@@ -340,10 +355,11 @@ export default function App() {
     checkAuth();
   }, []);
 
-  if (loading) {
+  // Only block protected routes with a loading spinner; public pages render instantly
+  if (loading && !isPublicRoute) {
     return (
-      <div className="min-h-screen bg-neutral-900 flex items-center justify-center">
-        <div className="w-12 h-12 border-4 border-warning-200 border-t-warning-600 rounded-full animate-spin"></div>
+      <div className="min-h-screen bg-neutral-950 flex items-center justify-center">
+        <div className="w-10 h-10 border-3 border-neutral-700 border-t-warning-500 rounded-full animate-spin"></div>
       </div>
     );
   }
