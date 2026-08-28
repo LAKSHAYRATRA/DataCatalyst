@@ -462,7 +462,8 @@ export default function AdminLanguageApps() {
             const res = await apiFetch(`${REVIEW_BASE}/${userId}/${appId}/analyze${sampleQuery}`, {
                 method: "POST"
             });
-            setQcData(prev => ({ ...prev, [key]: res.qcResult }));
+            const data = res?.qcResult || res?.freq || res;
+            setQcData(prev => ({ ...prev, [key]: data }));
         } catch (e) {
             setError("QC Analysis Failed: " + e.message);
         } finally {
@@ -929,6 +930,18 @@ export default function AdminLanguageApps() {
                                                                 </td>
                                                                 <td className="px-4 py-3.5">
                                                                     <div className="flex gap-2 items-center">
+                                                                        <button
+                                                                            onClick={() => {
+                                                                                setSelectedApplicantModal(app);
+                                                                                const firstKey = `${app.appId}_s_0`;
+                                                                                setShowSpectrogram(prev => ({ ...prev, [firstKey]: true }));
+                                                                            }}
+                                                                            className="px-2.5 py-1.5 bg-violet-900/60 hover:bg-violet-800/80 text-violet-200 border border-violet-700/50 rounded-lg text-xs font-bold flex items-center gap-1 transition-colors shadow-sm"
+                                                                            title="Inspect 0–24kHz Mel Spectrogram"
+                                                                        >
+                                                                            <span>📊</span>
+                                                                            <span>Spectrogram</span>
+                                                                        </button>
                                                                         <button
                                                                             onClick={() => setSelectedApplicantModal(app)}
                                                                             className="px-2.5 py-1.5 bg-neutral-700 hover:bg-neutral-600 text-white rounded-lg text-xs font-bold flex items-center gap-1 transition-colors shadow-sm"

@@ -1045,10 +1045,10 @@ export default function QaPhrases() {
                             <button
                               type="button"
                               onClick={() => toggleSpectrogram(p._id)}
-                              className={`w-full py-2 px-3 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-2 shadow-sm ${
+                              className={`w-full py-2.5 px-3 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-2 shadow-md ${
                                 showSpectrogram[p._id]
-                                  ? "bg-violet-600 text-white shadow-violet-600/30"
-                                  : "bg-neutral-800 hover:bg-neutral-700 text-violet-300 border border-violet-500/30"
+                                  ? "bg-violet-700 text-white ring-2 ring-violet-400"
+                                  : "bg-gradient-to-r from-violet-700 to-indigo-700 hover:from-violet-600 hover:to-indigo-600 text-white"
                               }`}
                               title="Toggle 0–24kHz Mel Spectrogram analysis with Audacity settings"
                             >
