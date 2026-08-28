@@ -31,7 +31,7 @@ export async function fetchAudioAndDecode(url) {
     }
 }
 
-export async function fetchAndConvertToWav(url) {
+export async function fetchDirectAudioBlob(url) {
     let token = null;
     const cookies = document.cookie.split(";").map((c) => c.trim());
     const vcCookie = cookies.find((c) => c.startsWith("vc_token="));
@@ -43,6 +43,30 @@ export async function fetchAndConvertToWav(url) {
         headers: token ? { Authorization: `Bearer ${token}` } : {}
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return await res.blob();
+}
+
+export async function fetchAndConvertToWav(url, forceConversion = false) {
+    let token = null;
+    const cookies = document.cookie.split(";").map((c) => c.trim());
+    const vcCookie = cookies.find((c) => c.startsWith("vc_token="));
+    if (vcCookie) token = vcCookie.split("=")[1];
+    else token = localStorage.getItem("vc_token");
+
+    const res = await fetch(url, { 
+        credentials: "include",
+        headers: token ? { Authorization: `Bearer ${token}` } : {}
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+    const contentType = (res.headers.get("content-type") || "").toLowerCase();
+    
+    // If not explicitly forcing a WAV conversion and the format is already browser-playable (FLAC/WAV/WebM/OGG),
+    // return the raw blob directly for instant 0ms load time!
+    if (!forceConversion && (contentType.includes("flac") || contentType.includes("wav") || contentType.includes("webm") || contentType.includes("ogg") || contentType.includes("mpeg"))) {
+        return await res.blob();
+    }
+
     const arrayBuffer = await res.arrayBuffer();
 
     // 2. Decode to PCM using Web Audio API

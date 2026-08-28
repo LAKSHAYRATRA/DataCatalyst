@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Play, Pause, Loader2, DownloadCloud } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { fetchAndConvertToWav } from '../lib/audioToWav.js';
+import { fetchDirectAudioBlob } from '../lib/audioToWav.js';
 
 export default function SecureAudioPlayer({ url, requireFullListen = false, onFirstListenComplete }) {
   const audioRef = useRef(null);
@@ -43,7 +43,7 @@ export default function SecureAudioPlayer({ url, requireFullListen = false, onFi
     try {
       setLoading(true);
       const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:3001";
-      const blob = await fetchAndConvertToWav(BACKEND_URL + url);
+      const blob = await fetchDirectAudioBlob(BACKEND_URL + url);
       const objectUrl = URL.createObjectURL(blob);
       setBlobUrl(objectUrl);
       setShouldAutoPlay(true);

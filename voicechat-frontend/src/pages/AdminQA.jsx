@@ -1,8 +1,8 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import AdminNav from "../components/AdminNav.jsx";
 import { getUserInfo } from "../lib/auth.js";
-import { fetchAndConvertToWav } from "../lib/audioToWav.js";
+import { fetchAndConvertToWav, fetchDirectAudioBlob } from "../lib/audioToWav.js";
 import AudioVisualizer from "../components/AudioVisualizer.jsx";
 import MergedCallStudio from "../components/MergedCallStudio.jsx";
 import Swal from "sweetalert2";
@@ -314,13 +314,13 @@ export default function AdminQA() {
         setLoadingAudio(key);
         try {
             const url = `${BACKEND_URL}/api/admin/qa/calls/${callId}/recording/${userId}`;
-            const wavBlob = await fetchAndConvertToWav(url);
-            setAudioUrls((prev) => ({ ...prev, [key]: URL.createObjectURL(wavBlob) }));
+            const audioBlob = await fetchDirectAudioBlob(url);
+            setAudioUrls((prev) => ({ ...prev, [key]: URL.createObjectURL(audioBlob) }));
         } catch (e) {
             Swal.fire({
                 icon: 'error',
-                title: 'Audio Conversion Failed',
-                text: "The audio format could not be converted to WAV in your browser. " + e.message,
+                title: 'Audio Load Failed',
+                text: "Failed to stream audio recording: " + e.message,
                 confirmButtonColor: '#ea580c'
             });
         } finally {

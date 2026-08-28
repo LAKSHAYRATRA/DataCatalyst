@@ -27,8 +27,9 @@ import {
 } from "lucide-react";
 import Swal from "sweetalert2";
 import AdminNav from "../components/AdminNav.jsx";
-import { fetchAndConvertToWav } from "../lib/audioToWav.js";
+import { fetchAndConvertToWav, fetchDirectAudioBlob } from "../lib/audioToWav.js";
 import { getUserInfo } from "../lib/auth.js";
+import SpectrogramViewer from "../components/SpectrogramViewer.jsx";
 
 const BASE = import.meta.env.VITE_BACKEND_URL || "http://localhost:3001";
 const REVIEW_BASE = "/api/admin/qa/language-applications";
@@ -92,7 +93,12 @@ export default function AdminLanguageApps() {
     const [loadingQc, setLoadingQc] = useState({});
     const [lightboxSrc, setLightboxSrc] = useState(null);
     const [selectedApplicantModal, setSelectedApplicantModal] = useState(null);
+    const [showSpectrogram, setShowSpectrogram] = useState({});
     const audioRefs = useRef({});
+
+    const toggleSpectrogram = (key) => {
+        setShowSpectrogram(prev => ({ ...prev, [key]: !prev[key] }));
+    };
 
     // Naming Dialog State
     const [namingModalOpen, setNamingModalOpen] = useState(false);
@@ -268,8 +274,8 @@ export default function AdminLanguageApps() {
         try {
             const sampleQuery = sampleIndex !== null ? `?sampleIndex=${sampleIndex}` : '';
             const url = `${BASE}/api/language-applications/${userId}/${appId}/recording${sampleQuery}`;
-            const wavBlob = await fetchAndConvertToWav(url);
-            const blobUrl = URL.createObjectURL(wavBlob);
+            const audioBlob = await fetchDirectAudioBlob(url);
+            const blobUrl = URL.createObjectURL(audioBlob);
             setAudioSrc(prev => ({ ...prev, [key]: blobUrl }));
             if (autoPlay) {
                 setTimeout(() => {
@@ -278,7 +284,7 @@ export default function AdminLanguageApps() {
                 }, 100);
             }
         } catch (e) {
-            setError("Failed to convert audio: " + e.message);
+            setError("Failed to load audio: " + e.message);
         } finally {
             setLoadingAudio(prev => ({ ...prev, [key]: false }));
         }
@@ -1160,6 +1166,18 @@ export default function AdminLanguageApps() {
 
                                                 <div className="flex items-center gap-2">
                                                     <button
+                                                        onClick={() => toggleSpectrogram(sampleKey)}
+                                                        className={`px-3 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm ${
+                                                            showSpectrogram[sampleKey]
+                                                                ? "bg-violet-600 text-white shadow-violet-600/30"
+                                                                : "bg-neutral-700 hover:bg-neutral-600 text-violet-300 border border-violet-500/30"
+                                                        }`}
+                                                        title="Toggle 0–24kHz Mel Spectrogram analysis with Audacity settings"
+                                                    >
+                                                        <span>📊</span>
+                                                        <span>{showSpectrogram[sampleKey] ? "Hide Spectrogram" : "Mel Spectrogram (0–24k)"}</span>
+                                                    </button>
+                                                    <button
                                                         onClick={() => toggleQC(selectedApplicantModal.userId, selectedApplicantModal.appId, idx)}
                                                         className={`px-3 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm ${
                                                             expandedApp === sampleKey
@@ -1184,6 +1202,20 @@ export default function AdminLanguageApps() {
                                                     </button>
                                                 </div>
                                             </div>
+
+                                            {/* Mel Spectrogram Drawer */}
+                                            {showSpectrogram[sampleKey] && (
+                                                <div className="mt-4 pt-4 border-t border-neutral-700/70">
+                                                    <SpectrogramViewer
+                                                        audioUrl={`${BASE}/api/language-applications/${selectedApplicantModal.userId}/${selectedApplicantModal.appId}/recording${idx !== null ? `?sampleIndex=${idx}` : ''}`}
+                                                        title={`Sample #${idx + 1} (${sample.phraseId || "Phrase"}) — Mel Spectrogram`}
+                                                        maxFreq={24000}
+                                                        gainDb={20}
+                                                        rangeDb={120}
+                                                        height={180}
+                                                    />
+                                                </div>
+                                            )}
 
                                             {/* Inline QC Drawer */}
                                             {expandedApp === sampleKey && (

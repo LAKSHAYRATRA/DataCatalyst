@@ -7,6 +7,7 @@ import { getUserInfo } from '../lib/auth';
 import SecureAudioPlayer from '../components/SecureAudioPlayer';
 import AdminNav from '../components/AdminNav.jsx';
 import InteractiveWaveformTrimmer from '../components/InteractiveWaveformTrimmer.jsx';
+import SpectrogramViewer from '../components/SpectrogramViewer.jsx';
 
 export default function QaPhrases() {
   const userInfo = getUserInfo();
@@ -36,6 +37,11 @@ export default function QaPhrases() {
   const [errorQc, setErrorQc] = useState({});
   const [loadingLufs, setLoadingLufs] = useState({});
   const [lightboxSrc, setLightboxSrc] = useState(null);
+  const [showSpectrogram, setShowSpectrogram] = useState({});
+
+  const toggleSpectrogram = (phraseId) => {
+    setShowSpectrogram(prev => ({ ...prev, [phraseId]: !prev[phraseId] }));
+  };
 
   // Audio Trimming States
   const [showTrimModal, setShowTrimModal] = useState(false);
@@ -1035,6 +1041,22 @@ export default function QaPhrases() {
                             </button>
                           )}
 
+                          {p.audioFile && (
+                            <button
+                              type="button"
+                              onClick={() => toggleSpectrogram(p._id)}
+                              className={`w-full py-2 px-3 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-2 shadow-sm ${
+                                showSpectrogram[p._id]
+                                  ? "bg-violet-600 text-white shadow-violet-600/30"
+                                  : "bg-neutral-800 hover:bg-neutral-700 text-violet-300 border border-violet-500/30"
+                              }`}
+                              title="Toggle 0–24kHz Mel Spectrogram analysis with Audacity settings"
+                            >
+                              <span>📊</span>
+                              <span>{showSpectrogram[p._id] ? "Hide Spectrogram" : "Mel Spectrogram (0–24k)"}</span>
+                            </button>
+                          )}
+
                           {p.wasAudioTrimmed && p.originalAudioFile && (
                             <div className="p-3 bg-neutral-900/90 rounded-xl border border-purple-500/40 space-y-2 text-left my-2">
                               <div className="flex items-center justify-between text-xs font-bold text-purple-400">
@@ -1165,6 +1187,20 @@ export default function QaPhrases() {
                         </div>
                       </div>
                     </div>
+
+                    {/* Mel Spectrogram Panel */}
+                    {showSpectrogram[p._id] && (
+                      <div className="border-t border-neutral-200 dark:border-neutral-700 pt-4 mb-4">
+                        <SpectrogramViewer
+                          audioUrl={`${import.meta.env.VITE_BACKEND_URL || "http://localhost:3001"}/api/phrases/${p._id}/audio`}
+                          title={`Phrase ${p.phraseId || p._id} — Mel Spectrogram`}
+                          maxFreq={24000}
+                          gainDb={20}
+                          rangeDb={120}
+                          height={190}
+                        />
+                      </div>
+                    )}
 
                     {/* QC Collapse drawer */}
                     <div className="border-t border-neutral-200 dark:border-neutral-700 pt-4">

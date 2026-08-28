@@ -206,7 +206,10 @@ router.get("/qa/calls/:callId/recording/:speaker", async (req, res) => {
     try {
       const command = new GetObjectCommand({ Bucket: BUCKET_NAME, Key: cleanKey });
       const response = await s3Client.send(command);
-      res.setHeader("Content-Type", response.ContentType || "audio/wav");
+      const s3Ext = path.extname(cleanKey).toLowerCase();
+      const s3Mime = s3Ext === ".flac" ? "audio/flac" : s3Ext === ".wav" ? "audio/wav" : (response.ContentType || "audio/flac");
+      res.setHeader("Content-Type", s3Mime);
+      if (response.ContentLength) res.setHeader("Content-Length", response.ContentLength);
       return response.Body.pipe(res);
     } catch (s3Err) {
       const testFallback = path.join(process.cwd(), "recordings", "test.wav");
@@ -8284,6 +8287,21 @@ router.get("/companies/:id/phrase-workloads/:language", async (req, res) => {
                         }
                     },
                     pendingCount: { $sum: { $cond: [{ $eq: ["$status", "pending"] }, 1, 0] } },
+                    lockedCount: {
+                        $sum: {
+                            $cond: [
+                                {
+                                    $or: [
+                                        { $eq: ["$status", "locked"] },
+                                        { $ne: ["$lockedBy", null] },
+                                        { $ne: ["$qaLockedBy", null] }
+                                    ]
+                                },
+                                1,
+                                0
+                            ]
+                        }
+                    },
                     recordedCount: { $sum: { $cond: [{ $eq: ["$status", "recorded"] }, 1, 0] } },
                     approvedCount: { $sum: { $cond: [{ $eq: ["$status", "approved"] }, 1, 0] } },
                 }
@@ -8295,6 +8313,7 @@ router.get("/companies/:id/phrase-workloads/:language", async (req, res) => {
             reservedCount: 0,
             openPoolCount: 0,
             pendingCount: 0,
+            lockedCount: 0,
             recordedCount: 0,
             approvedCount: 0
         };
@@ -8475,6 +8494,48 @@ router.post("/companies/:id/phrase-workloads/:language/allocate-speaker", async 
             message: cleanSpeakerId 
                 ? `Allocated ${updateResult.modifiedCount} phrases to ${cleanSpeakerId}.` 
                 : `Reset ${updateResult.modifiedCount} phrases back to the open pool.`
+        });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+router.post("/companies/:id/phrase-workloads/:language/unlock-all", async (req, res) => {
+    try {
+        const company = await Company.findById(req.params.id);
+        if (!company) return res.status(404).json({ error: "Company not found" });
+
+        const companyFolder = company.name.replace(/[^a-zA-Z0-9_\-\ ]/g, "").trim();
+        const companyRegex = new RegExp(`^${companyFolder}(_downloaded)?$`, "i");
+        const language = String(req.params.language).trim().toLowerCase();
+
+        const filter = {
+            companyId: { $regex: companyRegex },
+            language: { $regex: new RegExp(`^${language}$`, "i") },
+            $or: [
+                { status: "locked" },
+                { lockedBy: { $ne: null } },
+                { qaLockedBy: { $ne: null } }
+            ]
+        };
+
+        const phrasesToUnlock = await Phrase.find(filter);
+        let unlockedCount = 0;
+
+        for (const p of phrasesToUnlock) {
+            p.status = (p.audioFile || p.recordedAt) ? "recorded" : "pending";
+            p.lockedBy = null;
+            p.lockedAt = null;
+            p.qaLockedBy = null;
+            p.qaLockedAt = null;
+            await p.save();
+            unlockedCount++;
+        }
+
+        res.json({
+            success: true,
+            unlockedCount,
+            message: `Successfully unlocked ${unlockedCount} locked phrases for ${company.name} (${language.toUpperCase()}).`
         });
     } catch (e) {
         res.status(500).json({ error: e.message });

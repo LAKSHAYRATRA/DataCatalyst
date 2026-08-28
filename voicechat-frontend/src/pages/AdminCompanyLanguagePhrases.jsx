@@ -517,6 +517,38 @@ export default function AdminCompanyLanguagePhrases() {
     }
   };
 
+  const handleUnlockAllPhrases = async () => {
+    const confirm = await Swal.fire({
+      title: "Unlock All Locked Phrases?",
+      text: `Unlock all phrases currently claimed or locked by contributors and QA reviewers for ${company ? company.name : "this company"} (${language.toUpperCase()})? They will be immediately returned to the pending recording pool.`,
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonText: "Yes, Unlock All",
+      confirmButtonColor: "#8b5cf6",
+      cancelButtonColor: "#404040"
+    });
+
+    if (!confirm.isConfirmed) return;
+
+    try {
+      const res = await apiPostJson(`/api/admin/companies/${id}/phrase-workloads/${encodeURIComponent(language)}/unlock-all`, {});
+      Swal.fire({
+        icon: "success",
+        title: "Phrases Unlocked!",
+        text: res.message || `Successfully unlocked ${res.unlockedCount} phrases.`,
+        timer: 3000
+      });
+      fetchPhrases(1, search, allocationFilter, statusFilter);
+    } catch (err) {
+      Swal.fire({
+        icon: "error",
+        title: "Unlock Failed",
+        text: err.message,
+        confirmButtonColor: "#ea580c"
+      });
+    }
+  };
+
   const renderTags = (tags) => {
     if (!tags) return null;
     let tagList = [];
@@ -629,7 +661,7 @@ export default function AdminCompanyLanguagePhrases() {
 
         {/* Language Allocation & Workload Summary Banner */}
         {summary && summary.totalCount > 0 && (
-          <div className="mb-6 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+          <div className="mb-6 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3">
             <div className="bg-neutral-800/90 border border-neutral-700 p-3.5 rounded-xl shadow-sm">
               <div className="text-[10px] font-bold uppercase tracking-wider text-neutral-400">Total Phrases</div>
               <div className="text-xl font-black text-white mt-0.5">{summary.totalCount}</div>
@@ -660,6 +692,15 @@ export default function AdminCompanyLanguagePhrases() {
               <div className="text-[10px] font-bold uppercase tracking-wider text-neutral-400">Pending</div>
               <div className="text-xl font-black text-amber-400 mt-0.5">{summary.pendingCount}</div>
               <div className="text-[10px] text-neutral-400 mt-0.5">Unrecorded</div>
+            </div>
+
+            <div className={`p-3.5 rounded-xl shadow-sm border ${summary.lockedCount > 0 ? 'bg-violet-950/40 border-violet-700/60' : 'bg-neutral-800/90 border-neutral-700'}`}>
+              <div className="text-[10px] font-bold uppercase tracking-wider text-violet-300 flex items-center justify-between">
+                <span>Locked</span>
+                {summary.lockedCount > 0 && <span className="text-[10px] animate-pulse text-violet-400 font-bold">ACTIVE</span>}
+              </div>
+              <div className="text-xl font-black text-violet-300 mt-0.5">{summary.lockedCount || 0}</div>
+              <div className="text-[10px] text-violet-400/80 mt-0.5">In Progress</div>
             </div>
 
             <div className="bg-neutral-800/90 border border-neutral-700 p-3.5 rounded-xl shadow-sm">
@@ -727,6 +768,13 @@ export default function AdminCompanyLanguagePhrases() {
               title="Upload new JSON phrase batch for this language with optional speaker allocation"
             >
               <Upload className="w-3.5 h-3.5" /> + Upload Phrases
+            </button>
+            <button
+              onClick={handleUnlockAllPhrases}
+              className="px-3 py-1.5 bg-violet-600 hover:bg-violet-500 text-white font-bold text-xs rounded-lg transition-colors flex items-center gap-1.5 shadow-md shadow-violet-600/20"
+              title="Unlock all currently locked phrases in this language and release them back to pending pool"
+            >
+              🔓 Unlock All Phrases {summary?.lockedCount > 0 ? `(${summary.lockedCount})` : ""}
             </button>
             <button
               onClick={handleAllocateToSpeaker}

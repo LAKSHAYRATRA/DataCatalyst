@@ -26,7 +26,7 @@ import {
 } from "lucide-react";
 import AdminNav from "../components/AdminNav.jsx";
 import { getUserInfo } from "../lib/auth.js";
-import { fetchAndConvertToWav } from "../lib/audioToWav.js";
+import { fetchDirectAudioBlob } from "../lib/audioToWav.js";
 import AudioVisualizer from "../components/AudioVisualizer.jsx";
 import Swal from "sweetalert2";
 
@@ -222,8 +222,8 @@ export default function AdminScriptedCallsReview() {
         setLoadingAudio(key);
         try {
             const url = `${BACKEND_URL}/api/admin/qa/calls/${callId}/recording/${targetSpeaker}`;
-            const wavBlob = await fetchAndConvertToWav(url);
-            const blobUrl = URL.createObjectURL(wavBlob);
+            const audioBlob = await fetchDirectAudioBlob(url);
+            const blobUrl = URL.createObjectURL(audioBlob);
             setAudioUrls(prev => ({ ...prev, [key]: blobUrl }));
             setTimeout(() => {
                 const el = audioRefs.current[key];

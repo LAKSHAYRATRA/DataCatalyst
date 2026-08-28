@@ -4,7 +4,7 @@ import { apiGet, apiPostJson, apiDeleteJson } from "../lib/api.js";
 import AdminNav from "../components/AdminNav.jsx";
 import AudioVisualizer from "../components/AudioVisualizer.jsx";
 import MergedCallStudio from "../components/MergedCallStudio.jsx";
-import { fetchAndConvertToWav } from "../lib/audioToWav.js";
+import { fetchAndConvertToWav, fetchDirectAudioBlob } from "../lib/audioToWav.js";
 import { getUserInfo } from "../lib/auth.js";
 import { createStoredZip } from "../lib/zipStore.js";
 import Swal from "sweetalert2";
@@ -1089,8 +1089,8 @@ export default function AdminCalls() {
         setLoadingAudio(prev => ({ ...prev, [key]: true }));
         try {
             const url = `${BACKEND_URL}/api/admin/qa/calls/${callId}/recording/${userId}`;
-            const wavBlob = await fetchAndConvertToWav(url);
-            setAudioUrls((prev) => ({ ...prev, [key]: URL.createObjectURL(wavBlob) }));
+            const audioBlob = await fetchDirectAudioBlob(url);
+            setAudioUrls((prev) => ({ ...prev, [key]: URL.createObjectURL(audioBlob) }));
         } catch (e) {
             Swal.fire({
                 icon: 'error',

@@ -698,6 +698,8 @@ export async function getAvailablePhrase(req, res) {
         ...baseQuery,
         $or: [
           { status: "pending" },
+          { status: "rejected" },
+          { status: "locked", lockedAt: null },
           { status: "locked", lockedAt: { $lt: expiryTime } }
         ]
       });
@@ -720,6 +722,8 @@ export async function getAvailablePhrase(req, res) {
         _id: existingIds.length > 0 ? { $nin: existingIds } : undefined,
         $or: [
           { status: "pending" },
+          { status: "rejected" },
+          { status: "locked", lockedAt: null },
           { status: "locked", lockedAt: { $lt: expiryTime } }
         ]
       };

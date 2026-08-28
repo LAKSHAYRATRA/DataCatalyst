@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { Navigate } from "react-router-dom";
 import { Download } from "lucide-react";
 import AdminNav from "../components/AdminNav.jsx";
-import { fetchAndConvertToWav } from "../lib/audioToWav.js";
+import { fetchAndConvertToWav, fetchDirectAudioBlob } from "../lib/audioToWav.js";
 import { getUserInfo } from "../lib/auth.js";
 
 const BASE = import.meta.env.VITE_BACKEND_URL || "http://localhost:3001";
@@ -102,8 +102,8 @@ export default function AdminCallApps() {
         setLoadingAudio(prev => ({ ...prev, [key]: true }));
         try {
             const url = `${BASE}/api/language-applications/${userId}/${appId}/recording`;
-            const wavBlob = await fetchAndConvertToWav(url);
-            const blobUrl = URL.createObjectURL(wavBlob);
+            const audioBlob = await fetchDirectAudioBlob(url);
+            const blobUrl = URL.createObjectURL(audioBlob);
             setAudioSrc(prev => ({ ...prev, [key]: blobUrl }));
             if (autoPlay) {
                 setTimeout(() => {
@@ -112,7 +112,7 @@ export default function AdminCallApps() {
                 }, 100);
             }
         } catch (e) {
-            setError("Failed to convert audio: " + e.message);
+            setError("Failed to load audio: " + e.message);
         } finally {
             setLoadingAudio(prev => ({ ...prev, [key]: false }));
         }
