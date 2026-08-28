@@ -1,43 +1,36 @@
-import React, { useState, useEffect, useRef } from "react";
-import { Maximize2, X, Settings2, Sparkles } from "lucide-react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
+import { Maximize2, X, Settings2, Sparkles, Sliders } from "lucide-react";
 
-// Roseus / Magma high-contrast spectrogram colormap
-function getRoseusColor(normVal) {
+// Exact Audacity "Color (Roseus)" Colormap Multi-Stop Palette
+const ROSEUS_STOPS = [
+    { t: 0.00, r: 16,  g: 16,  b: 44 },   // Dark navy / deep indigo silence
+    { t: 0.18, r: 46,  g: 18,  b: 86 },   // Midnight violet
+    { t: 0.35, r: 95,  g: 20,  b: 125 },  // Royal vibrant purple
+    { t: 0.50, r: 160, g: 24,  b: 115 },  // Vivid magenta
+    { t: 0.62, r: 205, g: 45,  b: 75 },   // Hot ruby / red-orange
+    { t: 0.74, r: 240, g: 105, b: 25 },   // Fiery bright orange
+    { t: 0.86, r: 255, g: 185, b: 35 },   // Golden amber yellow
+    { t: 0.95, r: 255, g: 240, b: 110 },  // Brilliant canary yellow
+    { t: 1.00, r: 255, g: 255, b: 225 }   // Warm white core
+];
+
+function getAudacityRoseusColor(normVal) {
     const v = Math.max(0, Math.min(1, normVal));
-    let r, g, b;
-
-    if (v < 0.2) {
-        // Deep purple / black
-        const t = v / 0.2;
-        r = Math.round(15 + t * 45);
-        g = Math.round(10 + t * 10);
-        b = Math.round(30 + t * 70);
-    } else if (v < 0.45) {
-        // Purple to Vivid Magenta
-        const t = (v - 0.2) / 0.25;
-        r = Math.round(60 + t * 120);
-        g = Math.round(20 + t * 15);
-        b = Math.round(100 + t * 40);
-    } else if (v < 0.75) {
-        // Magenta to Flame Orange
-        const t = (v - 0.45) / 0.3;
-        r = Math.round(180 + t * 65);
-        g = Math.round(35 + t * 85);
-        b = Math.round(140 - t * 110);
-    } else if (v < 0.92) {
-        // Orange to Electric Yellow
-        const t = (v - 0.75) / 0.17;
-        r = Math.round(245 + t * 10);
-        g = Math.round(120 + t * 110);
-        b = Math.round(30 + t * 40);
-    } else {
-        // Yellow to White Core
-        const t = (v - 0.92) / 0.08;
-        r = 255;
-        g = Math.round(230 + t * 25);
-        b = Math.round(70 + t * 185);
+    
+    for (let i = 0; i < ROSEUS_STOPS.length - 1; i++) {
+        const s0 = ROSEUS_STOPS[i];
+        const s1 = ROSEUS_STOPS[i + 1];
+        if (v >= s0.t && v <= s1.t) {
+            const range = s1.t - s0.t;
+            const frac = range > 0 ? (v - s0.t) / range : 0;
+            const r = Math.round(s0.r + frac * (s1.r - s0.r));
+            const g = Math.round(s0.g + frac * (s1.g - s0.g));
+            const b = Math.round(s0.b + frac * (s1.b - s0.b));
+            return [r, g, b];
+        }
     }
-    return [r, g, b];
+    const last = ROSEUS_STOPS[ROSEUS_STOPS.length - 1];
+    return [last.r, last.g, last.b];
 }
 
 // Fast In-Place Cooley-Tukey Radix-2 FFT
@@ -85,7 +78,7 @@ function fftRadix2(real, imag) {
     }
 }
 
-// Precompute Blackman-Harris window
+// 4-term Blackman-Harris window for maximum dynamic range (>92 dB side-lobe suppression)
 function getBlackmanHarrisWindow(size) {
     const w = new Float32Array(size);
     const a0 = 0.35875, a1 = 0.48829, a2 = 0.14128, a3 = 0.01168;
@@ -103,13 +96,15 @@ export default function SpectrogramViewer({
     title = "Mel Spectrogram", 
     scaleType = "linear", // "linear" | "mel"
     maxFreq = 24000,
-    gainDb = 20,
-    rangeDb = 120,
-    height = 200
+    gainDb: initialGain = 20,
+    rangeDb: initialRange = 120,
+    height = 220
 }) {
-    const canvasRef = useRef(null);
     const [loading, setLoading] = useState(false);
     const [scale, setScale] = useState(scaleType); // "linear" | "mel"
+    const [gain, setGain] = useState(initialGain); // Audacity: 20 dB
+    const [range, setRange] = useState(initialRange); // Audacity: 120 dB
+    const [showSettings, setShowSettings] = useState(false);
     const [isLightboxOpen, setIsLightboxOpen] = useState(false);
     const [renderedDataUrl, setRenderedDataUrl] = useState(null);
     const [duration, setDuration] = useState(0);
@@ -148,20 +143,24 @@ export default function SpectrogramViewer({
             const dur = buffer.duration;
             setDuration(dur);
 
-            // FFT Parameters matching Audacity Settings (Window: 2048/4096, Hop: 256)
+            // Audacity spec: Window size 2048/4096 with Blackman-Harris window
             const fftSize = 2048;
-            const hopSize = Math.max(128, Math.floor(totalSamples / 1200));
+            const hopSize = Math.max(64, Math.floor(totalSamples / 1600));
             const numFrames = Math.floor((totalSamples - fftSize) / hopSize);
             if (numFrames <= 0) return;
 
             const windowFunc = getBlackmanHarrisWindow(fftSize);
+            let winSum = 0;
+            for (let i = 0; i < fftSize; i++) winSum += windowFunc[i];
+            const winNorm = winSum > 0 ? winSum / 2 : fftSize / 2;
+
             const numBins = fftSize / 2;
             const nyquist = sr / 2;
             const targetMaxFreq = Math.min(nyquist, maxFreq);
 
-            // Allocate rendering canvas
-            const width = Math.min(1400, Math.max(700, numFrames));
-            const plotHeight = 320;
+            // High-resolution Canvas Buffer
+            const width = Math.min(1600, Math.max(800, numFrames));
+            const plotHeight = 360;
             const canvas = document.createElement("canvas");
             canvas.width = width;
             canvas.height = plotHeight;
@@ -173,7 +172,7 @@ export default function SpectrogramViewer({
             const real = new Float32Array(fftSize);
             const imag = new Float32Array(fftSize);
 
-            // Compute STFT & Map to Pixels
+            // Pre-calculate frame FFT magnitudes
             for (let x = 0; x < width; x++) {
                 const frameIdx = Math.floor((x / width) * numFrames);
                 const sampleStart = frameIdx * hopSize;
@@ -187,29 +186,37 @@ export default function SpectrogramViewer({
                 fftRadix2(real, imag);
 
                 for (let y = 0; y < plotHeight; y++) {
-                    // Vertical frequency mapping: y = 0 is top (Max Freq = 24k), y = plotHeight - 1 is bottom (0k)
+                    // Vertical frequency mapping: y = 0 is 24k (top), y = plotHeight - 1 is 0k (bottom)
                     const normY = 1 - (y / plotHeight);
                     let targetF;
 
                     if (scale === "mel") {
-                        // Mel scale mapping
                         const melMax = 2595 * Math.log10(1 + targetMaxFreq / 700);
                         const mel = normY * melMax;
                         targetF = 700 * (Math.pow(10, mel / 2595) - 1);
                     } else {
-                        // Linear scale mapping (0 to 24000 Hz)
                         targetF = normY * targetMaxFreq;
                     }
 
-                    const bin = Math.min(numBins - 1, Math.max(0, Math.round((targetF / nyquist) * numBins)));
-                    const mag = Math.sqrt(real[bin] * real[bin] + imag[bin] * imag[bin]) / fftSize;
+                    // Linear interpolation between FFT frequency bins
+                    const exactBin = Math.max(0, Math.min(numBins - 1, (targetF / nyquist) * numBins));
+                    const binLow = Math.floor(exactBin);
+                    const binHigh = Math.min(numBins - 1, binLow + 1);
+                    const binFrac = exactBin - binLow;
 
-                    // Convert to dB with Gain & Range
-                    const db = 20 * Math.log10(mag + 1e-7) + gainDb;
-                    // Normalized amplitude: 0 (noise floor / -100dB) to 1 (0dB / peak)
-                    const normAmp = Math.max(0, Math.min(1, (db + rangeDb - gainDb) / rangeDb));
+                    const magLow = Math.sqrt(real[binLow] * real[binLow] + imag[binLow] * imag[binLow]) / winNorm;
+                    const magHigh = Math.sqrt(real[binHigh] * real[binHigh] + imag[binHigh] * imag[binHigh]) / winNorm;
+                    const mag = magLow * (1 - binFrac) + magHigh * binFrac;
 
-                    const [r, g, b] = getRoseusColor(normAmp);
+                    // Audacity exact dBFS formulation:
+                    // rawDb = 20 * log10(mag)
+                    // effectiveDb = rawDb + Gain
+                    // normVal = (effectiveDb - (-Range)) / Range = (effectiveDb + Range) / Range
+                    const rawDb = 20 * Math.log10(Math.max(1e-9, mag));
+                    const effectiveDb = rawDb + gain;
+                    const normAmp = Math.max(0, Math.min(1, (effectiveDb + range) / range));
+
+                    const [r, g, b] = getAudacityRoseusColor(normAmp);
                     const pixelIdx = (y * width + x) * 4;
                     data[pixelIdx] = r;
                     data[pixelIdx + 1] = g;
@@ -231,9 +238,9 @@ export default function SpectrogramViewer({
 
     useEffect(() => {
         computeAndRenderSpectrogram();
-    }, [audioUrl, audioBuffer, scale, maxFreq, gainDb, rangeDb]);
+    }, [audioUrl, audioBuffer, scale, maxFreq, gain, range]);
 
-    // Frequency Rulers at 0k, 5k, 10k, 15k, 20k, 24k
+    // Frequency Rulers at 24k, 20k, 15k, 10k, 5k, 0k (matching Audacity)
     const frequencyTicks = [
         { label: "24k", ratio: 1.0 },
         { label: "20k", ratio: 20000 / maxFreq },
@@ -244,44 +251,58 @@ export default function SpectrogramViewer({
     ];
 
     return (
-        <div className="w-full bg-[#0c0f17] border border-neutral-800 rounded-xl p-3.5 shadow-xl text-neutral-200">
-            {/* Header Toolbar */}
-            <div className="flex items-center justify-between gap-3 mb-2.5 pb-2 border-b border-neutral-800">
+        <div className="w-full bg-[#181a24] border border-[#2d3248] rounded-xl p-3 shadow-2xl text-neutral-200">
+            {/* Header Control Toolbar */}
+            <div className="flex flex-wrap items-center justify-between gap-3 mb-2.5 pb-2 border-b border-[#2d3248]">
                 <div className="flex items-center gap-2">
-                    <span className="text-xs font-bold text-violet-400 uppercase tracking-wider flex items-center gap-1.5">
+                    <span className="text-xs font-bold text-violet-300 uppercase tracking-wider flex items-center gap-1.5">
                         <Sparkles className="w-3.5 h-3.5 text-violet-400" />
-                        {title} ({scale === "linear" ? "Linear 0–24kHz" : "Mel Scale"})
+                        {title}
                     </span>
-                    <span className="text-[10px] text-neutral-400 font-mono bg-neutral-900/80 px-2 py-0.5 rounded border border-neutral-800">
+                    <span className="text-[10px] text-amber-300 font-mono bg-[#0f111a] px-2 py-0.5 rounded border border-[#2d3248]">
+                        Color (Roseus) • +{gain}dB Gain • {range}dB Range
+                    </span>
+                    <span className="text-[10px] text-neutral-400 font-mono bg-[#0f111a] px-2 py-0.5 rounded border border-[#2d3248]">
                         {duration > 0 ? `${duration.toFixed(2)}s` : "48kHz"}
                     </span>
                 </div>
 
                 <div className="flex items-center gap-2">
                     {/* Scale Toggle: Linear vs Mel */}
-                    <div className="flex bg-neutral-900 border border-neutral-700 rounded-lg p-0.5 text-[11px] font-semibold">
+                    <div className="flex bg-[#0f111a] border border-[#2d3248] rounded-lg p-0.5 text-[11px] font-semibold">
                         <button
                             type="button"
                             onClick={() => setScale("linear")}
-                            className={`px-2 py-0.5 rounded ${scale === "linear" ? "bg-violet-600 text-white shadow-sm" : "text-neutral-400 hover:text-neutral-200"}`}
+                            className={`px-2.5 py-0.5 rounded transition-all ${scale === "linear" ? "bg-violet-600 text-white shadow-sm" : "text-neutral-400 hover:text-neutral-200"}`}
                         >
                             Linear (0–24k)
                         </button>
                         <button
                             type="button"
                             onClick={() => setScale("mel")}
-                            className={`px-2 py-0.5 rounded ${scale === "mel" ? "bg-violet-600 text-white shadow-sm" : "text-neutral-400 hover:text-neutral-200"}`}
+                            className={`px-2.5 py-0.5 rounded transition-all ${scale === "mel" ? "bg-violet-600 text-white shadow-sm" : "text-neutral-400 hover:text-neutral-200"}`}
                         >
                             Mel Scale
                         </button>
                     </div>
 
+                    {/* Live Gain / Range Settings Toggle */}
+                    <button
+                        type="button"
+                        onClick={() => setShowSettings(!showSettings)}
+                        className={`p-1.5 rounded-lg border text-xs font-bold flex items-center gap-1 transition-colors ${showSettings ? "bg-violet-700 border-violet-500 text-white" : "bg-[#0f111a] border-[#2d3248] text-neutral-300 hover:text-white"}`}
+                        title="Tuning Settings (Gain & Range)"
+                    >
+                        <Sliders className="w-3.5 h-3.5" />
+                        <span className="hidden sm:inline">Tuning</span>
+                    </button>
+
                     {renderedDataUrl && (
                         <button
                             type="button"
                             onClick={() => setIsLightboxOpen(true)}
-                            className="p-1 text-neutral-400 hover:text-white bg-neutral-800 hover:bg-neutral-700 rounded-md transition-colors border border-neutral-700"
-                            title="Open Fullscreen Lightbox Spectrogram"
+                            className="p-1.5 text-neutral-300 hover:text-white bg-[#0f111a] hover:bg-[#2d3248] rounded-lg transition-colors border border-[#2d3248]"
+                            title="Open Fullscreen High-Res Spectrogram"
                         >
                             <Maximize2 className="w-3.5 h-3.5" />
                         </button>
@@ -289,26 +310,63 @@ export default function SpectrogramViewer({
                 </div>
             </div>
 
-            {/* Spectrogram Canvas with 0k, 5k, 10k, 15k, 20k, 24k Ruler */}
-            <div className="relative flex items-stretch bg-black rounded-lg overflow-hidden border border-neutral-800" style={{ height }}>
-                {/* Vertical Frequency Axis (Left Ruler) */}
-                <div className="w-10 bg-[#090b10] border-r border-neutral-800/80 flex flex-col justify-between py-1 px-1 text-right select-none">
+            {/* Tuning Drawer */}
+            {showSettings && (
+                <div className="mb-3 p-3 bg-[#0d0f17] border border-violet-500/30 rounded-xl grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+                    <div>
+                        <div className="flex justify-between items-center mb-1 text-neutral-300 font-semibold">
+                            <span>Gain (dB): <b className="text-violet-400">+{gain} dB</b></span>
+                            <span className="text-[10px] text-neutral-500">Audacity: +20 dB</span>
+                        </div>
+                        <input
+                            type="range"
+                            min="0"
+                            max="50"
+                            step="5"
+                            value={gain}
+                            onChange={(e) => setGain(Number(e.target.value))}
+                            className="w-full accent-violet-500 cursor-pointer"
+                        />
+                    </div>
+
+                    <div>
+                        <div className="flex justify-between items-center mb-1 text-neutral-300 font-semibold">
+                            <span>Dynamic Range (dB): <b className="text-violet-400">{range} dB</b></span>
+                            <span className="text-[10px] text-neutral-500">Audacity: 120 dB</span>
+                        </div>
+                        <input
+                            type="range"
+                            min="60"
+                            max="140"
+                            step="10"
+                            value={range}
+                            onChange={(e) => setRange(Number(e.target.value))}
+                            className="w-full accent-violet-500 cursor-pointer"
+                        />
+                    </div>
+                </div>
+            )}
+
+            {/* Spectrogram Canvas with 0k, 5k, 10k, 15k, 20k, 24k Ruler (Audacity Track Style) */}
+            <div className="relative flex items-stretch bg-[#101030] rounded-lg overflow-hidden border border-[#2d3248]" style={{ height }}>
+                {/* Vertical Frequency Axis (Audacity Grey Track Ruler) */}
+                <div className="w-12 bg-[#202334] border-r border-[#3a3f5c] flex flex-col justify-between py-1.5 px-1.5 text-right select-none shadow-inner">
                     {frequencyTicks.map((tick, idx) => (
-                        <div key={idx} className="flex items-center justify-end gap-1">
-                            <span className="text-[9px] font-mono font-bold text-neutral-400 leading-none">
+                        <div key={idx} className="flex items-center justify-end gap-1.5">
+                            <span className="text-[10px] font-mono font-bold text-neutral-300 leading-none">
                                 {tick.label}
                             </span>
-                            <span className="w-1 h-[1px] bg-neutral-600 inline-block" />
+                            <span className="w-2 h-[1px] bg-neutral-400 inline-block" />
                         </div>
                     ))}
                 </div>
 
                 {/* Spectrogram Heatmap Image */}
-                <div className="flex-1 relative bg-black flex items-center justify-center overflow-hidden">
+                <div className="flex-1 relative bg-[#101030] flex items-center justify-center overflow-hidden">
                     {loading ? (
-                        <div className="flex items-center gap-2 text-xs text-neutral-400">
+                        <div className="flex items-center gap-2 text-xs text-violet-300 font-medium">
                             <div className="w-4 h-4 border-2 border-violet-400 border-t-transparent rounded-full animate-spin" />
-                            <span>Computing 0–24kHz Mel Spectrogram...</span>
+                            <span>Rendering Audacity Roseus Spectrogram...</span>
                         </div>
                     ) : renderedDataUrl ? (
                         <img 
@@ -324,7 +382,7 @@ export default function SpectrogramViewer({
             </div>
 
             {/* Bottom Time Axis */}
-            <div className="flex justify-between items-center px-10 pt-1 text-[9px] font-mono text-neutral-500 select-none">
+            <div className="flex justify-between items-center px-12 pt-1 text-[10px] font-mono text-neutral-400 select-none">
                 <span>0.00s</span>
                 <span>{duration > 0 ? `${(duration / 2).toFixed(2)}s` : "Mid"}</span>
                 <span>{duration > 0 ? `${duration.toFixed(2)}s` : "End"}</span>
@@ -336,40 +394,40 @@ export default function SpectrogramViewer({
                     className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/95 backdrop-blur-md cursor-zoom-out animate-fade-in"
                     onClick={() => setIsLightboxOpen(false)}
                 >
-                    <div className="relative max-w-[95vw] w-full bg-[#0a0d14] border border-neutral-700 rounded-2xl p-6 shadow-2xl flex flex-col items-center" onClick={(e) => e.stopPropagation()}>
-                        <div className="w-full flex items-center justify-between pb-3 mb-3 border-b border-neutral-800">
+                    <div className="relative max-w-[96vw] w-full bg-[#151722] border border-[#343b59] rounded-2xl p-6 shadow-2xl flex flex-col items-center" onClick={(e) => e.stopPropagation()}>
+                        <div className="w-full flex items-center justify-between pb-3 mb-3 border-b border-[#2d3248]">
                             <div className="flex items-center gap-3">
                                 <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
                                     <Sparkles className="w-4 h-4 text-violet-400" />
                                     {title} — {scale === "linear" ? "Linear Scale (0–24000 Hz)" : "Mel Scale Spectrogram"}
                                 </h3>
-                                <span className="text-xs font-mono text-neutral-400 bg-neutral-900 px-2 py-0.5 rounded border border-neutral-800">
-                                    Audacity Spec: 20dB Gain | 120dB Range | Roseus Colormap
+                                <span className="text-xs font-mono text-amber-300 bg-[#0f111a] px-2.5 py-1 rounded-lg border border-[#2d3248]">
+                                    Color (Roseus) • +{gain}dB Gain • {range}dB Range • Blackman-Harris
                                 </span>
                             </div>
                             <button 
                                 onClick={() => setIsLightboxOpen(false)}
-                                className="p-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white"
+                                className="p-1.5 rounded-lg bg-[#202334] hover:bg-[#2d3248] text-neutral-300 hover:text-white border border-[#3a3f5c]"
                             >
                                 <X className="w-5 h-5" />
                             </button>
                         </div>
 
                         {/* High-Resolution Expanded Spectrogram View */}
-                        <div className="w-full flex items-stretch bg-black rounded-xl overflow-hidden border border-neutral-800" style={{ height: "60vh" }}>
+                        <div className="w-full flex items-stretch bg-[#101030] rounded-xl overflow-hidden border border-[#2d3248]" style={{ height: "62vh" }}>
                             {/* Frequency Axis */}
-                            <div className="w-14 bg-[#090b10] border-r border-neutral-800 flex flex-col justify-between py-2 px-1.5 text-right select-none">
+                            <div className="w-16 bg-[#202334] border-r border-[#3a3f5c] flex flex-col justify-between py-2 px-2 text-right select-none shadow-inner">
                                 {frequencyTicks.map((tick, idx) => (
                                     <div key={idx} className="flex items-center justify-end gap-1.5">
-                                        <span className="text-[11px] font-mono font-bold text-violet-300 leading-none">
+                                        <span className="text-xs font-mono font-bold text-violet-200 leading-none">
                                             {tick.label}
                                         </span>
-                                        <span className="w-2 h-[1px] bg-neutral-500 inline-block" />
+                                        <span className="w-2.5 h-[1.5px] bg-neutral-400 inline-block" />
                                     </div>
                                 ))}
                             </div>
 
-                            <div className="flex-1 relative bg-black">
+                            <div className="flex-1 relative bg-[#101030]">
                                 <img 
                                     src={renderedDataUrl} 
                                     alt="Zoomed Spectrogram" 
@@ -379,7 +437,7 @@ export default function SpectrogramViewer({
                         </div>
 
                         {/* Timeline ruler */}
-                        <div className="w-full flex justify-between items-center px-14 pt-2 text-[11px] font-mono text-neutral-400 select-none">
+                        <div className="w-full flex justify-between items-center px-16 pt-2 text-xs font-mono text-neutral-400 select-none">
                             <span>0.00s</span>
                             <span>{duration > 0 ? `${(duration * 0.25).toFixed(2)}s` : "1/4"}</span>
                             <span>{duration > 0 ? `${(duration * 0.5).toFixed(2)}s` : "1/2"}</span>
