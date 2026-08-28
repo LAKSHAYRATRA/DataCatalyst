@@ -4,6 +4,7 @@ import AdminNav from "../components/AdminNav.jsx";
 import { getUserInfo } from "../lib/auth.js";
 import { fetchAndConvertToWav } from "../lib/audioToWav.js";
 import AudioVisualizer from "../components/AudioVisualizer.jsx";
+import MergedCallStudio from "../components/MergedCallStudio.jsx";
 import Swal from "sweetalert2";
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:3001";
@@ -96,6 +97,7 @@ export default function AdminQA() {
     const [callPages, setCallPages] = useState(1);
     const [callTotal, setCallTotal] = useState(0);
     const [reviewing, setReviewing] = useState(null);
+    const [mergedStudioCall, setMergedStudioCall] = useState(null);
     const [notes, setNotes] = useState("");
     const [recordingNotes, setRecordingNotes] = useState({});
     const [rejectionReasons, setRejectionReasons] = useState({});
@@ -597,12 +599,22 @@ export default function AdminQA() {
                                                 <td className="px-4 py-3 text-neutral-400 text-xs">{fmt(call.startedAt)}</td>
                                                 <td className="px-4 py-3 text-neutral-300">{dur(getCallStart(call), call.endedAt)}</td>
                                                 <td className="px-4 py-3">
-                                                    <button
-                                                        onClick={() => openCallReview(call)}
-                                                        className="px-3 py-1.5 bg-warning-600 hover:bg-warning-700 text-white text-xs font-semibold rounded-lg"
-                                                    >
-                                                        Review
-                                                    </button>
+                                                    <div className="flex items-center gap-1.5">
+                                                        <button
+                                                            onClick={() => openCallReview(call)}
+                                                            className="px-3 py-1.5 bg-warning-600 hover:bg-warning-700 text-white text-xs font-semibold rounded-lg"
+                                                        >
+                                                            Review
+                                                        </button>
+                                                        <button
+                                                            onClick={() => setMergedStudioCall(call)}
+                                                            className="px-2.5 py-1.5 bg-emerald-950/80 hover:bg-emerald-900/90 text-emerald-300 hover:text-white border border-emerald-700/60 font-bold text-xs rounded-lg flex items-center gap-1 shadow-sm transition-all"
+                                                            title="Open Merged Dual-Waveform Studio"
+                                                        >
+                                                            <span>🎧</span>
+                                                            <span className="hidden sm:inline">Merged</span>
+                                                        </button>
+                                                    </div>
                                                 </td>
                                             </tr>
                                         ))}
@@ -625,7 +637,16 @@ export default function AdminQA() {
                 <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50" onClick={closeCallReview}>
                     <div className="bg-neutral-800 border border-neutral-700 rounded-xl max-w-6xl w-full max-h-[90vh] overflow-y-auto p-4 md:p-6 animate-scale-in" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center justify-between mb-4 md:mb-6">
-                            <h2 className="text-xl md:text-2xl font-bold text-white">Review Call</h2>
+                            <div className="flex items-center gap-3">
+                                <h2 className="text-xl md:text-2xl font-bold text-white">Review Call</h2>
+                                <button
+                                    onClick={() => setMergedStudioCall(reviewing)}
+                                    className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 via-indigo-600 to-primary-600 hover:from-emerald-500 hover:to-primary-500 text-white font-bold text-xs shadow-lg shadow-indigo-500/20 flex items-center gap-1.5 transition-all transform hover:scale-[1.02]"
+                                >
+                                    <span>🎧</span>
+                                    <span>See Merged Call</span>
+                                </button>
+                            </div>
                             <button onClick={closeCallReview} className="text-neutral-400 hover:text-white">
                                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path>
@@ -996,6 +1017,25 @@ export default function AdminQA() {
                     </div>
                     <div className="mt-4 text-xs text-neutral-400 font-medium">
                         Click anywhere outside the spectrogram or 'X' to close zoom view
+                    </div>
+                </div>
+            )}
+
+            {/* Merged Call Dual-Waveform Studio Modal */}
+            {mergedStudioCall && (
+                <div 
+                    className="fixed inset-0 bg-black/85 backdrop-blur-md z-[100] flex items-center justify-center p-2 md:p-6 animate-fade-in"
+                    onClick={() => setMergedStudioCall(null)}
+                >
+                    <div 
+                        className="bg-neutral-900 border border-neutral-700/80 rounded-2xl w-full max-w-6xl h-[92vh] overflow-hidden shadow-2xl flex flex-col animate-scale-in"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <MergedCallStudio 
+                            call={mergedStudioCall} 
+                            onClose={() => setMergedStudioCall(null)} 
+                            isModal={true} 
+                        />
                     </div>
                 </div>
             )}

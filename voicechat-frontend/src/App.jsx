@@ -3,6 +3,7 @@ import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import Login from "./pages/Login.jsx";
 import Signup from "./pages/Signup.jsx";
 import Call from "./pages/Call.jsx";
+import ScriptedCall from "./pages/ScriptedCall.jsx";
 import Dashboard from "./pages/Dashboard.jsx";
 import AdminDashboard from "./pages/AdminDashboard.jsx";
 import AdminCalls from "./pages/AdminCalls.jsx";
@@ -22,6 +23,11 @@ import LanguageApply from "./pages/LanguageApply.jsx";
 import AdminLanguages from "./pages/AdminLanguages.jsx";
 import AdminLanguageApps from "./pages/AdminLanguageApps.jsx";
 import AdminCallApps from "./pages/AdminCallApps.jsx";
+import AdminScriptedCallsReview from "./pages/AdminScriptedCallsReview.jsx";
+import AdminScriptedCallApps from "./pages/AdminScriptedCallApps.jsx";
+import AdminScriptedLanguages from "./pages/AdminScriptedLanguages.jsx";
+import AdminScriptedTopics from "./pages/AdminScriptedTopics.jsx";
+import AdminMergedCallStudio from "./pages/AdminMergedCallStudio.jsx";
 import Landing from "./pages/Landing.jsx";
 import Support from "./pages/Support.jsx";
 import UserPayouts from "./pages/UserPayouts.jsx";
@@ -64,6 +70,9 @@ function isUserDisabled(userInfo) {
 
 function needsAgreementSigning(userInfo) {
   if (!userInfo) return false;
+  // Strictly Admin: bypass agreement constraint completely
+  if (userInfo.isAdmin === true) return false;
+
   if (userInfo.accountStatus !== "approved") return false;
   const ca = userInfo.contributorAgreement || {};
   // Not signed yet, OR admin rejected -> user must (re-)sign
@@ -72,6 +81,9 @@ function needsAgreementSigning(userInfo) {
 
 function awaitingAgreementReview(userInfo) {
   if (!userInfo) return false;
+  // Strictly Admin: bypass agreement review constraint
+  if (userInfo.isAdmin === true) return false;
+
   if (userInfo.accountStatus !== "approved") return false;
   const ca = userInfo.contributorAgreement || {};
   return ca.signed === true && ca.adminReviewStatus === "pending";
@@ -378,6 +390,7 @@ export default function App() {
 
         {/* Protected platform routes */}
         <Route path="/call" element={<RequireAuth><Call /></RequireAuth>} />
+        <Route path="/scripted-call" element={<RequireAuth><ScriptedCall /></RequireAuth>} />
         <Route path="/dashboard" element={<RequireDashboardAccess><Dashboard /></RequireDashboardAccess>} />
         <Route path="/payouts" element={<RequireAuth><UserPayouts /></RequireAuth>} />
         <Route path="/kyc/pan" element={<RequireAuth><KycPan /></RequireAuth>} />
@@ -385,6 +398,7 @@ export default function App() {
         {/* Admin Routes */}
         <Route path="/admin/dashboard" element={<RequireAdmin><AdminDashboard /></RequireAdmin>} />
         <Route path="/admin/calls" element={<RequireAdmin><AdminCalls /></RequireAdmin>} />
+        <Route path="/admin/calls/:callId/merged" element={<RequireAdminOrQA><AdminMergedCallStudio /></RequireAdminOrQA>} />
         <Route path="/admin/topics" element={<RequireAdmin><AdminTopics /></RequireAdmin>} />
         <Route path="/admin/users" element={<RequireAdmin><AdminUsers /></RequireAdmin>} />
         <Route path="/admin/payouts" element={<RequireAdmin><AdminPayouts /></RequireAdmin>} />
@@ -398,6 +412,11 @@ export default function App() {
         <Route path="/admin/languages" element={<RequireAdmin><AdminLanguages /></RequireAdmin>} />
         <Route path="/admin/language-apps" element={<RequireAdminOrQA><AdminLanguageApps /></RequireAdminOrQA>} />
         <Route path="/admin/call-apps" element={<RequireAdminOrQA><AdminCallApps /></RequireAdminOrQA>} />
+        <Route path="/admin/scripted-calls-review" element={<RequireAdminOrQA><AdminScriptedCallsReview /></RequireAdminOrQA>} />
+        <Route path="/admin/scripted-qa" element={<RequireAdminOrQA><AdminScriptedCallsReview /></RequireAdminOrQA>} />
+        <Route path="/admin/scripted-call-apps" element={<RequireAdminOrQA><AdminScriptedCallApps /></RequireAdminOrQA>} />
+        <Route path="/admin/scripted-topics" element={<RequireAdminOrQA><AdminScriptedTopics /></RequireAdminOrQA>} />
+        <Route path="/admin/scripted-languages" element={<RequireAdminOrQA><AdminScriptedLanguages /></RequireAdminOrQA>} />
         <Route path="/admin/phrases" element={<RequireAdmin><AdminPhrases /></RequireAdmin>} />
         <Route path="/admin/phrases/downloads" element={<RequireAdmin><AdminPhraseDownloads /></RequireAdmin>} />
         <Route path="/admin/projects" element={<RequireAdmin><AdminProjects /></RequireAdmin>} />

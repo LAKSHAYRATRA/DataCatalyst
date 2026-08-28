@@ -1,16 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { apiGet } from '../../../lib/api.js';
-import { PhoneCall } from 'lucide-react';
-
-const FLAG_MAP = {
-    hindi: 'https://flagcdn.com/w160/in.png',
-    english: 'https://flagcdn.com/w160/gb.png',
-};
-const COLOR_MAP = {
-    hindi: 'from-orange-400 to-orange-600',
-    english: 'from-blue-400 to-blue-600',
-};
+import { PhoneCall, Radio, ChevronRight, AlertCircle, Globe, Languages, Sparkles } from 'lucide-react';
 
 export default function LanguageSelection({ onLanguageSelect, callCount, callLimit }) {
     const navigate = useNavigate();
@@ -43,7 +34,6 @@ export default function LanguageSelection({ onLanguageSelect, callCount, callLim
     }
 
     const approvedLangs = languages.filter(l => getStatus(l.code) === 'approved');
-    const otherLangs = languages.filter(l => getStatus(l.code) !== 'approved');
 
     const handleSelect = (lang) => {
         const isLangLimitReached = lang.maxHoursPerContributor !== undefined && lang.maxHoursPerContributor !== -1 && (lang.userDurationSeconds || 0) >= lang.maxHoursPerContributor * 3600;
@@ -53,79 +43,121 @@ export default function LanguageSelection({ onLanguageSelect, callCount, callLim
     };
 
     return (
-        <div className="min-h-screen bg-neutral-50 dark:bg-neutral-950 text-neutral-900 dark:text-neutral-50 pt-16 md:pt-0 md:pl-64 transition-colors duration-300">
-            <div className="max-w-7xl mx-auto px-4 md:px-6 py-6 md:py-12">
-                {/* Header */}
-                <div className="mb-8 animate-fade-in">
-                    <h1 className="text-3xl md:text-4xl font-bold text-neutral-900 dark:text-white mb-2">Select Language</h1>
-                    <p className="text-neutral-600 dark:text-neutral-400">
-                        You've made <span className="font-bold text-primary-600 dark:text-primary-400">{callCount}/{callLimit}</span> calls today
-                    </p>
-                    {isLimitReached && (
-                        <div className="mt-3 bg-error-50 dark:bg-error-950/20 border border-error-200 dark:border-error-800 text-error-700 dark:text-error-400 px-4 py-2 rounded-lg inline-block text-sm transition-colors duration-300">
-                            Daily limit reached! Try again tomorrow.
+        <div className="min-h-screen bg-neutral-950 text-white pt-16 md:pt-0 md:pl-64 flex flex-col font-sans selection:bg-indigo-500/30 selection:text-indigo-200 transition-colors duration-300">
+            <main className="flex-1 max-w-7xl w-full mx-auto p-4 md:p-8 space-y-8">
+                <div className="max-w-4xl mx-auto py-8 md:py-16 space-y-8 animate-fade-in">
+                    {/* Language Box Header */}
+                    <div className="text-center space-y-3">
+                        <div className="inline-flex p-3 rounded-2xl bg-gradient-to-br from-indigo-500 to-primary-600 text-white shadow-xl shadow-indigo-500/25 mb-1">
+                            <Languages className="w-8 h-8" />
+                        </div>
+                        <h1 className="text-3xl md:text-4xl font-black tracking-tight text-white">
+                            Select Call Language
+                        </h1>
+                        <p className="text-sm text-neutral-400 max-w-lg mx-auto leading-relaxed">
+                            Choose an approved language project below to connect with a contributor for a live 2-person voice call.
+                        </p>
+                        <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-neutral-900/90 border border-neutral-800 text-xs font-semibold text-neutral-300 shadow-inner">
+                            <span className="text-neutral-400">Daily Calls:</span>
+                            <span className={`font-bold ${isLimitReached ? 'text-rose-400' : 'text-indigo-400'}`}>
+                                {callCount}/{callLimit}
+                            </span>
+                            {isLimitReached && (
+                                <span className="text-[10px] uppercase font-bold text-rose-400 bg-rose-950/60 px-2 py-0.5 rounded-full border border-rose-800/40">
+                                    Limit Reached
+                                </span>
+                            )}
+                        </div>
+                    </div>
+
+                    {loading ? (
+                        <div className="flex flex-col items-center justify-center py-20 text-neutral-500">
+                            <div className="w-10 h-10 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mb-4" />
+                            <p className="text-sm font-bold">Loading Approved Languages...</p>
+                        </div>
+                    ) : approvedLangs.length === 0 ? (
+                        <div className="text-center py-16 border border-dashed border-neutral-800 rounded-3xl bg-neutral-900/40 p-8 space-y-4 max-w-xl mx-auto shadow-2xl">
+                            <div className="w-16 h-16 bg-neutral-800/80 rounded-2xl flex items-center justify-center mx-auto text-indigo-400 border border-neutral-700">
+                                <PhoneCall className="w-8 h-8" />
+                            </div>
+                            <h3 className="text-lg font-bold text-neutral-200">No Approved Call Languages</h3>
+                            <p className="text-xs text-neutral-400 max-w-sm mx-auto leading-relaxed">
+                                You have not been approved for any live call languages yet. Submit a voice sample under Project Apply in the sidebar to get started.
+                            </p>
+                            <button 
+                                onClick={() => navigate('/language-apply?type=call')}
+                                className="px-6 py-2.5 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs shadow-lg shadow-indigo-600/25 transition-all inline-flex items-center gap-2 cursor-pointer"
+                            >
+                                <span>Apply for Languages</span>
+                                <ChevronRight className="w-4 h-4" />
+                            </button>
+                        </div>
+                    ) : (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+                            {approvedLangs.map((lang) => {
+                                const isLangLimitReached = lang.maxHoursPerContributor !== undefined && lang.maxHoursPerContributor !== -1 && (lang.userDurationSeconds || 0) >= lang.maxHoursPerContributor * 3600;
+                                const isBlocked = isLimitReached || isLangLimitReached;
+
+                                return (
+                                    <div
+                                        key={lang._id || lang.code}
+                                        className={`group relative bg-neutral-900/90 border border-neutral-800 hover:border-indigo-500/80 rounded-3xl p-6 shadow-xl hover:shadow-2xl hover:shadow-indigo-500/10 transition-all duration-300 flex flex-col justify-between overflow-hidden ${
+                                            isBlocked ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'
+                                        } ${selected === lang.code ? 'ring-4 ring-indigo-500 scale-[1.02]' : ''}`}
+                                        onClick={() => !isBlocked && handleSelect(lang)}
+                                    >
+                                        {/* Glow Accent */}
+                                        <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/10 rounded-full blur-2xl group-hover:bg-indigo-500/20 transition-all pointer-events-none" />
+
+                                        <div className="space-y-4">
+                                            <div className="flex items-center justify-between">
+                                                <div className="p-2.5 rounded-2xl bg-indigo-950/60 border border-indigo-800/40 text-indigo-400">
+                                                    <Radio className="w-5 h-5" />
+                                                </div>
+                                                <span className={`text-[10px] font-extrabold uppercase px-2.5 py-1 rounded-full ${
+                                                    isBlocked 
+                                                        ? 'bg-neutral-800 text-neutral-400 border border-neutral-700' 
+                                                        : 'bg-emerald-900/60 text-emerald-300 border border-emerald-700/50'
+                                                }`}>
+                                                    {isLangLimitReached ? 'Hourly Limit' : isLimitReached ? 'Daily Limit' : 'Active'}
+                                                </span>
+                                            </div>
+
+                                            <div>
+                                                <h3 className="text-xl font-black text-white group-hover:text-indigo-300 transition-colors capitalize">
+                                                    {lang.name}
+                                                </h3>
+                                                {lang.hourlyPayout !== undefined && (
+                                                    <p className="text-sm font-extrabold text-emerald-400 mt-1">
+                                                        ${Number(lang.hourlyPayout || 0).toFixed(2)}/hr
+                                                    </p>
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        {/* Action Button */}
+                                        <button
+                                            disabled={isBlocked}
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                handleSelect(lang);
+                                            }}
+                                            className={`w-full py-3 rounded-2xl font-bold text-xs shadow-lg transition-all flex items-center justify-center gap-2 mt-6 ${
+                                                isBlocked
+                                                    ? 'bg-neutral-800 text-neutral-500 cursor-not-allowed border border-neutral-700'
+                                                    : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-indigo-600/25 cursor-pointer'
+                                            }`}
+                                        >
+                                            <span>{isLangLimitReached ? 'Language Limit Reached' : isLimitReached ? 'Daily Limit Reached' : 'Open / Join Call'}</span>
+                                            {!isBlocked && <ChevronRight className="w-4 h-4" />}
+                                        </button>
+                                    </div>
+                                );
+                            })}
                         </div>
                     )}
                 </div>
-
-                {loading ? (
-                    <div className="text-center text-neutral-400 dark:text-neutral-500 py-12">Loading your approved languages…</div>
-                ) : (
-                    <>
-                        {/* Approved language cards */}
-                        {approvedLangs.length > 0 ? (
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8 animate-slide-up">
-                                {approvedLangs.map(lang => {
-                                    const isLangLimitReached = lang.maxHoursPerContributor !== undefined && lang.maxHoursPerContributor !== -1 && (lang.userDurationSeconds || 0) >= lang.maxHoursPerContributor * 3600;
-                                    const isBlocked = isLimitReached || isLangLimitReached;
-                                    return (
-                                        <div
-                                            key={lang.code}
-                                            onClick={() => handleSelect(lang)}
-                                            className={`relative overflow-hidden rounded-2xl bg-gradient-to-br from-indigo-900 via-primary-900 to-indigo-950 text-white shadow-xl shadow-primary-900/20 border border-primary-800/50 hover-lift cursor-pointer transition-all text-left ${isBlocked ? 'opacity-50 cursor-not-allowed' : ''} ${selected === lang.code ? 'ring-4 ring-primary-500 scale-102' : ''}`}
-                                        >
-                                            {/* Background Deco */}
-                                            <div className="absolute top-0 right-0 w-32 h-32 bg-primary-500 rounded-full blur-[60px] opacity-20 pointer-events-none transform translate-x-1/2 -translate-y-1/2"></div>
-                                            
-                                            <div className="py-6 px-8 relative z-10 flex flex-col items-center justify-center gap-4">
-                                                 <h2 className="text-2xl font-extrabold text-white tracking-tight text-center">{lang.name}</h2>
-                                                 <span className="text-xs font-bold uppercase tracking-widest text-primary-200 bg-white/10 px-3 py-1.5 rounded-full border border-white/10">
-                                                     Hourly Rate: ${Number(lang.hourlyPayout || 0).toFixed(2)}/hour
-                                                 </span>
-                                                <button
-                                                    disabled={isBlocked}
-                                                    className={`bg-white text-primary-900 font-extrabold text-base px-8 py-3 rounded-xl shadow-[0_0_20px_rgba(255,255,255,0.2)] hover:shadow-[0_0_30px_rgba(255,255,255,0.35)] transition-all ${isBlocked ? 'opacity-50 cursor-not-allowed' : ''}`}
-                                                >
-                                                    {isLangLimitReached ? 'Language Limit Reached' : isLimitReached ? 'Limit Reached' : 'Join a Call'}
-                                                </button>
-                                            </div>
-                                        </div>
-                                    );
-                                })}
-                            </div>
-                        ) : (
-                            <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-indigo-900 via-primary-900 to-indigo-950 text-white shadow-2xl shadow-primary-900/20 border border-primary-800/50 p-8 md:p-12 max-w-xl mx-auto mt-6 text-center animate-fade-in flex flex-col items-center justify-center">
-                                {/* Background Deco */}
-                                <div className="absolute top-0 right-0 w-32 h-32 bg-primary-500 rounded-full blur-[60px] opacity-20 pointer-events-none transform translate-x-1/2 -translate-y-1/2"></div>
-                                
-                                <div className="w-20 h-20 bg-white/10 backdrop-blur-md rounded-full flex items-center justify-center mb-6 border-4 border-white/20 text-white shadow-inner">
-                                    <PhoneCall className="w-10 h-10" />
-                                </div>
-                                <h2 className="text-2xl font-extrabold text-white mb-3">No Approved Call Languages</h2>
-                                <p className="text-primary-100/80 max-w-sm leading-relaxed mb-8 text-center px-6">
-                                    You have not applied to any call languages yet. Apply for a language under Project Apply in the sidebar to start joining calls.
-                                </p>
-                                <button 
-                                    onClick={() => navigate('/language-apply?type=call')}
-                                    className="bg-white text-primary-900 font-extrabold text-base px-8 py-3.5 rounded-xl shadow-[0_0_20px_rgba(255,255,255,0.25)] hover:shadow-[0_0_35px_rgba(255,255,255,0.4)] transition-all"
-                                >
-                                    Project Apply
-                                </button>
-                            </div>
-                        )}
-                    </>
-                )}
-            </div>
+            </main>
         </div>
     );
 }

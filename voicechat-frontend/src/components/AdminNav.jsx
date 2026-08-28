@@ -68,6 +68,7 @@ export default function AdminNav() {
 
     const [openMenus, setOpenMenus] = useState({
         calls: false,
+        scriptedCalls: false,
         transcription: false,
         users: false,
         phrases: false
@@ -77,6 +78,7 @@ export default function AdminNav() {
         const path = location.pathname;
         setOpenMenus({
             calls: ['/admin/calls', '/admin/topics', '/admin/qa', '/admin/qa-payments', '/admin/languages', '/admin/call-apps'].includes(path),
+            scriptedCalls: ['/admin/scripted-calls-review', '/admin/scripted-qa', '/admin/scripted-call-apps', '/admin/scripted-languages', '/admin/scripted-topics'].some(p => path.startsWith(p)),
             transcription: ['/admin/segmentation', '/admin/transcription'].includes(path),
             users: ['/admin/users', '/admin/payouts', '/admin/finances', '/admin/pan-verification', '/admin/agreements'].some(p => path.startsWith(p)),
             phrases: ['/admin/qaphrase', '/admin/phrases', '/admin/language-apps', '/admin/projects', '/admin/companies', '/admin/phrases/downloads'].includes(path)
@@ -211,6 +213,49 @@ export default function AdminNav() {
                                                     <span>Call Apps</span>
                                                 </Link>
                                             )}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
+                            {/* Scripted Calls Menu (For Admin & QA) */}
+                            {(isAdmin || isQA) && (
+                                <div className="space-y-1">
+                                    <button 
+                                        onClick={() => toggleMenu('scriptedCalls')}
+                                        className="w-full flex items-center justify-between px-4 py-3 rounded-lg text-sm font-semibold text-neutral-300 hover:bg-neutral-700/50 hover:text-white transition-all focus:outline-none"
+                                    >
+                                        <div className="flex items-center space-x-3">
+                                            <svg className="w-5 h-5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 100-6 3 3 0 000 6z" />
+                                            </svg>
+                                            <span className="flex items-center gap-1.5">
+                                                <span>Scripted Calls</span>
+                                                <span className="text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded bg-indigo-900/60 text-indigo-300 border border-indigo-700/50 leading-none">new</span>
+                                            </span>
+                                        </div>
+                                        <svg className={`w-4 h-4 transform transition-transform duration-200 ${openMenus.scriptedCalls ? 'rotate-180 text-warning-400' : 'text-neutral-500'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M19 9l-7 7-7-7"></path>
+                                        </svg>
+                                    </button>
+                                    {openMenus.scriptedCalls && (
+                                        <div className="mt-1 ml-4 pl-3 border-l border-neutral-700 space-y-1 animate-fade-in">
+                                            <Link to="/admin/scripted-calls-review" onClick={() => setIsMobileMenuOpen(false)}
+                                                className={`flex items-center px-3 py-2 rounded-lg text-xs font-semibold transition-all ${isActive('/admin/scripted-calls-review') || isActive('/admin/scripted-qa') ? 'bg-neutral-700 text-warning-400' : 'text-neutral-400 hover:text-white'}`}>
+                                                <span>Scripted Calls Review</span>
+                                            </Link>
+                                            <Link to="/admin/scripted-topics" onClick={() => setIsMobileMenuOpen(false)}
+                                                className={`flex items-center px-3 py-2 rounded-lg text-xs font-semibold transition-all ${isActive('/admin/scripted-topics') ? 'bg-neutral-700 text-warning-400' : 'text-neutral-400 hover:text-white'}`}>
+                                                <span>Scripted Call Topics</span>
+                                            </Link>
+                                            <Link to="/admin/scripted-languages" onClick={() => setIsMobileMenuOpen(false)}
+                                                className={`flex items-center px-3 py-2 rounded-lg text-xs font-semibold transition-all ${isActive('/admin/scripted-languages') ? 'bg-neutral-700 text-warning-400' : 'text-neutral-400 hover:text-white'}`}>
+                                                <span>Scripted Call Languages</span>
+                                            </Link>
+                                            <Link to="/admin/scripted-call-apps" onClick={() => setIsMobileMenuOpen(false)}
+                                                className={`flex items-center px-3 py-2 rounded-lg text-xs font-semibold transition-all ${isActive('/admin/scripted-call-apps') ? 'bg-neutral-700 text-warning-400' : 'text-neutral-400 hover:text-white'}`}>
+                                                <span>Scripted Calls Apps</span>
+                                            </Link>
                                         </div>
                                     )}
                                 </div>

@@ -19,7 +19,7 @@ export default function Dashboard() {
     const itemsPerPage = 8;
 
     const userInfo = getUserInfo();
-    const awaitingReview = userInfo?.contributorAgreement?.signed === true
+    const awaitingReview = !userInfo?.isAdmin && userInfo?.contributorAgreement?.signed === true
         && userInfo?.contributorAgreement?.adminReviewStatus === "pending";
 
     useEffect(() => {

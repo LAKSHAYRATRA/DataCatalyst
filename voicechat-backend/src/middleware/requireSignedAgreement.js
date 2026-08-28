@@ -3,6 +3,11 @@ import { AGREEMENT_VERSION } from "../services/agreementPdf.js";
 export function requireSignedAgreement(req, res, next) {
   if (!req.user) return res.status(401).json({ error: "unauthorized" });
 
+  // STRICTLY ADMIN: bypass agreement signing requirement
+  if (req.user.isAdmin === true) {
+    return next();
+  }
+
   const ca = req.user.contributorAgreement;
   if (!ca || ca.signed !== true) {
     return res.status(403).json({ error: "agreement_not_signed" });

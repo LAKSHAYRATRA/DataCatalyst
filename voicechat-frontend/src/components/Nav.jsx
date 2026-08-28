@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import { clearToken, getUserInfo } from "../lib/auth.js";
 import { motion } from "framer-motion";
-import { LayoutDashboard, PhoneCall, Wallet, LogOut, Menu, X, Mic2, FolderGit2, RotateCw } from "lucide-react";
+import { LayoutDashboard, PhoneCall, Wallet, LogOut, Menu, X, Mic2, FolderGit2, RotateCw, Radio } from "lucide-react";
 
 function BrandLogo({ className = "" }) {
   return (
@@ -216,27 +216,36 @@ export default function Nav({ disabled = false }) {
               } ${disabled ? 'opacity-50 cursor-not-allowed pointer-events-none' : ''}`}
           >
             <PhoneCall className={`w-4 h-4 ${isActive("/call") ? "text-primary-600 dark:text-primary-400" : "group-hover:text-primary-500 transition-colors"}`} />
-            <span>Active Call</span>
+            <span>Call</span>
             {disabled && <span className="ml-auto text-[10px] bg-error-100 dark:bg-error-900/50 text-error-600 dark:text-error-400 px-2 py-0.5 rounded-full uppercase tracking-wider animate-pulse">In Call</span>}
           </Link>
 
-          {/* Premium High-Priority Link for Phrase Studio */}
+          {/* Premium Highlighted Link for Scripted Call [new] */}
           <Link
-            to="/phrases"
+            to="/scripted-call"
             onClick={handleLinkClick}
-            className={`relative overflow-hidden flex items-center space-x-3 px-4 py-2.5 rounded-xl text-sm font-bold transition-all duration-300 group ${isActive("/phrases")
+            className={`relative overflow-hidden flex items-center space-x-3 px-4 py-2.5 rounded-xl text-sm font-bold transition-all duration-300 group ${isActive("/scripted-call")
               ? "bg-gradient-to-r from-primary-600 to-indigo-600 text-white shadow-lg shadow-primary-500/30"
               : "bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-300 hover:bg-primary-100 dark:hover:bg-primary-900/40 border border-primary-100 dark:border-primary-800/50"
               } ${disabled ? 'opacity-50 cursor-not-allowed pointer-events-none' : ''}`}
           >
             <motion.div 
-              animate={isActive("/phrases") ? {} : { rotate: [0, 5, -5, 0] }}
+              animate={isActive("/scripted-call") ? {} : { rotate: [0, 5, -5, 0] }}
               transition={{ repeat: Infinity, duration: 2, ease: "easeInOut" }}
             >
-              <Mic2 className={`w-4 h-4 ${isActive("/phrases") ? "text-white" : "text-primary-600 dark:text-primary-400"}`} />
+              <Radio className={`w-4 h-4 ${isActive("/scripted-call") ? "text-white" : "text-primary-600 dark:text-primary-400"}`} />
             </motion.div>
-            <span className="flex-1">Phrase Studio</span>
-            {!isActive("/phrases") && (
+            <span className="flex-1 flex items-center gap-1.5">
+              <span>Scripted Call</span>
+              <span className={`text-[10px] font-extrabold uppercase px-1.5 py-0.5 rounded leading-tight tracking-wide ${
+                isActive("/scripted-call") 
+                  ? "bg-white/25 text-white" 
+                  : "bg-primary-600 text-white dark:bg-primary-500"
+              }`}>
+                new
+              </span>
+            </span>
+            {!isActive("/scripted-call") && (
               <span className="absolute right-0 top-0 bottom-0 flex items-center pr-4">
                 <span className="flex h-2 w-2 rounded-full bg-primary-500 blur-[2px] absolute"></span>
                 <span className="flex h-2 w-2 rounded-full bg-primary-400"></span>
@@ -244,9 +253,21 @@ export default function Nav({ disabled = false }) {
             )}
             
             {/* Shimmer Effect */}
-            {isActive("/phrases") && (
+            {isActive("/scripted-call") && (
               <div className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/20 to-transparent group-hover:animate-shimmer" />
             )}
+          </Link>
+
+          <Link
+            to="/phrases"
+            onClick={handleLinkClick}
+            className={`flex items-center space-x-3 px-4 py-2.5 rounded-xl text-sm font-bold transition-all duration-300 group ${isActive("/phrases")
+              ? "bg-neutral-100 dark:bg-neutral-800 text-neutral-900 dark:text-white shadow-inner"
+              : "text-neutral-500 dark:text-neutral-400 hover:bg-neutral-50 dark:hover:bg-neutral-800/50 hover:text-neutral-900 dark:hover:text-neutral-200"
+              } ${disabled ? 'opacity-50 cursor-not-allowed pointer-events-none' : ''}`}
+          >
+            <Mic2 className={`w-4 h-4 ${isActive("/phrases") ? "text-primary-600 dark:text-primary-400" : "group-hover:text-primary-500 transition-colors"}`} />
+            <span>Phrase Studio</span>
           </Link>
 
           <div className="my-3.5">

@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { apiGet, apiPostJson, apiDeleteJson } from "../lib/api.js";
 import AdminNav from "../components/AdminNav.jsx";
 import AudioVisualizer from "../components/AudioVisualizer.jsx";
+import MergedCallStudio from "../components/MergedCallStudio.jsx";
 import { fetchAndConvertToWav } from "../lib/audioToWav.js";
 import { getUserInfo } from "../lib/auth.js";
 import { createStoredZip } from "../lib/zipStore.js";
@@ -54,10 +55,12 @@ export default function AdminCalls() {
     const [calls, setCalls] = useState([]);
     const [statusFilter, setStatusFilter] = useState("");
     const [rejectedSubTab, setRejectedSubTab] = useState("pending_rejected");
+    const [pipelineSubTab, setPipelineSubTab] = useState("calls");
     const [pagination, setPagination] = useState({ page: 1, limit: 20, total: 0, pages: 0 });
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
     const [selectedCall, setSelectedCall] = useState(null);
+    const [mergedStudioCall, setMergedStudioCall] = useState(null);
     const [recordingNotes, setRecordingNotes] = useState({});
     const [rejectionReasons, setRejectionReasons] = useState({});
     const [selectedCalls, setSelectedCalls] = useState(new Set());
@@ -82,10 +85,12 @@ export default function AdminCalls() {
     useEffect(() => {
         setSelectedCallIds([]);
         loadCalls();
-    }, [pagination.page, statusFilter, rejectedSubTab]);
+    }, [pagination.page, statusFilter, rejectedSubTab, pipelineSubTab]);
 
     const displayCalls = useMemo(() => {
-        if (statusFilter === "rejected" && rejectedSubTab === "monologued") {
+        const isMonologueView = (statusFilter === "rejected" && rejectedSubTab === "monologued") ||
+                                (["pending_segmentation", "pending_transcription", "finished"].includes(statusFilter) && pipelineSubTab === "monologues");
+        if (isMonologueView) {
             const monologueItems = [];
             calls.forEach(call => {
                 const hasA = call.recordingAMonologueStatus === 'transcribed' || (call.isMonologued && call.monologueDetails?.speakerUsed === 'userA') || (call.isMonologued && call.monologueDetails?.userA?.status === 'transcribed');
@@ -131,7 +136,7 @@ export default function AdminCalls() {
             return monologueItems;
         }
         return calls;
-    }, [calls, statusFilter, rejectedSubTab]);
+    }, [calls, statusFilter, rejectedSubTab, pipelineSubTab]);
 
     const isAllSelected = displayCalls.length > 0 && displayCalls.every(c => selectedCallIds.includes(c.monologueUniqueKey || c.callId));
 
@@ -154,9 +159,10 @@ export default function AdminCalls() {
             setLoading(true);
             const statusParam = statusFilter ? `&status=${statusFilter}` : "";
             const subTabParam = (statusFilter === "rejected" && isAdmin && rejectedSubTab) ? `&rejectedSubTab=${rejectedSubTab}` : "";
-            const data = await apiGet(`/api/admin/calls?page=${pagination.page}&limit=${pagination.limit}${statusParam}${subTabParam}`);
-            setCalls(data.calls);
-            setPagination(data.pagination);
+            const pipelineSubTabParam = ["pending_segmentation", "pending_transcription", "finished"].includes(statusFilter) ? `&pipelineSubTab=${pipelineSubTab}` : "";
+            const data = await apiGet(`/api/admin/calls?page=${pagination.page}&limit=${pagination.limit}${statusParam}${subTabParam}${pipelineSubTabParam}`);
+            setCalls(data.calls || []);
+            setPagination(data.pagination || { page: 1, limit: 20, total: 0, pages: 0 });
         } catch (e) {
             setError(e.message);
             if (e.message.includes("Forbidden") || e.message.includes("Unauthorized")) {
@@ -856,6 +862,52 @@ export default function AdminCalls() {
         }
     }
 
+    async function handleCancelSendAsCall(callId) {
+        const result = await Swal.fire({
+            title: 'Remove from Transcription?',
+            text: 'Remove this call from the call transcription queue?',
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#dc2626',
+            cancelButtonColor: '#404040',
+            confirmButtonText: 'Yes, Remove'
+        });
+
+        if (!result.isConfirmed) return;
+
+        try {
+            setIsTranscribingCall(prev => ({ ...prev, [callId]: true }));
+            const data = await apiPostJson(`/api/admin/calls/${callId}/cancel-transcribe-call`, {});
+            
+            Swal.fire({
+                icon: 'info',
+                title: 'Removed from Transcription',
+                text: data.message || `Call removed from transcription queue.`,
+                timer: 2000,
+                showConfirmButton: false
+            });
+
+            if (selectedCall?.callId === callId) {
+                setSelectedCall(prev => ({
+                    ...prev,
+                    transcribedAsCall: false,
+                    callTranscriptionStatus: null,
+                    isApprovedForTranscription: false
+                }));
+            }
+            await loadCalls();
+        } catch (err) {
+            Swal.fire({
+                icon: 'error',
+                title: 'Action Failed',
+                text: err.message || 'Could not remove call from transcription.',
+                confirmButtonColor: '#ea580c'
+            });
+        } finally {
+            setIsTranscribingCall(prev => ({ ...prev, [callId]: false }));
+        }
+    }
+
     async function handlePurgeRejected() {
         const result = await Swal.fire({
             title: 'Purge Rejected Recordings?',
@@ -1228,6 +1280,9 @@ export default function AdminCalls() {
                                 { label: "Pending", value: "pending" },
                                 { label: "Approved", value: "approved" },
                                 { label: "Rejected", value: "rejected" },
+                                { label: "Pending Segmentation", value: "pending_segmentation", badge: "✂️" },
+                                { label: "Pending Transcription", value: "pending_transcription", badge: "📝" },
+                                { label: "Finished", value: "finished", badge: "🎉" },
                                 { label: "Call Logs", value: "logs" },
                                 { label: "All Calls", value: "" }
                             ].map((tab) => (
@@ -1237,16 +1292,59 @@ export default function AdminCalls() {
                                         setStatusFilter(tab.value);
                                         setPagination(prev => ({ ...prev, page: 1 }));
                                     }}
-                                    className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${
+                                    className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all flex items-center gap-1.5 ${
                                         statusFilter === tab.value
                                             ? "bg-warning-600 text-white shadow-md shadow-warning-900/20"
                                             : "bg-neutral-800 text-neutral-400 hover:text-white border border-neutral-700"
                                     }`}
                                 >
-                                    {tab.label}
+                                    {tab.badge && <span>{tab.badge}</span>}
+                                    <span>{tab.label}</span>
                                 </button>
                             ))}
                         </div>
+
+                        {/* Pipeline Subtabs: Pending Segmentation, Pending Transcription, Finished */}
+                        {["pending_segmentation", "pending_transcription", "finished"].includes(statusFilter) && (
+                            <div className="flex flex-wrap items-center justify-between gap-3 mb-4 p-3 bg-neutral-800/80 border border-neutral-700/80 rounded-xl animate-in fade-in slide-in-from-top-2 duration-200">
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <span className="text-xs font-bold text-neutral-400 uppercase tracking-wider mr-1">
+                                        {statusFilter === "pending_segmentation" ? "Segmentation Pipeline:" : statusFilter === "pending_transcription" ? "Transcription Pipeline:" : "Completed Pipeline:"}
+                                    </span>
+                                    <button
+                                        onClick={() => {
+                                            setPipelineSubTab("calls");
+                                            setPagination(prev => ({ ...prev, page: 1 }));
+                                        }}
+                                        className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold rounded-lg transition-all ${
+                                            pipelineSubTab === "calls"
+                                                ? "bg-indigo-600 text-white shadow-md shadow-indigo-950/40"
+                                                : "bg-neutral-900 text-neutral-400 hover:text-white border border-neutral-700"
+                                        }`}
+                                    >
+                                        <span>📞 Calls</span>
+                                    </button>
+                                    <button
+                                        onClick={() => {
+                                            setPipelineSubTab("monologues");
+                                            setPagination(prev => ({ ...prev, page: 1 }));
+                                        }}
+                                        className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold rounded-lg transition-all ${
+                                            pipelineSubTab === "monologues"
+                                                ? "bg-purple-600 text-white shadow-md shadow-purple-950/40"
+                                                : "bg-neutral-900 text-neutral-400 hover:text-white border border-neutral-700"
+                                        }`}
+                                    >
+                                        <span>🎙️ Monologues</span>
+                                    </button>
+                                </div>
+                                <div className="text-xs text-neutral-400 font-medium">
+                                    {statusFilter === "pending_segmentation" && "Calls & monologues pending waveform segmentation or QA review"}
+                                    {statusFilter === "pending_transcription" && "Segmentation QA approved • Pending transcription text or QA review"}
+                                    {statusFilter === "finished" && "Completed end-to-end (Segmentation QA ✓ & Transcription QA ✓)"}
+                                </div>
+                            </div>
+                        )}
 
                         {statusFilter === "rejected" && (
                             <div className="flex flex-wrap items-center justify-between gap-3 mb-4 p-3 bg-neutral-800/80 border border-neutral-700/80 rounded-xl animate-in fade-in slide-in-from-top-2 duration-200">
@@ -1308,7 +1406,7 @@ export default function AdminCalls() {
                                     <svg className="w-3.5 h-3.5 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                                     </svg>
-                                    Delete All Rejected Calls
+                                    Purge Rejected
                                 </button>
                             </div>
                         )}
@@ -1350,12 +1448,12 @@ export default function AdminCalls() {
                         )}
 
                         {/* Calls Table */}
-                        <div className="bg-neutral-800 border border-neutral-700 rounded-xl overflow-hidden">
+                        <div className="bg-neutral-800 rounded-xl overflow-hidden shadow-xl border border-neutral-700">
                             <div className="overflow-x-auto">
                                 <table className="w-full">
-                                    <thead className="bg-neutral-700">
+                                    <thead className="bg-neutral-900 border-b border-neutral-700">
                                         <tr>
-                                            <th className="w-8 px-2 py-2 text-center">
+                                            <th className="w-8 px-2 py-2.5 text-center">
                                                 <input
                                                     type="checkbox"
                                                     checked={isAllSelected}
@@ -1373,9 +1471,9 @@ export default function AdminCalls() {
                                                     <th className="px-2.5 py-2.5 text-left text-xs font-semibold text-neutral-300 uppercase tracking-tight">Reviewed By (QA)</th>
                                                     <th className="px-2.5 py-2.5 text-left text-xs font-semibold text-neutral-300 uppercase tracking-tight">Verdict</th>
                                                     <th className="hidden lg:table-cell px-2.5 py-2.5 text-left text-xs font-semibold text-neutral-300 uppercase tracking-tight">Date</th>
-                                                    <th className="sticky right-0 bg-neutral-700 z-20 px-3 py-2.5 text-left text-xs font-bold text-warning-400 uppercase tracking-tight shadow-[-4px_0_10px_rgba(0,0,0,0.4)]">Actions</th>
+                                                    <th className="px-3 py-2.5 text-left text-xs font-bold text-warning-400 uppercase tracking-tight">Actions</th>
                                                 </>
-                                            ) : (statusFilter === "rejected" && rejectedSubTab === "monologued") ? (
+                                            ) : (statusFilter === "rejected" && rejectedSubTab === "monologued") || (["pending_segmentation", "pending_transcription", "finished"].includes(statusFilter) && pipelineSubTab === "monologues") ? (
                                                 <>
                                                     <th className="px-2.5 py-2.5 text-left text-xs font-semibold text-neutral-300 uppercase tracking-tight">Call ID</th>
                                                     <th className="px-2.5 py-2.5 text-left text-xs font-semibold text-neutral-300 uppercase tracking-tight">Monologue Speaker</th>
@@ -1383,8 +1481,19 @@ export default function AdminCalls() {
                                                     <th className="hidden md:table-cell px-2.5 py-2.5 text-left text-xs font-semibold text-neutral-300 uppercase tracking-tight">Topic</th>
                                                     <th className="hidden md:table-cell px-2.5 py-2.5 text-left text-xs font-semibold text-neutral-300 uppercase tracking-tight">Language</th>
                                                     <th className="px-2.5 py-2.5 text-left text-xs font-semibold text-neutral-300 uppercase tracking-tight">Duration</th>
-                                                    <th className="px-2.5 py-2.5 text-left text-xs font-bold text-purple-400 uppercase tracking-tight">Monologue Status</th>
-                                                    <th className="sticky right-0 bg-neutral-700 z-20 px-3 py-2.5 text-left text-xs font-bold text-warning-400 uppercase tracking-tight shadow-[-4px_0_10px_rgba(0,0,0,0.4)]">Actions</th>
+                                                    <th className="px-2.5 py-2.5 text-left text-xs font-bold text-purple-400 uppercase tracking-tight">Pipeline Status</th>
+                                                    <th className="px-3 py-2.5 text-left text-xs font-bold text-warning-400 uppercase tracking-tight">Actions</th>
+                                                </>
+                                            ) : ["pending_segmentation", "pending_transcription", "finished"].includes(statusFilter) && pipelineSubTab === "calls" ? (
+                                                <>
+                                                    <th className="px-2.5 py-2.5 text-left text-xs font-semibold text-neutral-300 uppercase tracking-tight">Call ID</th>
+                                                    <th className="px-2.5 py-2.5 text-left text-xs font-semibold text-neutral-300 uppercase tracking-tight">Speakers</th>
+                                                    <th className="hidden md:table-cell px-2.5 py-2.5 text-left text-xs font-semibold text-neutral-300 uppercase tracking-tight">Topic</th>
+                                                    <th className="hidden md:table-cell px-2.5 py-2.5 text-left text-xs font-semibold text-neutral-300 uppercase tracking-tight">Language</th>
+                                                    <th className="px-2.5 py-2.5 text-left text-xs font-semibold text-neutral-300 uppercase tracking-tight">Duration</th>
+                                                    <th className="px-2.5 py-2.5 text-left text-xs font-bold text-indigo-400 uppercase tracking-tight">Segmentation QA</th>
+                                                    <th className="px-2.5 py-2.5 text-left text-xs font-bold text-blue-400 uppercase tracking-tight">Transcription QA</th>
+                                                    <th className="px-3 py-2.5 text-left text-xs font-bold text-warning-400 uppercase tracking-tight">Actions</th>
                                                 </>
                                             ) : statusFilter === "rejected" ? (
                                                 <>
@@ -1398,7 +1507,7 @@ export default function AdminCalls() {
                                                     ) : (
                                                         <th className="px-2.5 py-2.5 text-left text-xs font-semibold text-neutral-300 uppercase tracking-tight">Verdict</th>
                                                     )}
-                                                    <th className="sticky right-0 bg-neutral-700 z-20 px-3 py-2.5 text-left text-xs font-bold text-warning-400 uppercase tracking-tight shadow-[-4px_0_10px_rgba(0,0,0,0.4)]">Actions</th>
+                                                    <th className="px-3 py-2.5 text-left text-xs font-bold text-warning-400 uppercase tracking-tight">Actions</th>
                                                 </>
                                             ) : (
                                                 <>
@@ -1410,7 +1519,7 @@ export default function AdminCalls() {
                                                     <th className="px-2.5 py-2.5 text-left text-xs font-semibold text-neutral-300 uppercase tracking-tight">Duration</th>
                                                     <th className="hidden sm:table-cell px-2.5 py-2.5 text-left text-xs font-semibold text-neutral-300 uppercase tracking-tight">End Reason</th>
                                                     <th className="px-2.5 py-2.5 text-left text-xs font-semibold text-neutral-300 uppercase tracking-tight">Call Status</th>
-                                                    <th className="sticky right-0 bg-neutral-700 z-20 px-3 py-2.5 text-left text-xs font-bold text-warning-400 uppercase tracking-tight shadow-[-4px_0_10px_rgba(0,0,0,0.4)]">Actions</th>
+                                                    <th className="px-3 py-2.5 text-left text-xs font-bold text-warning-400 uppercase tracking-tight">Actions</th>
                                                 </>
                                             )}
                                         </tr>
@@ -1490,7 +1599,7 @@ export default function AdminCalls() {
                                                             </div>
                                                         </td>
                                                     </>
-                                                ) : (statusFilter === "rejected" && rejectedSubTab === "monologued") ? (
+                                                ) : (statusFilter === "rejected" && rejectedSubTab === "monologued") || (["pending_segmentation", "pending_transcription", "finished"].includes(statusFilter) && pipelineSubTab === "monologues") ? (
                                                     <>
                                                         <td className="px-2.5 py-2 whitespace-nowrap">
                                                             <div className="text-xs font-mono text-neutral-300">{call.callId.slice(0, 8)}...</div>
@@ -1522,9 +1631,92 @@ export default function AdminCalls() {
                                                             <div className="text-xs text-neutral-300">{formatDuration(call.recordingAStartedAt || call.startedAt, call.endedAt)}</div>
                                                         </td>
                                                         <td className="px-2.5 py-2 whitespace-nowrap">
-                                                            <span className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-bold rounded-lg bg-purple-900/70 text-purple-200 border border-purple-500/50 shadow-sm shadow-purple-950/40">
-                                                                ✓ Monologued ({call.monologueSpeakerLabel})
+                                                            {statusFilter === "pending_segmentation" ? (
+                                                                <span className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-bold rounded-lg bg-amber-950/70 text-amber-300 border border-amber-500/40 shadow-sm shadow-amber-950/40">
+                                                                    ✂️ Pending Cut / QA
+                                                                </span>
+                                                            ) : statusFilter === "pending_transcription" ? (
+                                                                <span className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-bold rounded-lg bg-indigo-950/70 text-indigo-300 border border-indigo-500/40 shadow-sm shadow-indigo-950/40">
+                                                                    📝 In Transcription
+                                                                </span>
+                                                            ) : statusFilter === "finished" ? (
+                                                                <span className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-bold rounded-lg bg-emerald-950/70 text-emerald-300 border border-emerald-500/40 shadow-sm shadow-emerald-950/40">
+                                                                    🎉 Finished & QA Verified
+                                                                </span>
+                                                            ) : (
+                                                                <span className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-bold rounded-lg bg-purple-900/70 text-purple-200 border border-purple-500/50 shadow-sm shadow-purple-950/40">
+                                                                    ✓ Monologued ({call.monologueSpeakerLabel})
+                                                                </span>
+                                                            )}
+                                                        </td>
+                                                    </>
+                                                ) : ["pending_segmentation", "pending_transcription", "finished"].includes(statusFilter) && pipelineSubTab === "calls" ? (
+                                                    <>
+                                                        <td className="px-2.5 py-2 whitespace-nowrap">
+                                                            <div className="text-xs font-mono text-neutral-300">{call.callId.slice(0, 8)}...</div>
+                                                        </td>
+                                                        <td className="px-2.5 py-2">
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="text-xs text-white font-medium">{call.userA?.username || "Speaker A"}</span>
+                                                                <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded ${call.recordingAStatus === 'approved' ? 'bg-success-950/60 text-success-300' : 'bg-neutral-800 text-neutral-400'}`}>
+                                                                    {call.recordingAStatus === 'approved' ? '✓ Spk A' : 'Spk A'}
+                                                                </span>
+                                                            </div>
+                                                            <div className="flex items-center gap-2 mt-1">
+                                                                <span className="text-xs text-neutral-300 font-medium">{call.userB?.username || "Speaker B"}</span>
+                                                                <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded ${call.recordingBStatus === 'approved' ? 'bg-success-950/60 text-success-300' : 'bg-neutral-800 text-neutral-400'}`}>
+                                                                    {call.recordingBStatus === 'approved' ? '✓ Spk B' : 'Spk B'}
+                                                                </span>
+                                                            </div>
+                                                        </td>
+                                                        <td className="hidden md:table-cell px-2.5 py-2">
+                                                            <div className="text-xs font-medium text-white max-w-[150px] truncate" title={call.subtopicId?.title}>
+                                                                {call.subtopicId?.title || "—"}
+                                                            </div>
+                                                        </td>
+                                                        <td className="hidden md:table-cell px-2.5 py-2 whitespace-nowrap">
+                                                            <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-indigo-900/50 text-indigo-300 capitalize">
+                                                                {call.language || '—'}
                                                             </span>
+                                                        </td>
+                                                        <td className="px-2.5 py-2 whitespace-nowrap">
+                                                            <div className="text-xs text-neutral-300">{formatDuration(call.recordingAStartedAt || call.startedAt, call.endedAt)}</div>
+                                                        </td>
+                                                        {/* Segmentation QA column */}
+                                                        <td className="px-2.5 py-2 whitespace-nowrap">
+                                                            {call.segmentation_qa ? (
+                                                                <span className="px-2 py-0.5 text-xs font-bold rounded-lg bg-emerald-950/70 text-emerald-300 border border-emerald-500/30">
+                                                                    ✓ Seg QA Approved
+                                                                </span>
+                                                            ) : call.Segmentation_Done ? (
+                                                                <span className="px-2 py-0.5 text-xs font-bold rounded-lg bg-amber-950/70 text-amber-300 border border-amber-500/30">
+                                                                    ⏳ Seg QA Pending
+                                                                </span>
+                                                            ) : (
+                                                                <span className="px-2 py-0.5 text-xs font-medium rounded-lg bg-neutral-800 text-neutral-400 border border-neutral-700">
+                                                                    ✂️ Pending Cut
+                                                                </span>
+                                                            )}
+                                                        </td>
+                                                        {/* Transcription QA column */}
+                                                        <td className="px-2.5 py-2 whitespace-nowrap">
+                                                            {call.transcription_status === 'QA_APPROVED' ? (
+                                                                <span className="px-2 py-0.5 text-xs font-bold rounded-lg bg-emerald-950/70 text-emerald-300 border border-emerald-500/30">
+                                                                    ✓ QA Verified
+                                                                </span>
+                                                            ) : call.transcription_status === 'TRANSCRIPTION_COMPLETED' ? (
+                                                                <span className="px-2 py-0.5 text-xs font-bold rounded-lg bg-indigo-950/70 text-indigo-300 border border-indigo-500/30">
+                                                                    ⏳ Transcription QA
+                                                                </span>
+                                                            ) : call.total_segments > 0 ? (
+                                                                <span className="px-2 py-0.5 text-xs font-bold rounded-lg bg-purple-950/70 text-purple-300 border border-purple-500/30">
+                                                                    📝 In Progress ({call.qa_verified_segments_count || 0}/{call.total_segments})
+                                                                </span>
+                                                            ) : (
+                                                                <span className="px-2 py-0.5 text-xs font-medium rounded-lg bg-neutral-800 text-neutral-400 border border-neutral-700">
+                                                                    ⏳ Queued
+                                                                </span>
+                                                            )}
                                                         </td>
                                                     </>
                                                 ) : statusFilter === "rejected" ? (
@@ -1675,7 +1867,7 @@ export default function AdminCalls() {
                                                     </>
                                                 )}
                                                 {/* Actions */}
-                                                <td className="sticky right-0 bg-neutral-800 group-hover:bg-neutral-700/90 z-10 px-3 py-2 whitespace-nowrap text-xs shadow-[-4px_0_10px_rgba(0,0,0,0.4)]">
+                                                <td className="px-3 py-2 whitespace-nowrap text-xs">
                                                     <div className="flex items-center gap-1.5">
                                                         <button
                                                             onClick={() => {
@@ -1691,7 +1883,7 @@ export default function AdminCalls() {
                                                                     [uBId]: call.recordingBQCResult || null
                                                                 });
                                                             }}
-                                                            className="px-2.5 py-1 bg-warning-600/90 hover:bg-warning-500 text-white font-semibold rounded text-xs transition-colors shadow-sm"
+                                                            className="px-3 py-1.5 bg-warning-600/90 hover:bg-warning-500 text-white font-semibold rounded-lg text-xs transition-colors shadow-sm cursor-pointer"
                                                         >
                                                             View
                                                         </button>
@@ -1948,7 +2140,16 @@ export default function AdminCalls() {
                 <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50" onClick={() => setSelectedCall(null)}>
                     <div className="bg-neutral-800 border border-neutral-700 rounded-xl max-w-6xl w-full max-h-[90vh] overflow-y-auto p-4 md:p-6 animate-scale-in" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center justify-between mb-4 md:mb-6">
-                            <h2 className="text-xl md:text-2xl font-bold text-white">Call Details</h2>
+                            <div className="flex items-center gap-3">
+                                <h2 className="text-xl md:text-2xl font-bold text-white">Call Details</h2>
+                                <button
+                                    onClick={() => setMergedStudioCall(selectedCall)}
+                                    className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 via-indigo-600 to-primary-600 hover:from-emerald-500 hover:to-primary-500 text-white font-bold text-xs shadow-lg shadow-indigo-500/20 flex items-center gap-1.5 transition-all transform hover:scale-[1.02]"
+                                >
+                                    <span>🎧</span>
+                                    <span>See Merged Call</span>
+                                </button>
+                            </div>
                             <button onClick={() => setSelectedCall(null)} className="text-neutral-400 hover:text-white">
                                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path>
@@ -2589,50 +2790,65 @@ export default function AdminCalls() {
                                     <div className="text-neutral-500 text-sm">No recordings available</div>
                                 )}
 
-                                {/* Combined Transcribe as Call Button (Admin Only) */}
-                                {isAdmin && (selectedCall.recordingAFile || selectedCall.recordingBFile) && (
-                                    <div className="mt-6 pt-5 border-t border-neutral-700 bg-neutral-900/80 p-4.5 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4 border border-indigo-500/30 shadow-2xl">
-                                        <div className="flex items-center gap-3">
-                                            <div className="w-10 h-10 rounded-xl bg-indigo-600/20 border border-indigo-500/40 text-indigo-300 flex items-center justify-center text-lg font-bold shrink-0">
-                                                📞
-                                            </div>
-                                            <div>
-                                                <div className="text-white text-xs font-bold uppercase tracking-wider flex items-center gap-2">
-                                                    <span>Transcribe as Call</span>
-                                                    <span className="text-[10px] bg-indigo-500/20 text-indigo-300 px-2 py-0.5 rounded-full border border-indigo-500/30 font-semibold">
-                                                        Admin Only
-                                                    </span>
+                                {/* Combined Transcribe as Call Control Card (Admin Only) */}
+                                {isAdmin && (
+                                    <div className="mt-6 pt-5 border-t border-neutral-700">
+                                        <div className="bg-gradient-to-r from-neutral-900 via-indigo-950/40 to-neutral-900 border border-indigo-500/40 rounded-2xl p-4 md:p-5 shadow-2xl flex flex-col sm:flex-row items-center justify-between gap-4">
+                                            <div className="flex items-center gap-3.5">
+                                                <div className="w-11 h-11 rounded-2xl bg-indigo-600/20 border border-indigo-500/40 text-indigo-300 flex items-center justify-center text-xl font-bold shrink-0 shadow-inner">
+                                                    📞
                                                 </div>
-                                                <p className="text-neutral-400 text-[11px] mt-0.5">
-                                                    Transcribe complete 2-person dialogue, irrespective of individual speaker rejection states.
-                                                </p>
+                                                <div>
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="text-white text-sm font-bold tracking-tight">
+                                                            Transcribe as Full Call (2-Speaker Dialogue)
+                                                        </span>
+                                                        <span className="text-[10px] bg-indigo-500/20 text-indigo-300 px-2 py-0.5 rounded-full border border-indigo-500/30 font-bold uppercase tracking-wider">
+                                                            Admin Control
+                                                        </span>
+                                                    </div>
+                                                    <p className="text-neutral-400 text-xs mt-0.5">
+                                                        Queues complete dialogue for transcription studio without automatic QA push.
+                                                    </p>
+                                                </div>
                                             </div>
-                                        </div>
 
-                                        <div className="flex items-center gap-2 w-full sm:w-auto shrink-0">
-                                            {selectedCall.transcribedAsCall || selectedCall.callTranscriptionStatus === 'transcribed' ? (
-                                                <div className="w-full sm:w-auto px-4 py-2 bg-indigo-950/80 border border-indigo-500/50 rounded-xl text-center text-xs font-bold text-indigo-300 shadow-md">
-                                                    ✓ Transcribed as Call
-                                                </div>
-                                            ) : (
-                                                <button
-                                                    onClick={() => handleSendAsCall(selectedCall.callId)}
-                                                    disabled={isTranscribingCall[selectedCall.callId]}
-                                                    className="w-full sm:w-auto px-5 py-2.5 bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 disabled:opacity-50 text-white rounded-xl text-xs font-bold shadow-lg shadow-indigo-900/30 transition-all flex items-center justify-center gap-2 border border-indigo-400/30 active:scale-95"
-                                                >
-                                                    {isTranscribingCall[selectedCall.callId] ? (
-                                                        <>
-                                                            <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                                                            <span>Sending to Pipeline...</span>
-                                                        </>
-                                                    ) : (
-                                                        <>
-                                                            <span>📞</span>
-                                                            <span>Transcribe as Call</span>
-                                                        </>
-                                                    )}
-                                                </button>
-                                            )}
+                                            <div className="flex items-center gap-2.5 w-full sm:w-auto shrink-0">
+                                                {selectedCall.transcribedAsCall || selectedCall.callTranscriptionStatus === 'transcribed' ? (
+                                                    <div className="flex items-center gap-2 w-full sm:w-auto">
+                                                        <div className="px-4 py-2 bg-emerald-950/80 border border-emerald-500/50 rounded-xl text-center text-xs font-bold text-emerald-300 flex items-center gap-1.5 shadow-md">
+                                                            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                                                            <span>✓ In Transcription</span>
+                                                        </div>
+                                                        <button
+                                                            onClick={() => handleCancelSendAsCall(selectedCall.callId)}
+                                                            disabled={isTranscribingCall[selectedCall.callId]}
+                                                            className="px-3 py-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white border border-neutral-700 text-xs font-bold rounded-xl transition-all"
+                                                            title="Remove from transcription queue"
+                                                        >
+                                                            Remove
+                                                        </button>
+                                                    </div>
+                                                ) : (
+                                                    <button
+                                                        onClick={() => handleSendAsCall(selectedCall.callId)}
+                                                        disabled={isTranscribingCall[selectedCall.callId]}
+                                                        className="w-full sm:w-auto px-5 py-2.5 bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 disabled:opacity-50 text-white rounded-xl text-xs font-bold shadow-lg shadow-indigo-900/40 transition-all flex items-center justify-center gap-2 border border-indigo-400/40 active:scale-95 cursor-pointer"
+                                                    >
+                                                        {isTranscribingCall[selectedCall.callId] ? (
+                                                            <>
+                                                                <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                                                <span>Queueing Call...</span>
+                                                            </>
+                                                        ) : (
+                                                            <>
+                                                                <span>📞</span>
+                                                                <span>Transcribe as Call</span>
+                                                            </>
+                                                        )}
+                                                    </button>
+                                                )}
+                                            </div>
                                         </div>
                                     </div>
                                 )}
@@ -2671,6 +2887,25 @@ export default function AdminCalls() {
                     </div>
                     <div className="mt-4 text-xs text-neutral-400 font-medium">
                         Click anywhere outside the spectrogram or 'X' to close zoom view
+                    </div>
+                </div>
+            )}
+
+            {/* Merged Call Dual-Waveform Studio Modal */}
+            {mergedStudioCall && (
+                <div 
+                    className="fixed inset-0 bg-black/85 backdrop-blur-md z-[100] flex items-center justify-center p-2 md:p-6 animate-fade-in"
+                    onClick={() => setMergedStudioCall(null)}
+                >
+                    <div 
+                        className="bg-neutral-900 border border-neutral-700/80 rounded-2xl w-full max-w-6xl h-[92vh] overflow-hidden shadow-2xl flex flex-col animate-scale-in"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <MergedCallStudio 
+                            call={mergedStudioCall} 
+                            onClose={() => setMergedStudioCall(null)} 
+                            isModal={true} 
+                        />
                     </div>
                 </div>
             )}

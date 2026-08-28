@@ -1,4 +1,5 @@
 import React from 'react';
+import { HelpCircle, MessageSquare, Play, X, Check, Loader2 } from 'lucide-react';
 
 export default function RoleSelector({
     myRole,
@@ -8,61 +9,79 @@ export default function RoleSelector({
     onEndConversation
 }) {
     return (
-        <div className="bg-white border border-neutral-200 rounded-xl p-4 md:p-6 animate-scale-in">
-            <h3 className="text-base md:text-lg font-bold text-neutral-900 mb-3 md:mb-4 flex items-center">
-                <span className="w-7 h-7 md:w-8 md:h-8 bg-neutral-900 text-white rounded-full flex items-center justify-center mr-2 md:mr-3 text-xs md:text-sm">2</span>
-                Assign Roles
-            </h3>
-            <p className="text-neutral-600 text-xs md:text-sm mb-4 md:mb-6">
-                Decide who will ask questions and who will answer.
-            </p>
+        <div className="bg-neutral-900/90 border border-neutral-800 rounded-3xl p-6 md:p-8 shadow-xl backdrop-blur-xl animate-scale-in text-white space-y-6">
+            <div>
+                <h3 className="text-base md:text-lg font-black text-white flex items-center gap-3">
+                    <span className="w-7 h-7 rounded-xl bg-emerald-600/30 border border-emerald-500/40 text-emerald-300 flex items-center justify-center text-xs font-black">
+                        2
+                    </span>
+                    <span>Assign Speaking Roles</span>
+                </h3>
+                <p className="text-neutral-400 text-xs mt-1">
+                    Select who will lead the questions and who will provide the answers.
+                </p>
+            </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Questioner Button */}
                 <button
                     onClick={() => onSelectRole("questioner")}
                     disabled={myRole !== null || peerRole === "questioner"}
-                    className={`p-6 rounded-xl border-2 transition-all relative overflow-hidden group ${myRole === "questioner"
-                        ? "border-warning-500 bg-warning-50 ring-2 ring-warning-200"
-                        : peerRole === "questioner"
-                            ? "border-neutral-200 bg-neutral-100 opacity-50 cursor-not-allowed"
-                            : "border-neutral-200 hover:border-warning-400 hover:shadow-md"
-                        }`}
+                    className={`p-6 rounded-2xl border-2 transition-all relative overflow-hidden flex flex-col justify-between text-left cursor-pointer group ${
+                        myRole === "questioner"
+                            ? "border-indigo-500 bg-indigo-950/50 ring-2 ring-indigo-500/40 shadow-xl shadow-indigo-950/50"
+                            : peerRole === "questioner"
+                                ? "border-neutral-800 bg-neutral-950 opacity-40 cursor-not-allowed"
+                                : "border-neutral-800 bg-neutral-950 hover:border-indigo-500/70 hover:shadow-lg"
+                    }`}
                 >
-                    <div className="text-4xl mb-3">❓</div>
-                    <div className="text-xl font-bold text-neutral-900 mb-1">Questioner</div>
-                    <div className="text-sm text-neutral-500">You will ask the questions</div>
+                    <div>
+                        <div className="w-10 h-10 rounded-xl bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 flex items-center justify-center mb-3">
+                            <HelpCircle className="w-5 h-5" />
+                        </div>
+                        <div className="text-lg font-black text-white mb-1">Questioner</div>
+                        <div className="text-xs text-neutral-400">You will ask conversational questions</div>
+                    </div>
+
                     {peerRole === "questioner" && (
-                        <div className="absolute top-2 right-2 text-xs bg-error-100 text-error-700 px-2 py-1 rounded-full font-bold">
+                        <div className="absolute top-3 right-3 text-[10px] bg-rose-950 text-rose-300 border border-rose-800/60 px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wider">
                             Taken
                         </div>
                     )}
                     {myRole === "questioner" && (
-                        <div className="absolute top-2 right-2 text-xs bg-warning-100 text-warning-700 px-2 py-1 rounded-full font-bold">
+                        <div className="absolute top-3 right-3 text-[10px] bg-indigo-600 text-white px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wider shadow-sm">
                             Your Role
                         </div>
                     )}
                 </button>
 
+                {/* Answerer Button */}
                 <button
                     onClick={() => onSelectRole("answerer")}
                     disabled={myRole !== null || peerRole === "answerer"}
-                    className={`p-6 rounded-xl border-2 transition-all relative overflow-hidden group ${myRole === "answerer"
-                        ? "border-success-500 bg-success-50 ring-2 ring-success-200"
-                        : peerRole === "answerer"
-                            ? "border-neutral-200 bg-neutral-100 opacity-50 cursor-not-allowed"
-                            : "border-neutral-200 hover:border-success-400 hover:shadow-md"
-                        }`}
+                    className={`p-6 rounded-2xl border-2 transition-all relative overflow-hidden flex flex-col justify-between text-left cursor-pointer group ${
+                        myRole === "answerer"
+                            ? "border-emerald-500 bg-emerald-950/50 ring-2 ring-emerald-500/40 shadow-xl shadow-emerald-950/50"
+                            : peerRole === "answerer"
+                                ? "border-neutral-800 bg-neutral-950 opacity-40 cursor-not-allowed"
+                                : "border-neutral-800 bg-neutral-950 hover:border-emerald-500/70 hover:shadow-lg"
+                    }`}
                 >
-                    <div className="text-4xl mb-3">💬</div>
-                    <div className="text-xl font-bold text-neutral-900 mb-1">Answerer</div>
-                    <div className="text-sm text-neutral-500">You will answer questions</div>
+                    <div>
+                        <div className="w-10 h-10 rounded-xl bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center justify-center mb-3">
+                            <MessageSquare className="w-5 h-5" />
+                        </div>
+                        <div className="text-lg font-black text-white mb-1">Answerer</div>
+                        <div className="text-xs text-neutral-400">You will respond and explain</div>
+                    </div>
+
                     {peerRole === "answerer" && (
-                        <div className="absolute top-2 right-2 text-xs bg-error-100 text-error-700 px-2 py-1 rounded-full font-bold">
+                        <div className="absolute top-3 right-3 text-[10px] bg-rose-950 text-rose-300 border border-rose-800/60 px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wider">
                             Taken
                         </div>
                     )}
                     {myRole === "answerer" && (
-                        <div className="absolute top-2 right-2 text-xs bg-success-100 text-success-700 px-2 py-1 rounded-full font-bold">
+                        <div className="absolute top-3 right-3 text-[10px] bg-emerald-600 text-white px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wider shadow-sm">
                             Your Role
                         </div>
                     )}
@@ -70,56 +89,46 @@ export default function RoleSelector({
             </div>
 
             {/* Status Footer */}
-            <div className="bg-neutral-900 text-white p-4 rounded-lg text-center shadow-inner">
+            <div className="bg-neutral-950 border border-neutral-800 p-5 rounded-2xl text-center shadow-inner space-y-3">
                 {!myRole && !peerRole && (
-                    <div className="text-neutral-400">Waiting for role selections...</div>
+                    <div className="text-neutral-400 text-xs font-semibold">Waiting for role selections...</div>
                 )}
                 {myRole && !peerRole && (
-                    <div className="text-warning-300 font-medium animate-pulse flex items-center justify-center">
-                        <svg className="w-5 h-5 mr-2 animate-spin" fill="none" viewBox="0 0 24 24">
-                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                        </svg>
-                        Waiting for peer to select role...
+                    <div className="text-amber-300 text-xs font-semibold animate-pulse flex items-center justify-center gap-2">
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>Waiting for partner to select their speaking role...</span>
                     </div>
                 )}
                 {!myRole && peerRole && (
-                    <div className="text-warning-300 font-medium animate-pulse">
-                        Peer selected <span className="underline decoration-warning-500 underline-offset-4">{peerRole}</span>. Please select your role!
+                    <div className="text-indigo-300 text-xs font-semibold animate-pulse">
+                        Partner selected <span className="font-bold text-white capitalize">{peerRole}</span>. Please click the other role to confirm!
                     </div>
                 )}
                 {myRole && peerRole && (
                     <div className="flex flex-col items-center space-y-3">
-                        <div className="text-success-300 font-medium flex items-center">
-                            <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path>
-                            </svg>
-                            Roles Confirmed! Ready to start the call.
+                        <div className="text-emerald-400 text-xs font-extrabold flex items-center gap-1.5 uppercase tracking-wider">
+                            <Check className="w-4 h-4" />
+                            <span>Roles Confirmed! Ready to begin conversation</span>
                         </div>
                         <button
                             onClick={onStartCall}
-                            className="btn btn-success px-8 py-3 text-lg font-bold shadow-lg hover:shadow-xl transition-all"
+                            className="px-8 py-3.5 rounded-2xl bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-500 hover:from-emerald-500 hover:to-teal-400 text-white font-black text-sm shadow-xl shadow-emerald-950/40 transition-all flex items-center justify-center gap-2 cursor-pointer transform hover:scale-[1.02]"
                         >
-                            <svg className="w-6 h-6 mr-2 inline-block" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"></path>
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                            </svg>
-                            Start Call
+                            <Play className="w-4 h-4 fill-current" />
+                            <span>Start 20-Min Call</span>
                         </button>
                     </div>
                 )}
             </div>
 
             {/* End Conversation Button */}
-            <div className="mt-6 flex justify-center">
+            <div className="flex justify-center">
                 <button
                     onClick={onEndConversation}
-                    className="px-6 py-2 rounded-full border border-neutral-200 text-neutral-500 hover:border-error-200 hover:text-error-500 hover:bg-error-50 transition-all flex items-center text-sm font-semibold"
+                    className="px-5 py-2 rounded-2xl border border-rose-900/40 bg-rose-950/20 text-rose-400 hover:bg-rose-900/40 hover:text-white transition-all flex items-center gap-1.5 text-xs font-bold cursor-pointer"
                 >
-                    <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path>
-                    </svg>
-                    End Conversation
+                    <X className="w-3.5 h-3.5" />
+                    <span>Cancel / End Conversation</span>
                 </button>
             </div>
         </div>

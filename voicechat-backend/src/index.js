@@ -74,6 +74,7 @@ import {
   getUserStatus,
   uploadIntroRecording,
   getLanguages,
+  getScriptedLanguages,
   getMyLanguageApplications,
   submitLanguageApplication,
   streamLanguageRecording,
@@ -103,6 +104,7 @@ import {
 // ─── External routes ──────────────────────────────────────────────────────────
 import adminRoutes from "./routes/admin.js";
 import topicsRoutes from "./routes/topics.js";
+import scriptedTopicsRoutes from "./routes/scriptedTopics.js";
 import supportRoutes from "./routes/support.js";
 import phrasesRoutes from "./routes/phrases.js";
 import projectsRoutes from "./routes/projects.js";
@@ -306,6 +308,7 @@ app.get("/api/user/contributor-agreement/download", requireAuth(JWT_SECRET), dow
 // Languages
 app.get("/api/public/languages", getLanguages);
 app.get("/api/languages", requireAuth(JWT_SECRET), getLanguages);
+app.get("/api/scripted-languages", getScriptedLanguages);
 app.get(
   "/api/language-applications/my",
   requireAuth(JWT_SECRET),
@@ -348,6 +351,7 @@ app.get(
 // Admin / topics / support (external route modules)
 app.use("/api/admin", adminRoutes);
 app.use("/api/topics", topicsRoutes);
+app.use("/api/scripted-topics", scriptedTopicsRoutes);
 app.use("/api/support", supportRoutes);
 app.use("/api/phrases", phrasesRoutes);
 app.use("/api/projects", projectsRoutes);

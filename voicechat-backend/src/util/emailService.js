@@ -717,8 +717,12 @@ export async function sendAgreementApprovedEmail(to, firstName, s3Key) {
  * Send an email confirming receipt of a project (language) application.
  */
 export async function sendProjectApplicationReceivedEmail(to, firstName, languageName, projectType) {
-    const subject = `Project application received — Voclara`;
-    const typeLabel = projectType === "call" ? "Calling" : "Phrase Recording";
+    const typeLabel = projectType === "call" 
+        ? "Calling" 
+        : projectType === "scripted_call" 
+        ? "Scripted Calls" 
+        : "Phrase Recording";
+    const subject = `Project application received (${languageName} ${typeLabel}) — Voclara`;
     const html = `
 <!DOCTYPE html>
 <html>
@@ -785,8 +789,12 @@ export async function sendProjectApplicationReceivedEmail(to, firstName, languag
  * Send an email confirming that a project (language) application has been approved.
  */
 export async function sendProjectApplicationApprovedEmail(to, firstName, languageName, projectType) {
-    const subject = `Project application approved — Voclara`;
-    const typeLabel = projectType === "call" ? "Calling" : "Phrase Recording";
+    const typeLabel = projectType === "call" 
+        ? "Calling" 
+        : projectType === "scripted_call" 
+        ? "Scripted Calls" 
+        : "Phrase Recording";
+    const subject = `Project application approved (${languageName} ${typeLabel}) — Voclara`;
     const html = `
 <!DOCTYPE html>
 <html>
@@ -853,8 +861,12 @@ export async function sendProjectApplicationApprovedEmail(to, firstName, languag
  * Send an email notifying that a project (language) application has been rejected.
  */
 export async function sendProjectApplicationRejectedEmail(to, firstName, languageName, projectType) {
-    const subject = `Application update — Voclara project status`;
-    const typeLabel = projectType === "call" ? "Calling" : "Phrase Recording";
+    const typeLabel = projectType === "call" 
+        ? "Calling" 
+        : projectType === "scripted_call" 
+        ? "Scripted Calls" 
+        : "Phrase Recording";
+    const subject = `Application update — Voclara (${languageName} ${typeLabel})`;
     const html = `
 <!DOCTYPE html>
 <html>

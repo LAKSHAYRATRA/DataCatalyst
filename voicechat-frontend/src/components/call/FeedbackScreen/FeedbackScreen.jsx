@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from "react";
 import { apiPostJson } from "../../../lib/api.js";
 import { clearLastCall, getLastCall } from "../../../lib/lastCall.js";
+import { Star, CheckCircle2, MessageSquare, ArrowRight, Home, Sparkles } from "lucide-react";
 
 export default function FeedbackScreen({ onJoinAnotherQueue, onGoHome }) {
   const last = useMemo(() => getLastCall(), []);
@@ -44,49 +45,46 @@ export default function FeedbackScreen({ onJoinAnotherQueue, onGoHome }) {
 
   const StarRating = ({ value, onChange, label }) => {
     return (
-      <div>
-        <label className="block text-xs md:text-sm font-medium text-neutral-700 mb-2 md:mb-3">{label}</label>
-        <div className="flex items-center space-x-1 md:space-x-2">
+      <div className="space-y-2">
+        <label className="block text-xs font-bold uppercase tracking-wider text-neutral-400">{label}</label>
+        <div className="flex items-center gap-2">
           {[1, 2, 3, 4, 5].map((star) => (
             <button
               key={star}
               type="button"
               onClick={() => onChange(star)}
-              className="focus:outline-none transition-transform hover:scale-110 touch-manipulation"
+              className="p-1 focus:outline-none transition-transform hover:scale-125 cursor-pointer text-amber-400"
             >
-              <svg
-                className={`w-8 h-8 md:w-10 md:h-10 ${star <= value ? 'text-warning-500' : 'text-neutral-300'
-                  }`}
-                fill="currentColor"
-                viewBox="0 0 20 20"
-              >
-                <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
-              </svg>
+              <Star
+                className={`w-7 h-7 md:w-8 md:h-8 transition-colors ${
+                  star <= value ? 'fill-amber-400 text-amber-400' : 'text-neutral-700 fill-transparent'
+                }`}
+              />
             </button>
           ))}
-          <span className="ml-1 md:ml-2 text-xs md:text-sm font-semibold text-neutral-600">{value}/5</span>
+          <span className="ml-2 text-xs font-bold text-amber-400 bg-amber-950/60 px-2 py-0.5 rounded-md border border-amber-800/40">
+            {value}/5
+          </span>
         </div>
       </div>
     );
   };
 
   return (
-    <div className="max-w-2xl mx-auto px-4 py-8">
-      <div className="text-center mb-6 animate-fade-in">
-        <h1 className="text-2xl font-bold text-neutral-900 mb-2">How was your call?</h1>
-        <p className="text-sm text-neutral-600">Your feedback helps us improve</p>
+    <div className="max-w-xl mx-auto px-4 py-8 animate-fade-in font-sans text-white">
+      <div className="text-center mb-6 space-y-2">
+        <div className="inline-flex p-3 rounded-2xl bg-gradient-to-br from-indigo-500 to-primary-600 text-white shadow-xl shadow-indigo-500/25 mb-1">
+          <MessageSquare className="w-7 h-7" />
+        </div>
+        <h1 className="text-2xl md:text-3xl font-black tracking-tight text-white">How was your call?</h1>
+        <p className="text-xs md:text-sm text-neutral-400">Your feedback helps improve our quality and matching algorithms</p>
       </div>
 
-      <div className="card animate-slide-up">
+      <div className="bg-neutral-900/90 border border-neutral-800 rounded-3xl p-6 md:p-8 shadow-2xl backdrop-blur-xl space-y-6">
         {last?.callId && (
-          <div className="bg-neutral-50 rounded-lg p-4 mb-6 border border-neutral-200">
-            <div className="text-xs text-neutral-500 mb-1">Call Details</div>
-            <div className="text-sm text-neutral-700">
-              <span className="font-mono">{last.callId.slice(0, 12)}...</span>
-              {last.peerUsername && (
-                <span className="ml-2">• {last.peerUsername}</span>
-              )}
-            </div>
+          <div className="bg-neutral-950 rounded-2xl p-4 border border-neutral-800 flex items-center justify-between text-xs">
+            <span className="text-neutral-400">Call Reference:</span>
+            <span className="font-mono text-indigo-400 font-bold">{last.callId.slice(0, 12)}...</span>
           </div>
         )}
 
@@ -95,58 +93,60 @@ export default function FeedbackScreen({ onJoinAnotherQueue, onGoHome }) {
             <StarRating
               value={ratingOverall}
               onChange={setRatingOverall}
-              label="Overall Experience"
+              label="Overall Conversation Experience"
             />
 
             <StarRating
               value={audioQuality}
               onChange={setAudioQuality}
-              label="Audio Quality"
+              label="Audio & Connection Quality"
             />
 
-            <div>
-              <label className="block text-xs md:text-sm font-medium text-neutral-700 mb-2">
-                Would you talk to this person again?
+            <div className="space-y-2">
+              <label className="block text-xs font-bold uppercase tracking-wider text-neutral-400">
+                Would you speak with this partner again?
               </label>
-              <div className="flex flex-col sm:flex-row gap-2 md:gap-3">
+              <div className="grid grid-cols-2 gap-3">
                 <button
                   type="button"
                   onClick={() => setWouldTalkAgain(true)}
-                  className={`flex-1 py-2.5 md:py-3 rounded-lg text-sm md:text-base font-semibold transition-all ${wouldTalkAgain
-                    ? 'bg-success-600 text-white shadow-sm'
-                    : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200'
-                    }`}
+                  className={`py-3 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                    wouldTalkAgain
+                      ? 'bg-emerald-600 text-white shadow-md shadow-emerald-950/40 border border-emerald-500'
+                      : 'bg-neutral-950 text-neutral-400 border border-neutral-800 hover:border-neutral-700'
+                  }`}
                 >
-                  Yes
+                  Yes, Great Partner
                 </button>
                 <button
                   type="button"
                   onClick={() => setWouldTalkAgain(false)}
-                  className={`flex-1 py-2.5 md:py-3 rounded-lg text-sm md:text-base font-semibold transition-all ${!wouldTalkAgain
-                    ? 'bg-error-600 text-white shadow-sm'
-                    : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200'
-                    }`}
+                  className={`py-3 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                    !wouldTalkAgain
+                      ? 'bg-rose-600 text-white shadow-md shadow-rose-950/40 border border-rose-500'
+                      : 'bg-neutral-950 text-neutral-400 border border-neutral-800 hover:border-neutral-700'
+                  }`}
                 >
-                  No
+                  No, Prefer Other
                 </button>
               </div>
             </div>
 
-            <div>
-              <label className="block text-xs md:text-sm font-medium text-neutral-700 mb-2">
+            <div className="space-y-2">
+              <label className="block text-xs font-bold uppercase tracking-wider text-neutral-400">
                 Additional Comments (Optional)
               </label>
               <textarea
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
-                rows={4}
-                className="input resize-none"
-                placeholder="Share your thoughts about the conversation..."
+                rows={3}
+                className="w-full bg-neutral-950 border border-neutral-800 focus:border-indigo-500 rounded-2xl p-4 text-white text-xs resize-none outline-none transition-colors"
+                placeholder="Share any thoughts about your partner or conversational topics..."
               />
             </div>
 
             {error && (
-              <div className="bg-error-50 border border-error-200 text-error-700 px-4 py-3 rounded-lg text-sm animate-scale-in">
+              <div className="bg-rose-950/60 border border-rose-800/60 text-rose-300 px-4 py-3 rounded-xl text-xs">
                 {error}
               </div>
             )}
@@ -154,33 +154,35 @@ export default function FeedbackScreen({ onJoinAnotherQueue, onGoHome }) {
             <button
               type="submit"
               disabled={loading}
-              className="btn btn-primary w-full"
+              className="w-full py-3.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-xs font-bold rounded-2xl transition-all shadow-lg shadow-indigo-600/25 cursor-pointer"
             >
               {loading ? "Submitting..." : "Submit Feedback"}
             </button>
           </form>
         ) : (
-          <div className="text-center py-6 animate-scale-in">
-            <div className="w-16 h-16 bg-success-100 text-success-600 rounded-full flex items-center justify-center mx-auto mb-4">
-              <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path>
-              </svg>
+          <div className="text-center py-6 space-y-6 animate-scale-in">
+            <div className="w-16 h-16 bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 rounded-2xl flex items-center justify-center mx-auto shadow-inner">
+              <CheckCircle2 className="w-8 h-8" />
             </div>
-            <h3 className="text-xl font-bold text-neutral-900 mb-2">Feedback Submitted Successfully!</h3>
-            <p className="text-neutral-600 mb-8">Thank you for helping us make the community better.</p>
+            <div className="space-y-1">
+              <h3 className="text-xl font-black text-white">Feedback Submitted Successfully!</h3>
+              <p className="text-xs text-neutral-400">Thank you for contributing to data quality.</p>
+            </div>
             
-            <div className="space-y-3">
+            <div className="space-y-3 pt-2">
               <button
                 onClick={onJoinAnotherQueue}
-                className="btn btn-primary w-full py-3 text-lg"
+                className="w-full py-3.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-2xl transition-all shadow-lg shadow-indigo-600/25 flex items-center justify-center gap-2 cursor-pointer"
               >
-                Join Another Queue
+                <span>Join Another Call Queue</span>
+                <ArrowRight className="w-4 h-4" />
               </button>
               <button
                 onClick={onGoHome}
-                className="px-4 py-2 mt-2 w-full text-sm font-medium text-neutral-600 hover:text-neutral-900 bg-neutral-100 hover:bg-neutral-200 rounded-lg transition-colors"
+                className="w-full py-3 bg-neutral-950 hover:bg-neutral-800 border border-neutral-800 text-neutral-300 hover:text-white font-bold text-xs rounded-2xl transition-all flex items-center justify-center gap-2 cursor-pointer"
               >
-                Go to Dashboard
+                <Home className="w-4 h-4" />
+                <span>Return to Dashboard</span>
               </button>
             </div>
           </div>

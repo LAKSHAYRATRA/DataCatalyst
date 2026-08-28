@@ -5,6 +5,7 @@ import { User } from "../models/User.js";
 import { CallSession } from "../models/CallSession.js";
 import { Feedback } from "../models/Feedback.js";
 import { Language } from "../models/Language.js";
+import { ScriptedLanguage } from "../models/ScriptedLanguage.js";
 import { Phrase } from "../models/Phrase.js";
 import { Company } from "../models/Company.js";
 import { Counter } from "../models/Counter.js";
@@ -173,6 +174,16 @@ export async function getLanguages(req, res) {
   }
 }
 
+// ─── GET /api/scripted-languages ───────────────────────────────────────────────
+export async function getScriptedLanguages(req, res) {
+  try {
+    const langs = await ScriptedLanguage.find({ enabled: true }).sort({ name: 1 }).lean();
+    res.json({ languages: langs });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+}
+
 // ─── GET /api/language-applications/my ───────────────────────────────────────
 export async function getMyLanguageApplications(req, res) {
   try {
@@ -273,31 +284,45 @@ export async function submitLanguageApplication(req, res) {
 
     let lang;
     if (languageCode) {
-      const filter = applicationType === "call"
-        ? { code: { $regex: new RegExp(`^${languageCode}$`, "i") }, enabled: true }
-        : { code: { $regex: new RegExp(`^${languageCode}$`, "i") } };
-      lang = await Language.findOne(filter);
-      if (!lang) {
-        if (applicationType === "phrase") {
-          const formattedLangName = languageCode.charAt(0).toUpperCase() + languageCode.slice(1);
-          lang = await Language.findOneAndUpdate(
+      if (applicationType === "scripted_call") {
+        lang = await ScriptedLanguage.findOne({
+          $or: [
             { code: languageCode.toLowerCase() },
-            {
-              $setOnInsert: {
-                code: languageCode.toLowerCase(),
-                name: formattedLangName,
-                hourlyPayout: 0,
-                enabled: true,
-                isPhrase: true
-              }
-            },
-            { upsert: true, new: true }
-          );
-        } else {
+            { name: { $regex: new RegExp(`^${languageCode}$`, "i") } },
+            mongoose.Types.ObjectId.isValid(languageCode) ? { _id: languageCode } : null
+          ].filter(Boolean)
+        });
+        if (!lang) {
           uploadedFiles.forEach(f => { try { fs.unlinkSync(f.path); } catch (e) {} });
-          return res.status(404).json({
-            error: "Language not found or disabled for calls"
-          });
+          return res.status(404).json({ error: "Scripted language not found or disabled" });
+        }
+      } else {
+        const filter = applicationType === "call"
+          ? { code: { $regex: new RegExp(`^${languageCode}$`, "i") }, enabled: true }
+          : { code: { $regex: new RegExp(`^${languageCode}$`, "i") } };
+        lang = await Language.findOne(filter);
+        if (!lang) {
+          if (applicationType === "phrase") {
+            const formattedLangName = languageCode.charAt(0).toUpperCase() + languageCode.slice(1);
+            lang = await Language.findOneAndUpdate(
+              { code: languageCode.toLowerCase() },
+              {
+                $setOnInsert: {
+                  code: languageCode.toLowerCase(),
+                  name: formattedLangName,
+                  hourlyPayout: 0,
+                  enabled: true,
+                  isPhrase: true
+                }
+              },
+              { upsert: true, new: true }
+            );
+          } else {
+            uploadedFiles.forEach(f => { try { fs.unlinkSync(f.path); } catch (e) {} });
+            return res.status(404).json({
+              error: "Language not found or disabled for calls"
+            });
+          }
         }
       }
     }
@@ -374,11 +399,15 @@ export async function submitLanguageApplication(req, res) {
       const sampleLabel = uploadedFiles.length > 1 ? `__sample_${i + 1}` : "";
       const baseFileName = applicationType === "phrase"
         ? `${user.speaker_id}__${companyFolder}__${languageCode}${sampleLabel}${ext}`
-        : `${user._id}_${languageCode}_${Date.now()}${sampleLabel}${ext}`;
+        : applicationType === "scripted_call"
+          ? `${user.speaker_id || user._id}__scripted__${languageCode}_${Date.now()}${sampleLabel}${ext}`
+          : `${user._id}_${languageCode}_${Date.now()}${sampleLabel}${ext}`;
       
       let s3Key;
       if (applicationType === "phrase" && targetCompany) {
         s3Key = `phrases/${companyFolder}/phrase apps/${baseFileName}`;
+      } else if (applicationType === "scripted_call") {
+        s3Key = `scripted-call-apps/${baseFileName}`;
       } else {
         s3Key = `language-apps/${baseFileName}`;
       }

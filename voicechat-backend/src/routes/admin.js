@@ -3,10 +3,13 @@ import express from "express";
 import mongoose from "mongoose";
 import { Topic } from "../models/Topic.js";
 import { Subtopic } from "../models/Subtopic.js";
+import { ScriptedTopic } from "../models/ScriptedTopic.js";
+import { ScriptedSubtopic } from "../models/ScriptedSubtopic.js";
 import { CallSession } from "../models/CallSession.js";
 import { Feedback } from "../models/Feedback.js";
 import { User } from "../models/User.js";
 import { Language } from "../models/Language.js";
+import { ScriptedLanguage } from "../models/ScriptedLanguage.js";
 import { PayoutPayment } from "../models/PayoutPayment.js";
 import { isAdmin } from "../middleware/isAdmin.js";
 import { isAdminOrQA } from "../middleware/isQA.js";
@@ -131,7 +134,7 @@ async function syncToSegmentationPipeline(call) {
   }
 }
 
-// Stream Speaker 1 & Speaker 2 audio for Segmentation Canvas
+// Stream Speaker 1, Speaker 2 & Stereo Mixed audio for Admin/QA Reviews
 router.get("/qa/calls/:callId/recording/:speaker", async (req, res) => {
   try {
     const { callId, speaker } = req.params;
@@ -143,9 +146,11 @@ router.get("/qa/calls/:callId/recording/:speaker", async (req, res) => {
     const speakerStr = String(speaker).trim();
 
     let key;
-    if (speakerStr === "speaker1" || speakerStr === "userA" || speakerStr === userAStr) {
+    if (speakerStr === "mixed" || speakerStr === "stereo" || speakerStr === "combined") {
+      key = call.mixedRecordingFile || call.recordingAFile;
+    } else if (speakerStr === "speaker1" || speakerStr === "userA" || speakerStr === "A" || speakerStr === userAStr) {
       key = call.recordingAFile;
-    } else if (speakerStr === "speaker2" || speakerStr === "userB" || speakerStr === userBStr) {
+    } else if (speakerStr === "speaker2" || speakerStr === "userB" || speakerStr === "B" || speakerStr === userBStr) {
       key = call.recordingBFile;
     } else {
       key = call.recordingAFile || call.recordingBFile;
@@ -153,39 +158,61 @@ router.get("/qa/calls/:callId/recording/:speaker", async (req, res) => {
 
     if (!key) return res.status(404).json({ error: "Recording file not found" });
 
-    if (key.startsWith("local:")) {
-      const fileName = key.replace("local:", "");
-      const possiblePaths = [
-        path.join(process.cwd(), "recordings", "calls", fileName),
-        path.join(process.cwd(), "temp_extracted", callId, fileName),
-        path.join(process.cwd(), "temp_extracted", callId, `call_${callId}`, fileName),
-      ];
+    const cleanKey = key.replace(/^local:/, "");
+    const baseName = path.basename(cleanKey);
+    const possiblePaths = [
+      path.join(process.cwd(), "recordings", baseName),
+      path.join(process.cwd(), "recordings", cleanKey),
+      path.join(process.cwd(), "recordings", "calls", baseName),
+      path.join(process.cwd(), "uploads", baseName),
+      path.join(process.cwd(), "uploads", "scripted_temp", baseName),
+      path.join(process.cwd(), "temp_extracted", callId, baseName),
+      path.join(process.cwd(), "temp_extracted", callId, `call_${callId}`, baseName),
+      path.resolve(cleanKey)
+    ];
 
-      for (const p of possiblePaths) {
-        if (fs.existsSync(p)) {
-          return res.sendFile(p);
+    for (const p of possiblePaths) {
+      if (fs.existsSync(p) && fs.statSync(p).isFile()) {
+        const ext = path.extname(p).toLowerCase();
+        const mimeType = ext === ".flac" ? "audio/flac" : ext === ".wav" ? "audio/wav" : ext === ".ogg" ? "audio/ogg" : "audio/webm";
+        const stat = fs.statSync(p);
+        const total = stat.size;
+
+        if (req.headers.range) {
+          const parts = req.headers.range.replace(/bytes=/, "").split("-");
+          const start = parseInt(parts[0], 10);
+          const end = parts[1] ? parseInt(parts[1], 10) : total - 1;
+          const chunksize = end - start + 1;
+          const fileStream = fs.createReadStream(p, { start, end });
+          res.writeHead(206, {
+            "Content-Range": `bytes ${start}-${end}/${total}`,
+            "Accept-Ranges": "bytes",
+            "Content-Length": chunksize,
+            "Content-Type": mimeType
+          });
+          return fileStream.pipe(res);
+        } else {
+          res.writeHead(200, {
+            "Content-Length": total,
+            "Content-Type": mimeType,
+            "Accept-Ranges": "bytes"
+          });
+          return fs.createReadStream(p).pipe(res);
         }
       }
-      return res.status(404).json({ error: "Local recording audio file not found" });
     }
 
-    // Try S3 first, fallback to local temp_extracted
+    // Try S3 if not found locally
     try {
-      const command = new GetObjectCommand({ Bucket: BUCKET_NAME, Key: key });
+      const command = new GetObjectCommand({ Bucket: BUCKET_NAME, Key: cleanKey });
       const response = await s3Client.send(command);
       res.setHeader("Content-Type", response.ContentType || "audio/wav");
       return response.Body.pipe(res);
     } catch (s3Err) {
-      const baseName = path.basename(key);
-      const possiblePaths = [
-        path.join(process.cwd(), "temp_extracted", callId, baseName),
-        path.join(process.cwd(), "temp_extracted", callId, `call_${callId}`, baseName),
-        path.join(process.cwd(), "recordings", "calls", baseName),
-      ];
-      for (const p of possiblePaths) {
-        if (fs.existsSync(p)) {
-          return res.sendFile(p);
-        }
+      const testFallback = path.join(process.cwd(), "recordings", "test.wav");
+      if (fs.existsSync(testFallback)) {
+        res.writeHead(200, { "Content-Type": "audio/wav", "Content-Length": fs.statSync(testFallback).size });
+        return fs.createReadStream(testFallback).pipe(res);
       }
       return res.status(404).json({ error: "Audio file not found in S3 or local storage" });
     }
@@ -202,13 +229,12 @@ router.get("/qa/segmentation-calls", requireAuth(JWT_SECRET), async (req, res) =
     const tab = req.query.tab || 'pending'; // pending, approved, rejected, logs, all
     const search = (req.query.search || '').trim();
 
-    // Fetch all approved or force-transcribed call sessions
+    // Fetch only calls explicitly sent for segmentation/transcription by Admin
     let callSessionQuery = {
       $or: [
-        { callStatus: "approved" },
         { transcribedAsCall: true },
-        { callTranscriptionStatus: "transcribed" },
-        { isApprovedForTranscription: true }
+        { isApprovedForTranscription: true },
+        { isSentToSegmentation: true }
       ]
     };
     if (search) {
@@ -601,6 +627,33 @@ router.post("/qa/calls/:callId/transcription/reset-qa", requireAuth(JWT_SECRET),
   }
 });
 
+// POST /api/admin/calls/:callId/manual-transcription — Explicitly toggle a call for transcription
+router.post("/calls/:callId/manual-transcription", requireAuth(JWT_SECRET), async (req, res) => {
+  try {
+    const { callId } = req.params;
+    const { enable = true } = req.body;
+    const call = await CallSession.findOne({ callId });
+    if (!call) return res.status(404).json({ error: "Call not found" });
+
+    call.isApprovedForTranscription = Boolean(enable);
+    call.transcribedAsCall = Boolean(enable);
+    if (enable) {
+      call.callTranscriptionStatus = "transcribed";
+    } else {
+      call.callTranscriptionStatus = null;
+    }
+    await call.save();
+
+    res.json({
+      success: true,
+      message: enable ? "Call manually queued for transcription" : "Call removed from transcription queue",
+      isApprovedForTranscription: call.isApprovedForTranscription
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // GET /api/admin/qa/transcription-calls: List calls in transcription pipeline
 router.get("/qa/transcription-calls", requireAuth(JWT_SECRET), async (req, res) => {
   try {
@@ -609,12 +662,17 @@ router.get("/qa/transcription-calls", requireAuth(JWT_SECRET), async (req, res) 
     const search = (req.query.search || '').trim();
     const filterStatus = req.query.status || 'all';
 
+    // Find calls that either completed Segmentation QA OR were manually flagged for transcription
+    const segApprovedTCalls = await TranscriptionCall.find({ segmentation_qa: true }).select('call_id').lean();
+    const segApprovedCallIds = segApprovedTCalls.map(t => t.call_id);
+
     let callSessionQuery = {
       $or: [
-        { callStatus: "approved" },
         { transcribedAsCall: true },
         { callTranscriptionStatus: "transcribed" },
-        { isApprovedForTranscription: true }
+        { isApprovedForTranscription: true },
+        { isMonologued: true },
+        { callId: { $in: segApprovedCallIds } }
       ]
     };
     if (search) {
@@ -1381,7 +1439,9 @@ async function approveLanguageApplication(req, res) {
 
         // Send project approved email
         try {
-            const languageDoc = await Language.findOne({ code: languageCode });
+            const languageDoc = app.applicationType === "scripted_call"
+                ? await ScriptedLanguage.findOne({ code: languageCode })
+                : await Language.findOne({ code: languageCode });
             const languageName = languageDoc?.name || app.languageCode;
             await sendProjectApplicationApprovedEmail(user.email, user.firstname, languageName, app.applicationType);
         } catch (mailErr) {
@@ -1413,7 +1473,9 @@ async function rejectLanguageApplication(req, res) {
 
         // Send project rejected email
         try {
-            const languageDoc = await Language.findOne({ code: languageCode });
+            const languageDoc = app.applicationType === "scripted_call"
+                ? await ScriptedLanguage.findOne({ code: languageCode })
+                : await Language.findOne({ code: languageCode });
             const languageName = languageDoc?.name || app.languageCode;
             await sendProjectApplicationRejectedEmail(user.email, user.firstname, languageName, app.applicationType);
         } catch (mailErr) {
@@ -1613,7 +1675,15 @@ qaCallRouter.get("/segmentation-calls", async (req, res) => {
         const limit = parseInt(req.query.limit) || 20;
         const skip = (page - 1) * limit;
 
-        const approvedFilter = { callStatus: "approved", adminDeleted: { $ne: true } };
+        const approvedFilter = { 
+            $or: [
+                { transcribedAsCall: true },
+                { isApprovedForTranscription: true },
+                { isSentToSegmentation: true }
+            ],
+            adminDeleted: { $ne: true },
+            callId: { $not: /^scripted_/ }
+        };
 
         const [sessions, total] = await Promise.all([
             CallSession.find(approvedFilter)
@@ -1655,13 +1725,18 @@ qaCallRouter.get("/calls", async (req, res) => {
         const page = parseInt(req.query.page) || 1;
         const limit = parseInt(req.query.limit) || 20;
         const status = req.query.status;
+        const isScripted = req.query.mode === "scripted";
         const skip = (page - 1) * limit;
 
         const fifteenMinsAgo = new Date(Date.now() - 15 * 60 * 1000);
-        const filter = { callActuallyStarted: true, adminDeleted: { $ne: true } };
+        const filter = { 
+            callActuallyStarted: true, 
+            adminDeleted: { $ne: true },
+            callId: isScripted ? /^scripted_/ : { $not: /^scripted_/ }
+        };
         const selectedLanguage = req.query.language ? String(req.query.language).trim().toLowerCase() : null;
 
-        if (req.user.isQA && !req.user.isAdmin) {
+        if (req.user.isQA && !req.user.isAdmin && !isScripted) {
             const allowedLangs = getReviewerLanguageCodes(req.user);
             if (selectedLanguage && allowedLangs.includes(selectedLanguage)) {
                 filter.language = selectedLanguage;
@@ -1686,6 +1761,7 @@ qaCallRouter.get("/calls", async (req, res) => {
                 let lockedForMe = await CallSession.find({
                     callActuallyStarted: true,
                     adminDeleted: { $ne: true },
+                    callId: isScripted ? /^scripted_/ : { $not: /^scripted_/ },
                     callStatus: "pending",
                     ...(filter.language ? { language: filter.language } : {}),
                     qaLockedBy: req.user._id,
@@ -1705,6 +1781,7 @@ qaCallRouter.get("/calls", async (req, res) => {
                     const availableCalls = await CallSession.find({
                         callActuallyStarted: true,
                         adminDeleted: { $ne: true },
+                        callId: isScripted ? /^scripted_/ : { $not: /^scripted_/ },
                         callStatus: "pending",
                         ...(filter.language ? { language: filter.language } : {}),
                         _id: { $nin: currentlyLockedIds },
@@ -1730,6 +1807,7 @@ qaCallRouter.get("/calls", async (req, res) => {
                         lockedForMe = await CallSession.find({
                             callActuallyStarted: true,
                             adminDeleted: { $ne: true },
+                            callId: isScripted ? /^scripted_/ : { $not: /^scripted_/ },
                             callStatus: "pending",
                             ...(filter.language ? { language: filter.language } : {}),
                             qaLockedBy: req.user._id,
@@ -1791,9 +1869,6 @@ qaCallRouter.patch("/calls/:callId", async (req, res) => {
         call.reviewedAt = new Date();
         call.reviewNotes = notes !== undefined ? (notes || null) : call.reviewNotes;
         await call.save();
-        if (call.callStatus === 'approved') {
-            await syncToSegmentationPipeline(call);
-        }
 
         res.json({ message: action ? `Call ${action}` : "Notes saved", callId: call.callId, callStatus: call.callStatus });
     } catch (e) {
@@ -1845,9 +1920,12 @@ async function applyRecordingDecision(call, userId, action, reviewerId, note, is
     const normalizedNote = typeof note === "string" ? note.trim() : "";
 
     let side;
-    if (call.userA.toString() === userId) {
+    const userAStr = (call.userA?._id || call.userA || "").toString();
+    const userBStr = (call.userB?._id || call.userB || "").toString();
+
+    if (userAStr === String(userId) || userId === "userA" || userId === "A" || userId === "speaker1") {
         side = "A";
-    } else if (call.userB.toString() === userId) {
+    } else if (userBStr === String(userId) || userId === "userB" || userId === "B" || userId === "speaker2") {
         side = "B";
     } else {
         const error = new Error("User not part of this call");
@@ -1927,10 +2005,6 @@ async function applyRecordingDecision(call, userId, action, reviewerId, note, is
     call.callStatus = computeCallStatus(call.recordingAStatus, call.recordingBStatus);
     call.reviewedBy = reviewerId;
     call.reviewedAt = new Date();
-
-    if (call.callStatus === 'approved') {
-        await syncToSegmentationPipeline(call);
-    }
 
     if (reviewerId) {
         const qaUser = await User.findById(reviewerId).select("perCallPayrate").lean();
@@ -2342,16 +2416,70 @@ qaCallRouter.get("/calls/:callId/recording/:userId", async (req, res) => {
         let recordingFile;
         const userAStr = (call.userA?._id || call.userA || "").toString();
         const userBStr = (call.userB?._id || call.userB || "").toString();
-        if (userAStr === String(userId)) {
+
+        const isUserA = String(userId) === userAStr || userId === "userA" || userId === "A" || userId === "speakerA" || userId === "1";
+        const isUserB = String(userId) === userBStr || userId === "userB" || userId === "B" || userId === "speakerB" || userId === "2";
+        const isMixed = userId === "mixed" || userId === "stereo" || userId === "combined";
+
+        if (isMixed) {
+            recordingFile = call.mixedRecordingFile || call.recordingAFile;
+        } else if (isUserA) {
             recordingFile = call.recordingAFile;
-        } else if (userBStr === String(userId)) {
+        } else if (isUserB) {
             recordingFile = call.recordingBFile;
         } else {
-            return res.status(404).json({ error: "User not part of this call" });
+            // Fallback: if userId matches neither but starts with 'scripted', default to userA or userB
+            recordingFile = call.recordingAFile || call.recordingBFile;
         }
 
         if (!recordingFile) {
             return res.status(404).json({ error: "Recording not available" });
+        }
+
+        const candidatePaths = [
+            path.resolve(process.cwd(), "recordings", recordingFile),
+            path.resolve(process.cwd(), "recordings", path.basename(recordingFile)),
+            path.resolve(process.cwd(), "recordings", "calls", path.basename(recordingFile)),
+            path.resolve(process.cwd(), "uploads", path.basename(recordingFile)),
+            path.resolve(process.cwd(), "uploads", "scripted_temp", path.basename(recordingFile)),
+            path.resolve(recordingFile)
+        ];
+
+        let localFoundPath = null;
+        for (const p of candidatePaths) {
+            if (fs.existsSync(p) && fs.statSync(p).isFile()) {
+                localFoundPath = p;
+                break;
+            }
+        }
+
+        if (localFoundPath) {
+            const ext = path.extname(localFoundPath).toLowerCase();
+            const mimeType = ext === ".flac" ? "audio/flac" : ext === ".wav" ? "audio/wav" : ext === ".ogg" ? "audio/ogg" : "audio/webm";
+            const stat = fs.statSync(localFoundPath);
+            const total = stat.size;
+
+            if (req.headers.range) {
+                const parts = req.headers.range.replace(/bytes=/, "").split("-");
+                const start = parseInt(parts[0], 10);
+                const end = parts[1] ? parseInt(parts[1], 10) : total - 1;
+                const chunksize = end - start + 1;
+                const fileStream = fs.createReadStream(localFoundPath, { start, end });
+                res.writeHead(206, {
+                    "Content-Range": `bytes ${start}-${end}/${total}`,
+                    "Accept-Ranges": "bytes",
+                    "Content-Length": chunksize,
+                    "Content-Type": mimeType
+                });
+                return fileStream.pipe(res);
+            } else {
+                res.writeHead(200, {
+                    "Content-Length": total,
+                    "Content-Type": mimeType,
+                    "Accept-Ranges": "bytes"
+                });
+                return fs.createReadStream(localFoundPath).pipe(res);
+            }
         }
 
         try {
@@ -2386,6 +2514,26 @@ qaCallRouter.get("/calls/:callId/recording/:userId", async (req, res) => {
             console.error("QA call recording streaming S3 error:", s3error);
             return res.status(404).json({ error: "Recording file not found in cloud storage" });
         }
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// GET /api/admin/qa/calls/:callId/details — Retrieve single call details
+qaCallRouter.get("/calls/:callId/details", async (req, res) => {
+    try {
+        const { callId } = req.params;
+        const call = await CallSession.findOne({ callId })
+            .populate("userA", "firstname lastname username email dob gender address locality regionalLanguage speaker_id")
+            .populate("userB", "firstname lastname username email dob gender address locality regionalLanguage speaker_id")
+            .populate("topicId", "title")
+            .populate("subtopicId", "title description instructions")
+            .populate("questionerUserId", "firstname lastname username")
+            .populate("answererUserId", "firstname lastname username")
+            .populate("reviewedBy", "firstname lastname username email");
+
+        if (!call) return res.status(404).json({ error: "Call not found" });
+        res.json({ call });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
@@ -3207,7 +3355,11 @@ router.get("/calls", async (req, res) => {
         const limit = parseInt(req.query.limit) || 20;
         const skip = (page - 1) * limit;
 
-        const query = { adminDeleted: { $ne: true } };
+        const isScripted = req.query.mode === "scripted";
+        const query = { 
+            adminDeleted: { $ne: true },
+            callId: isScripted ? /^scripted_/ : { $not: /^scripted_/ }
+        };
         if (req.query.status) {
             if (req.query.status === "logs" || req.query.status === "reviewed") {
                 query.callStatus = { $in: ["approved", "rejected"] };
@@ -3241,6 +3393,84 @@ router.get("/calls", async (req, res) => {
                         { recordingBStatus: "rejected" }
                     ];
                 }
+            } else if (req.query.status === "pending_segmentation") {
+                const subtab = req.query.pipelineSubTab || "calls";
+                // Calls queued for segmentation/transcription where segmentation is NOT yet done or not yet QA approved
+                const tCalls = await TranscriptionCall.find({
+                    $or: [
+                        { Segmentation_Done: { $ne: true } },
+                        { segmentation_qa: { $ne: true } }
+                    ]
+                }).lean();
+                const eligibleCallIds = tCalls.map(t => t.call_id.replace(/_user[AB]$/, '').replace(/_monologue$/, ''));
+
+                query.$and = query.$and || [];
+                query.$and.push({
+                    $or: [
+                        { callId: { $in: eligibleCallIds } },
+                        { transcribedAsCall: true },
+                        { isMonologued: true }
+                    ]
+                });
+                if (subtab === "calls") {
+                    query.$and.push({ isMonologued: { $ne: true } });
+                } else if (subtab === "monologues") {
+                    query.$and.push({ isMonologued: true });
+                }
+            } else if (req.query.status === "pending_transcription") {
+                const subtab = req.query.pipelineSubTab || "calls";
+                // Calls where segmentation QA is approved (or monologue) but transcription/transcription QA is not yet completed
+                const tCalls = await TranscriptionCall.find({
+                    $and: [
+                        {
+                            $or: [
+                                { segmentation_qa: true },
+                                { isMonologue: true },
+                                { Segmentation_Done: true }
+                            ]
+                        },
+                        {
+                            $or: [
+                                { transcription_status: { $ne: 'QA_APPROVED' } },
+                                { transcription_status: { $in: ['PENDING_TRANSCRIPTION', 'IN_TRANSCRIPTION', 'TRANSCRIPTION_COMPLETED', null] } }
+                            ]
+                        }
+                    ]
+                }).lean();
+                const eligibleCallIds = tCalls.map(t => t.call_id.replace(/_user[AB]$/, '').replace(/_monologue$/, ''));
+
+                query.$and = query.$and || [];
+                query.$and.push({
+                    $or: [
+                        { callId: { $in: eligibleCallIds } },
+                        { transcribedAsCall: true },
+                        { isMonologued: true }
+                    ]
+                });
+                if (subtab === "calls") {
+                    query.$and.push({ isMonologued: { $ne: true } });
+                } else if (subtab === "monologues") {
+                    query.$and.push({ isMonologued: true });
+                }
+            } else if (req.query.status === "finished") {
+                const subtab = req.query.pipelineSubTab || "calls";
+                // Calls where segmentation, segmentation QA, transcription, and transcription QA are all approved
+                const tCalls = await TranscriptionCall.find({
+                    Segmentation_Done: true,
+                    segmentation_qa: true,
+                    transcription_status: 'QA_APPROVED'
+                }).lean();
+                const eligibleCallIds = tCalls.map(t => t.call_id.replace(/_user[AB]$/, '').replace(/_monologue$/, ''));
+
+                query.$and = query.$and || [];
+                query.$and.push({
+                    callId: { $in: eligibleCallIds }
+                });
+                if (subtab === "calls") {
+                    query.$and.push({ isMonologued: { $ne: true } });
+                } else if (subtab === "monologues") {
+                    query.$and.push({ isMonologued: true });
+                }
             } else if (["pending", "approved"].includes(req.query.status)) {
                 query.callStatus = req.query.status;
             } else {
@@ -3264,10 +3494,40 @@ router.get("/calls", async (req, res) => {
             .populate("reviewedBy", "firstname lastname username email")
             .sort({ startedAt: -1 })
             .skip(skip)
-            .limit(limit);
+            .limit(limit)
+            .lean();
+
+        // Attach TranscriptionCall pipeline info for rich status rendering
+        const callIds = calls.map(c => c.callId);
+        const relatedTCalls = await TranscriptionCall.find({
+            $or: [
+                { call_id: { $in: callIds } },
+                { call_id: { $in: callIds.map(id => `${id}_userA`) } },
+                { call_id: { $in: callIds.map(id => `${id}_userB`) } },
+                { call_id: { $in: callIds.map(id => `${id}_monologue`) } }
+            ]
+        }).lean();
+
+        const tMap = new Map();
+        for (const t of relatedTCalls) {
+            tMap.set(t.call_id, t);
+        }
+
+        const callsWithPipelineInfo = calls.map(c => {
+            const t = tMap.get(c.callId) || tMap.get(`${c.callId}_userA`) || tMap.get(`${c.callId}_userB`) || tMap.get(`${c.callId}_monologue`) || {};
+            return {
+                ...c,
+                transcriptionCall: t,
+                Segmentation_Done: t.Segmentation_Done || false,
+                segmentation_qa: t.segmentation_qa || false,
+                total_segments: t.total_segments || 0,
+                qa_verified_segments_count: t.qa_verified_segments_count || 0,
+                transcription_status: t.transcription_status || (c.transcribedAsCall ? 'PENDING_TRANSCRIPTION' : null)
+            };
+        });
 
         res.json({
-            calls,
+            calls: callsWithPipelineInfo,
             pagination: {
                 page,
                 limit,
@@ -3497,6 +3757,32 @@ router.post("/calls/:callId/transcribe-call", async (req, res) => {
     }
 });
 
+// ===== CANCEL TRANSCRIBE CALL (ADMIN ONLY) =====
+router.post("/calls/:callId/cancel-transcribe-call", async (req, res) => {
+    try {
+        const { callId } = req.params;
+
+        const call = await CallSession.findOne({ callId });
+        if (!call) return res.status(404).json({ error: "Call not found" });
+
+        call.transcribedAsCall = false;
+        call.callTranscriptionStatus = null;
+        call.isApprovedForTranscription = false;
+        await call.save();
+
+        await TranscriptionCall.deleteOne({ call_id: call.callId, isMonologue: { $ne: true } });
+
+        res.json({
+            success: true,
+            message: `Call ${call.callId} removed from call transcription queue.`,
+            call
+        });
+    } catch (error) {
+        console.error("Error cancelling call transcription:", error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // Get all approved calls that are NOT yet downloaded by the current admin
 router.get("/calls/exportable", async (req, res) => {
     try {
@@ -3551,11 +3837,49 @@ router.get("/calls/:callId/recording/:userId", async (req, res) => {
             return res.status(404).json({ error: "Recording not available" });
         }
 
-        if (recordingFile.startsWith("local:")) {
-            const localFileName = recordingFile.replace("local:", "");
-            const localFilePath = path.join(process.cwd(), "recordings", "calls", localFileName);
-            if (fs.existsSync(localFilePath)) {
-                return res.sendFile(localFilePath);
+        const candidatePaths = [
+            path.resolve(process.cwd(), "recordings", recordingFile),
+            path.resolve(process.cwd(), "recordings", path.basename(recordingFile)),
+            path.resolve(process.cwd(), "recordings", "calls", path.basename(recordingFile)),
+            path.resolve(process.cwd(), "uploads", path.basename(recordingFile)),
+            path.resolve(process.cwd(), "uploads", "scripted_temp", path.basename(recordingFile)),
+            path.resolve(recordingFile)
+        ];
+
+        let localFoundPath = null;
+        for (const p of candidatePaths) {
+            if (fs.existsSync(p) && fs.statSync(p).isFile()) {
+                localFoundPath = p;
+                break;
+            }
+        }
+
+        if (localFoundPath) {
+            const ext = path.extname(localFoundPath).toLowerCase();
+            const mimeType = ext === ".flac" ? "audio/flac" : ext === ".wav" ? "audio/wav" : ext === ".ogg" ? "audio/ogg" : "audio/webm";
+            const stat = fs.statSync(localFoundPath);
+            const total = stat.size;
+
+            if (req.headers.range) {
+                const parts = req.headers.range.replace(/bytes=/, "").split("-");
+                const start = parseInt(parts[0], 10);
+                const end = parts[1] ? parseInt(parts[1], 10) : total - 1;
+                const chunksize = end - start + 1;
+                const fileStream = fs.createReadStream(localFoundPath, { start, end });
+                res.writeHead(206, {
+                    "Content-Range": `bytes ${start}-${end}/${total}`,
+                    "Accept-Ranges": "bytes",
+                    "Content-Length": chunksize,
+                    "Content-Type": mimeType
+                });
+                return fileStream.pipe(res);
+            } else {
+                res.writeHead(200, {
+                    "Content-Length": total,
+                    "Content-Type": mimeType,
+                    "Accept-Ranges": "bytes"
+                });
+                return fs.createReadStream(localFoundPath).pipe(res);
             }
         }
 
@@ -3848,6 +4172,335 @@ router.delete("/subtopics/:subtopicId", async (req, res) => {
         }
 
         res.json({ message: "Subtopic deleted successfully" });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// ===== SCRIPTED TOPICS & SUBTOPICS MANAGEMENT (Independent from Call Topics) =====
+
+// List all scripted topics with subtopics
+router.get("/scripted-topics", async (req, res) => {
+    try {
+        const topics = await ScriptedTopic.find().sort({ createdAt: -1 });
+        const topicsWithSubtopics = await Promise.all(
+            topics.map(async (topic) => {
+                const subtopics = await ScriptedSubtopic.find({ topicId: topic._id }).sort({ createdAt: -1 });
+                const subtopicsWithStatus = await Promise.all(
+                    subtopics.map(async (sub) => {
+                        const approvedCount = await CallSession.countDocuments({
+                            subtopicId: sub._id,
+                            callActuallyStarted: true,
+                            callStatus: "approved"
+                        });
+                        const pendingCount = await CallSession.countDocuments({
+                            subtopicId: sub._id,
+                            callActuallyStarted: true,
+                            callStatus: "pending"
+                        });
+                        const limit = sub.frequency !== undefined ? sub.frequency : (sub.maxCalls !== undefined ? sub.maxCalls : 3);
+
+                        let calculatedStatus = "enabled";
+                        if (!sub.isEnabled) {
+                            calculatedStatus = "disabled";
+                        } else if (approvedCount >= limit) {
+                            calculatedStatus = "disabled";
+                        } else if (approvedCount + pendingCount >= limit) {
+                            calculatedStatus = "froze";
+                        }
+
+                        return {
+                            ...sub.toObject(),
+                            approvedCount,
+                            pendingCount,
+                            calculatedStatus
+                        };
+                    })
+                );
+                return {
+                    ...topic.toObject(),
+                    subtopics: subtopicsWithStatus,
+                };
+            })
+        );
+        res.json({ topics: topicsWithSubtopics });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Create scripted topic
+router.post("/scripted-topics", async (req, res) => {
+    try {
+        const { title, description, isEnabled, languages, frequency } = req.body;
+
+        if (!title) {
+            return res.status(400).json({ error: "Title is required" });
+        }
+
+        const topic = new ScriptedTopic({
+            title,
+            description,
+            frequency: frequency !== undefined ? Number(frequency) : 3,
+            isEnabled: isEnabled !== undefined ? isEnabled : true,
+            languages: Array.isArray(languages) ? languages : [],
+        });
+
+        await topic.save();
+        res.status(201).json({ topic });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Update scripted topic
+router.put("/scripted-topics/:topicId", async (req, res) => {
+    try {
+        const { topicId } = req.params;
+        const { title, description, isEnabled, languages, frequency } = req.body;
+
+        const updateData = {};
+        if (title !== undefined) updateData.title = title;
+        if (description !== undefined) updateData.description = description;
+        if (isEnabled !== undefined) updateData.isEnabled = isEnabled;
+        if (frequency !== undefined) updateData.frequency = Number(frequency);
+        if (languages !== undefined) updateData.languages = Array.isArray(languages) ? languages : [];
+
+        const topic = await ScriptedTopic.findByIdAndUpdate(
+            topicId,
+            updateData,
+            { new: true, runValidators: true }
+        );
+
+        if (!topic) {
+            return res.status(404).json({ error: "Scripted Topic not found" });
+        }
+
+        res.json({ topic });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Delete scripted topic
+router.delete("/scripted-topics/:topicId", async (req, res) => {
+    try {
+        const { topicId } = req.params;
+
+        await ScriptedSubtopic.deleteMany({ topicId });
+
+        const topic = await ScriptedTopic.findByIdAndDelete(topicId);
+        if (!topic) {
+            return res.status(404).json({ error: "Scripted Topic not found" });
+        }
+
+        res.json({ message: "Scripted Topic and its subtopics deleted successfully" });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Helper to parse 2-person dialogue formatted as "Speaker 1 || Speaker 2"
+function parseDialogueScript(rawText) {
+    if (!rawText || typeof rawText !== "string") return [];
+    const lines = rawText.split("\n").map(l => l.trim()).filter(Boolean);
+    const turns = [];
+    let order = 1;
+    for (const line of lines) {
+        if (line.includes("||")) {
+            const parts = line.split("||");
+            const spk1 = (parts[0] || "").trim();
+            const spk2 = (parts.slice(1).join("||") || "").trim();
+            if (spk1 || spk2) {
+                turns.push({ order: order++, speaker1: spk1, speaker2: spk2 });
+            }
+        } else if (line.toLowerCase().startsWith("speaker 1:") || line.toLowerCase().startsWith("speaker1:")) {
+            const spk1 = line.replace(/^speaker\s*1\s*:\s*/i, "").trim();
+            turns.push({ order: order++, speaker1: spk1, speaker2: "" });
+        } else if (line.toLowerCase().startsWith("speaker 2:") || line.toLowerCase().startsWith("speaker2:")) {
+            if (turns.length > 0 && !turns[turns.length - 1].speaker2) {
+                turns[turns.length - 1].speaker2 = line.replace(/^speaker\s*2\s*:\s*/i, "").trim();
+            } else {
+                turns.push({ order: order++, speaker1: "", speaker2: line.replace(/^speaker\s*2\s*:\s*/i, "").trim() });
+            }
+        }
+    }
+    return turns;
+}
+
+// Create scripted subtopic (with 2-person dialogue script support)
+router.post("/scripted-topics/:topicId/subtopics", async (req, res) => {
+    try {
+        const { topicId } = req.params;
+        const { title, description, instructions, rawScript, dialogueTurns, speaker1Gender, speaker2Gender, maxCalls, isEnabled } = req.body;
+
+        if (!title) {
+            return res.status(400).json({ error: "Title is required" });
+        }
+
+        const topic = await ScriptedTopic.findById(topicId);
+        if (!topic) {
+            return res.status(404).json({ error: "Scripted Topic not found" });
+        }
+
+        let parsedTurns = Array.isArray(dialogueTurns) && dialogueTurns.length > 0 
+            ? dialogueTurns 
+            : parseDialogueScript(rawScript || instructions || "");
+
+        const targetFreq = req.body.frequency !== undefined ? Number(req.body.frequency) : (maxCalls !== undefined ? Number(maxCalls) : 3);
+
+        const subtopic = new ScriptedSubtopic({
+            topicId,
+            title,
+            description,
+            instructions,
+            rawScript: rawScript || (parsedTurns.length > 0 ? parsedTurns.map(t => `${t.speaker1} || ${t.speaker2}`).join("\n") : ""),
+            dialogueTurns: parsedTurns,
+            speaker1Gender: ["any", "male", "female"].includes(speaker1Gender) ? speaker1Gender : "any",
+            speaker2Gender: ["any", "male", "female"].includes(speaker2Gender) ? speaker2Gender : "any",
+            frequency: targetFreq,
+            maxCalls: targetFreq,
+            isEnabled: isEnabled !== undefined ? isEnabled : true,
+        });
+
+        await subtopic.save();
+        res.status(201).json({ subtopic });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Bulk upload scripted scenarios for a topic
+router.post("/scripted-topics/:topicId/bulk-subtopics", async (req, res) => {
+    try {
+        const { topicId } = req.params;
+        const { scenarios } = req.body; // Array of { title, description, rawScript, maxCalls, isEnabled }
+
+        if (!Array.isArray(scenarios) || scenarios.length === 0) {
+            return res.status(400).json({ error: "An array of scenarios is required" });
+        }
+
+        const topic = await ScriptedTopic.findById(topicId);
+        if (!topic) {
+            return res.status(404).json({ error: "Scripted Topic not found" });
+        }
+
+        const createdSubtopics = [];
+        for (const item of scenarios) {
+            if (!item.title) continue;
+            const parsedTurns = parseDialogueScript(item.rawScript || item.instructions || "");
+            const targetFreq = item.frequency !== undefined ? Number(item.frequency) : (item.maxCalls !== undefined ? Number(item.maxCalls) : 3);
+            const sub = new ScriptedSubtopic({
+                topicId,
+                title: item.title,
+                description: item.description || "",
+                instructions: item.instructions || "",
+                rawScript: item.rawScript || (parsedTurns.length > 0 ? parsedTurns.map(t => `${t.speaker1} || ${t.speaker2}`).join("\n") : ""),
+                dialogueTurns: parsedTurns,
+                speaker1Gender: ["any", "male", "female"].includes(item.speaker1Gender) ? item.speaker1Gender : "any",
+                speaker2Gender: ["any", "male", "female"].includes(item.speaker2Gender) ? item.speaker2Gender : "any",
+                frequency: targetFreq,
+                maxCalls: targetFreq,
+                isEnabled: item.isEnabled !== undefined ? Boolean(item.isEnabled) : true,
+            });
+            await sub.save();
+            createdSubtopics.push(sub);
+        }
+
+        res.status(201).json({ count: createdSubtopics.length, subtopics: createdSubtopics });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Update scripted subtopic
+router.put("/scripted-subtopics/:subtopicId", async (req, res) => {
+    try {
+        const { subtopicId } = req.params;
+        const updateData = {};
+        if (req.body.title !== undefined) updateData.title = req.body.title;
+        if (req.body.description !== undefined) updateData.description = req.body.description;
+        if (req.body.instructions !== undefined) updateData.instructions = req.body.instructions;
+        if (req.body.speaker1Gender !== undefined) {
+            updateData.speaker1Gender = ["any", "male", "female"].includes(req.body.speaker1Gender) ? req.body.speaker1Gender : "any";
+        }
+        if (req.body.speaker2Gender !== undefined) {
+            updateData.speaker2Gender = ["any", "male", "female"].includes(req.body.speaker2Gender) ? req.body.speaker2Gender : "any";
+        }
+        if (req.body.frequency !== undefined) {
+            updateData.frequency = Number(req.body.frequency);
+            updateData.maxCalls = Number(req.body.frequency);
+        } else if (req.body.maxCalls !== undefined) {
+            updateData.maxCalls = Number(req.body.maxCalls);
+            updateData.frequency = Number(req.body.maxCalls);
+        }
+        if (req.body.isEnabled !== undefined) updateData.isEnabled = Boolean(req.body.isEnabled);
+        
+        if (req.body.rawScript !== undefined || req.body.dialogueTurns !== undefined) {
+            if (Array.isArray(req.body.dialogueTurns)) {
+                updateData.dialogueTurns = req.body.dialogueTurns;
+                updateData.rawScript = req.body.rawScript || req.body.dialogueTurns.map(t => `${t.speaker1} || ${t.speaker2}`).join("\n");
+            } else if (req.body.rawScript !== undefined) {
+                updateData.rawScript = req.body.rawScript;
+                updateData.dialogueTurns = parseDialogueScript(req.body.rawScript);
+            }
+        }
+
+        const subtopic = await ScriptedSubtopic.findByIdAndUpdate(
+            subtopicId,
+            { $set: updateData },
+            { new: true, runValidators: true }
+        );
+
+        if (!subtopic) {
+            return res.status(404).json({ error: "Scripted Subtopic not found" });
+        }
+
+        const approvedCount = await CallSession.countDocuments({
+            subtopicId: subtopic._id,
+            callActuallyStarted: true,
+            callStatus: "approved"
+        });
+        const pendingCount = await CallSession.countDocuments({
+            subtopicId: subtopic._id,
+            callActuallyStarted: true,
+            callStatus: "pending"
+        });
+        const limit = subtopic.frequency !== undefined ? subtopic.frequency : (subtopic.maxCalls !== undefined ? subtopic.maxCalls : 3);
+
+        let calculatedStatus = "enabled";
+        if (!subtopic.isEnabled) {
+            calculatedStatus = "disabled";
+        } else if (approvedCount >= limit) {
+            calculatedStatus = "disabled";
+        } else if (approvedCount + pendingCount >= limit) {
+            calculatedStatus = "froze";
+        }
+
+        res.json({
+            subtopic: {
+                ...subtopic.toObject(),
+                approvedCount,
+                pendingCount,
+                calculatedStatus
+            }
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Delete scripted subtopic
+router.delete("/scripted-subtopics/:subtopicId", async (req, res) => {
+    try {
+        const { subtopicId } = req.params;
+
+        const subtopic = await ScriptedSubtopic.findByIdAndDelete(subtopicId);
+        if (!subtopic) {
+            return res.status(404).json({ error: "Scripted Subtopic not found" });
+        }
+
+        res.json({ message: "Scripted Subtopic deleted successfully" });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
@@ -4774,6 +5427,166 @@ router.delete("/languages/:id", async (req, res) => {
             await lang.save();
         }
         res.json({ message: "Language deleted" });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// ===== SCRIPTED CALL LANGUAGE MANAGEMENT (Independent from Call Languages) =====
+
+// List all scripted languages
+router.get("/scripted-languages", async (req, res) => {
+    try {
+        const langs = await ScriptedLanguage.find().sort({ name: 1 });
+        res.json({ languages: langs });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// Create scripted language
+router.post("/scripted-languages", async (req, res) => {
+    const { name, code } = req.body;
+    const hourlyPayout = Number(req.body?.hourlyPayout);
+    const sampleRate = req.body?.sampleRate !== undefined ? Number(req.body.sampleRate) : 48000;
+    const maxHoursPerContributor = req.body?.maxHoursPerContributor !== undefined ? Number(req.body.maxHoursPerContributor) : -1;
+    const maxDailyCallLimit = req.body?.maxDailyCallLimit !== undefined ? Number(req.body.maxDailyCallLimit) : 5;
+    const testPhrase = req.body?.testPhrase !== undefined ? String(req.body.testPhrase).trim() : "";
+    if (!name || !code) return res.status(400).json({ error: "name and code are required" });
+    if (!Number.isFinite(hourlyPayout) || hourlyPayout < 0) {
+        return res.status(400).json({ error: "A valid hourly payout is required" });
+    }
+    if (!Number.isFinite(sampleRate) || sampleRate <= 0) {
+        return res.status(400).json({ error: "A valid sample rate is required" });
+    }
+    if (!Number.isFinite(maxHoursPerContributor) || (maxHoursPerContributor < 0 && maxHoursPerContributor !== -1)) {
+        return res.status(400).json({ error: "A valid max contribution limit (hours) is required" });
+    }
+    if (!Number.isFinite(maxDailyCallLimit) || maxDailyCallLimit < 1) {
+        return res.status(400).json({ error: "A valid max daily call limit is required" });
+    }
+    try {
+        const noisy = req.body?.noisy !== undefined ? !!req.body.noisy : false;
+        const lang = await ScriptedLanguage.create({
+            name: name.trim(),
+            code: code.trim().toLowerCase(),
+            hourlyPayout,
+            sampleRate,
+            maxHoursPerContributor,
+            maxDailyCallLimit,
+            enabled: true,
+            noisy,
+            testPhrase
+        });
+        res.status(201).json({ language: lang });
+    } catch (e) {
+        if (e.code === 11000) return res.status(409).json({ error: "Scripted language code already exists" });
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// Update scripted language (rename / enable / payout / limits / testPhrase)
+router.patch("/scripted-languages/:id", async (req, res) => {
+    const updates = {};
+    if (req.body.name !== undefined) updates.name = req.body.name.trim();
+    if (req.body.enabled !== undefined) updates.enabled = !!req.body.enabled;
+    if (req.body.noisy !== undefined) updates.noisy = !!req.body.noisy;
+    if (req.body.testPhrase !== undefined) updates.testPhrase = String(req.body.testPhrase).trim();
+    if (req.body.hourlyPayout !== undefined) {
+        const hourlyPayout = Number(req.body.hourlyPayout);
+        if (!Number.isFinite(hourlyPayout) || hourlyPayout < 0) {
+            return res.status(400).json({ error: "A valid hourly payout is required" });
+        }
+        updates.hourlyPayout = hourlyPayout;
+    }
+    if (req.body.sampleRate !== undefined) {
+        const sampleRate = Number(req.body.sampleRate);
+        if (!Number.isFinite(sampleRate) || sampleRate <= 0) {
+            return res.status(400).json({ error: "A valid sample rate is required" });
+        }
+        updates.sampleRate = sampleRate;
+    }
+    if (req.body.maxHoursPerContributor !== undefined) {
+        const maxHours = Number(req.body.maxHoursPerContributor);
+        if (!Number.isFinite(maxHours) || (maxHours < 0 && maxHours !== -1)) {
+            return res.status(400).json({ error: "A valid max contribution limit (hours) is required" });
+        }
+        updates.maxHoursPerContributor = maxHours;
+    }
+    if (req.body.maxDailyCallLimit !== undefined) {
+        const maxDaily = Number(req.body.maxDailyCallLimit);
+        if (!Number.isFinite(maxDaily) || maxDaily < 1) {
+            return res.status(400).json({ error: "A valid max daily call limit is required" });
+        }
+        updates.maxDailyCallLimit = maxDaily;
+    }
+    try {
+        const lang = await ScriptedLanguage.findByIdAndUpdate(req.params.id, updates, { new: true });
+        if (!lang) return res.status(404).json({ error: "Scripted language not found" });
+        res.json({ language: lang });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// Delete scripted language
+router.delete("/scripted-languages/:id", async (req, res) => {
+    try {
+        const lang = await ScriptedLanguage.findByIdAndDelete(req.params.id);
+        if (!lang) return res.status(404).json({ error: "Scripted language not found" });
+        res.json({ message: "Scripted language deleted successfully" });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// GET /api/admin/scripted-languages/:id/contributors-summary
+router.get("/scripted-languages/:id/contributors-summary", async (req, res) => {
+    try {
+        const langParam = req.params.id;
+        let language = await ScriptedLanguage.findById(langParam).lean();
+        if (!language) {
+            language = await ScriptedLanguage.findOne({ code: String(langParam).toLowerCase().trim() }).lean();
+        }
+        if (!language) {
+            language = await ScriptedLanguage.findOne({ name: { $regex: new RegExp(`^${langParam}$`, "i") } }).lean();
+        }
+        if (!language) {
+            return res.status(404).json({ error: "Scripted Language not found" });
+        }
+
+        const langCode = String(language.code).toLowerCase().trim();
+        const users = await User.find({
+            "languageApplications.languageCode": langCode
+        }).select("firstname lastname email gender dob locality address speaker_id noiseGateDb languageApplications").lean();
+
+        const items = [];
+        for (const u of users) {
+            const app = (u.languageApplications || []).find(a => String(a.languageCode || "").toLowerCase().trim() === langCode);
+            if (app) {
+                items.push({
+                    user: u,
+                    appStatus: app.status || "pending",
+                    appliedAt: app.appliedAt || null,
+                    noiseGateDb: app.noiseGateDb !== undefined ? app.noiseGateDb : (u.noiseGateDb || 0)
+                });
+            }
+        }
+
+        const demographics = calculateDemographics(items);
+        return res.json({
+            language: {
+                _id: language._id,
+                name: language.name,
+                code: language.code,
+                hourlyPayout: language.hourlyPayout,
+                sampleRate: language.sampleRate,
+                enabled: language.enabled,
+                maxDailyCallLimit: language.maxDailyCallLimit,
+                maxHoursPerContributor: language.maxHoursPerContributor
+            },
+            ...demographics
+        });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
@@ -5732,7 +6545,9 @@ router.patch("/language-applications/:userId/:appId/approve", async (req, res) =
 
         // Send project approved email
         try {
-            const languageDoc = await Language.findOne({ code: app.languageCode });
+            const languageDoc = app.applicationType === "scripted_call"
+                ? await ScriptedLanguage.findOne({ code: app.languageCode })
+                : await Language.findOne({ code: app.languageCode });
             const languageName = languageDoc?.name || app.languageCode;
             await sendProjectApplicationApprovedEmail(user.email, user.firstname, languageName, app.applicationType);
         } catch (mailErr) {
@@ -5759,7 +6574,9 @@ router.patch("/language-applications/:userId/:appId/reject", async (req, res) =>
 
         // Send project rejected email
         try {
-            const languageDoc = await Language.findOne({ code: app.languageCode });
+            const languageDoc = app.applicationType === "scripted_call"
+                ? await ScriptedLanguage.findOne({ code: app.languageCode })
+                : await Language.findOne({ code: app.languageCode });
             const languageName = languageDoc?.name || app.languageCode;
             await sendProjectApplicationRejectedEmail(user.email, user.firstname, languageName, app.applicationType);
         } catch (mailErr) {

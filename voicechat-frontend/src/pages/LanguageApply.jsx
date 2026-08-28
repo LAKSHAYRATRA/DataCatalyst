@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { PhoneCall, FileText, CheckCircle2, Mic, Sliders, Volume2, Settings, X, Activity } from "lucide-react";
+import { PhoneCall, FileText, CheckCircle2, Mic, Sliders, Volume2, Settings, X, Activity, Radio } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import Swal from "sweetalert2";
 import Nav from "../components/Nav.jsx";
@@ -107,14 +107,18 @@ export default function LanguageApply() {
     const navigate = useNavigate();
     const [companies, setCompanies] = useState([]);
     const [globalLanguages, setGlobalLanguages] = useState([]);
+    const [scriptedLanguages, setScriptedLanguages] = useState([]);
     const [myApps, setMyApps] = useState([]);
     const [selectedCompany, setSelectedCompany] = useState("");
     const [selectedLanguage, setSelectedLanguage] = useState("");
     const [applicationType, setApplicationType] = useState(() => {
         const params = new URLSearchParams(window.location.search);
         const t = params.get("type");
-        return (t === "phrase" || t === "call") ? t : "call";
-    }); // 'call' or 'phrase'
+        if (t === "phrase" || t === "call" || t === "scripted_call" || t === "scripted") {
+            return t === "scripted" ? "scripted_call" : t;
+        }
+        return "call";
+    }); // 'call' | 'phrase' | 'scripted_call'
     const [samplePhrase, setSamplePhrase] = useState(null);
     const [samplePhrases, setSamplePhrases] = useState([]);
     const [sampleIndex, setSampleIndex] = useState(0);
@@ -247,11 +251,18 @@ export default function LanguageApply() {
             const companiesRes = await apiGet("/api/admin/companies?forApply=true").catch(() => ({ companies: [] }));
             const appsRes = await apiGet("/api/language-applications/my").catch(() => ({ applications: [] }));
             const langsRes = await apiGet("/api/languages?type=call").catch(() => ({ languages: [] }));
+            let scriptedRes = { languages: [] };
+            try {
+                scriptedRes = await apiGet("/api/scripted-languages");
+            } catch (e) {
+                scriptedRes = await apiGet("/api/admin/scripted-languages").catch(() => ({ languages: [] }));
+            }
             
             if (meRes?.user) setUserInfo(meRes.user);
             setCompanies(companiesRes?.companies || []);
             setMyApps(appsRes?.applications || []);
             setGlobalLanguages(langsRes?.languages || []);
+            setScriptedLanguages((scriptedRes?.languages || []).filter(l => l.enabled));
         } catch (e) {
             console.error("Load error:", e);
             setError("Failed to load projects: " + e.message);
@@ -611,6 +622,8 @@ export default function LanguageApply() {
             if (applicationType === 'phrase') {
                 const displayName = companies.find(c => c.name === selectedCompany)?.projectName || selectedCompany;
                 setSuccess(`Your application for ${displayName} (${selectedLanguage}) has been submitted!`);
+            } else if (applicationType === 'scripted_call') {
+                setSuccess(`Your scripted call application for (${selectedLanguage}) has been submitted!`);
             } else {
                 setSuccess(`Your call application for (${selectedLanguage}) has been submitted!`);
             }
@@ -670,13 +683,13 @@ export default function LanguageApply() {
                     </div>
                 )}
 
-                {/* Highlighted Application Type Cards */}
+                {/* Highlighted Application Type Cards (3 Tracks) */}
                 {(phase === "select" || phase === "done") && (
-                    <div className="max-w-2xl mx-auto mb-8">
+                    <div className="max-w-4xl mx-auto mb-8">
                         <label className="block text-center text-xs font-bold uppercase tracking-wider text-neutral-500 dark:text-neutral-400 mb-3">
                             Step 1: Choose Application Track
                         </label>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                             {/* Call Application Card */}
                             <button
                                 type="button"
@@ -694,15 +707,44 @@ export default function LanguageApply() {
                                 )}
                                 <div className="flex items-center gap-3 mb-3">
                                     <div className={`p-3 rounded-xl ${applicationType === "call" ? "bg-primary-500 text-white shadow-md" : "bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400"}`}>
-                                        <PhoneCall className="w-6 h-6" />
+                                        <PhoneCall className="w-5 h-5" />
                                     </div>
                                     <div>
                                         <span className="text-[10px] font-bold text-primary-600 dark:text-primary-400 uppercase tracking-wider block">Live Voice Chat</span>
-                                        <h3 className="font-bold text-base text-neutral-900 dark:text-white">Call Application</h3>
+                                        <h3 className="font-bold text-sm text-neutral-900 dark:text-white">Call Application</h3>
                                     </div>
                                 </div>
                                 <p className="text-xs text-neutral-500 dark:text-neutral-400 leading-relaxed">
-                                    Apply for 1-on-1 live voice calls, pair audio dialogues, and real-time conversation projects.
+                                    Apply for 1-on-1 live voice calls, pair audio dialogues, and real-time conversations.
+                                </p>
+                            </button>
+
+                            {/* Scripted Call Application Card */}
+                            <button
+                                type="button"
+                                onClick={() => { setApplicationType("scripted_call"); setSelectedLanguage(""); setSelectedCompany(""); }}
+                                className={`relative text-left p-5 rounded-2xl border-2 transition-all duration-200 cursor-pointer flex flex-col justify-between ${
+                                    applicationType === "scripted_call"
+                                        ? "border-indigo-500 bg-indigo-50/50 dark:bg-indigo-950/40 shadow-lg ring-2 ring-indigo-500/30 scale-[1.02]"
+                                        : "border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 hover:border-neutral-300 dark:hover:border-neutral-700 hover:bg-neutral-50 dark:hover:bg-neutral-800/50 opacity-80 hover:opacity-100"
+                                }`}
+                            >
+                                {applicationType === "scripted_call" && (
+                                    <div className="absolute top-3 right-3 text-indigo-500">
+                                        <CheckCircle2 className="w-5 h-5 fill-indigo-500 text-white" />
+                                    </div>
+                                )}
+                                <div className="flex items-center gap-3 mb-3">
+                                    <div className={`p-3 rounded-xl ${applicationType === "scripted_call" ? "bg-indigo-600 text-white shadow-md" : "bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400"}`}>
+                                        <Radio className="w-5 h-5" />
+                                    </div>
+                                    <div>
+                                        <span className="text-[10px] font-bold text-indigo-500 uppercase tracking-wider block">Scripted Dialogues</span>
+                                        <h3 className="font-bold text-sm text-neutral-900 dark:text-white">Scripted Call Application</h3>
+                                    </div>
+                                </div>
+                                <p className="text-xs text-neutral-500 dark:text-neutral-400 leading-relaxed">
+                                    Apply for 2-person scripted dialogues, scenario turns, and verse recordings.
                                 </p>
                             </button>
 
@@ -723,11 +765,11 @@ export default function LanguageApply() {
                                 )}
                                 <div className="flex items-center gap-3 mb-3">
                                     <div className={`p-3 rounded-xl ${applicationType === "phrase" ? "bg-primary-500 text-white shadow-md" : "bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400"}`}>
-                                        <FileText className="w-6 h-6" />
+                                        <FileText className="w-5 h-5" />
                                     </div>
                                     <div>
                                         <span className="text-[10px] font-bold text-primary-600 dark:text-primary-400 uppercase tracking-wider block">Scripted Recording</span>
-                                        <h3 className="font-bold text-base text-neutral-900 dark:text-white">Phrase Studio Application</h3>
+                                        <h3 className="font-bold text-sm text-neutral-900 dark:text-white">Phrase Studio Application</h3>
                                     </div>
                                 </div>
                                 <p className="text-xs text-neutral-500 dark:text-neutral-400 leading-relaxed">
@@ -742,10 +784,10 @@ export default function LanguageApply() {
                 {(phase === "select" || phase === "done") && (
                     <div className="card animate-slide-up max-w-2xl mx-auto">
                         <h2 className="text-lg font-bold text-neutral-900 dark:text-white mb-1">
-                            {applicationType === 'phrase' ? 'Select Phrase Project' : 'Select Call Language'}
+                            {applicationType === 'phrase' ? 'Select Phrase Project' : applicationType === 'scripted_call' ? 'Select Scripted Call Language' : 'Select Call Language'}
                         </h2>
                         <p className="text-sm text-neutral-500 dark:text-neutral-400 mb-5">
-                            {applicationType === 'phrase' ? 'Choose a project and language to apply for.' : 'Choose a language you want to participate in calls for.'}
+                            {applicationType === 'phrase' ? 'Choose a project and language to apply for.' : applicationType === 'scripted_call' ? 'Choose an active scripted language to apply for.' : 'Choose a language you want to participate in calls for.'}
                         </p>
 
                         {pageLoading ? (
@@ -754,6 +796,8 @@ export default function LanguageApply() {
                             </div>
                         ) : (applicationType === 'call' && globalLanguages.filter(l => l.enabled).length === 0) ? (
                             <p className="text-neutral-400 dark:text-neutral-500 text-sm py-6 text-center">No call languages available to apply for right now.</p>
+                        ) : (applicationType === 'scripted_call' && scriptedLanguages.length === 0) ? (
+                            <p className="text-neutral-400 dark:text-neutral-500 text-sm py-6 text-center">No scripted languages available to apply for right now.</p>
                         ) : (applicationType === 'phrase' && companies.length === 0) ? (
                             <p className="text-neutral-400 dark:text-neutral-500 text-sm py-6 text-center">No phrase projects available yet.</p>
                         ) : (
@@ -785,7 +829,8 @@ export default function LanguageApply() {
                                         </div>
                                     </div>
                                 )}
-                                {(applicationType === 'call' || selectedCompany) && (
+
+                                {(applicationType === 'call' || applicationType === 'scripted_call' || selectedCompany) && (
                                     <div className="flex flex-col">
                                         <label className="block text-sm font-bold text-neutral-600 dark:text-neutral-400 mb-2">Language</label>
                                         <div className="relative">
@@ -811,7 +856,21 @@ export default function LanguageApply() {
                                                                       {displayName}{statusSuffix}
                                                                   </option>
                                                               );
-                                                          });
+                                                           });
+                                                     }
+                                                     if (applicationType === 'scripted_call') {
+                                                         return scriptedLanguages.filter(lang => {
+                                                             const st = getStatus(null, lang.code, 'scripted_call');
+                                                             return st !== 'rejected' && st !== 'blocked';
+                                                         }).map(lang => {
+                                                             const st = getStatus(null, lang.code, 'scripted_call');
+                                                             const statusSuffix = st === 'pending' ? ' (Already Applied - Pending)' : st === 'approved' ? ' (Already Applied - Approved)' : '';
+                                                             return (
+                                                                 <option key={lang._id || lang.code} value={lang.code}>
+                                                                     {lang.name} - ${Number(lang.hourlyPayout || 0).toFixed(2)}/hour{statusSuffix}
+                                                                 </option>
+                                                             );
+                                                         });
                                                      }
                                                      return globalLanguages.filter(lang => {
                                                           const st = getStatus(null, lang.code, 'call');
@@ -823,9 +882,9 @@ export default function LanguageApply() {
                                                                <option key={lang._id || lang.code} value={lang.code}>
                                                                    {lang.name} - ${Number(lang.hourlyPayout || 0).toFixed(2)}/hour{statusSuffix}
                                                                </option>
-                                                          );
-                                                      });
-                                                 })()}
+                                                           );
+                                                       });
+                                                  })()}
                                             </select>
                                             <div className="absolute inset-y-0 right-0 flex items-center pr-3.5 pointer-events-none text-neutral-500 dark:text-neutral-400">
                                                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -836,7 +895,7 @@ export default function LanguageApply() {
                                     </div>
                                 )}
                                 
-                                {(applicationType === 'call' ? selectedLanguage : (selectedCompany && selectedLanguage)) && (
+                                {((applicationType === 'call' || applicationType === 'scripted_call') ? selectedLanguage : (selectedCompany && selectedLanguage)) && (
                                     <div className="pt-4 border-t border-neutral-100 dark:border-neutral-800">
                                         <div className="mb-4">
                                             <span className="block text-sm font-semibold mb-1">Status:</span>
@@ -845,7 +904,11 @@ export default function LanguageApply() {
                                         
                                         {(() => {
                                             const currentSt = getStatus(selectedCompany, selectedLanguage, applicationType);
-                                            const langInfo = applicationType === 'call' ? globalLanguages.find(l => l.code === selectedLanguage) : null;
+                                            const langInfo = applicationType === 'call' 
+                                                ? globalLanguages.find(l => l.code === selectedLanguage)
+                                                : applicationType === 'scripted_call'
+                                                ? scriptedLanguages.find(l => l.code === selectedLanguage)
+                                                : null;
                                             const isLangLimitReached = langInfo && langInfo.maxHoursPerContributor !== undefined && langInfo.maxHoursPerContributor !== -1 && (langInfo.userDurationSeconds || 0) >= langInfo.maxHoursPerContributor * 3600;
                                             
                                             const isApplied = currentSt === "pending" || currentSt === "approved" || isLangLimitReached;
@@ -861,6 +924,16 @@ export default function LanguageApply() {
                                                         if (isApplied) return;
                                                         if (applicationType === 'phrase') {
                                                             fetchSamplePhrase(selectedCompany, selectedLanguage);
+                                                        } else if (applicationType === 'scripted_call') {
+                                                            const foundLang = scriptedLanguages.find(l => l.code === selectedLanguage);
+                                                            const promptText = (foundLang?.testPhrase || "").trim() || "Please read this sample scripted dialogue clearly and naturally into the microphone to verify audio quality.";
+                                                            setSamplePhrase({ text: promptText });
+                                                            setSamplePhrases([{ text: promptText, phraseId: `scripted_test_${selectedLanguage}` }]);
+                                                            setPhase("record");
+                                                            setAudioBlob(null);
+                                                            setAudioUrl(null);
+                                                            setRecordedLufs(null);
+                                                            setRawPcm(null);
                                                         } else {
                                                             setPhase("record");
                                                             setSamplePhrase(null);
@@ -1105,6 +1178,22 @@ export default function LanguageApply() {
                                         );
                                     })}
                                 </div>
+                            </div>
+                        )}
+
+                        {/* Scripted Call Test Phrase Box */}
+                        {applicationType === 'scripted_call' && samplePhrase && (
+                            <div className="bg-neutral-900 border border-neutral-800 p-6 rounded-2xl mb-5 space-y-3">
+                                <div className="flex items-center gap-2 text-indigo-400 text-xs font-bold uppercase tracking-wider">
+                                    <Radio className="w-4 h-4" />
+                                    <span>Scripted Call Test Phrase ({selectedLanguage})</span>
+                                </div>
+                                <p className="text-lg md:text-xl font-semibold text-white leading-relaxed whitespace-pre-wrap">
+                                    "{samplePhrase.text}"
+                                </p>
+                                <p className="text-xs text-neutral-400">
+                                    Please read the above script line naturally into your microphone to verify your tone, pronunciation, and clarity.
+                                </p>
                             </div>
                         )}
 

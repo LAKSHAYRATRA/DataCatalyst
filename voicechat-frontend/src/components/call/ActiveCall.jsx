@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { Mic, MicOff, PhoneOff, Users, Clock, MessageSquare, Radio, Volume2 } from 'lucide-react';
 
 export default function ActiveCall({
     peerUsername,
@@ -105,44 +106,46 @@ export default function ActiveCall({
         };
     }, [remoteAudioRef, remoteStream]);
 
+    const activeTopicObj = topics?.find(t => t._id === selectedTopic);
+    const activeSubtopicObj = activeTopicObj?.subtopics?.find(s => s._id === selectedSubtopic);
+
     return (
-        <div className="max-w-3xl mx-auto w-full px-4">
-            <div className="animate-fade-in">
-                {/* Call Timer (Now at the top) */}
-                <div className="text-center mb-6 md:mb-8 pt-4">
-                    <div className="text-3xl md:text-5xl font-bold text-primary-600 dark:text-primary-400 mb-2 font-mono tabular-nums">
+        <div className="max-w-3xl mx-auto w-full px-2 sm:px-4 py-4 animate-fade-in font-sans">
+            <div className="bg-neutral-900/90 border border-neutral-800 rounded-3xl p-6 md:p-10 shadow-2xl backdrop-blur-xl text-center space-y-6 relative overflow-hidden text-white">
+                {/* Ambient Glow */}
+                <div className="absolute -top-16 -right-16 w-48 h-48 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
+                <div className="absolute -bottom-16 -left-16 w-48 h-48 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
+
+                {/* Status & Timer Header */}
+                <div className="space-y-3 relative z-10">
+                    <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-emerald-950/80 border border-emerald-800/60 text-emerald-400 text-xs font-bold shadow-inner">
+                        <span className="w-2.5 h-2.5 bg-emerald-400 rounded-full animate-pulse" />
+                        <span>Live 2-Person Call Recording</span>
+                    </div>
+
+                    <div className="text-4xl md:text-6xl font-black text-white font-mono tracking-tight">
                         {formatTime(timeRemaining)}
                     </div>
-                    <p className="text-xs md:text-sm text-neutral-500 dark:text-neutral-400 mb-4">Time Remaining</p>
-                    <div className="inline-flex items-center space-x-2 px-3 md:px-4 py-1.5 md:py-2 bg-success-50 dark:bg-success-950/20 rounded-full">
-                        <div className="w-2 h-2 bg-success-500 rounded-full animate-pulse"></div>
-                        <span className="text-xs md:text-sm font-medium text-success-700 dark:text-success-300">Call in Progress with Anonymous Partner</span>
-                    </div>
+                    <p className="text-xs text-neutral-400 font-medium">Time Remaining in Call</p>
                 </div>
 
-                {/* Topic Info (Now below timer) */}
-                {(selectedTopic || selectedSubtopic) && (
-                    <div className="mb-6 md:mb-8">
-                        <div className="bg-neutral-50 dark:bg-neutral-900 rounded-xl p-4 md:p-6 border border-neutral-200 dark:border-neutral-800 shadow-sm transition-colors duration-300">
-                            <h4 className="text-sm font-semibold text-neutral-700 dark:text-neutral-400 mb-3 uppercase tracking-wider text-center">Conversation Topic</h4>
-                            {selectedTopic && topics?.find(t => t._id === selectedTopic) && (
-                                <p className="text-lg md:text-xl font-bold text-neutral-900 dark:text-white mb-2 text-center">
-                                    {topics.find(t => t._id === selectedTopic)?.title}
-                                </p>
-                            )}
-                            {selectedSubtopic && topics?.find(t => t._id === selectedTopic)?.subtopics?.find(s => s._id === selectedSubtopic) && (
-                                <div className="text-center">
-                                    <p className="text-base md:text-lg text-neutral-800 dark:text-neutral-200 font-medium mb-3">
-                                        {topics.find(t => t._id === selectedTopic)?.subtopics?.find(s => s._id === selectedSubtopic)?.title}
-                                    </p>
-                                    {topics.find(t => t._id === selectedTopic)?.subtopics?.find(s => s._id === selectedSubtopic)?.description && (
-                                        <div className="mt-2 text-sm text-neutral-600 dark:text-neutral-400 italic whitespace-pre-wrap text-left bg-white dark:bg-neutral-950 p-4 rounded-lg border border-neutral-100 dark:border-neutral-800 shadow-sm transition-colors duration-300">
-                                            {topics.find(t => t._id === selectedTopic)?.subtopics?.find(s => s._id === selectedSubtopic)?.description}
-                                        </div>
-                                    )}
-                                </div>
-                            )}
+                {/* Active Topic & Scenario Card */}
+                {(activeTopicObj || activeSubtopicObj) && (
+                    <div className="bg-neutral-950 border border-neutral-800 rounded-2xl p-5 text-left shadow-inner relative z-10 space-y-2">
+                        <div className="flex items-center gap-2 text-indigo-400 text-xs font-bold uppercase tracking-wider">
+                            <MessageSquare className="w-4 h-4" />
+                            <span>Conversation Scenario</span>
                         </div>
+                        {activeTopicObj && (
+                            <h4 className="text-base md:text-lg font-black text-white">
+                                {activeTopicObj.title} {activeSubtopicObj && <span className="text-neutral-400 font-normal">› {activeSubtopicObj.title}</span>}
+                            </h4>
+                        )}
+                        {activeSubtopicObj?.description && (
+                            <p className="text-xs text-neutral-300 leading-relaxed whitespace-pre-wrap pt-1 border-t border-neutral-800/60">
+                                {activeSubtopicObj.description}
+                            </p>
+                        )}
                     </div>
                 )}
 
@@ -150,40 +153,39 @@ export default function ActiveCall({
                 <audio ref={remoteAudioRef} autoPlay playsInline className="hidden" />
 
                 {/* Call Controls */}
-                <div className="flex justify-center gap-3 md:gap-4 mb-4 md:mb-6">
+                <div className="flex flex-wrap items-center justify-center gap-4 pt-2 relative z-10">
                     {/* Mute Button */}
                     <button
                         onClick={toggleMute}
-                        className={`btn ${isMuted ? 'btn-error' : 'btn-secondary'} w-full sm:w-auto`}
+                        className={`px-6 py-3.5 rounded-2xl font-bold text-xs shadow-lg transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                            isMuted 
+                                ? 'bg-rose-900/60 hover:bg-rose-800/80 text-rose-200 border border-rose-700/60' 
+                                : 'bg-neutral-800 hover:bg-neutral-700 text-white border border-neutral-700'
+                        }`}
                     >
-                        <svg className="w-5 h-5 mr-2 inline-block" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            {isMuted ? (
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2"></path>
-                            ) : (
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 5.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"></path>
-                            )}
-                        </svg>
-                        {isMuted ? 'Unmute' : 'Mute'}
+                        {isMuted ? <MicOff className="w-4 h-4 text-rose-400" /> : <Mic className="w-4 h-4 text-emerald-400" />}
+                        <span>{isMuted ? 'Unmute Mic' : 'Mute Mic'}</span>
                     </button>
 
                     {/* End Call Button */}
-                    <button onClick={onHangup} className="btn btn-error w-full sm:w-auto">
-                        <svg className="w-5 h-5 mr-2 inline-block" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 8l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2M5 3a2 2 0 00-2 2v1c0 8.284 6.716 15 15 15h1a2 2 0 002-2v-3.28a1 1 0 00-.684-.948l-4.493-1.498a1 1 0 00-1.21.502l-1.13 2.257a11.042 11.042 0 01-5.516-5.517l2.257-1.128a1 1 0 00.502-1.21L9.228 3.683A1 1 0 008.279 3H5z"></path>
-                        </svg>
-                        End Call
+                    <button
+                        onClick={onHangup}
+                        className="px-8 py-3.5 rounded-2xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs shadow-lg shadow-rose-900/40 transition-all flex items-center justify-center gap-2 cursor-pointer transform hover:scale-[1.02]"
+                    >
+                        <PhoneOff className="w-4 h-4" />
+                        <span>Hang Up / End Call</span>
                     </button>
                 </div>
 
-                {/* Call Info */}
-                <div className="grid grid-cols-2 gap-3 md:gap-4 pt-4 md:pt-6 border-t border-neutral-200 dark:border-neutral-800">
-                    <div className="text-center">
-                        <p className="text-xs text-neutral-500 dark:text-neutral-400 mb-1">Call ID</p>
-                        <p className="text-xs md:text-sm font-mono text-neutral-700 dark:text-neutral-300 break-all">{callId?.slice(0, 8)}...</p>
+                {/* Call Info Pills */}
+                <div className="grid grid-cols-2 gap-3 pt-6 border-t border-neutral-800/80 relative z-10">
+                    <div className="bg-neutral-950/60 p-3 rounded-xl border border-neutral-800/60 text-center">
+                        <div className="text-[10px] text-neutral-500 font-bold uppercase tracking-wider">Call ID</div>
+                        <div className="text-xs font-mono text-neutral-300 font-semibold truncate mt-0.5">{callId?.slice(0, 10)}...</div>
                     </div>
-                    <div className="text-center">
-                        <p className="text-xs text-neutral-500 dark:text-neutral-400 mb-1">Role</p>
-                        <p className="text-xs md:text-sm font-semibold text-neutral-700 dark:text-neutral-300 capitalize">{role || '-'}</p>
+                    <div className="bg-neutral-950/60 p-3 rounded-xl border border-neutral-800/60 text-center">
+                        <div className="text-[10px] text-neutral-500 font-bold uppercase tracking-wider">Your Speaking Role</div>
+                        <div className="text-xs font-bold text-emerald-400 capitalize mt-0.5">{role || 'Contributor'}</div>
                     </div>
                 </div>
             </div>
