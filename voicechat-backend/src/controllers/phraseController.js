@@ -199,6 +199,30 @@ async function calculateLufsFromAudioFile(filePath) {
   }
 }
 
+export async function resolveCompanyDoc(identifier) {
+  if (!identifier) return null;
+  const raw = String(identifier).trim();
+  if (!raw || raw === "Any") return null;
+  const clean = raw.replace(/_downloaded$/i, "").trim();
+  const cleanEscaped = clean.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&');
+  const rawEscaped = raw.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&');
+
+  const conditions = [
+    mongoose.Types.ObjectId.isValid(raw) ? { _id: raw } : null,
+    mongoose.Types.ObjectId.isValid(clean) ? { _id: clean } : null,
+    { name: { $regex: new RegExp(`^${cleanEscaped}(_downloaded)?$`, "i") } },
+    { name: { $regex: new RegExp(`^${rawEscaped}$`, "i") } },
+    { projectName: { $regex: new RegExp(`^${cleanEscaped}$`, "i") } },
+    { projectName: { $regex: new RegExp(`^${rawEscaped}$`, "i") } }
+  ].filter(Boolean);
+
+  try {
+    return await Company.findOne({ $or: conditions }).lean();
+  } catch (e) {
+    return null;
+  }
+}
+
 /**
  * Admin: Upload JSON array of phrases
  */
@@ -687,10 +711,7 @@ export async function getAvailablePhrase(req, res) {
       if (!targetCompany && baseQuery.companyId && typeof baseQuery.companyId === 'string') {
         targetCompany = baseQuery.companyId;
       }
-      const companyDoc = targetCompany
-        ? await Company.findOne({ $or: [{ name: targetCompany }, { _id: mongoose.Types.ObjectId.isValid(targetCompany) ? targetCompany : null }] }).select("chronologicalTag").lean()
-        : null;
-
+      const companyDoc = await resolveCompanyDoc(targetCompany);
       const chronoTag = (companyDoc?.chronologicalTag || "emotion").trim();
 
       // Get distinct values for the configured chronological tag (e.g. emotion, style, speed)
@@ -827,9 +848,8 @@ export async function getAvailablePhrase(req, res) {
     }
 
     const firstPhrase = lockedPhrases[0];
-    const companyDoc = firstPhrase?.companyId
-      ? await Company.findOne({ $or: [{ name: firstPhrase.companyId }, { _id: mongoose.Types.ObjectId.isValid(firstPhrase.companyId) ? firstPhrase.companyId : null }] }).select("userCustomizations enforceLufs").lean()
-      : null;
+    const targetComp = firstPhrase?.companyId || req.query.projectName || projectName;
+    const companyDoc = await resolveCompanyDoc(targetComp);
     const userCustomizations = companyDoc ? (companyDoc.userCustomizations || []) : [];
     const enforceLufs = companyDoc ? (companyDoc.enforceLufs !== false) : true;
 
@@ -1903,32 +1923,24 @@ export async function getSamplePhrase(req, res) {
       return res.status(400).json({ error: "companyId is required" });
     }
 
-    let targetCompany = companyId.trim();
-    let companyDoc = null;
-    // Resolve Company Name if companyId is a MongoDB ObjectId
-    try {
-      if (targetCompany.match(/^[0-9a-fA-F]{24}$/)) {
-        companyDoc = await Company.findById(targetCompany).lean();
-        if (companyDoc) {
-          targetCompany = companyDoc.name;
-        }
-      }
-    } catch (e) {
-      // Fallback to query as-is
-    }
-
-    if (!companyDoc) {
-      companyDoc = await Company.findOne({ name: { $regex: new RegExp(`^${targetCompany}$`, "i") } }).lean();
-    }
+    const targetCompany = companyId ? String(companyId).trim() : "";
+    const companyDoc = await resolveCompanyDoc(targetCompany);
+    const companyName = companyDoc ? companyDoc.name : targetCompany;
 
     const numberOfSamples = companyDoc?.numberOfSamples && Number(companyDoc.numberOfSamples) >= 1 ? Number(companyDoc.numberOfSamples) : 1;
     const userCustomizations = companyDoc ? (companyDoc.userCustomizations || []) : [];
 
+    const compEscaped = companyName.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&');
+    const cleanEscaped = companyName.replace(/_downloaded$/i, "").trim().replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&');
+
     const query = { 
-      companyId: { $regex: new RegExp(`^${targetCompany}$`, "i") }
+      $or: [
+        { companyId: { $regex: new RegExp(`^${compEscaped}$`, "i") } },
+        { companyId: { $regex: new RegExp(`^${cleanEscaped}(_downloaded)?$`, "i") } }
+      ]
     };
     if (language) {
-      query.language = { $regex: new RegExp(`^${language.trim()}$`, "i") };
+      query.language = { $regex: new RegExp(`^${language.trim().replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&')}$`, "i") };
     }
 
     // 1. Fetch any phrases explicitly designated as samples (isSample: true), ordered by sampleSlot

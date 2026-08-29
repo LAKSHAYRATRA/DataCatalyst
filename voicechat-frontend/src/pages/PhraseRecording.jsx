@@ -146,7 +146,17 @@ export default function PhraseRecording() {
 
   const activeApp = React.useMemo(() => {
     return approvedApps.find(a => {
-      const compMatch = !projectName || String(a.companyId || "").toLowerCase().trim() === String(projectName || "").toLowerCase().trim();
+      const projClean = String(projectName || "").replace(/_downloaded$/i, "").toLowerCase().trim();
+      const appComp = String(a.companyId || "").toLowerCase().trim();
+      const appClean = String(a.cleanCompanyId || a.companyId || "").replace(/_downloaded$/i, "").toLowerCase().trim();
+      const appProj = String(a.projectName || "").toLowerCase().trim();
+
+      const compMatch = !projectName || 
+        appComp === String(projectName || "").toLowerCase().trim() ||
+        appClean === projClean ||
+        appProj === projClean ||
+        appComp === projClean;
+
       const langMatch = !language || String(a.languageCode || "").toLowerCase().trim() === String(language || "").toLowerCase().trim();
       return compMatch && langMatch;
     });
@@ -788,7 +798,10 @@ export default function PhraseRecording() {
       lufsScore = calculateEbuR128Lufs(slot.rawPcm, 48000);
     }
 
-    const isLufsEnforced = enforceLufs !== false;
+    // Determine if LUFS constraint is enforced for this project
+    const isLufsEnforced = activeApp?.enforceLufs !== undefined 
+      ? activeApp.enforceLufs === true 
+      : enforceLufs === true;
 
     if (isLufsEnforced) {
       if (lufsScore === null) {
@@ -900,6 +913,12 @@ export default function PhraseRecording() {
 
       const repData = await apiGet(url).catch(() => null);
       const newPhrase = repData?.phrase || repData?.phrases?.[0] || null;
+      if (repData && repData.enforceLufs !== undefined) {
+        setEnforceLufs(repData.enforceLufs !== false);
+      }
+      if (repData && repData.userCustomizations) {
+        setUserCustomizations(repData.userCustomizations);
+      }
 
       // Replace ONLY slotId in-place! All other slots maintain their exact position & state!
       setSlots(prev => prev.map(s => s.id === slotId ? {

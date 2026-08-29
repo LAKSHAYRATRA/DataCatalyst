@@ -193,14 +193,17 @@ export async function getMyLanguageApplications(req, res) {
     
     let applications = user?.languageApplications || [];
 
-    const companies = await Company.find({}).select("name projectName _id").lean();
+    const companies = await Company.find({}).select("name projectName _id enforceLufs userCustomizations hourlyPayout").lean();
     const companyInfoMap = new Map();
     for (const c of companies) {
       const info = {
         companyId: c._id.toString(),
         companyName: c.name,
         projectName: c.projectName || c.name,
-        cleanName: c.name.replace(/_downloaded$/i, "").trim()
+        cleanName: c.name.replace(/_downloaded$/i, "").trim(),
+        enforceLufs: c.enforceLufs !== false,
+        userCustomizations: c.userCustomizations || [],
+        hourlyPayout: c.hourlyPayout || 0
       };
       const keys = [
         c._id.toString().toLowerCase(),
@@ -224,7 +227,9 @@ export async function getMyLanguageApplications(req, res) {
         projectName: matchedInfo?.projectName || app.projectName || app.companyId || "",
         companyName: matchedInfo?.companyName || app.companyId || "",
         cleanCompanyId: matchedInfo?.cleanName || rawCleanComp,
-        matchedCompanyDbId: matchedInfo?.companyId || ""
+        matchedCompanyDbId: matchedInfo?.companyId || "",
+        enforceLufs: matchedInfo ? (matchedInfo.enforceLufs !== false) : true,
+        userCustomizations: matchedInfo?.userCustomizations || []
       };
     });
 
