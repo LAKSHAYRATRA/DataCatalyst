@@ -3884,8 +3884,11 @@ router.get("/calls", async (req, res) => {
                 } else if (subtab === "monologues") {
                     query.$and.push({ isMonologued: true });
                 }
-            } else if (["pending", "approved"].includes(req.query.status)) {
-                query.callStatus = req.query.status;
+            } else if (req.query.status === "pending") {
+                query.callStatus = "pending";
+                query.callActuallyStarted = true;
+            } else if (req.query.status === "approved") {
+                query.callStatus = "approved";
             } else {
                 query.endReason = req.query.status;
             }
@@ -5495,7 +5498,7 @@ qaRouter.get("/", async (req, res) => {
     if (!req.user.isAdmin) return res.status(403).json({ error: "Admin access required" });
     try {
         const users = await User.find({ isQA: true })
-            .select("firstname lastname email username speaker_id qaLanguageCode qaLanguageCodes perCallPayrate hourlyPhrasePayrate createdAt")
+            .select("firstname lastname email username mobileNumber phone speaker_id qaLanguageCode qaLanguageCodes perCallPayrate hourlyPhrasePayrate createdAt")
             .sort({ createdAt: -1 });
         res.json({ users });
     } catch (e) {

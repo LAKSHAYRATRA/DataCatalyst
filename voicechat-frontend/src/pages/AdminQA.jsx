@@ -606,14 +606,6 @@ export default function AdminQA() {
                                                         >
                                                             Review
                                                         </button>
-                                                        <button
-                                                            onClick={() => setMergedStudioCall(call)}
-                                                            className="px-2.5 py-1.5 bg-emerald-950/80 hover:bg-emerald-900/90 text-emerald-300 hover:text-white border border-emerald-700/60 font-bold text-xs rounded-lg flex items-center gap-1 shadow-sm transition-all"
-                                                            title="Open Merged Dual-Waveform Studio"
-                                                        >
-                                                            <span>🎧</span>
-                                                            <span className="hidden sm:inline">Merged</span>
-                                                        </button>
                                                     </div>
                                                 </td>
                                             </tr>
@@ -639,13 +631,6 @@ export default function AdminQA() {
                         <div className="flex items-center justify-between mb-4 md:mb-6">
                             <div className="flex items-center gap-3">
                                 <h2 className="text-xl md:text-2xl font-bold text-white">Review Call</h2>
-                                <button
-                                    onClick={() => setMergedStudioCall(reviewing)}
-                                    className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 via-indigo-600 to-primary-600 hover:from-emerald-500 hover:to-primary-500 text-white font-bold text-xs shadow-lg shadow-indigo-500/20 flex items-center gap-1.5 transition-all transform hover:scale-[1.02]"
-                                >
-                                    <span>🎧</span>
-                                    <span>See Merged Call</span>
-                                </button>
                             </div>
                             <button onClick={closeCallReview} className="text-neutral-400 hover:text-white">
                                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">

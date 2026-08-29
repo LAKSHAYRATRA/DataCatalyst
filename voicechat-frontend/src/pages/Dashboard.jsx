@@ -73,7 +73,7 @@ export default function Dashboard() {
         })();
     }, []);
 
-    // Filter out projects that the contributor is already completely approved/pending for
+    // Filter out projects that the contributor is already approved, pending, blacklisted, OR rejected from
     const isEligibleForRecommendation = (project) => {
         const projCode = String(project.code || project.companyId || "").trim().toLowerCase();
         const projId = String(project.id || "").trim().toLowerCase();
@@ -95,19 +95,20 @@ export default function Dashboard() {
             // If user has no applications for this company, it's eligible
             if (companyApps.length === 0) return true;
 
-            // If project has specific languages, check if any language is open/unapplied or rejected
+            // If user was rejected from ANY application in this company, do NOT recommend it
+            const hasRejected = companyApps.some(a => a.status === "rejected");
+            if (hasRejected) return false;
+
+            // If project has specific languages, check if there are unapplied languages (not applied/pending/approved/blacklisted/rejected)
             if (projectLanguages.length > 0) {
                 return projectLanguages.some(lang => {
                     const appForLang = companyApps.find(a => String(a.languageCode || a.language || "").toLowerCase().trim() === lang);
-                    if (!appForLang) return true; // unapplied language
-                    if (appForLang.status === "rejected") return true; // can re-apply
-                    return false;
+                    return !appForLang; // only eligible if completely unapplied
                 });
             }
 
-            // Fallback for single-language project
-            const isBlocked = companyApps.some(a => a.status === "approved" || a.status === "pending" || a.status === "blacklisted");
-            return !isBlocked;
+            // Fallback for single-language project: if any app exists (approved/pending/rejected/blacklisted), do NOT recommend
+            return false;
         }
 
         if (project.type === "call" || project.type === "scripted_call") {
@@ -116,9 +117,9 @@ export default function Dashboard() {
                 const appLang = String(a.languageCode || a.language || "").trim().toLowerCase();
                 return appType === project.type && appLang === projCode;
             });
-            if (!app) return true;
-            if (app.status === "rejected") return true;
-            return false;
+            // If user has applied for this call / scripted project (approved, pending, blacklisted, OR rejected), do NOT recommend
+            if (app) return false;
+            return true;
         }
 
         return true;

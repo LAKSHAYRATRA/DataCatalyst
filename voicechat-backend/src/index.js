@@ -802,6 +802,8 @@ async function endCall(callId, reason) {
       const started = session.actualCallStartedAt || session.startedAt;
       const actualCallDuration = Math.max(0, Math.floor((endedAt.getTime() - new Date(started).getTime()) / 1000));
       
+      const didStartMainPhase = Boolean(session.callActuallyStarted || session.actualCallStartedAt);
+
       let callStatus = "pending";
       let recordingAStatus = "pending";
       let recordingBStatus = "pending";
@@ -809,7 +811,14 @@ async function endCall(callId, reason) {
       let recordingBReviewNote = null;
       let reviewNotes = null;
 
-      if (session.actualCallStartedAt && actualCallDuration < 540) {
+      if (!didStartMainPhase || reason === "negotiation_timeout") {
+        callStatus = "rejected";
+        recordingAStatus = "rejected";
+        recordingBStatus = "rejected";
+        recordingAReviewNote = "Call ended in negotiation phase without entering main phase";
+        recordingBReviewNote = "Call ended in negotiation phase without entering main phase";
+        reviewNotes = "Call ended in negotiation phase without entering main phase";
+      } else if (actualCallDuration < 540) {
         callStatus = "rejected";
         recordingAStatus = "rejected";
         recordingBStatus = "rejected";
@@ -995,6 +1004,13 @@ async function negotiationTimeout(callId) {
         endReason: "negotiation_timeout",
         negotiationEndedAt: new Date(),
         negotiationDuration: 4 * 60,
+        callStatus: "rejected",
+        recordingAStatus: "rejected",
+        recordingBStatus: "rejected",
+        callActuallyStarted: false,
+        recordingAReviewNote: "Call timed out in negotiation phase",
+        recordingBReviewNote: "Call timed out in negotiation phase",
+        reviewNotes: "Call timed out in negotiation phase",
       },
     }
   ).catch(() => {});
@@ -1830,6 +1846,32 @@ try {
   );
   if (resetScriptedCalls.modifiedCount > 0) {
     console.log(`Reset ${resetScriptedCalls.modifiedCount} scripted calls from rejected to pending.`);
+  }
+  // Ensure historical calls that ended in negotiation are rejected and never show in pending
+  const cleanupNegotiationCalls = await CallSession.updateMany(
+    {
+      callId: { $not: /^scripted_/ },
+      callStatus: "pending",
+      $or: [
+        { callActuallyStarted: false },
+        { callActuallyStarted: { $exists: false } },
+        { actualCallStartedAt: null },
+        { actualCallStartedAt: { $exists: false } },
+        { endReason: "negotiation_timeout" }
+      ]
+    },
+    {
+      $set: {
+        callStatus: "rejected",
+        recordingAStatus: "rejected",
+        recordingBStatus: "rejected",
+        callActuallyStarted: false,
+        reviewNotes: "Call ended in negotiation phase without entering main phase"
+      }
+    }
+  );
+  if (cleanupNegotiationCalls.modifiedCount > 0) {
+    console.log(`Cleaned up ${cleanupNegotiationCalls.modifiedCount} negotiation-only calls from pending.`);
   }
 } catch (e) {
   console.error("QA Payrate / Segment / Scripted Call reset error:", e.message);

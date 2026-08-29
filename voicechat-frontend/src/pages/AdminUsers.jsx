@@ -674,12 +674,15 @@ export default function AdminUsers() {
                                                     <div className="text-sm text-white font-medium">{user.username}</div>
                                                     <div className="text-xs text-neutral-400">{user.firstname} {user.lastname}</div>
                                                 </td>
-                                                <td className="hidden md:table-cell px-4 py-4 text-sm text-neutral-300">
-                                                    <div>{user.email}</div>
+                                                <td className="px-4 py-4 text-sm text-neutral-300">
+                                                    <div className="font-medium text-white">{user.email}</div>
                                                     {user.mobileNumber || user.phone ? (
-                                                        <div className="text-xs text-primary-400 font-mono mt-0.5">📱 {user.mobileNumber || user.phone}</div>
+                                                        <div className="text-xs text-primary-400 font-mono font-semibold mt-0.5 flex items-center gap-1">
+                                                            <span>📱</span>
+                                                            <span>{user.mobileNumber || user.phone}</span>
+                                                        </div>
                                                     ) : (
-                                                        <div className="text-xs text-neutral-500 italic mt-0.5">No phone</div>
+                                                        <div className="text-xs text-neutral-500 italic mt-0.5">No mobile number</div>
                                                     )}
                                                 </td>
                                                 <td className="px-4 py-4">
@@ -835,10 +838,15 @@ export default function AdminUsers() {
                                                         <div className="text-xs text-neutral-400">@{u.username}</div>
                                                     </td>
                                                     <td className="px-4 py-3 text-neutral-300">
-                                                        <div>{u.email}</div>
+                                                        <div className="font-medium text-white">{u.email}</div>
                                                         {u.mobileNumber || u.phone ? (
-                                                            <div className="text-xs text-primary-400 font-mono mt-0.5">📱 {u.mobileNumber || u.phone}</div>
-                                                        ) : null}
+                                                            <div className="text-xs text-primary-400 font-mono font-semibold mt-0.5 flex items-center gap-1">
+                                                                <span>📱</span>
+                                                                <span>{u.mobileNumber || u.phone}</span>
+                                                            </div>
+                                                        ) : (
+                                                            <div className="text-xs text-neutral-500 italic mt-0.5">No mobile number</div>
+                                                        )}
                                                     </td>
                                                     <td className="px-4 py-3 text-neutral-400 whitespace-nowrap">{u.signedAt ? new Date(u.signedAt).toLocaleDateString() : "—"}</td>
                                                     <td className="px-4 py-3 text-neutral-400 whitespace-nowrap">{u.approvedAt ? new Date(u.approvedAt).toLocaleDateString() : "—"}</td>
@@ -1031,7 +1039,17 @@ export default function AdminUsers() {
                                             <tr key={u._id} className="hover:bg-neutral-700/30 transition-colors">
                                                 <td className="px-4 py-3 font-mono font-bold text-amber-400 text-xs">{u.speaker_id || "QA_--"}</td>
                                                 <td className="px-4 py-3 text-white font-medium">{u.firstname} {u.lastname}</td>
-                                                <td className="px-4 py-3 text-neutral-400">{u.email}</td>
+                                                 <td className="px-4 py-3 text-neutral-400">
+                                                     <div className="text-white font-medium">{u.email}</div>
+                                                     {u.mobileNumber || u.phone ? (
+                                                         <div className="text-xs text-primary-400 font-mono font-semibold mt-0.5 flex items-center gap-1">
+                                                             <span>📱</span>
+                                                             <span>{u.mobileNumber || u.phone}</span>
+                                                         </div>
+                                                     ) : (
+                                                         <div className="text-xs text-neutral-500 italic mt-0.5">No mobile number</div>
+                                                     )}
+                                                 </td>
                                                 <td className="px-4 py-3 text-neutral-400 font-mono text-xs">{u.username}</td>
                                                 <td className="px-4 py-3 text-neutral-300 text-xs max-w-[200px] truncate" title={u.qaLanguageCodes?.join(", ")}>
                                                     {u.qaLanguageCodes && u.qaLanguageCodes.length > 0
