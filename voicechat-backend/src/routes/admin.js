@@ -6136,7 +6136,10 @@ router.delete("/scripted-languages/:id", async (req, res) => {
 router.get("/scripted-languages/:id/contributors-summary", async (req, res) => {
     try {
         const langParam = req.params.id;
-        let language = await ScriptedLanguage.findById(langParam).lean();
+        let language = null;
+        if (mongoose.Types.ObjectId.isValid(langParam)) {
+            language = await ScriptedLanguage.findById(langParam).lean();
+        }
         if (!language) {
             language = await ScriptedLanguage.findOne({ code: String(langParam).toLowerCase().trim() }).lean();
         }
@@ -6147,22 +6150,128 @@ router.get("/scripted-languages/:id/contributors-summary", async (req, res) => {
             return res.status(404).json({ error: "Scripted Language not found" });
         }
 
-        const langCode = String(language.code).toLowerCase().trim();
+        const baseName = (language.language || language.name || "").trim().toLowerCase();
+        // find all subprojects/languages belonging to this base scripted language
+        const relatedScriptedLangs = await ScriptedLanguage.find({
+            $or: [
+                { _id: language._id },
+                { code: String(language.code || "").toLowerCase().trim() },
+                ...(baseName ? [
+                    { language: new RegExp(`^${baseName}$`, "i") },
+                    { name: new RegExp(`^${baseName}$`, "i") },
+                    { name: new RegExp(`\\(${baseName}\\)$`, "i") }
+                ] : [])
+            ]
+        }).lean();
+
+        const validCodes = Array.from(new Set([
+            String(language.code || "").toLowerCase().trim(),
+            String(language.name || "").toLowerCase().trim(),
+            ...relatedScriptedLangs.map(l => String(l.code || "").toLowerCase().trim()),
+            ...relatedScriptedLangs.map(l => String(l.name || "").toLowerCase().trim())
+        ])).filter(Boolean);
+
+        // Fetch scripted call sessions & submissions for statistics
+        const scriptedSessions = await CallSession.find({
+            $and: [
+                { $or: [{ callId: /^scripted_/ }, { endReason: "scripted_completed" }] },
+                { language: { $in: validCodes.map(c => new RegExp(`^${c}$`, "i")) } }
+            ]
+        }).select("userA userB actualCallDuration duration recordingADurationMinutes recordingBDurationMinutes callStatus").lean();
+
+        const userRecordedSecsMap = new Map(); // userId -> { approvedSec, pendingSec, rejectedSec, count }
+        for (const s of scriptedSessions) {
+            const durA = (Number(s.recordingADurationMinutes) || 0) * 60 || (Number(s.actualCallDuration || s.duration) || 0) / 2;
+            const durB = (Number(s.recordingBDurationMinutes) || 0) * 60 || (Number(s.actualCallDuration || s.duration) || 0) / 2;
+            if (s.userA) {
+                const uKey = String(s.userA);
+                if (!userRecordedSecsMap.has(uKey)) userRecordedSecsMap.set(uKey, { approvedSec: 0, pendingSec: 0, rejectedSec: 0, count: 0 });
+                const st = userRecordedSecsMap.get(uKey);
+                st.approvedSec += durA;
+                st.count++;
+            }
+            if (s.userB) {
+                const uKey = String(s.userB);
+                if (!userRecordedSecsMap.has(uKey)) userRecordedSecsMap.set(uKey, { approvedSec: 0, pendingSec: 0, rejectedSec: 0, count: 0 });
+                const st = userRecordedSecsMap.get(uKey);
+                st.approvedSec += durB;
+                st.count++;
+            }
+        }
+
+        // Also fetch individual ScriptedSubmission verses stats
+        const submissions = await ScriptedSubmission.find({
+            language: { $in: validCodes.map(c => new RegExp(`^${c}$`, "i")) }
+        }).select("userId status verses").lean();
+
+        for (const sub of submissions) {
+            if (!sub.userId) continue;
+            const uKey = String(sub.userId);
+            if (!userRecordedSecsMap.has(uKey)) userRecordedSecsMap.set(uKey, { approvedSec: 0, pendingSec: 0, rejectedSec: 0, count: 0 });
+            const st = userRecordedSecsMap.get(uKey);
+            (sub.verses || []).forEach(v => {
+                const dur = Number(v.durationSec) || 0;
+                if (v.status === "approved") st.approvedSec += dur;
+                else if (v.status === "rejected") st.rejectedSec = (st.rejectedSec || 0) + dur;
+                else st.pendingSec = (st.pendingSec || 0) + dur;
+            });
+        }
+
+        // Users who applied specifically for scripted call (applicationType: "scripted_call")
         const users = await User.find({
-            "languageApplications.languageCode": langCode
-        }).select("firstname lastname email gender dob locality address speaker_id noiseGateDb languageApplications").lean();
+            $or: [
+                {
+                    languageApplications: {
+                        $elemMatch: {
+                            applicationType: "scripted_call",
+                            languageCode: { $in: validCodes }
+                        }
+                    }
+                },
+                { _id: { $in: Array.from(userRecordedSecsMap.keys()) } }
+            ]
+        }).select("firstname lastname email username gender dob locality address speaker_id noiseGateDb languageApplications createdAt").lean();
 
         const items = [];
+        const seenUserIds = new Set();
+
         for (const u of users) {
-            const app = (u.languageApplications || []).find(a => String(a.languageCode || "").toLowerCase().trim() === langCode);
-            if (app) {
-                items.push({
-                    user: u,
-                    appStatus: app.status || "pending",
-                    appliedAt: app.appliedAt || null,
-                    noiseGateDb: app.noiseGateDb !== undefined ? app.noiseGateDb : (u.noiseGateDb || 0)
-                });
-            }
+            const uKey = String(u._id);
+            if (seenUserIds.has(uKey)) continue;
+            seenUserIds.add(uKey);
+
+            // Match ONLY scripted_call application
+            const matchingApp = (u.languageApplications || []).find(a => {
+                const appType = a.applicationType || "phrase";
+                if (appType !== "scripted_call") return false;
+                const c = String(a.languageCode || "").toLowerCase().trim();
+                return validCodes.includes(c);
+            });
+
+            const stats = userRecordedSecsMap.get(uKey) || { approvedSec: 0, pendingSec: 0, rejectedSec: 0, count: 0 };
+            const appStatus = matchingApp ? matchingApp.status : (stats.approvedSec > 0 ? "approved" : "pending");
+
+            const approvedSeconds = Math.round(stats.approvedSec || 0);
+            const rejectedSeconds = Math.round(stats.rejectedSec || 0);
+            const pendingSeconds = Math.round(stats.pendingSec || 0);
+            const totalSeconds = approvedSeconds + rejectedSeconds + pendingSeconds;
+            const totalAttempts = stats.count || 0;
+            const approvalRate = totalSeconds > 0 ? Math.round((approvedSeconds / totalSeconds) * 100) : (appStatus === "approved" ? 100 : 0);
+            const rejectionRate = totalSeconds > 0 ? Math.round((rejectedSeconds / totalSeconds) * 100) : (appStatus === "rejected" ? 100 : 0);
+
+            items.push({
+                user: u,
+                appStatus,
+                appliedAt: matchingApp?.appliedAt || u.createdAt || null,
+                noiseGateDb: matchingApp?.noiseGateDb !== undefined ? matchingApp.noiseGateDb : (u.noiseGateDb || 0),
+                approvedSeconds,
+                rejectedSeconds,
+                pendingSeconds,
+                totalSeconds,
+                approvedCount: stats.count || 0,
+                approvalRate,
+                rejectionRate
+            });
         }
 
         const demographics = calculateDemographics(items);
@@ -6179,6 +6288,118 @@ router.get("/scripted-languages/:id/contributors-summary", async (req, res) => {
             },
             ...demographics
         });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// POST /api/admin/scripted-languages/:id/remove-contributor
+router.post("/scripted-languages/:id/remove-contributor", async (req, res) => {
+    try {
+        const langParam = req.params.id;
+        const { userId } = req.body;
+
+        if (!userId) {
+            return res.status(400).json({ error: "userId is required" });
+        }
+
+        let language = await ScriptedLanguage.findById(langParam).lean();
+        if (!language) {
+            language = await ScriptedLanguage.findOne({ code: String(langParam).toLowerCase().trim() }).lean();
+        }
+        if (!language) {
+            language = await ScriptedLanguage.findOne({ name: { $regex: new RegExp(`^${langParam}$`, "i") } }).lean();
+        }
+        if (!language) {
+            return res.status(404).json({ error: "Scripted Language not found" });
+        }
+
+        const langCode = String(language.code || "").toLowerCase().trim();
+        const langName = String(language.name || "").toLowerCase().trim();
+
+        const user = await User.findById(userId);
+        if (!user) {
+            return res.status(404).json({ error: "User not found" });
+        }
+
+        if (!user.languageApplications) {
+            user.languageApplications = [];
+        }
+
+        let updated = false;
+        user.languageApplications.forEach(app => {
+            if (app.applicationType === "scripted_call") {
+                const appLang = String(app.languageCode || "").toLowerCase().trim();
+                if (appLang === langCode || appLang === langName) {
+                    app.status = "rejected";
+                    app.reviewedAt = new Date();
+                    app.reviewedBy = req.user._id;
+                    updated = true;
+                }
+            }
+        });
+
+        if (!updated) {
+            user.languageApplications.push({
+                applicationType: "scripted_call",
+                languageCode: langCode,
+                status: "rejected",
+                appliedAt: new Date(),
+                reviewedAt: new Date(),
+                reviewedBy: req.user._id
+            });
+        }
+
+        user.markModified("languageApplications");
+        await user.save();
+
+        res.json({ message: `Contributor ${user.firstname || user.username} has been removed from Scripted Language ${language.name}.` });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// POST /api/admin/scripted-languages/:id/reset-contributor
+router.post("/scripted-languages/:id/reset-contributor", async (req, res) => {
+    try {
+        const langParam = req.params.id;
+        const { userId } = req.body;
+
+        if (!userId) {
+            return res.status(400).json({ error: "userId is required" });
+        }
+
+        let language = await ScriptedLanguage.findById(langParam).lean();
+        if (!language) {
+            language = await ScriptedLanguage.findOne({ code: String(langParam).toLowerCase().trim() }).lean();
+        }
+        if (!language) {
+            language = await ScriptedLanguage.findOne({ name: { $regex: new RegExp(`^${langParam}$`, "i") } }).lean();
+        }
+        if (!language) {
+            return res.status(404).json({ error: "Scripted Language not found" });
+        }
+
+        const langCode = String(language.code || "").toLowerCase().trim();
+        const langName = String(language.name || "").toLowerCase().trim();
+
+        const user = await User.findById(userId);
+        if (!user) {
+            return res.status(404).json({ error: "User not found" });
+        }
+
+        if (user.languageApplications) {
+            user.languageApplications = user.languageApplications.filter(app => {
+                if (app.applicationType !== "scripted_call") return true;
+                const appLang = String(app.languageCode || "").toLowerCase().trim();
+                return appLang !== langCode && appLang !== langName;
+            });
+        }
+
+        user.markModified("languageApplications");
+        await user.save();
+
+        res.json({ message: `Scripted call application for ${user.firstname || user.username} has been reset for ${language.name}. They can now apply again.` });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
@@ -6299,8 +6520,10 @@ router.get("/languages/:id/contributors-summary", async (req, res) => {
         const langCode = String(language.code || "").toLowerCase().trim();
         const langName = String(language.name || "").toLowerCase().trim();
 
-        // 1. Fetch call sessions for this language
+        // 1. Fetch live call sessions for this language (excluding scripted calls)
         const callSessions = await CallSession.find({
+            callId: { $not: /^scripted_/ },
+            endReason: { $ne: "scripted_completed" },
             language: { $regex: new RegExp(`^(${langCode}|${langName})$`, "i") }
         }).select("userA userB callStatus actualCallDuration duration callActuallyStarted").lean();
 
