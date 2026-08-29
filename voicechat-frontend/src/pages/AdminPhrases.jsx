@@ -43,7 +43,7 @@ export default function AdminPhrases() {
 
   async function fetchPhraseLanguages() {
     try {
-      const data = await apiGet('/api/admin/languages');
+      const data = await apiGet('/api/admin/languages?type=phrase');
       setPhraseLanguagesList(data.languages || []);
     } catch (err) {
       console.error(err);

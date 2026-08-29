@@ -16,6 +16,7 @@ const companySchema = new mongoose.Schema(
     allowPhraseTextEdit: { type: Boolean, default: false },
     enforceLufs: { type: Boolean, default: true },
     isHidden: { type: Boolean, default: false },
+    isBoosted: { type: Boolean, default: false },
     hiddenLanguages: [{ type: String, lowercase: true, trim: true, default: [] }]
   },
   { timestamps: true }

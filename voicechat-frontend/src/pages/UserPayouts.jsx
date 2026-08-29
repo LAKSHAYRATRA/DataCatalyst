@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import Nav from "../components/Nav.jsx";
 import { apiGet, apiPostJson } from "../lib/api.js";
-import { PhoneCall, Mic2, CreditCard } from "lucide-react";
+import { PhoneCall, Radio, Mic2, CreditCard } from "lucide-react";
 
 function money(value) {
   return `$${(Number(value) || 0).toFixed(2)}`;
@@ -23,7 +23,7 @@ export default function UserPayouts() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [tab, setTab] = useState("calls");
+  const [tab, setTab] = useState("calls"); // 'calls' | 'scripted' | 'phrases' | 'payments'
   const [subTab, setSubTab] = useState("all"); // 'all' | 'pending' | 'reviewed'
 
   const [editingUpi, setEditingUpi] = useState(false);
@@ -78,9 +78,14 @@ export default function UserPayouts() {
   };
 
   const summary = data?.summary;
-  const callsList = data?.calls || [];
+  const rawCallsList = data?.calls || [];
   const phrasesList = data?.phrases || [];
 
+  // Separate Live Calls vs Scripted Calls
+  const callsList = rawCallsList.filter(c => !String(c.callId || "").startsWith("scripted_") && c.endReason !== "scripted_completed");
+  const scriptedList = rawCallsList.filter(c => String(c.callId || "").startsWith("scripted_") || c.endReason === "scripted_completed");
+
+  // Live Calls Metrics
   const callApprovedSecs = callsList
     .filter(c => c.status === "approved")
     .reduce((sum, c) => sum + ((Number(c.durationMinutes) || 0) * 60 || Number(c.duration) || 0), 0);
@@ -102,6 +107,29 @@ export default function UserPayouts() {
     return true;
   });
 
+  // Scripted Calls Metrics
+  const scriptedApprovedSecs = scriptedList
+    .filter(c => c.status === "approved")
+    .reduce((sum, c) => sum + ((Number(c.durationMinutes) || 0) * 60 || Number(c.duration) || 0), 0);
+
+  const scriptedPendingSecs = scriptedList
+    .filter(c => c.status === "recorded" || c.status === "completed" || c.status === "pending")
+    .reduce((sum, c) => sum + ((Number(c.durationMinutes) || 0) * 60 || Number(c.duration) || 0), 0);
+
+  const scriptedPendingUsd = scriptedList
+    .filter(c => c.status === "recorded" || c.status === "completed" || c.status === "pending")
+    .reduce((sum, c) => sum + (Number(c.payoutUsd) || 0), 0);
+
+  const pendingScriptedCount = scriptedList.filter(c => c.status === "recorded" || c.status === "completed" || c.status === "pending").length;
+  const reviewedScriptedCount = scriptedList.filter(c => c.status === "approved" || c.status === "rejected").length;
+
+  const filteredScripted = scriptedList.filter(c => {
+    if (subTab === "pending") return c.status === "recorded" || c.status === "completed" || c.status === "pending";
+    if (subTab === "reviewed") return c.status === "approved" || c.status === "rejected";
+    return true;
+  });
+
+  // Phrases Metrics
   const phraseApprovedSecs = phrasesList
     .filter(p => p.status === "approved")
     .reduce((sum, p) => sum + (Number(p.duration) || 0), 0);
@@ -125,7 +153,7 @@ export default function UserPayouts() {
 
   const totalPendingEst = (summary?.totalRemainingPayoutUsd && summary.totalRemainingPayoutUsd > 0)
     ? summary.totalRemainingPayoutUsd
-    : (summary?.totalPendingEstimatedUsd !== undefined ? summary.totalPendingEstimatedUsd : (phrasePendingUsd + callPendingUsd));
+    : (summary?.totalPendingEstimatedUsd !== undefined ? summary.totalPendingEstimatedUsd : (phrasePendingUsd + callPendingUsd + scriptedPendingUsd));
 
   return (
     <div className="min-h-screen bg-neutral-50 dark:bg-neutral-950 text-neutral-900 dark:text-neutral-50 pt-16 md:pt-0 md:pl-64 transition-colors duration-300">
@@ -146,7 +174,7 @@ export default function UserPayouts() {
               <div className="card">
                 <div className="text-sm text-neutral-600 dark:text-neutral-400 mb-1">Earned</div>
                 <div className="text-3xl font-bold text-neutral-900 dark:text-white">{money(summary?.totalMoneyMadeUsd)}</div>
-                <div className="text-xs text-neutral-500 dark:text-neutral-400 mt-2">From approved calls and phrases</div>
+                <div className="text-xs text-neutral-500 dark:text-neutral-400 mt-2">From approved live calls, scripted calls, and phrases</div>
               </div>
               <div className="card">
                 <div className="text-sm text-neutral-600 dark:text-neutral-400 mb-1">Paid Out</div>
@@ -156,7 +184,7 @@ export default function UserPayouts() {
               <div className="card">
                 <div className="text-sm text-neutral-600 dark:text-neutral-400 mb-1">Remaining Payout</div>
                 <div className="text-3xl font-bold text-warning-700 dark:text-warning-500">{money(summary?.totalRemainingPayoutUsd)}</div>
-                <div className="text-xs text-neutral-500 dark:text-neutral-400 mt-2">{summary?.pendingCalls || pendingCallsCount} calls, {summary?.pendingPhrases || pendingPhrasesCount} phrases pending</div>
+                <div className="text-xs text-neutral-500 dark:text-neutral-400 mt-2">{pendingCallsCount} live calls, {pendingScriptedCount} scripted calls, {pendingPhrasesCount} phrases pending</div>
               </div>
             </div>
 
@@ -285,7 +313,24 @@ export default function UserPayouts() {
                     <span className={`px-2 py-0.5 rounded-full text-xs font-extrabold ${
                       tab === "calls" ? "bg-white/20 text-white" : "bg-neutral-300 dark:bg-neutral-800 text-neutral-800 dark:text-neutral-200"
                     }`}>
-                      {data?.calls?.length || 0}
+                      {callsList.length}
+                    </span>
+                  </button>
+
+                  <button
+                    onClick={() => { setTab("scripted"); setSubTab("all"); }}
+                    className={`flex items-center gap-2.5 px-5 py-2.5 rounded-xl text-sm font-bold transition-all duration-300 ${
+                      tab === "scripted"
+                        ? "bg-gradient-to-r from-primary-600 to-indigo-600 text-white shadow-lg shadow-primary-500/30 scale-[1.02]"
+                        : "text-neutral-700 dark:text-neutral-300 hover:text-neutral-900 dark:hover:text-white hover:bg-neutral-300/60 dark:hover:bg-neutral-800"
+                    }`}
+                  >
+                    <Radio className={`w-4 h-4 ${tab === "scripted" ? "text-white" : "text-primary-600 dark:text-primary-400"}`} />
+                    <span>Scripted Calls</span>
+                    <span className={`px-2 py-0.5 rounded-full text-xs font-extrabold ${
+                      tab === "scripted" ? "bg-white/20 text-white" : "bg-neutral-300 dark:bg-neutral-800 text-neutral-800 dark:text-neutral-200"
+                    }`}>
+                      {scriptedList.length}
                     </span>
                   </button>
 
@@ -324,12 +369,14 @@ export default function UserPayouts() {
                   </button>
                 </div>
                 <div className="text-xs font-bold uppercase tracking-wider text-neutral-500 dark:text-neutral-400 bg-neutral-100 dark:bg-neutral-900/80 px-3.5 py-2 rounded-xl border border-neutral-200 dark:border-neutral-800 self-start md:self-auto">
-                  Showing <span className="text-neutral-900 dark:text-white font-extrabold">{tab === "calls" ? `${data?.calls?.length || 0} calls` : tab === "phrases" ? `${data?.phrases?.length || 0} phrases` : `${data?.payments?.length || 0} payments`}</span>
+                  Showing <span className="text-neutral-900 dark:text-white font-extrabold">
+                    {tab === "calls" ? `${callsList.length} calls` : tab === "scripted" ? `${scriptedList.length} scripted calls` : tab === "phrases" ? `${data?.phrases?.length || 0} phrases` : `${data?.payments?.length || 0} payments`}
+                  </span>
                 </div>
               </div>
 
-              {/* Duration Counters & Sub-filters for Calls & Phrases */}
-              {(tab === "calls" || tab === "phrases") && (
+              {/* Duration Counters & Sub-filters for Calls, Scripted & Phrases */}
+              {(tab === "calls" || tab === "scripted" || tab === "phrases") && (
                 <div className="mb-6 space-y-4">
                   {/* Duration Counters */}
                   <div className="grid grid-cols-2 md:grid-cols-3 gap-4 bg-neutral-900 dark:bg-neutral-900 text-white p-5 rounded-2xl border border-neutral-800 shadow-md">
@@ -338,7 +385,7 @@ export default function UserPayouts() {
                         <span className="w-2 h-2 rounded-full bg-success-400"></span> Approved Duration
                       </span>
                       <span className="font-mono font-bold text-xl md:text-2xl text-white tracking-wide">
-                        {formatHHMMSSFromSeconds(tab === "calls" ? callApprovedSecs : phraseApprovedSecs)}
+                        {formatHHMMSSFromSeconds(tab === "calls" ? callApprovedSecs : tab === "scripted" ? scriptedApprovedSecs : phraseApprovedSecs)}
                       </span>
                     </div>
                     <div>
@@ -346,7 +393,7 @@ export default function UserPayouts() {
                         <span className="w-2 h-2 rounded-full bg-warning-400"></span> Pending Review Duration
                       </span>
                       <span className="font-mono font-bold text-xl md:text-2xl text-white tracking-wide">
-                        {formatHHMMSSFromSeconds(tab === "calls" ? callPendingSecs : phrasePendingSecs)}
+                        {formatHHMMSSFromSeconds(tab === "calls" ? callPendingSecs : tab === "scripted" ? scriptedPendingSecs : phrasePendingSecs)}
                       </span>
                     </div>
                     <div className="col-span-2 md:col-span-1">
@@ -354,7 +401,7 @@ export default function UserPayouts() {
                         <span className="w-2 h-2 rounded-full bg-primary-400"></span> Est. Pending Value
                       </span>
                       <span className="font-mono font-bold text-xl md:text-2xl text-white tracking-wide">
-                        {money(tab === "calls" ? callPendingUsd : phrasePendingUsd)}
+                        {money(tab === "calls" ? callPendingUsd : tab === "scripted" ? scriptedPendingUsd : phrasePendingUsd)}
                       </span>
                     </div>
                   </div>
@@ -370,7 +417,7 @@ export default function UserPayouts() {
                           : "bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400 hover:bg-neutral-200 dark:hover:bg-neutral-700"
                       }`}
                     >
-                      All ({tab === "calls" ? callsList.length : phrasesList.length})
+                      All ({tab === "calls" ? callsList.length : tab === "scripted" ? scriptedList.length : phrasesList.length})
                     </button>
                     <button
                       onClick={() => setSubTab("pending")}
@@ -380,7 +427,7 @@ export default function UserPayouts() {
                           : "bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400 hover:bg-neutral-200 dark:hover:bg-neutral-700"
                       }`}
                     >
-                      Pending ({tab === "calls" ? pendingCallsCount : pendingPhrasesCount})
+                      Pending ({tab === "calls" ? pendingCallsCount : tab === "scripted" ? pendingScriptedCount : pendingPhrasesCount})
                     </button>
                     <button
                       onClick={() => setSubTab("reviewed")}
@@ -390,7 +437,7 @@ export default function UserPayouts() {
                           : "bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400 hover:bg-neutral-200 dark:hover:bg-neutral-700"
                       }`}
                     >
-                      Reviewed ({tab === "calls" ? reviewedCallsCount : reviewedPhrasesCount})
+                      Reviewed ({tab === "calls" ? reviewedCallsCount : tab === "scripted" ? reviewedScriptedCount : reviewedPhrasesCount})
                     </button>
                   </div>
                 </div>
@@ -429,6 +476,45 @@ export default function UserPayouts() {
                     </div>
                   ))}
                   {!filteredCalls.length && <div className="text-center py-12 text-neutral-500 dark:text-neutral-400">No {subTab !== "all" ? subTab : ""} calls found.</div>}
+                </div>
+              ) : tab === "scripted" ? (
+                <div className="space-y-3">
+                  {filteredScripted.map((call) => (
+                    <div key={call.callId} className="rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900/50 p-4 flex flex-col gap-3 transition-colors duration-300">
+                      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                        <div>
+                          <div className="text-sm font-semibold text-neutral-900 dark:text-white flex items-center gap-2">
+                            <Radio className="w-4 h-4 text-indigo-500" />
+                            <span>{call.subtopic && call.subtopic !== "-" ? call.subtopic : call.topic || "Scripted Conversation"}</span>
+                          </div>
+                          <div className="text-sm text-neutral-600 dark:text-neutral-400 mt-0.5">
+                            {call.topic && call.topic !== "-" && call.topic !== call.subtopic ? `${call.topic} • ` : ""}<span className="capitalize">{call.language || "-"}</span>
+                          </div>
+                          <div className="text-xs text-neutral-500 dark:text-neutral-500 mt-2">{formatDate(call.startedAt)} • {call.durationMinutes?.toFixed?.(2) || "0.00"} min</div>
+                        </div>
+                        <div className="text-left md:text-right">
+                          <div className="text-xl font-bold text-neutral-900 dark:text-white">{money(call.payoutUsd)}</div>
+                          <span className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-semibold capitalize mt-1 ${
+                            call.status === "approved" ? "bg-success-100 text-success-700 dark:bg-success-900/40 dark:text-success-300" :
+                            call.status === "rejected" ? "bg-error-100 text-error-700 dark:bg-error-900/40 dark:text-error-300" :
+                            "bg-warning-100 text-warning-700 dark:bg-warning-900/40 dark:text-warning-300"
+                          }`}>
+                            {call.status === "recorded" || call.status === "pending" ? "Pending Review" : call.status}
+                          </span>
+                        </div>
+                      </div>
+
+                      {call.reviewNote && (
+                        <div className="mt-1 pt-3 border-t border-neutral-100 dark:border-neutral-800/80 bg-neutral-50/80 dark:bg-neutral-800/40 p-3 rounded-xl text-xs">
+                          <div className="text-neutral-700 dark:text-neutral-300 flex items-start gap-2">
+                            <span className="font-semibold text-neutral-900 dark:text-white shrink-0">Feedback Note:</span>
+                            <span className="italic">"{call.reviewNote}"</span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                  {!filteredScripted.length && <div className="text-center py-12 text-neutral-500 dark:text-neutral-400">No {subTab !== "all" ? subTab : ""} scripted calls found.</div>}
                 </div>
               ) : tab === "phrases" ? (
                 <div className="space-y-3">

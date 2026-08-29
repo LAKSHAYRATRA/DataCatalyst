@@ -84,6 +84,39 @@ export default function AdminCompanies() {
     }
   };
 
+  const toggleBoostCompany = async (e, companyId, companyName, currentIsBoosted, isHidden) => {
+    e.stopPropagation();
+    const nextBoost = !currentIsBoosted;
+    if (nextBoost && isHidden) {
+      Swal.fire({
+        icon: "warning",
+        title: "Project is Hidden",
+        text: `Cannot boost "${companyName}" because the project is hidden. Please unhide the project first before boosting.`,
+        confirmButtonColor: "#f59e0b"
+      });
+      return;
+    }
+    try {
+      await apiPatchJson(`/api/admin/companies/${companyId}`, { isBoosted: nextBoost });
+      setCompanies(prev => prev.map(c => {
+        if (c._id === companyId) {
+          return { ...c, isBoosted: nextBoost };
+        }
+        return c;
+      }));
+      Swal.fire({
+        toast: true,
+        position: "top-end",
+        icon: "success",
+        title: nextBoost ? `"${companyName}" boosted & recommended on Dashboard!` : `"${companyName}" unboosted`,
+        timer: 2500,
+        showConfirmButton: false
+      });
+    } catch (err) {
+      Swal.fire("Cannot Boost Project", err.message, "error");
+    }
+  };
+
   const createCompany = async () => {
     if (!newCompanyName.trim()) return;
     setIsCreating(true);
@@ -276,15 +309,22 @@ export default function AdminCompanies() {
                       </div>
                     </div>
 
-                    {company.isHidden ? (
-                      <span className="text-[11px] bg-rose-900/50 text-rose-300 border border-rose-600/60 px-2 py-0.5 rounded-full font-bold flex items-center gap-1">
-                        <EyeOff className="w-3 h-3" /> Hidden
-                      </span>
-                    ) : (
-                      <span className="text-[11px] bg-emerald-900/40 text-emerald-300 border border-emerald-600/50 px-2 py-0.5 rounded-full font-bold flex items-center gap-1">
-                        <Eye className="w-3 h-3" /> Active
-                      </span>
-                    )}
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {company.isBoosted && (
+                        <span className="text-[11px] bg-gradient-to-r from-amber-500/20 to-orange-500/20 text-amber-300 border border-amber-500/50 px-2 py-0.5 rounded-full font-extrabold flex items-center gap-1 shadow-sm">
+                          🔥 Boosted
+                        </span>
+                      )}
+                      {company.isHidden ? (
+                        <span className="text-[11px] bg-rose-900/50 text-rose-300 border border-rose-600/60 px-2 py-0.5 rounded-full font-bold flex items-center gap-1">
+                          <EyeOff className="w-3 h-3" /> Hidden
+                        </span>
+                      ) : (
+                        <span className="text-[11px] bg-emerald-900/40 text-emerald-300 border border-emerald-600/50 px-2 py-0.5 rounded-full font-bold flex items-center gap-1">
+                          <Eye className="w-3 h-3" /> Active
+                        </span>
+                      )}
+                    </div>
                   </div>
 
                   {/* Config Highlights Grid */}
@@ -341,6 +381,17 @@ export default function AdminCompanies() {
                     >
                       <Layers className="w-3.5 h-3.5" />
                       <span>Workloads</span>
+                    </button>
+                    <button 
+                      onClick={(e) => toggleBoostCompany(e, company._id, company.projectName || company.name, company.isBoosted, company.isHidden)}
+                      className={`p-1.5 px-2.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1 ${
+                        company.isBoosted
+                          ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 hover:bg-amber-500/30'
+                          : 'bg-neutral-700/80 hover:bg-neutral-700 text-neutral-300 hover:text-white'
+                      }`}
+                      title={company.isBoosted ? "Unboost from Dashboard" : "Boost & Recommend on Dashboard"}
+                    >
+                      <span>🚀 {company.isBoosted ? 'Boosted' : 'Boost'}</span>
                     </button>
                     <button 
                       onClick={(e) => toggleHideCompany(e, company._id, company.name, company.isHidden)}

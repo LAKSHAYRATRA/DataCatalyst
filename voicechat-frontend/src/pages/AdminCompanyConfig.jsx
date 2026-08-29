@@ -53,11 +53,29 @@ export default function AdminCompanyConfig() {
   }
 
   const handleFieldChange = (field, value) => {
+    if (field === 'isBoosted' && value === true && company.isHidden) {
+      Swal.fire({
+        icon: "warning",
+        title: "Project is Hidden",
+        text: "Cannot boost this project because it is currently hidden. Please unhide the project first before boosting.",
+        confirmButtonColor: "#f59e0b"
+      });
+      return;
+    }
     setCompany(prev => ({ ...prev, [field]: value }));
   };
 
   const handleSave = async (e) => {
     if (e) e.preventDefault();
+    if (company.isBoosted && company.isHidden) {
+      Swal.fire({
+        icon: "warning",
+        title: "Project is Hidden",
+        text: "Cannot boost this project because it is currently hidden. Please unhide the project first before boosting.",
+        confirmButtonColor: "#f59e0b"
+      });
+      return;
+    }
     setSaving(true);
     setMessage('');
     try {
@@ -69,7 +87,8 @@ export default function AdminCompanyConfig() {
         singlePhraseFrequency: Math.max(1, Number(company.singlePhraseFrequency) || 1),
         namingPattern: company.namingPattern || '{phraseId}',
         allowPhraseTextEdit: Boolean(company.allowPhraseTextEdit),
-        enforceLufs: company.enforceLufs !== false
+        enforceLufs: company.enforceLufs !== false,
+        isBoosted: Boolean(company.isBoosted)
       });
       setCompany(res.company);
       setMessage('Configuration saved successfully!');
@@ -83,9 +102,36 @@ export default function AdminCompanyConfig() {
       });
       setTimeout(() => setMessage(''), 3000);
     } catch (err) {
-      Swal.fire('Error', 'Failed to save configuration: ' + err.message, 'error');
+      Swal.fire('Cannot Save Configuration', err.message, 'error');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const toggleBoost = async () => {
+    const nextBoost = !company.isBoosted;
+    if (nextBoost && company.isHidden) {
+      Swal.fire({
+        icon: "warning",
+        title: "Project is Hidden",
+        text: "Cannot boost this project because it is currently hidden. Please unhide the project first before boosting.",
+        confirmButtonColor: "#f59e0b"
+      });
+      return;
+    }
+    try {
+      await apiPatchJson(`/api/admin/companies/${id}`, { isBoosted: nextBoost });
+      setCompany(prev => ({ ...prev, isBoosted: nextBoost }));
+      Swal.fire({
+        toast: true,
+        position: "top-end",
+        icon: "success",
+        title: nextBoost ? `"${company.projectName || company.name}" boosted & recommended on Dashboard!` : `"${company.projectName || company.name}" unboosted`,
+        timer: 2500,
+        showConfirmButton: false
+      });
+    } catch (err) {
+      Swal.fire("Cannot Boost Project", err.message, "error");
     }
   };
 
@@ -106,7 +152,7 @@ export default function AdminCompanyConfig() {
 
     try {
       const res = await apiPatchJson(`/api/admin/companies/${id}/toggle-hide`, {});
-      setCompany(prev => ({ ...prev, isHidden: res.isHidden }));
+      setCompany(prev => ({ ...prev, isHidden: res.isHidden, isBoosted: res.isBoosted !== undefined ? res.isBoosted : prev.isBoosted }));
       Swal.fire({
         toast: true,
         position: "top-end",
@@ -238,6 +284,18 @@ export default function AdminCompanyConfig() {
               >
                 <span>📊 Summary</span>
               </button>
+              <button 
+                type="button"
+                onClick={toggleBoost}
+                className={`px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm ${
+                  company.isBoosted
+                    ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 hover:bg-amber-500/30'
+                    : 'bg-neutral-700 hover:bg-neutral-600 text-neutral-300 hover:text-white'
+                }`}
+                title={company.isBoosted ? "Unboost from Dashboard" : "Boost & Recommend on Contributor Dashboard"}
+              >
+                <span>🚀 {company.isBoosted ? 'Boosted' : 'Boost Project'}</span>
+              </button>
               <button
                 onClick={toggleHide}
                 className={`px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm ${
@@ -255,6 +313,42 @@ export default function AdminCompanyConfig() {
 
         {/* Configuration Form Sections */}
         <form onSubmit={handleSave} className="space-y-6">
+          
+          {/* Boost Project Banner Card */}
+          <div className="bg-neutral-800/80 border border-amber-500/30 p-5 rounded-2xl shadow-lg flex flex-col sm:flex-row sm:items-center justify-between gap-4 relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-32 h-32 bg-amber-500/5 rounded-full blur-2xl pointer-events-none" />
+            <div className="space-y-1">
+              <label className="text-sm font-bold text-white flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-amber-400" />
+                <span>🚀 Boost Project (Recommended on Dashboard)</span>
+              </label>
+              <p className="text-xs text-neutral-400 max-w-2xl">
+                Pin and feature this phrase project prominently under "Recommended Projects" on the contributor dashboard for rapid applicant acquisition.
+              </p>
+            </div>
+            <div className="flex items-center gap-3 self-start sm:self-center">
+              <span className={`text-xs font-bold transition-colors duration-200 ${company.isBoosted ? 'text-amber-400' : 'text-neutral-400'}`}>
+                {company.isBoosted ? "🔥 Active on Dashboard" : "Unboosted"}
+              </span>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={Boolean(company.isBoosted)}
+                onClick={() => handleFieldChange('isBoosted', !company.isBoosted)}
+                className={`relative inline-flex h-7 w-14 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-300 ease-in-out focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 focus:ring-offset-neutral-900 ${
+                  company.isBoosted
+                    ? 'bg-gradient-to-r from-amber-500 to-orange-500 shadow-[0_0_12px_rgba(245,158,11,0.45)]'
+                    : 'bg-neutral-700 hover:bg-neutral-600'
+                }`}
+              >
+                <span
+                  className={`pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow-md ring-0 transition duration-300 ease-in-out ${
+                    company.isBoosted ? 'translate-x-7' : 'translate-x-0'
+                  }`}
+                />
+              </button>
+            </div>
+          </div>
           
           {/* General & Application Settings Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

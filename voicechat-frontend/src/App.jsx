@@ -8,6 +8,8 @@ import Dashboard from "./pages/Dashboard.jsx";
 import AdminDashboard from "./pages/AdminDashboard.jsx";
 import AdminCalls from "./pages/AdminCalls.jsx";
 import AdminTopics from "./pages/AdminTopics.jsx";
+import AdminTopicsLanguages from "./pages/AdminTopicsLanguages.jsx";
+import AdminTopicsSubprojects from "./pages/AdminTopicsSubprojects.jsx";
 import AdminUsers from "./pages/AdminUsers.jsx";
 import AdminQA from "./pages/AdminQA.jsx";
 import AdminSegmentation from "./pages/AdminSegmentation.jsx";
@@ -21,12 +23,16 @@ import PendingApproval from "./pages/PendingApproval.jsx";
 import ContributorAgreement from "./pages/ContributorAgreement.jsx";
 import LanguageApply from "./pages/LanguageApply.jsx";
 import AdminLanguages from "./pages/AdminLanguages.jsx";
+import AdminLanguageSubprojects from "./pages/AdminLanguageSubprojects.jsx";
 import AdminLanguageApps from "./pages/AdminLanguageApps.jsx";
 import AdminCallApps from "./pages/AdminCallApps.jsx";
 import AdminScriptedCallsReview from "./pages/AdminScriptedCallsReview.jsx";
 import AdminScriptedCallApps from "./pages/AdminScriptedCallApps.jsx";
 import AdminScriptedLanguages from "./pages/AdminScriptedLanguages.jsx";
+import AdminScriptedLanguageSubprojects from "./pages/AdminScriptedLanguageSubprojects.jsx";
 import AdminScriptedTopics from "./pages/AdminScriptedTopics.jsx";
+import AdminScriptedTopicsLanguages from "./pages/AdminScriptedTopicsLanguages.jsx";
+import AdminScriptedTopicsSubprojects from "./pages/AdminScriptedTopicsSubprojects.jsx";
 import AdminMergedCallStudio from "./pages/AdminMergedCallStudio.jsx";
 import Landing from "./pages/Landing.jsx";
 import Support from "./pages/Support.jsx";
@@ -399,7 +405,13 @@ export default function App() {
         <Route path="/admin/dashboard" element={<RequireAdmin><AdminDashboard /></RequireAdmin>} />
         <Route path="/admin/calls" element={<RequireAdmin><AdminCalls /></RequireAdmin>} />
         <Route path="/admin/calls/:callId/merged" element={<RequireAdminOrQA><AdminMergedCallStudio /></RequireAdminOrQA>} />
-        <Route path="/admin/topics" element={<RequireAdmin><AdminTopics /></RequireAdmin>} />
+        {/* Call Topics 3-Tier Hierarchy */}
+        <Route path="/admin/topics" element={<RequireAdmin><AdminTopicsLanguages /></RequireAdmin>} />
+        <Route path="/admin/topics/:langCode/subprojects" element={<RequireAdmin><AdminTopicsSubprojects /></RequireAdmin>} />
+        <Route path="/admin/topics/:langCode/subprojects/:subprojectCode/topics" element={<RequireAdmin><AdminTopics /></RequireAdmin>} />
+        <Route path="/admin/topics/manage/:subprojectCode" element={<RequireAdmin><AdminTopics /></RequireAdmin>} />
+        <Route path="/admin/topics/all" element={<RequireAdmin><AdminTopics /></RequireAdmin>} />
+
         <Route path="/admin/users" element={<RequireAdmin><AdminUsers /></RequireAdmin>} />
         <Route path="/admin/payouts" element={<RequireAdmin><AdminPayouts /></RequireAdmin>} />
         <Route path="/admin/payouts/:userId" element={<RequireAdmin><AdminPayoutUser /></RequireAdmin>} />
@@ -410,13 +422,22 @@ export default function App() {
         <Route path="/admin/segmentation" element={<RequireAdminOrQA><AdminSegmentation /></RequireAdminOrQA>} />
         <Route path="/admin/transcription" element={<RequireAdminOrQA><AdminTranscription /></RequireAdminOrQA>} />
         <Route path="/admin/languages" element={<RequireAdmin><AdminLanguages /></RequireAdmin>} />
+        <Route path="/admin/languages/:langCode/subprojects" element={<RequireAdmin><AdminLanguageSubprojects /></RequireAdmin>} />
         <Route path="/admin/language-apps" element={<RequireAdminOrQA><AdminLanguageApps /></RequireAdminOrQA>} />
         <Route path="/admin/call-apps" element={<RequireAdminOrQA><AdminCallApps /></RequireAdminOrQA>} />
         <Route path="/admin/scripted-calls-review" element={<RequireAdminOrQA><AdminScriptedCallsReview /></RequireAdminOrQA>} />
         <Route path="/admin/scripted-qa" element={<RequireAdminOrQA><AdminScriptedCallsReview /></RequireAdminOrQA>} />
         <Route path="/admin/scripted-call-apps" element={<RequireAdminOrQA><AdminScriptedCallApps /></RequireAdminOrQA>} />
-        <Route path="/admin/scripted-topics" element={<RequireAdminOrQA><AdminScriptedTopics /></RequireAdminOrQA>} />
+
+        {/* Scripted Call Topics 3-Tier Hierarchy */}
+        <Route path="/admin/scripted-topics" element={<RequireAdminOrQA><AdminScriptedTopicsLanguages /></RequireAdminOrQA>} />
+        <Route path="/admin/scripted-topics/:langCode/subprojects" element={<RequireAdminOrQA><AdminScriptedTopicsSubprojects /></RequireAdminOrQA>} />
+        <Route path="/admin/scripted-topics/:langCode/subprojects/:subprojectCode/topics" element={<RequireAdminOrQA><AdminScriptedTopics /></RequireAdminOrQA>} />
+        <Route path="/admin/scripted-topics/manage/:subprojectCode" element={<RequireAdminOrQA><AdminScriptedTopics /></RequireAdminOrQA>} />
+        <Route path="/admin/scripted-topics/all" element={<RequireAdminOrQA><AdminScriptedTopics /></RequireAdminOrQA>} />
+
         <Route path="/admin/scripted-languages" element={<RequireAdminOrQA><AdminScriptedLanguages /></RequireAdminOrQA>} />
+        <Route path="/admin/scripted-languages/:langCode/subprojects" element={<RequireAdminOrQA><AdminScriptedLanguageSubprojects /></RequireAdminOrQA>} />
         <Route path="/admin/phrases" element={<RequireAdmin><AdminPhrases /></RequireAdmin>} />
         <Route path="/admin/phrases/downloads" element={<RequireAdmin><AdminPhraseDownloads /></RequireAdmin>} />
         <Route path="/admin/projects" element={<RequireAdmin><AdminProjects /></RequireAdmin>} />

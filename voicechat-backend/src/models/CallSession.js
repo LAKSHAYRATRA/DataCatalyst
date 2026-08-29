@@ -19,6 +19,9 @@ const callSessionSchema = new mongoose.Schema(
     subtopicId: { type: mongoose.Schema.Types.ObjectId, ref: "Subtopic" },
     questionerUserId: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
     answererUserId: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+    enableCallRoles: { type: Boolean, default: false },
+    userARole: { type: String, default: "" },
+    userBRole: { type: String, default: "" },
     topicSelectedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
     topicSelectedAt: { type: Date },
 
@@ -58,7 +61,7 @@ const callSessionSchema = new mongoose.Schema(
     recordingADurationMinutes: { type: Number, default: 0, min: 0 },
     recordingAPayoutUsd: { type: Number, default: 0, min: 0 },
     recordingANoisy: { type: Boolean, default: false },
-    recordingARejectionReason: { type: String, enum: ['Off-Topic Conversation', 'Noisy', null], default: null },
+    recordingARejectionReason: { type: String, default: null },
     recordingBStatus: {
       type: String,
       enum: ['pending', 'approved', 'rejected'],
@@ -68,7 +71,7 @@ const callSessionSchema = new mongoose.Schema(
     recordingBDurationMinutes: { type: Number, default: 0, min: 0 },
     recordingBPayoutUsd: { type: Number, default: 0, min: 0 },
     recordingBNoisy: { type: Boolean, default: false },
-    recordingBRejectionReason: { type: String, enum: ['Off-Topic Conversation', 'Noisy', null], default: null },
+    recordingBRejectionReason: { type: String, default: null },
 
 
     // QA Review tracking & 15-minute lock window
@@ -123,6 +126,10 @@ const callSessionSchema = new mongoose.Schema(
     // Full Call Dialogue transcription tracking (irrespective of individual speaker rejection)
     transcribedAsCall: { type: Boolean, default: false },
     callTranscriptionStatus: { type: String, enum: ['pending', 'transcribed', 'rejected'], default: 'pending' },
+
+    // Scripted Scenario Links
+    scriptedTopicId: { type: mongoose.Schema.Types.ObjectId, ref: "ScriptedTopic", default: null },
+    subtopicId: { type: mongoose.Schema.Types.ObjectId, ref: "ScriptedSubtopic", default: null }
   },
   { timestamps: true }
 );

@@ -6,6 +6,8 @@ import crypto from "crypto";
 import { CallSession } from "../models/CallSession.js";
 import { ScriptedSubmission } from "../models/ScriptedSubmission.js";
 import { ScriptedSubtopic } from "../models/ScriptedSubtopic.js";
+import { ScriptedLanguage } from "../models/ScriptedLanguage.js";
+import { Language } from "../models/Language.js";
 
 const execAsync = promisify(exec);
 
@@ -41,7 +43,7 @@ export async function stitchScriptedPair(sub1, sub2) {
 
     try {
         const subtopic = await ScriptedSubtopic.findById(sub1.subtopicId).lean();
-        const turnsCount = Math.max(sub1.verses?.length || 0, sub2.verses?.length || 0);
+        const turnsCount = Math.max(sub1.verses?.length || 0, sub2.verses?.length || 0, subtopic?.dialogueTurns?.length || 0);
 
         if (turnsCount === 0) {
             throw new Error("No verses found to stitch for scripted pair");
@@ -60,6 +62,8 @@ export async function stitchScriptedPair(sub1, sub2) {
         const trackBConcatList = [];
 
         let totalDuration = 0;
+        let totalAudioSecA = 0;
+        let totalAudioSecB = 0;
         const segmentTimestamps = []; // For QA labels and time-aligned verification
 
         for (let i = 0; i < turnsCount; i++) {
@@ -72,6 +76,8 @@ export async function stitchScriptedPair(sub1, sub2) {
             // 1. Process Speaker 1 Turn
             if (v1File && fs.existsSync(v1File)) {
                 const dur1 = await getAudioDuration(v1File);
+                if (v1) v1.durationSec = dur1;
+                totalAudioSecA += dur1;
                 const s1StartTime = totalDuration;
                 totalDuration += dur1;
                 const s1EndTime = totalDuration;
@@ -109,6 +115,8 @@ export async function stitchScriptedPair(sub1, sub2) {
             // 2. Process Speaker 2 Turn
             if (v2File && fs.existsSync(v2File)) {
                 const dur2 = await getAudioDuration(v2File);
+                if (v2) v2.durationSec = dur2;
+                totalAudioSecB += dur2;
                 const s2StartTime = totalDuration;
                 totalDuration += dur2;
                 const s2EndTime = totalDuration;
@@ -152,6 +160,20 @@ export async function stitchScriptedPair(sub1, sub2) {
         fs.writeFileSync(listBPath, trackBConcatList.map(f => `file '${f.replace(/\\/g, "/")}'`).join("\n"));
 
         // Output destination files
+        let callSession = null;
+        let callId = null;
+
+        if (sub1.callSessionId) {
+            callSession = await CallSession.findById(sub1.callSessionId);
+            if (callSession) {
+                callId = callSession.callId;
+            }
+        }
+
+        if (!callId) {
+            callId = `scripted_${crypto.randomUUID()}`;
+        }
+
         const outTrackA = path.join(recordingsDir, `${callId}_A.wav`);
         const outTrackB = path.join(recordingsDir, `${callId}_B.wav`);
         const outMixedStereo = path.join(recordingsDir, `${callId}_stereo.wav`);
@@ -167,38 +189,63 @@ export async function stitchScriptedPair(sub1, sub2) {
             `ffmpeg -y -i "${outTrackA}" -i "${outTrackB}" -filter_complex "[0:a][1:a]join=inputs=2:channel_layout=stereo[a]" -map "[a]" -c:a pcm_s16le "${outMixedStereo}"`
         );
 
-        const durationMinutes = Math.max(0.1, +(totalDuration / 60).toFixed(2));
+        const durationMinutesA = Math.max(0.01, +(totalAudioSecA / 60).toFixed(2));
+        const durationMinutesB = Math.max(0.01, +(totalAudioSecB / 60).toFixed(2));
+
+        const langCode = String(sub1.language || "english").toLowerCase().trim();
+        const [sLang, lang] = await Promise.all([
+            ScriptedLanguage.findOne({ code: langCode }).select("hourlyPayout").lean(),
+            Language.findOne({ code: langCode }).select("hourlyPayout").lean()
+        ]);
+        const hourlyRate = (sLang && Number(sLang.hourlyPayout) > 0) ? Number(sLang.hourlyPayout) : (Number(lang?.hourlyPayout) || 0);
+
+        const payoutUsdA = Math.round(((hourlyRate * durationMinutesA) / 60) * 100) / 100;
+        const payoutUsdB = Math.round(((hourlyRate * durationMinutesB) / 60) * 100) / 100;
+
         const now = new Date();
 
-        // Create unified CallSession for Admin Review & QA Pipeline
-        const callSession = new CallSession({
-            callId,
-            userA: sub1.userId,
-            userB: sub2.userId,
-            topicId: sub1.topicId,
-            subtopicId: sub1.subtopicId,
-            language: sub1.language || "english",
-            startedAt: sub1.createdAt || now,
-            endedAt: now,
-            actualCallStartedAt: sub1.createdAt || now,
-            actualCallDuration: Math.round(totalDuration),
-            recordingAFile: `${callId}_A.wav`,
-            recordingAStartedAt: sub1.createdAt || now,
-            recordingBFile: `${callId}_B.wav`,
-            recordingBStartedAt: sub2.createdAt || now,
-            mixedRecordingFile: `${callId}_stereo.wav`,
-            callActuallyStarted: true,
-            callStatus: "pending",
-            recordingAStatus: "pending",
-            recordingBStatus: "pending",
-            recordingADurationMinutes: durationMinutes,
-            recordingBDurationMinutes: durationMinutes,
-            endReason: "scripted_completed"
-        });
+        if (!callSession) {
+            callSession = new CallSession({
+                callId,
+                userA: sub1.userId,
+                userB: sub2.userId,
+                topicId: sub1.topicId,
+                subtopicId: sub1.subtopicId,
+                language: sub1.language || "english",
+                startedAt: sub1.createdAt || now,
+                endedAt: now,
+                actualCallStartedAt: sub1.createdAt || now,
+                actualCallDuration: Math.round(totalDuration),
+                recordingAFile: `${callId}_A.wav`,
+                recordingAStartedAt: sub1.createdAt || now,
+                recordingBFile: `${callId}_B.wav`,
+                recordingBStartedAt: sub2.createdAt || now,
+                mixedRecordingFile: `${callId}_stereo.wav`,
+                callActuallyStarted: true,
+                callStatus: "pending",
+                recordingAStatus: "pending",
+                recordingBStatus: "pending",
+                recordingADurationMinutes: durationMinutesA,
+                recordingBDurationMinutes: durationMinutesB,
+                recordingAPayoutUsd: payoutUsdA,
+                recordingBPayoutUsd: payoutUsdB,
+                endReason: "scripted_completed"
+            });
+        } else {
+            callSession.actualCallDuration = Math.round(totalDuration);
+            callSession.recordingADurationMinutes = durationMinutesA;
+            callSession.recordingBDurationMinutes = durationMinutesB;
+            callSession.recordingAPayoutUsd = payoutUsdA;
+            callSession.recordingBPayoutUsd = payoutUsdB;
+            callSession.callStatus = "pending";
+            callSession.recordingAStatus = "pending";
+            callSession.recordingBStatus = "pending";
+            callSession.endedAt = now;
+        }
 
         await callSession.save();
 
-        // Update Submissions as matched
+        // Update Submissions as matched and persist verse durations
         sub1.status = "matched";
         sub1.pairedSubmissionId = sub2._id;
         sub1.callSessionId = callSession._id;

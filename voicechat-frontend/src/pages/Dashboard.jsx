@@ -4,18 +4,22 @@ import { apiGet } from "../lib/api.js";
 import { getUserInfo } from "../lib/auth.js";
 import { motion } from "framer-motion";
 import { Link } from "react-router-dom";
-import { Phone, CheckCircle2, Clock, Activity, Mic2, AlertCircle, ChevronLeft, ChevronRight, MessageSquare, CreditCard } from "lucide-react";
+import { Phone, CheckCircle2, Clock, Activity, Mic2, AlertCircle, ChevronLeft, ChevronRight, MessageSquare, CreditCard, Sparkles, TrendingUp, Zap, Flame, ArrowRight, Layers, Radio } from "lucide-react";
 
 export default function Dashboard() {
     const [sessions, setSessions] = useState([]);
     const [error, setError] = useState("");
     const [loading, setLoading] = useState(true);
+    const [recommendedProjects, setRecommendedProjects] = useState([]);
+    const [myApps, setMyApps] = useState([]);
+    const [recLoading, setRecLoading] = useState(true);
     const [currentPage, setCurrentPage] = useState(1);
     const [feedbackModal, setFeedbackModal] = useState(null);
     const [showPanReminder, setShowPanReminder] = useState(false);
     const [panRejected, setPanRejected] = useState(false);
     const [panRejectionReason, setPanRejectionReason] = useState(null);
     const [showUpiReminder, setShowUpiReminder] = useState(false);
+    const [pendingScriptedReRecords, setPendingScriptedReRecords] = useState([]);
     const itemsPerPage = 8;
 
     const userInfo = getUserInfo();
@@ -44,7 +48,83 @@ export default function Dashboard() {
                 // silent — banner just stays hidden
             }
         })();
+        (async () => {
+            try {
+                const reRes = await apiGet("/api/scripted-topics/my-rerecords").catch(() => ({ rerecords: [] }));
+                setPendingScriptedReRecords(reRes?.rerecords || []);
+            } catch {
+                // silent
+            }
+        })();
+        (async () => {
+            try {
+                const [recRes, appsRes] = await Promise.all([
+                    apiGet("/api/projects/recommended").catch(() => ({ projects: [] })),
+                    apiGet("/api/language-applications/my").catch(() => ({ applications: [] }))
+                ]);
+                setRecommendedProjects(recRes.projects || []);
+                setMyApps(appsRes.applications || []);
+            } catch {
+                setRecommendedProjects([]);
+                setMyApps([]);
+            } finally {
+                setRecLoading(false);
+            }
+        })();
     }, []);
+
+    // Filter out projects that the contributor is already completely approved/pending for
+    const isEligibleForRecommendation = (project) => {
+        const projCode = String(project.code || project.companyId || "").trim().toLowerCase();
+        const projId = String(project.id || "").trim().toLowerCase();
+        const projTitle = String(project.projectName || project.title || "").trim().toLowerCase();
+
+        if (project.type === "phrase") {
+            const projectLanguages = Array.isArray(project.languages) && project.languages.length > 0
+                ? project.languages.map(l => String(l).toLowerCase().trim())
+                : [String(project.language || "").toLowerCase().trim()].filter(Boolean);
+
+            const companyApps = (myApps || []).filter(a => {
+                const appType = a.applicationType || "phrase";
+                if (appType !== "phrase") return false;
+                const appComp = String(a.companyId || "").trim().toLowerCase();
+                const appProj = String(a.projectName || "").trim().toLowerCase();
+                return appComp === projCode || appComp === projId || appProj === projTitle || appProj === projCode;
+            });
+
+            // If user has no applications for this company, it's eligible
+            if (companyApps.length === 0) return true;
+
+            // If project has specific languages, check if any language is open/unapplied or rejected
+            if (projectLanguages.length > 0) {
+                return projectLanguages.some(lang => {
+                    const appForLang = companyApps.find(a => String(a.languageCode || a.language || "").toLowerCase().trim() === lang);
+                    if (!appForLang) return true; // unapplied language
+                    if (appForLang.status === "rejected") return true; // can re-apply
+                    return false;
+                });
+            }
+
+            // Fallback for single-language project
+            const isBlocked = companyApps.some(a => a.status === "approved" || a.status === "pending" || a.status === "blacklisted");
+            return !isBlocked;
+        }
+
+        if (project.type === "call" || project.type === "scripted_call") {
+            const app = (myApps || []).find(a => {
+                const appType = a.applicationType || (a.companyId ? "phrase" : "call");
+                const appLang = String(a.languageCode || a.language || "").trim().toLowerCase();
+                return appType === project.type && appLang === projCode;
+            });
+            if (!app) return true;
+            if (app.status === "rejected") return true;
+            return false;
+        }
+
+        return true;
+    };
+
+    const unappliedBoostedProjects = recommendedProjects.filter(p => isEligibleForRecommendation(p));
 
     // Calculate stats
     const totalCalls = sessions.length;
@@ -130,8 +210,8 @@ export default function Dashboard() {
     return (
         <div className="min-h-screen bg-neutral-50 dark:bg-neutral-950 text-neutral-900 dark:text-neutral-50 pt-16 md:pt-0 md:pl-72 transition-colors duration-300">
             <Nav />
-            <div className="max-w-7xl mx-auto px-4 md:px-8 py-8 md:py-12">
 
+            <div className="max-w-7xl mx-auto px-4 md:px-8 py-8 md:py-12">
                 {/* Header Sequence */}
                 <motion.div
                     initial={{ opacity: 0, x: -20 }}
@@ -144,56 +224,118 @@ export default function Dashboard() {
                     </div>
                 </motion.div>
 
-                {showPanReminder && (
+                {pendingScriptedReRecords.length > 0 && (
                     <motion.div
                         initial={{ opacity: 0, y: -8 }}
                         animate={{ opacity: 1, y: 0 }}
-                        className="mb-6 rounded-2xl border border-error-400/40 bg-error-500/10 dark:bg-error-500/10 p-5 md:p-6 flex flex-col md:flex-row md:items-center gap-4"
+                        className="mb-8 rounded-3xl border-2 border-rose-500/60 bg-gradient-to-r from-rose-950/90 via-rose-900/40 to-amber-950/60 p-5 md:p-6 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-xl shadow-rose-950/40 animate-pulse"
                     >
-                        <div className="w-11 h-11 rounded-full bg-error-500/20 flex items-center justify-center flex-shrink-0">
-                            <AlertCircle className="w-5 h-5 text-error-400" />
+                        <div className="flex items-start gap-4">
+                            <div className="w-12 h-12 rounded-2xl bg-rose-500/20 border border-rose-500/40 flex items-center justify-center flex-shrink-0 mt-0.5 text-rose-400">
+                                <AlertCircle className="w-6 h-6" />
+                            </div>
+                            <div>
+                                <div className="flex items-center gap-2">
+                                    <h3 className="text-lg font-black text-rose-200">Action Required: Re-record Scripted Call Verses</h3>
+                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-rose-600 text-white">
+                                        {pendingScriptedReRecords.length} Scenario{pendingScriptedReRecords.length > 1 ? "s" : ""} Flagged
+                                    </span>
+                                </div>
+                                <p className="text-sm text-neutral-300 mt-1">
+                                    {pendingScriptedReRecords[0].scenarioTitle} in {pendingScriptedReRecords[0].language} has flagged verse(s) requiring a quick re-take.
+                                </p>
+                            </div>
                         </div>
-                        <div className="flex-1">
-                            <h3 className="text-lg font-semibold text-error-300">
-                                {panRejected ? "Your PAN was rejected -- please re-upload" : "Upload your PAN to save on TDS"}
-                            </h3>
-                            <p className="text-sm text-neutral-300 mt-1">
-                                {panRejected && panRejectionReason
-                                    ? <>Reason: <em>"{panRejectionReason}"</em>. Please upload a clearer or correct PAN card.</>
-                                    : "Without a PAN on file we're required to deduct 5% TDS from every payout under Section 206AA -- and that amount can't be reclaimed. With a PAN, no TDS is deducted until you cross Rs. 5,00,000 in a financial year."}
-                            </p>
+                        <div className="flex items-center gap-2 flex-wrap shrink-0">
+                            {pendingScriptedReRecords.map((rec) => (
+                                <Link
+                                    key={rec.submissionId}
+                                    to={`/scripted-call?subtopicId=${rec.subtopicId}&language=${encodeURIComponent(rec.language || 'english')}`}
+                                    className="inline-flex items-center justify-center px-6 py-3 rounded-2xl bg-gradient-to-r from-rose-600 to-amber-600 hover:from-rose-500 hover:to-amber-500 text-white text-sm font-black shadow-lg shadow-rose-900/30 transition-all flex-shrink-0"
+                                >
+                                    Re-record {rec.scenarioTitle} Now →
+                                </Link>
+                            ))}
+                        </div>
+                    </motion.div>
+                )}
+
+                {panRejected && (
+                    <motion.div
+                        initial={{ opacity: 0, y: -8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="mb-8 rounded-2xl border border-rose-500/40 bg-rose-500/10 dark:bg-rose-500/10 p-5 md:p-6 flex flex-col md:flex-row md:items-center justify-between gap-4"
+                    >
+                        <div className="flex items-start gap-4">
+                            <div className="w-11 h-11 rounded-full bg-rose-500/20 flex items-center justify-center flex-shrink-0 mt-0.5">
+                                <AlertCircle className="w-5 h-5 text-rose-400" />
+                            </div>
+                            <div>
+                                <h3 className="text-lg font-semibold text-rose-300">PAN Verification Rejected</h3>
+                                <p className="text-sm text-neutral-300 mt-1">
+                                    {panRejectionReason
+                                        ? `Reason: ${panRejectionReason}. Please update and re-submit your PAN card.`
+                                        : "Your PAN details could not be verified. Please review and re-submit."}
+                                </p>
+                            </div>
                         </div>
                         <Link
-                            to="/kyc/pan"
-                            className="btn btn-primary whitespace-nowrap"
+                            to="/profile"
+                            className="inline-flex items-center justify-center px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-sm font-bold shadow-lg shadow-rose-900/30 transition-all flex-shrink-0"
                         >
-                            {panRejected ? "Re-upload PAN" : "Upload PAN"}
+                            Re-submit PAN
                         </Link>
                     </motion.div>
                 )}
 
-                {showUpiReminder && (
+                {showPanReminder && !panRejected && (
                     <motion.div
                         initial={{ opacity: 0, y: -8 }}
                         animate={{ opacity: 1, y: 0 }}
-                        className="mb-6 rounded-2xl border border-error-400/40 bg-error-500/10 dark:bg-error-500/10 p-5 md:p-6 flex flex-col md:flex-row md:items-center gap-4"
+                        className="mb-8 rounded-2xl border border-amber-500/40 bg-amber-500/10 dark:bg-amber-500/10 p-5 md:p-6 flex flex-col md:flex-row md:items-center justify-between gap-4"
                     >
-                        <div className="w-11 h-11 rounded-full bg-error-500/20 flex items-center justify-center flex-shrink-0">
-                            <CreditCard className="w-5 h-5 text-error-400" />
-                        </div>
-                        <div className="flex-1">
-                            <h3 className="text-lg font-semibold text-error-300">
-                                Add your UPI ID for Payouts
-                            </h3>
-                            <p className="text-sm text-neutral-300 mt-1">
-                                You have completed at least one call! Please add your UPI ID in the Earnings tab so we can process your payouts.
-                            </p>
+                        <div className="flex items-start gap-4">
+                            <div className="w-11 h-11 rounded-full bg-amber-500/20 flex items-center justify-center flex-shrink-0 mt-0.5">
+                                <AlertCircle className="w-5 h-5 text-amber-400" />
+                            </div>
+                            <div>
+                                <h3 className="text-lg font-semibold text-amber-300">Action Required: Complete PAN Verification</h3>
+                                <p className="text-sm text-neutral-300 mt-1">
+                                    Please upload your PAN card details to ensure timely monthly payouts.
+                                </p>
+                            </div>
                         </div>
                         <Link
-                            to="/payouts"
-                            className="btn btn-primary whitespace-nowrap"
+                            to="/profile"
+                            className="inline-flex items-center justify-center px-5 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-sm font-bold shadow-lg shadow-amber-900/30 transition-all flex-shrink-0"
                         >
-                            Go to Earnings
+                            Submit PAN Details
+                        </Link>
+                    </motion.div>
+                )}
+
+                {showUpiReminder && !showPanReminder && !panRejected && (
+                    <motion.div
+                        initial={{ opacity: 0, y: -8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="mb-8 rounded-2xl border border-primary-500/40 bg-primary-500/10 dark:bg-primary-500/10 p-5 md:p-6 flex flex-col md:flex-row md:items-center justify-between gap-4"
+                    >
+                        <div className="flex items-start gap-4">
+                            <div className="w-11 h-11 rounded-full bg-primary-500/20 flex items-center justify-center flex-shrink-0 mt-0.5">
+                                <CreditCard className="w-5 h-5 text-primary-400" />
+                            </div>
+                            <div>
+                                <h3 className="text-lg font-semibold text-primary-300">Add UPI ID for Faster Payouts</h3>
+                                <p className="text-sm text-neutral-300 mt-1">
+                                    You haven't added a UPI ID yet. Add one in your profile for seamless earnings transfer.
+                                </p>
+                            </div>
+                        </div>
+                        <Link
+                            to="/profile"
+                            className="inline-flex items-center justify-center px-5 py-2.5 rounded-xl bg-primary-600 hover:bg-primary-500 text-white text-sm font-bold shadow-lg shadow-primary-900/30 transition-all flex-shrink-0"
+                        >
+                            Add UPI ID
                         </Link>
                     </motion.div>
                 )}
@@ -216,44 +358,114 @@ export default function Dashboard() {
                     </motion.div>
                 )}
 
-                {/* Phrase Studio Call to Action Widget */}
-                <motion.div 
-                    initial={{ opacity: 0, scale: 0.95 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    transition={{ delay: 0.2 }}
-                >
-                    <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-indigo-900 via-primary-900 to-indigo-950 text-white mb-10 shadow-2xl shadow-primary-900/20 border border-primary-800/50">
-                        {/* Background Deco */}
-                        <div className="absolute top-0 right-0 w-96 h-96 bg-primary-500 rounded-full blur-[120px] opacity-20 pointer-events-none transform translate-x-1/2 -translate-y-1/2"></div>
-                        
-                        <div className="relative z-10 p-8 md:p-10 flex flex-col md:flex-row items-center justify-between gap-8">
-                            <div className="flex-1">
-                                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 border border-white/20 text-xs font-bold tracking-widest uppercase mb-4 text-primary-200">
-                                    <span className="w-2 h-2 rounded-full bg-success-400 animate-pulse"></span>
-                                    New Audio Feature
+                {/* Recommended Projects Section (Shown only for unapplied, unapproved projects) */}
+                {!recLoading && unappliedBoostedProjects.length > 0 && (
+                    <motion.div 
+                        initial={{ opacity: 0, y: 15 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: 0.15 }}
+                        className="mb-10"
+                    >
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
+                            <div className="flex items-center gap-2.5">
+                                <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-amber-500 to-rose-500 flex items-center justify-center shadow-lg shadow-amber-500/20 text-white flex-shrink-0">
+                                    <Sparkles className="w-4 h-4 text-white" />
                                 </div>
-                                <h2 className="text-3xl md:text-4xl font-extrabold tracking-tight mb-4">Phrase Recording Studio</h2>
-                                <p className="text-primary-100/80 text-lg max-w-xl leading-relaxed mb-6">
-                                    Don't want to engage in long conversations right now? Jump into the Phrase Studio to record quick, 5-second scripts to train AI instantly. High approval rate, fast payout!
-                                </p>
+                                <div>
+                                    <h2 className="text-lg md:text-xl font-extrabold text-neutral-900 dark:text-white">
+                                        Recommended Projects
+                                    </h2>
+                                    <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                                        High-earning voice tasks & dialogues open for you to apply right now.
+                                    </p>
+                                </div>
                             </div>
-                            
-                            <motion.div 
-                                whileHover={{ scale: 1.05 }}
-                                whileTap={{ scale: 0.95 }}
-                                className="w-full md:w-auto"
+
+                            <Link 
+                                to="/language-apply" 
+                                className="inline-flex items-center gap-1.5 text-xs font-bold text-primary-600 dark:text-primary-400 hover:underline self-start sm:self-auto"
                             >
-                                <Link 
-                                    to="/phrases" 
-                                    className="block text-center bg-white text-primary-900 font-bold text-lg px-8 py-4 rounded-2xl shadow-[0_0_40px_rgba(255,255,255,0.3)] hover:shadow-[0_0_60px_rgba(255,255,255,0.5)] transition-all flex items-center justify-center gap-3"
-                                >
-                                    <Mic2 className="w-6 h-6 text-primary-600" />
-                                    Launch Studio
-                                </Link>
-                            </motion.div>
+                                <span>Browse All Applications</span>
+                                <ArrowRight className="w-3.5 h-3.5" />
+                            </Link>
                         </div>
-                    </div>
-                </motion.div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                            {unappliedBoostedProjects.map((proj) => {
+                                const isCall = proj.type === "call";
+                                const isScripted = proj.type === "scripted_call";
+
+                                return (
+                                    <div 
+                                        key={`${proj.type}-${proj.code}`}
+                                        className={`relative overflow-hidden rounded-3xl p-5 md:p-6 transition-all duration-300 flex flex-col justify-between shadow-xl border bg-gradient-to-br from-neutral-900 via-neutral-900/90 to-amber-950/30 border-amber-500/40 hover:border-amber-400/80 shadow-amber-500/5`}
+                                    >
+                                        <div className="absolute top-0 right-0 w-32 h-32 bg-amber-500/10 rounded-full blur-2xl pointer-events-none" />
+
+                                        <div>
+                                            {/* Card Header */}
+                                            <div className="flex items-start justify-between gap-2 mb-3">
+                                                <div className="flex items-center gap-1.5 flex-wrap">
+                                                    <span className={`inline-flex items-center gap-1 text-[10px] font-extrabold uppercase tracking-wider px-2.5 py-1 rounded-full border ${
+                                                        isCall 
+                                                            ? 'bg-blue-500/10 text-blue-400 border-blue-500/30' 
+                                                            : isScripted 
+                                                            ? 'bg-purple-500/10 text-purple-400 border-purple-500/30'
+                                                            : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                                                    }`}>
+                                                        {isCall && <Phone className="w-2.5 h-2.5" />}
+                                                        {isScripted && <Radio className="w-2.5 h-2.5" />}
+                                                        {!isCall && !isScripted && <Mic2 className="w-2.5 h-2.5" />}
+                                                        <span>{proj.typeLabel}</span>
+                                                    </span>
+
+                                                    <span className="inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-gradient-to-r from-amber-500/20 to-orange-500/20 text-amber-300 border border-amber-500/50 shadow-sm animate-pulse">
+                                                        <Sparkles className="w-2.5 h-2.5 text-amber-300" /> Priority
+                                                    </span>
+                                                </div>
+
+                                                <div className="text-right flex-shrink-0">
+                                                    <span className="text-xs font-black font-mono text-emerald-400 block">
+                                                        ${proj.hourlyPayout || 0}
+                                                        <span className="text-[10px] text-neutral-400 font-normal">/hr</span>
+                                                    </span>
+                                                </div>
+                                            </div>
+
+                                            {/* Project Title */}
+                                            <h3 className="font-extrabold text-neutral-900 dark:text-white text-base leading-snug mb-1">
+                                                {proj.title}
+                                            </h3>
+
+                                            <div className="flex items-center gap-2 flex-wrap mb-4 text-xs">
+                                                <span className="text-[11px] font-semibold text-neutral-500 dark:text-neutral-400">
+                                                    🌐 {proj.language}
+                                                </span>
+                                                {proj.roles && (
+                                                    <span className="text-[10px] font-bold text-indigo-400 bg-indigo-950/60 px-2 py-0.5 rounded border border-indigo-800/40">
+                                                        🎭 {proj.roles.join(" vs ")}
+                                                    </span>
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        {/* Action Button */}
+                                        <div className="pt-3 border-t border-neutral-100 dark:border-neutral-800/80">
+                                            <Link
+                                                to={proj.applyUrl}
+                                                className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-primary-600 to-indigo-600 hover:from-primary-500 hover:to-indigo-500 text-white font-extrabold text-xs flex items-center justify-center gap-2 shadow-lg shadow-primary-900/20 transition-all"
+                                            >
+                                                <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                                                <span>Apply for Project</span>
+                                                <ArrowRight className="w-3.5 h-3.5" />
+                                            </Link>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </motion.div>
+                )}
 
                 {/* Stats Cards */}
                 <motion.div 

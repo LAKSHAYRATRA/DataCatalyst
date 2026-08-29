@@ -5,6 +5,7 @@ import { Topic } from "../models/Topic.js";
 import { Subtopic } from "../models/Subtopic.js";
 import { ScriptedTopic } from "../models/ScriptedTopic.js";
 import { ScriptedSubtopic } from "../models/ScriptedSubtopic.js";
+import { ScriptedSubmission } from "../models/ScriptedSubmission.js";
 import { CallSession } from "../models/CallSession.js";
 import { Feedback } from "../models/Feedback.js";
 import { User } from "../models/User.js";
@@ -2005,7 +2006,11 @@ async function applyRecordingDecision(call, userId, action, reviewerId, note, is
         }
     }
 
-    call.callStatus = computeCallStatus(call.recordingAStatus, call.recordingBStatus);
+    if (call.callId && call.callId.startsWith("scripted_")) {
+        call.callStatus = (call.recordingAStatus === "approved" && call.recordingBStatus === "approved") ? "approved" : "pending";
+    } else {
+        call.callStatus = computeCallStatus(call.recordingAStatus, call.recordingBStatus);
+    }
     call.reviewedBy = reviewerId;
     call.reviewedAt = new Date();
 
@@ -2557,7 +2562,7 @@ qaCallRouter.post("/calls/:callId/lock", async (req, res) => {
         if (!call) return res.status(404).json({ error: "Call not found" });
 
         const fifteenMinsAgo = new Date(Date.now() - 15 * 60 * 1000);
-        const isLockedByOther = call.qaLockedBy &&
+        const isLockedByOther = !req.user?.isAdmin && call.qaLockedBy &&
             call.qaLockedBy.toString() !== req.user._id.toString() &&
             call.qaLockedAt &&
             call.qaLockedAt > fifteenMinsAgo;
@@ -2592,7 +2597,7 @@ qaCallRouter.post("/calls/:callId/unlock", async (req, res) => {
         const call = await CallSession.findOne({ callId });
         if (!call) return res.status(404).json({ error: "Call not found" });
 
-        if (call.qaLockedBy && call.qaLockedBy.toString() === req.user._id.toString()) {
+        if (req.user?.isAdmin || (call.qaLockedBy && call.qaLockedBy.toString() === req.user._id.toString())) {
             call.qaLockedBy = null;
             call.qaLockedAt = null;
             await call.save();
@@ -2865,7 +2870,95 @@ qaCallRouter.get("/payments-stats", async (req, res) => {
 
 const getLanguagesHandler = async (req, res) => {
     try {
-        const langs = await Language.find().sort({ name: 1 });
+        if (req.query.type === "phrase") {
+            // For phrase projects: return clean Language Names (English, Hindi, Bengali, etc.)
+            const phraseLangs = await Language.find({ $or: [{ isPhrase: true }, { type: "phrase" }] }).sort({ name: 1 }).lean();
+            
+            // Standard curated language presets (Clean Language Names)
+            const standardLangs = [
+                { name: "English", code: "english" },
+                { name: "Hindi", code: "hindi" },
+                { name: "Bengali", code: "bengali" },
+                { name: "Tamil", code: "tamil" },
+                { name: "Telugu", code: "telugu" },
+                { name: "Marathi", code: "marathi" },
+                { name: "Gujarati", code: "gujarati" },
+                { name: "Kannada", code: "kannada" },
+                { name: "Malayalam", code: "malayalam" },
+                { name: "Punjabi", code: "punjabi" },
+                { name: "Odia", code: "odia" },
+                { name: "Assamese", code: "assamese" },
+                { name: "Urdu", code: "urdu" },
+                { name: "Hinglish", code: "hinglish" },
+                { name: "Sanskrit", code: "sanskrit" },
+                { name: "Bhojpuri", code: "bhojpuri" },
+                { name: "Marwari", code: "marwari" },
+                { name: "Maithili", code: "maithili" },
+                { name: "Kashmiri", code: "kashmiri" },
+                { name: "Nepali", code: "nepali" },
+                { name: "Sindhi", code: "sindhi" }
+            ];
+
+            const langMap = new Map();
+            // 1. Add standard languages
+            standardLangs.forEach(sl => {
+                langMap.set(sl.code.toLowerCase(), {
+                    _id: `preset_${sl.code}`,
+                    name: sl.name,
+                    code: sl.code,
+                    language: sl.name,
+                    enabled: true,
+                    isPhrase: true
+                });
+            });
+
+            // 2. Add distinct languages found in Phrase collection
+            const distinctDbLangs = await Phrase.distinct("language");
+            distinctDbLangs.forEach(dl => {
+                if (dl) {
+                    const code = String(dl).toLowerCase().trim();
+                    const name = code.charAt(0).toUpperCase() + code.slice(1);
+                    if (!langMap.has(code)) {
+                        langMap.set(code, {
+                            _id: `db_${code}`,
+                            name,
+                            code,
+                            language: name,
+                            enabled: true,
+                            isPhrase: true
+                        });
+                    }
+                }
+            });
+
+            // 3. Add explicit phrase languages from Language model
+            phraseLangs.forEach(pl => {
+                const code = String(pl.code || "").toLowerCase().trim();
+                const name = pl.name || code.charAt(0).toUpperCase() + code.slice(1);
+                langMap.set(code, {
+                    ...pl,
+                    name,
+                    code,
+                    language: name
+                });
+            });
+
+            const sortedPhraseLanguages = Array.from(langMap.values()).sort((a, b) => a.name.localeCompare(b.name));
+            return res.json({ languages: sortedPhraseLanguages });
+        }
+
+        const query = { isPhrase: { $ne: true } };
+        if (req.query.language) {
+            const langStr = String(req.query.language).trim();
+            query.$or = [
+                { language: new RegExp(`^${langStr}$`, 'i') },
+                { name: new RegExp(`\\(${langStr}\\)$`, 'i') },
+                { code: new RegExp(`-${langStr.toLowerCase()}$`, 'i') },
+                { code: langStr.toLowerCase() },
+                { name: new RegExp(`^${langStr}$`, 'i') }
+            ];
+        }
+        const langs = await Language.find(query).sort({ name: 1 });
         res.json({ languages: langs });
     } catch (e) {
         res.status(500).json({ error: e.message });
@@ -2965,6 +3058,323 @@ const bulkDeleteCallsHandler = async (req, res) => {
 qaCallRouter.delete("/calls/bulk-delete", bulkDeleteCallsHandler);
 qaCallRouter.post("/calls/bulk-delete", bulkDeleteCallsHandler);
 qaCallRouter.delete("/calls/:callId", deleteSingleCallHandler);
+
+// Granular Scripted Verse QA Review endpoints
+qaCallRouter.patch("/scripted/verse/:submissionId/:turnIndex/approve", async (req, res) => {
+    try {
+        const { submissionId, turnIndex } = req.params;
+        const sub = await ScriptedSubmission.findById(submissionId);
+        if (!sub) return res.status(404).json({ error: "Submission not found" });
+
+        const verse = (sub.verses || []).find(v => Number(v.turnIndex) === Number(turnIndex));
+        if (!verse) return res.status(404).json({ error: "Verse not found" });
+
+        verse.status = "approved";
+        verse.rejectionReason = null;
+        verse.reviewNote = req.body.note || req.body.reviewNote || null;
+        verse.reviewedAt = new Date();
+        verse.reviewedBy = req.user._id;
+
+        const allApproved = sub.verses.length > 0 && sub.verses.every(v => v.status === "approved");
+        const hasRejected = sub.verses.some(v => v.status === "rejected");
+
+        if (allApproved) {
+            sub.status = "approved";
+        } else if (hasRejected) {
+            sub.status = "needs_rerecord";
+        } else {
+            sub.status = "partially_approved";
+        }
+
+        await sub.save();
+
+        if (sub.callSessionId) {
+            const call = await CallSession.findById(sub.callSessionId);
+            if (call) {
+                const isUserA = String(sub.userId) === String(call.userA);
+                if (isUserA) {
+                    call.recordingAStatus = allApproved ? "approved" : "pending";
+                    call.recordingAReviewNote = verse.reviewNote;
+                } else {
+                    call.recordingBStatus = allApproved ? "approved" : "pending";
+                    call.recordingBReviewNote = verse.reviewNote;
+                }
+
+                // Check other participant's submission
+                const otherUserId = isUserA ? call.userB : call.userA;
+                let otherApproved = false;
+                if (otherUserId) {
+                    const otherSub = await ScriptedSubmission.findOne({ 
+                        $or: [
+                            { callSessionId: call._id, userId: otherUserId },
+                            { subtopicId: call.subtopicId, userId: otherUserId }
+                        ]
+                    });
+                    if (otherSub && otherSub.verses?.length > 0) {
+                        otherApproved = otherSub.verses.every(v => v.status === "approved");
+                    }
+                }
+
+                if (allApproved && otherApproved) {
+                    call.recordingAStatus = "approved";
+                    call.recordingBStatus = "approved";
+                    call.callStatus = "approved";
+                    call.reviewedBy = req.user._id;
+                    call.reviewedAt = new Date();
+                } else {
+                    call.callStatus = "pending"; // Keeps scripted call in pending until all phrases are approved
+                }
+                await call.save();
+            }
+        }
+
+        res.json({ success: true, message: "Verse approved", verse, submission: sub });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+qaCallRouter.patch("/scripted/verse/:submissionId/:turnIndex/reject", async (req, res) => {
+    try {
+        const { submissionId, turnIndex } = req.params;
+        const { rejectionReason, note, reviewNote } = req.body;
+
+        const sub = await ScriptedSubmission.findById(submissionId);
+        if (!sub) return res.status(404).json({ error: "Submission not found" });
+
+        const verse = (sub.verses || []).find(v => Number(v.turnIndex) === Number(turnIndex));
+        if (!verse) return res.status(404).json({ error: "Verse not found" });
+
+        verse.status = "rejected";
+        verse.rejectionReason = rejectionReason || "Needs re-recording";
+        verse.reviewNote = note || reviewNote || "";
+        verse.reviewedAt = new Date();
+        verse.reviewedBy = req.user._id;
+
+        sub.status = "needs_rerecord";
+        await sub.save();
+
+        if (sub.callSessionId) {
+            const call = await CallSession.findById(sub.callSessionId);
+            if (call) {
+                const isUserA = String(sub.userId) === String(call.userA);
+                if (isUserA) {
+                    call.recordingAStatus = "pending";
+                    call.recordingARejectionReason = verse.rejectionReason;
+                    call.recordingAReviewNote = verse.reviewNote;
+                } else {
+                    call.recordingBStatus = "pending";
+                    call.recordingBRejectionReason = verse.rejectionReason;
+                    call.recordingBReviewNote = verse.reviewNote;
+                }
+                // Scripted calls NEVER move to rejected; they remain in pending until all phrases are re-recorded and approved
+                call.callStatus = "pending";
+                call.reviewedBy = req.user._id;
+                call.reviewedAt = new Date();
+                await call.save();
+            }
+        }
+
+        res.json({ success: true, message: "Verse rejected for re-recording", verse, submission: sub });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+qaCallRouter.post("/scripted/submission/:submissionId/approve-all", async (req, res) => {
+    try {
+        const { submissionId } = req.params;
+        const sub = await ScriptedSubmission.findById(submissionId);
+        if (!sub) return res.status(404).json({ error: "Submission not found" });
+
+        const now = new Date();
+        for (const v of sub.verses) {
+            v.status = "approved";
+            v.rejectionReason = null;
+            v.reviewedAt = now;
+            v.reviewedBy = req.user._id;
+        }
+        sub.status = "approved";
+        await sub.save();
+
+        if (sub.callSessionId) {
+            const call = await CallSession.findById(sub.callSessionId);
+            if (call) {
+                const hourlyPayout = await getLanguageHourlyPayout(call.language);
+                const isUserA = String(sub.userId) === String(call.userA);
+                const durSec = (sub.verses || []).reduce((sum, v) => sum + (Number(v.durationSec) || 0), 0);
+                const durMin = durSec > 0 ? Math.max(0.01, +(durSec / 60).toFixed(2)) : (Number(isUserA ? call.recordingADurationMinutes : call.recordingBDurationMinutes) || 0);
+
+                if (isUserA) {
+                    call.recordingAStatus = "approved";
+                    call.recordingADurationMinutes = durMin;
+                    call.recordingAPayoutUsd = roundCurrency((hourlyPayout * durMin) / 60);
+                } else {
+                    call.recordingBStatus = "approved";
+                    call.recordingBDurationMinutes = durMin;
+                    call.recordingBPayoutUsd = roundCurrency((hourlyPayout * durMin) / 60);
+                }
+
+                if (call.recordingAStatus === "approved" && call.recordingBStatus === "approved") {
+                    call.callStatus = "approved";
+                    call.reviewedBy = req.user._id;
+                    call.reviewedAt = now;
+                }
+                await call.save();
+            }
+        }
+
+        res.json({ success: true, message: "All verses approved for submission", submission: sub });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+qaCallRouter.post("/scripted/call/:callId/approve-all", async (req, res) => {
+    try {
+        const { callId } = req.params;
+        const call = await CallSession.findOne({ callId });
+        if (!call) return res.status(404).json({ error: "Call not found" });
+
+        const now = new Date();
+        const [subA, subB] = await Promise.all([
+            ScriptedSubmission.findOne({ subtopicId: call.subtopicId, userId: call.userA }),
+            ScriptedSubmission.findOne({ subtopicId: call.subtopicId, userId: call.userB })
+        ]);
+
+        const hourlyPayout = await getLanguageHourlyPayout(call.language);
+
+        if (subA) {
+            for (const v of subA.verses) {
+                v.status = "approved";
+                v.rejectionReason = null;
+                v.reviewedAt = now;
+                v.reviewedBy = req.user._id;
+            }
+            subA.status = "approved";
+            await subA.save();
+
+            const durSecA = (subA.verses || []).reduce((sum, v) => sum + (Number(v.durationSec) || 0), 0);
+            const durMinA = durSecA > 0 ? Math.max(0.01, +(durSecA / 60).toFixed(2)) : (Number(call.recordingADurationMinutes) || 0);
+            call.recordingADurationMinutes = durMinA;
+            call.recordingAPayoutUsd = roundCurrency((hourlyPayout * durMinA) / 60);
+        }
+
+        if (subB) {
+            for (const v of subB.verses) {
+                v.status = "approved";
+                v.rejectionReason = null;
+                v.reviewedAt = now;
+                v.reviewedBy = req.user._id;
+            }
+            subB.status = "approved";
+            await subB.save();
+
+            const durSecB = (subB.verses || []).reduce((sum, v) => sum + (Number(v.durationSec) || 0), 0);
+            const durMinB = durSecB > 0 ? Math.max(0.01, +(durSecB / 60).toFixed(2)) : (Number(call.recordingBDurationMinutes) || 0);
+            call.recordingBDurationMinutes = durMinB;
+            call.recordingBPayoutUsd = roundCurrency((hourlyPayout * durMinB) / 60);
+        }
+
+        call.recordingAStatus = "approved";
+        call.recordingBStatus = "approved";
+        call.callStatus = "approved";
+        call.reviewedBy = req.user._id;
+        call.reviewedAt = now;
+        call.qaLockedBy = null;
+        call.qaLockedAt = null;
+        await call.save();
+
+        res.json({ success: true, message: "Entire scripted dialogue approved!", call });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+qaCallRouter.post("/scripted/call/:callId/submit-review", async (req, res) => {
+    try {
+        const { callId } = req.params;
+        const { decisions } = req.body; // Array of { submissionId, turnIndex, status, rejectionReason, reviewNote }
+
+        if (!Array.isArray(decisions) || decisions.length === 0) {
+            return res.status(400).json({ error: "No review decisions provided." });
+        }
+
+        const call = await CallSession.findOne({ callId });
+        if (!call) return res.status(404).json({ error: "Scripted call not found." });
+
+        const now = new Date();
+
+        // Group decisions by submissionId
+        const decisionsBySub = {};
+        for (const d of decisions) {
+            if (!d.submissionId) continue;
+            if (!decisionsBySub[d.submissionId]) decisionsBySub[d.submissionId] = [];
+            decisionsBySub[d.submissionId].push(d);
+        }
+
+        let allSubmissionsApproved = true;
+        let anySubmissionsRejected = false;
+
+        for (const subId of Object.keys(decisionsBySub)) {
+            const sub = await ScriptedSubmission.findById(subId);
+            if (!sub) continue;
+
+            for (const d of decisionsBySub[subId]) {
+                const verse = (sub.verses || []).find(v => Number(v.turnIndex) === Number(d.turnIndex));
+                if (verse) {
+                    verse.status = d.status === "rejected" ? "rejected" : "approved";
+                    verse.rejectionReason = d.status === "rejected" ? (d.rejectionReason || "Needs re-recording") : null;
+                    verse.reviewNote = d.status === "rejected" ? (d.reviewNote || "") : (d.reviewNote || null);
+                    verse.reviewedAt = now;
+                    verse.reviewedBy = req.user._id;
+                }
+            }
+
+            const subHasRejected = sub.verses.some(v => v.status === "rejected");
+            const subAllApproved = sub.verses.length > 0 && sub.verses.every(v => v.status === "approved");
+
+            if (subHasRejected) {
+                sub.status = "needs_rerecord"; // ONLY NOW is the submission set to needs_rerecord!
+                anySubmissionsRejected = true;
+                allSubmissionsApproved = false;
+            } else if (subAllApproved) {
+                sub.status = "approved";
+            } else {
+                sub.status = "partially_approved";
+                allSubmissionsApproved = false;
+            }
+
+            await sub.save();
+        }
+
+        // Update CallSession status
+        if (allSubmissionsApproved) {
+            call.recordingAStatus = "approved";
+            call.recordingBStatus = "approved";
+            call.callStatus = "approved";
+        } else {
+            call.recordingAStatus = "pending";
+            call.recordingBStatus = "pending";
+            call.callStatus = "pending"; // Keeps call in pending until re-records complete!
+        }
+        call.reviewedBy = req.user._id;
+        call.reviewedAt = now;
+        call.qaLockedBy = null;
+        call.qaLockedAt = null;
+        await call.save();
+
+        res.json({
+            success: true,
+            message: allSubmissionsApproved ? "All verses approved! Call marked as Approved." : "Review submitted. Rejected verses sent for contributor re-recording.",
+            callStatus: call.callStatus,
+            allApproved: allSubmissionsApproved
+        });
+    } catch (err) {
+        console.error("Scripted review submit error:", err);
+        res.status(500).json({ error: err.message });
+    }
+});
 
 // Mount QA router BEFORE isAdmin — this must stay here
 router.use("/qa", qaCallRouter);
@@ -3971,7 +4381,16 @@ router.post("/calls/:callId/download-log", async (req, res) => {
 // ===== TOPICS MANAGEMENT =====
 router.get("/topics", async (req, res) => {
     try {
-        const topics = await Topic.find().sort({ createdAt: -1 });
+        const { subproject, language } = req.query;
+        const target = (subproject || language || "").trim();
+        const query = {};
+        if (target) {
+            query.$or = [
+                { languages: target },
+                { languages: { $regex: new RegExp(`^${target}$`, "i") } }
+            ];
+        }
+        const topics = await Topic.find(query).sort({ createdAt: -1 });
         const topicsWithSubtopics = await Promise.all(
             topics.map(async (topic) => {
                 const subtopics = await Subtopic.find({ topicId: topic._id }).sort({ createdAt: -1 });
@@ -4185,7 +4604,16 @@ router.delete("/subtopics/:subtopicId", async (req, res) => {
 // List all scripted topics with subtopics
 router.get("/scripted-topics", async (req, res) => {
     try {
-        const topics = await ScriptedTopic.find().sort({ createdAt: -1 });
+        const { subproject, language } = req.query;
+        const target = (subproject || language || "").trim();
+        const query = {};
+        if (target) {
+            query.$or = [
+                { languages: target },
+                { languages: { $regex: new RegExp(`^${target}$`, "i") } }
+            ];
+        }
+        const topics = await ScriptedTopic.find(query).sort({ createdAt: -1 });
         const topicsWithSubtopics = await Promise.all(
             topics.map(async (topic) => {
                 const subtopics = await ScriptedSubtopic.find({ topicId: topic._id }).sort({ createdAt: -1 });
@@ -5321,7 +5749,95 @@ router.use("/qa-users", qaRouter);
 // List all languages
 router.get("/languages", async (req, res) => {
     try {
-        const langs = await Language.find().sort({ name: 1 });
+        if (req.query.type === "phrase") {
+            // For phrase projects: return clean Language Names (English, Hindi, Bengali, etc.)
+            const phraseLangs = await Language.find({ $or: [{ isPhrase: true }, { type: "phrase" }] }).sort({ name: 1 }).lean();
+            
+            // Standard curated language presets (Clean Language Names)
+            const standardLangs = [
+                { name: "English", code: "english" },
+                { name: "Hindi", code: "hindi" },
+                { name: "Bengali", code: "bengali" },
+                { name: "Tamil", code: "tamil" },
+                { name: "Telugu", code: "telugu" },
+                { name: "Marathi", code: "marathi" },
+                { name: "Gujarati", code: "gujarati" },
+                { name: "Kannada", code: "kannada" },
+                { name: "Malayalam", code: "malayalam" },
+                { name: "Punjabi", code: "punjabi" },
+                { name: "Odia", code: "odia" },
+                { name: "Assamese", code: "assamese" },
+                { name: "Urdu", code: "urdu" },
+                { name: "Hinglish", code: "hinglish" },
+                { name: "Sanskrit", code: "sanskrit" },
+                { name: "Bhojpuri", code: "bhojpuri" },
+                { name: "Marwari", code: "marwari" },
+                { name: "Maithili", code: "maithili" },
+                { name: "Kashmiri", code: "kashmiri" },
+                { name: "Nepali", code: "nepali" },
+                { name: "Sindhi", code: "sindhi" }
+            ];
+
+            const langMap = new Map();
+            // 1. Add standard languages
+            standardLangs.forEach(sl => {
+                langMap.set(sl.code.toLowerCase(), {
+                    _id: `preset_${sl.code}`,
+                    name: sl.name,
+                    code: sl.code,
+                    language: sl.name,
+                    enabled: true,
+                    isPhrase: true
+                });
+            });
+
+            // 2. Add distinct languages found in Phrase collection
+            const distinctDbLangs = await Phrase.distinct("language");
+            distinctDbLangs.forEach(dl => {
+                if (dl) {
+                    const code = String(dl).toLowerCase().trim();
+                    const name = code.charAt(0).toUpperCase() + code.slice(1);
+                    if (!langMap.has(code)) {
+                        langMap.set(code, {
+                            _id: `db_${code}`,
+                            name,
+                            code,
+                            language: name,
+                            enabled: true,
+                            isPhrase: true
+                        });
+                    }
+                }
+            });
+
+            // 3. Add explicit phrase languages from Language model
+            phraseLangs.forEach(pl => {
+                const code = String(pl.code || "").toLowerCase().trim();
+                const name = pl.name || code.charAt(0).toUpperCase() + code.slice(1);
+                langMap.set(code, {
+                    ...pl,
+                    name,
+                    code,
+                    language: name
+                });
+            });
+
+            const sortedPhraseLanguages = Array.from(langMap.values()).sort((a, b) => a.name.localeCompare(b.name));
+            return res.json({ languages: sortedPhraseLanguages });
+        }
+
+        const query = { isPhrase: { $ne: true } };
+        if (req.query.language) {
+            const langStr = String(req.query.language).trim();
+            query.$or = [
+                { language: new RegExp(`^${langStr}$`, 'i') },
+                { name: new RegExp(`\\(${langStr}\\)$`, 'i') },
+                { code: new RegExp(`-${langStr.toLowerCase()}$`, 'i') },
+                { code: langStr.toLowerCase() },
+                { name: new RegExp(`^${langStr}$`, 'i') }
+            ];
+        }
+        const langs = await Language.find(query).sort({ name: 1 });
         res.json({ languages: langs });
     } catch (e) {
         res.status(500).json({ error: e.message });
@@ -5330,8 +5846,8 @@ router.get("/languages", async (req, res) => {
 
 // Create language
 router.post("/languages", async (req, res) => {
-    const { name, code } = req.body;
-    const hourlyPayout = Number(req.body?.hourlyPayout);
+    const { name, code, type, isPhrase } = req.body;
+    const hourlyPayout = req.body?.hourlyPayout !== undefined ? Number(req.body.hourlyPayout) : (type === "phrase" || isPhrase ? 0 : NaN);
     const sampleRate = req.body?.sampleRate !== undefined ? Number(req.body.sampleRate) : 48000;
     const maxHoursPerContributor = req.body?.maxHoursPerContributor !== undefined ? Number(req.body.maxHoursPerContributor) : -1;
     const maxDailyCallLimit = req.body?.maxDailyCallLimit !== undefined ? Number(req.body.maxDailyCallLimit) : 5;
@@ -5350,15 +5866,27 @@ router.post("/languages", async (req, res) => {
     }
     try {
         const noisy = req.body?.noisy !== undefined ? !!req.body.noisy : false;
+        const isBoosted = req.body?.isBoosted !== undefined ? !!req.body.isBoosted : false;
+        const enableCallRoles = req.body?.enableCallRoles !== undefined ? !!req.body.enableCallRoles : false;
+        const role1 = req.body?.role1 ? String(req.body.role1).trim() : "Role 1";
+        const role2 = req.body?.role2 ? String(req.body.role2).trim() : "Role 2";
+        const projectName = req.body?.projectName ? String(req.body.projectName).trim() : "";
+        const language = req.body?.language ? String(req.body.language).trim() : "";
         const lang = await Language.create({
             name: name.trim(),
+            projectName,
+            language,
             code: code.trim().toLowerCase(),
             hourlyPayout,
             sampleRate,
             maxHoursPerContributor,
             maxDailyCallLimit,
             enabled: true,
-            noisy
+            noisy,
+            isBoosted,
+            enableCallRoles,
+            role1,
+            role2
         });
         res.status(201).json({ language: lang });
     } catch (e) {
@@ -5371,8 +5899,27 @@ router.post("/languages", async (req, res) => {
 router.patch("/languages/:id", async (req, res) => {
     const updates = {};
     if (req.body.name !== undefined) updates.name = req.body.name.trim();
-    if (req.body.enabled !== undefined) updates.enabled = !!req.body.enabled;
+    if (req.body.projectName !== undefined) updates.projectName = String(req.body.projectName).trim();
+    if (req.body.language !== undefined) updates.language = String(req.body.language).trim();
+    if (req.body.enabled !== undefined) {
+        updates.enabled = !!req.body.enabled;
+        if (!updates.enabled) updates.isBoosted = false; // Auto unboost if disabled
+    }
     if (req.body.noisy !== undefined) updates.noisy = !!req.body.noisy;
+    if (req.body.isBoosted !== undefined) {
+        const isBoost = !!req.body.isBoosted;
+        if (isBoost) {
+            const existing = await Language.findById(req.params.id);
+            const isCurrentlyEnabled = updates.enabled !== undefined ? updates.enabled : (existing ? existing.enabled : true);
+            if (!isCurrentlyEnabled) {
+                return res.status(400).json({ error: "Cannot boost a disabled/hidden project. Please enable the project first before boosting." });
+            }
+        }
+        updates.isBoosted = isBoost;
+    }
+    if (req.body.enableCallRoles !== undefined) updates.enableCallRoles = !!req.body.enableCallRoles;
+    if (req.body.role1 !== undefined) updates.role1 = String(req.body.role1).trim() || "Role 1";
+    if (req.body.role2 !== undefined) updates.role2 = String(req.body.role2).trim() || "Role 2";
     if (req.body.hourlyPayout !== undefined) {
         const hourlyPayout = Number(req.body.hourlyPayout);
         if (!Number.isFinite(hourlyPayout) || hourlyPayout < 0) {
@@ -5440,7 +5987,18 @@ router.delete("/languages/:id", async (req, res) => {
 // List all scripted languages
 router.get("/scripted-languages", async (req, res) => {
     try {
-        const langs = await ScriptedLanguage.find().sort({ name: 1 });
+        const query = {};
+        if (req.query.language) {
+            const langStr = String(req.query.language).trim();
+            query.$or = [
+                { language: new RegExp(`^${langStr}$`, 'i') },
+                { name: new RegExp(`\\(${langStr}\\)$`, 'i') },
+                { code: new RegExp(`-${langStr.toLowerCase()}$`, 'i') },
+                { code: langStr.toLowerCase() },
+                { name: new RegExp(`^${langStr}$`, 'i') }
+            ];
+        }
+        const langs = await ScriptedLanguage.find(query).sort({ name: 1 });
         res.json({ languages: langs });
     } catch (e) {
         res.status(500).json({ error: e.message });
@@ -5470,8 +6028,16 @@ router.post("/scripted-languages", async (req, res) => {
     }
     try {
         const noisy = req.body?.noisy !== undefined ? !!req.body.noisy : false;
+        const isBoosted = req.body?.isBoosted !== undefined ? !!req.body.isBoosted : false;
+        const enableCallRoles = req.body?.enableCallRoles !== undefined ? !!req.body.enableCallRoles : false;
+        const role1 = req.body?.role1 ? String(req.body.role1).trim() : "Role 1";
+        const role2 = req.body?.role2 ? String(req.body.role2).trim() : "Role 2";
+        const projectName = req.body?.projectName ? String(req.body.projectName).trim() : "";
+        const language = req.body?.language ? String(req.body.language).trim() : "";
         const lang = await ScriptedLanguage.create({
             name: name.trim(),
+            projectName,
+            language,
             code: code.trim().toLowerCase(),
             hourlyPayout,
             sampleRate,
@@ -5479,6 +6045,10 @@ router.post("/scripted-languages", async (req, res) => {
             maxDailyCallLimit,
             enabled: true,
             noisy,
+            isBoosted,
+            enableCallRoles,
+            role1,
+            role2,
             testPhrase
         });
         res.status(201).json({ language: lang });
@@ -5492,8 +6062,27 @@ router.post("/scripted-languages", async (req, res) => {
 router.patch("/scripted-languages/:id", async (req, res) => {
     const updates = {};
     if (req.body.name !== undefined) updates.name = req.body.name.trim();
-    if (req.body.enabled !== undefined) updates.enabled = !!req.body.enabled;
+    if (req.body.projectName !== undefined) updates.projectName = String(req.body.projectName).trim();
+    if (req.body.language !== undefined) updates.language = String(req.body.language).trim();
+    if (req.body.enabled !== undefined) {
+        updates.enabled = !!req.body.enabled;
+        if (!updates.enabled) updates.isBoosted = false; // Auto unboost if disabled
+    }
     if (req.body.noisy !== undefined) updates.noisy = !!req.body.noisy;
+    if (req.body.isBoosted !== undefined) {
+        const isBoost = !!req.body.isBoosted;
+        if (isBoost) {
+            const existing = await ScriptedLanguage.findById(req.params.id);
+            const isCurrentlyEnabled = updates.enabled !== undefined ? updates.enabled : (existing ? existing.enabled : true);
+            if (!isCurrentlyEnabled) {
+                return res.status(400).json({ error: "Cannot boost a disabled/hidden project. Please enable the project first before boosting." });
+            }
+        }
+        updates.isBoosted = isBoost;
+    }
+    if (req.body.enableCallRoles !== undefined) updates.enableCallRoles = !!req.body.enableCallRoles;
+    if (req.body.role1 !== undefined) updates.role1 = String(req.body.role1).trim() || "Role 1";
+    if (req.body.role2 !== undefined) updates.role2 = String(req.body.role2).trim() || "Role 2";
     if (req.body.testPhrase !== undefined) updates.testPhrase = String(req.body.testPhrase).trim();
     if (req.body.hourlyPayout !== undefined) {
         const hourlyPayout = Number(req.body.hourlyPayout);
@@ -7937,6 +8526,16 @@ router.patch("/companies/:id", async (req, res) => {
         if (chronologicalTag !== undefined) updateData.chronologicalTag = String(chronologicalTag).trim().toLowerCase();
         if (allowPhraseTextEdit !== undefined) updateData.allowPhraseTextEdit = Boolean(allowPhraseTextEdit);
         if (enforceLufs !== undefined) updateData.enforceLufs = Boolean(enforceLufs);
+        if (req.body.isBoosted !== undefined) {
+            const isBoost = Boolean(req.body.isBoosted);
+            if (isBoost) {
+                const existing = await Company.findById(req.params.id);
+                if (existing && existing.isHidden) {
+                    return res.status(400).json({ error: "Cannot boost a hidden project. Please unhide the project first before boosting." });
+                }
+            }
+            updateData.isBoosted = isBoost;
+        }
         
         const company = await Company.findByIdAndUpdate(req.params.id, { $set: updateData }, { new: true });
         if (!company) return res.status(404).json({ error: "Company not found" });
@@ -8031,11 +8630,15 @@ router.patch("/companies/:id/toggle-hide", async (req, res) => {
         if (!company) return res.status(404).json({ error: "Company not found" });
 
         company.isHidden = !company.isHidden;
+        if (company.isHidden) {
+            company.isBoosted = false; // Hidden projects cannot remain boosted
+        }
         await company.save();
 
         res.json({ 
-            message: `Project '${company.name}' is now ${company.isHidden ? 'hidden' : 'visible'}`,
+            message: `Project '${company.name}' is now ${company.isHidden ? 'hidden (unboosted)' : 'visible'}`,
             isHidden: company.isHidden,
+            isBoosted: company.isBoosted,
             company
         });
     } catch (e) {

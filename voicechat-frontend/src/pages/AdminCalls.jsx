@@ -2186,22 +2186,24 @@ export default function AdminCalls() {
                                     <div className="bg-neutral-700 p-3 rounded-lg">
                                         <div className="text-white font-semibold text-sm md:text-base">{userAName}</div>
                                         {userAEmail && <div className="text-xs text-neutral-400 break-all">{userAEmail}</div>}
-                                        {selectedCall.questionerUserId?.toString() === userAId?.toString() && (
+                                        {selectedCall.userARole ? (
+                                            <div className="text-xs font-bold text-indigo-300 mt-1 inline-flex items-center gap-1 bg-indigo-950/60 px-2 py-0.5 rounded border border-indigo-800/50">🎭 {selectedCall.userARole}</div>
+                                        ) : selectedCall.questionerUserId?.toString() === userAId?.toString() ? (
                                             <div className="text-xs text-warning-400 mt-1">Questioner</div>
-                                        )}
-                                        {selectedCall.answererUserId?.toString() === userAId?.toString() && (
+                                        ) : selectedCall.answererUserId?.toString() === userAId?.toString() ? (
                                             <div className="text-xs text-success-400 mt-1">Answerer</div>
-                                        )}
+                                        ) : null}
                                     </div>
                                     <div className="bg-neutral-700 p-3 rounded-lg">
                                         <div className="text-white font-semibold text-sm md:text-base">{userBName}</div>
                                         {userBEmail && <div className="text-xs text-neutral-400 break-all">{userBEmail}</div>}
-                                        {selectedCall.questionerUserId?.toString() === userBId?.toString() && (
+                                        {selectedCall.userBRole ? (
+                                            <div className="text-xs font-bold text-emerald-300 mt-1 inline-flex items-center gap-1 bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-800/50">🎭 {selectedCall.userBRole}</div>
+                                        ) : selectedCall.questionerUserId?.toString() === userBId?.toString() ? (
                                             <div className="text-xs text-warning-400 mt-1">Questioner</div>
-                                        )}
-                                        {selectedCall.answererUserId?.toString() === userBId?.toString() && (
+                                        ) : selectedCall.answererUserId?.toString() === userBId?.toString() ? (
                                             <div className="text-xs text-success-400 mt-1">Answerer</div>
-                                        )}
+                                        ) : null}
                                     </div>
                                 </div>
                             </div>

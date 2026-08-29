@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useParams, Link } from "react-router-dom";
 import { 
     Radio, 
     Plus, 
@@ -12,25 +12,34 @@ import {
     FileText, 
     Layers, 
     RefreshCw, 
-    AlertCircle,
-    Sliders,
-    Globe,
-    Check,
-    X,
-    Upload,
-    MessageSquare,
-    Users,
-    Sparkles,
-    Eye
+    AlertCircle, 
+    Sliders, 
+    Globe, 
+    Check, 
+    X, 
+    Upload, 
+    MessageSquare, 
+    Users, 
+    Sparkles, 
+    Eye,
+    ArrowLeft,
+    FolderKanban
 } from "lucide-react";
 import { apiGet, apiPostJson, apiPutJson, apiDeleteJson } from "../lib/api.js";
 import AdminNav from "../components/AdminNav.jsx";
 import Swal from "sweetalert2";
 
+function capitalize(str) {
+    if (!str) return "";
+    return str.charAt(0).toUpperCase() + str.slice(1);
+}
+
 export default function AdminScriptedTopics() {
     const navigate = useNavigate();
+    const { langCode, subprojectCode } = useParams();
     const [topics, setTopics] = useState([]);
     const [scriptedLanguages, setScriptedLanguages] = useState([]);
+    const [subprojectDetails, setSubprojectDetails] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
     const [activeTab, setActiveTab] = useState("active"); // "active" | "disabled"
@@ -72,13 +81,19 @@ export default function AdminScriptedTopics() {
     useEffect(() => {
         loadTopics();
         loadLanguages();
-    }, []);
+    }, [langCode, subprojectCode]);
 
     async function loadLanguages() {
         try {
             const data = await apiGet("/api/admin/scripted-languages");
-            const activeLangs = (data.languages || []).filter(l => l.enabled);
+            const list = data.languages || [];
+            const activeLangs = list.filter(l => l.enabled);
             setScriptedLanguages(activeLangs);
+
+            if (subprojectCode) {
+                const found = list.find(l => l.code.toLowerCase() === subprojectCode.toLowerCase());
+                if (found) setSubprojectDetails(found);
+            }
         } catch (e) {
             console.error("Failed to load scripted languages:", e);
         }
@@ -87,7 +102,8 @@ export default function AdminScriptedTopics() {
     async function loadTopics() {
         try {
             setLoading(true);
-            const data = await apiGet("/api/admin/scripted-topics");
+            const queryUrl = subprojectCode ? `/api/admin/scripted-topics?subproject=${encodeURIComponent(subprojectCode)}` : "/api/admin/scripted-topics";
+            const data = await apiGet(queryUrl);
             const loadedTopics = data.topics || [];
             setTopics(loadedTopics);
 
@@ -221,15 +237,39 @@ export default function AdminScriptedTopics() {
             if (editingSubtopic) {
                 await apiPutJson(`/api/admin/scripted-subtopics/${editingSubtopic._id}`, payload);
             } else {
-                await apiPostJson(`/api/admin/scripted-topics/${selectedTopicForSubtopic._id}/subtopics`, payload);
+                let targetTopicId = selectedTopicForSubtopic?._id;
+                if (!targetTopicId) {
+                    if (topics.length > 0) {
+                        targetTopicId = topics[0]._id;
+                    } else {
+                        // Auto-create default topic for this subproject/language
+                        const defaultTitle = subprojectDetails?.projectName || subprojectDetails?.name || (langCode ? `${capitalize(langCode)} Conversations` : "General Conversations");
+                        const newTopicRes = await apiPostJson("/api/admin/scripted-topics", {
+                            title: defaultTitle,
+                            description: `Conversations for ${defaultTitle}`,
+                            frequency: payload.maxCalls || 3,
+                            isEnabled: true,
+                            languages: subprojectCode ? [subprojectCode] : []
+                        });
+                        targetTopicId = newTopicRes.topic?._id;
+                    }
+                }
+                await apiPostJson(`/api/admin/scripted-topics/${targetTopicId}/subtopics`, payload);
             }
             setShowSubtopicModal(false);
             setEditingSubtopic(null);
             setSelectedTopicForSubtopic(null);
             setSubtopicForm({ title: "", description: "", instructions: "", rawScript: "", maxCalls: 3, isEnabled: true });
             loadTopics();
+            Swal.fire({
+                icon: 'success',
+                title: 'Conversation Added',
+                text: 'Scripted conversation successfully created!',
+                confirmButtonColor: '#6366f1'
+            });
         } catch (e) {
             setError(e.message);
+            Swal.fire('Error', e.message, 'error');
         }
     };
 
@@ -243,10 +283,6 @@ export default function AdminScriptedTopics() {
     // Where is the bank || Down the road
     const handleBulkSubmit = async (e) => {
         e.preventDefault();
-        if (!bulkTopicId) {
-            Swal.fire('Topic Required', 'Please select a topic for the scenarios.', 'warning');
-            return;
-        }
         if (!bulkRawText.trim()) {
             Swal.fire('Content Required', 'Please enter or paste your conversation scripts.', 'warning');
             return;
@@ -254,6 +290,24 @@ export default function AdminScriptedTopics() {
 
         try {
             setBulkUploading(true);
+            let targetTopicId = bulkTopicId;
+            if (!targetTopicId) {
+                if (topics.length > 0) {
+                    targetTopicId = topics[0]._id;
+                } else {
+                    // Auto-create default topic for this subproject/language
+                    const defaultTitle = subprojectDetails?.projectName || subprojectDetails?.name || (langCode ? `${capitalize(langCode)} Conversations` : "General Conversations");
+                    const newTopicRes = await apiPostJson("/api/admin/scripted-topics", {
+                        title: defaultTitle,
+                        description: `Conversations for ${defaultTitle}`,
+                        frequency: bulkDefaultMaxCalls || 3,
+                        isEnabled: true,
+                        languages: subprojectCode ? [subprojectCode] : []
+                    });
+                    targetTopicId = newTopicRes.topic?._id;
+                }
+            }
+
             const blocks = bulkRawText.split(/(?:^|\n)###\s+/).map(b => b.trim()).filter(Boolean);
             const scenarios = [];
 
@@ -293,7 +347,7 @@ export default function AdminScriptedTopics() {
                 return;
             }
 
-            const res = await apiPostJson(`/api/admin/scripted-topics/${bulkTopicId}/bulk-subtopics`, {
+            const res = await apiPostJson(`/api/admin/scripted-topics/${targetTopicId}/bulk-subtopics`, {
                 scenarios
             });
 
@@ -302,8 +356,8 @@ export default function AdminScriptedTopics() {
             loadTopics();
             Swal.fire({
                 icon: 'success',
-                title: 'Scenarios Uploaded',
-                text: `Successfully imported ${res.count || scenarios.length} scripted scenario(s) with 2-person dialogues!`,
+                title: 'Conversations Imported',
+                text: `Successfully imported ${res.count || scenarios.length} scripted conversation(s)!`,
                 confirmButtonColor: '#6366f1'
             });
         } catch (err) {
@@ -402,20 +456,47 @@ export default function AdminScriptedTopics() {
             <AdminNav />
             <div className="flex-1 md:ml-64 p-6 md:p-8 min-w-0 max-w-7xl mx-auto space-y-6">
 
+                {/* Breadcrumb if navigating through Language & Subproject */}
+                {langCode && subprojectCode && (
+                    <div className="flex items-center gap-2 text-xs font-semibold text-neutral-400 pb-3 border-b border-neutral-800/80">
+                        <Link to="/admin/scripted-topics" className="hover:text-indigo-400 flex items-center gap-1">
+                            <Radio className="w-3.5 h-3.5" />
+                            <span>Scripted Call Topics</span>
+                        </Link>
+                        <span>/</span>
+                        <Link to={`/admin/scripted-topics/${encodeURIComponent(langCode)}/subprojects`} className="hover:text-indigo-400 flex items-center gap-1">
+                            <Globe className="w-3.5 h-3.5" />
+                            <span>{capitalize(langCode)}</span>
+                        </Link>
+                        <span>/</span>
+                        <span className="text-white flex items-center gap-1">
+                            <FolderKanban className="w-3.5 h-3.5 text-indigo-400" />
+                            <span>{subprojectDetails?.projectName || subprojectDetails?.name || subprojectCode}</span>
+                        </span>
+                        <span>/</span>
+                        <span className="text-indigo-400">Topics</span>
+                    </div>
+                )}
+
                 {/* Header */}
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6 border-b border-neutral-800">
                     <div>
                         <div className="flex items-center gap-2.5 mb-1">
+                            <Link to={langCode ? `/admin/scripted-topics/${encodeURIComponent(langCode)}/subprojects` : "/admin/scripted-topics"} className="p-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-400 hover:text-white transition-colors mr-1">
+                                <ArrowLeft className="w-4 h-4" />
+                            </Link>
                             <div className="p-2 rounded-xl bg-gradient-to-r from-indigo-600 to-primary-600 text-white shadow-lg shadow-indigo-500/20">
                                 <Radio className="w-5 h-5" />
                             </div>
-                            <h1 className="text-2xl font-bold">Scripted Call Topics</h1>
+                            <h1 className="text-2xl font-bold">
+                                {subprojectDetails ? `${subprojectDetails.projectName || subprojectDetails.name} Scripted Topics` : "Scripted Call Topics"}
+                            </h1>
                             <span className="text-xs font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-full bg-indigo-900/60 text-indigo-300 border border-indigo-700/50">
                                 2-Person Script Engine
                             </span>
                         </div>
                         <p className="text-sm text-neutral-400">
-                            Upload and manage 2-person dialogues separated by <code className="px-1.5 py-0.5 rounded bg-neutral-800 text-indigo-300 font-mono text-xs">||</code> for dual-contributor recorded verses.
+                            {subprojectDetails ? `Upload and manage 2-person dialogues and quota targets for ${subprojectDetails.name}` : "Upload and manage 2-person dialogues separated by || for dual-contributor recorded verses."}
                         </p>
                     </div>
 
@@ -433,14 +514,24 @@ export default function AdminScriptedTopics() {
                         </button>
                         <button
                             onClick={() => {
-                                setEditingTopic(null);
-                                setTopicForm({ title: "", description: "", frequency: 3, isEnabled: true, languages: [] });
-                                setShowTopicModal(true);
+                                setSelectedTopicForSubtopic(topics[0] || null);
+                                setEditingSubtopic(null);
+                                setSubtopicForm({
+                                    title: "",
+                                    description: "",
+                                    instructions: "",
+                                    rawScript: "",
+                                    speaker1Gender: "any",
+                                    speaker2Gender: "any",
+                                    maxCalls: topics[0]?.frequency || 3,
+                                    isEnabled: true
+                                });
+                                setShowSubtopicModal(true);
                             }}
-                            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-primary-600 hover:bg-primary-500 text-white font-bold text-sm shadow-lg shadow-primary-500/20 transition-all cursor-pointer"
+                            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-sm shadow-lg shadow-indigo-500/20 transition-all cursor-pointer"
                         >
                             <Plus className="w-4 h-4" />
-                            <span>Add Scripted Topic</span>
+                            <span>Add Scripted Conversation</span>
                         </button>
                     </div>
                 </div>
@@ -462,7 +553,7 @@ export default function AdminScriptedTopics() {
                             }`}
                         >
                             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                            <span>Active Scenarios ({totalActiveSubtopics})</span>
+                            <span>Active Conversations ({totalActiveSubtopics})</span>
                         </button>
                         <button
                             onClick={() => setActiveTab("disabled")}
@@ -502,31 +593,54 @@ export default function AdminScriptedTopics() {
                 {loading ? (
                     <div className="flex flex-col items-center justify-center py-24 text-neutral-500">
                         <div className="w-10 h-10 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mb-4" />
-                        <p className="text-sm font-semibold">Loading Scripted Topics...</p>
+                        <p className="text-sm font-semibold">Loading Scripted Conversations...</p>
                     </div>
                 ) : displayedTopics.length === 0 ? (
-                    <div className="text-center py-20 border border-dashed border-neutral-800 rounded-2xl bg-neutral-900/40">
+                    <div className="text-center py-20 border border-dashed border-neutral-800 rounded-2xl bg-neutral-900/40 p-8">
                         <Radio className="w-12 h-12 text-neutral-600 mx-auto mb-3" />
                         <h3 className="text-base font-bold text-neutral-300">
-                            {activeTab === "active" ? "No Active Scripted Topics" : "No Completed / Disabled Topics"}
+                            {activeTab === "active" ? "No Active Scripted Conversations" : "No Completed Conversations"}
                         </h3>
-                        <p className="text-xs text-neutral-500 mt-1 max-w-sm mx-auto mb-4">
+                        <p className="text-xs text-neutral-500 mt-1 max-w-sm mx-auto mb-5">
                             {activeTab === "active" 
-                                ? "Create your first scripted conversation topic to upload 2-person dialogues." 
+                                ? "Add your 2-person scripted conversation dialogues separated by || to start recording." 
                                 : "Completed scripted scenarios with reached quotas will appear here."}
                         </p>
                         {activeTab === "active" && (
-                            <button
-                                onClick={() => {
-                                    setEditingTopic(null);
-                                    setTopicForm({ title: "", description: "", frequency: 3, isEnabled: true, languages: [] });
-                                    setShowTopicModal(true);
-                                }}
-                                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-primary-600 hover:bg-primary-500 text-white font-bold text-xs"
-                            >
-                                <Plus className="w-3.5 h-3.5" />
-                                <span>Create Scripted Topic</span>
-                            </button>
+                            <div className="flex items-center justify-center gap-3">
+                                <button
+                                    onClick={() => {
+                                        setBulkTopicId(topics[0]?._id || "");
+                                        setBulkRawText("");
+                                        setShowBulkModal(true);
+                                    }}
+                                    className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-200 font-bold text-xs border border-neutral-700 cursor-pointer shadow-sm"
+                                >
+                                    <Upload className="w-3.5 h-3.5 text-indigo-400" />
+                                    <span>Bulk Upload Scripts</span>
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        setSelectedTopicForSubtopic(topics[0] || null);
+                                        setEditingSubtopic(null);
+                                        setSubtopicForm({
+                                            title: "",
+                                            description: "",
+                                            instructions: "",
+                                            rawScript: "",
+                                            speaker1Gender: "any",
+                                            speaker2Gender: "any",
+                                            maxCalls: 3,
+                                            isEnabled: true
+                                        });
+                                        setShowSubtopicModal(true);
+                                    }}
+                                    className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs cursor-pointer shadow-lg shadow-indigo-600/30"
+                                >
+                                    <Plus className="w-3.5 h-3.5" />
+                                    <span>Add Scripted Conversation</span>
+                                </button>
+                            </div>
                         )}
                     </div>
                 ) : (
@@ -961,30 +1075,48 @@ export default function AdminScriptedTopics() {
                                     <div className="flex items-center gap-2">
                                         <MessageSquare className="w-5 h-5 text-indigo-400" />
                                         <h2 className="text-lg font-bold text-white">
-                                            {editingSubtopic ? "Edit 2-Person Script Scenario" : "Add 2-Person Script Scenario"}
+                                            {editingSubtopic ? "Edit Scripted Conversation" : "Add Scripted Conversation"}
                                         </h2>
                                     </div>
-                                    {selectedTopicForSubtopic && (
-                                        <p className="text-xs text-indigo-400 font-bold mt-0.5">
-                                            Topic: {selectedTopicForSubtopic.title}
-                                        </p>
-                                    )}
+                                    <p className="text-xs text-neutral-400 mt-0.5">
+                                        {subprojectDetails?.projectName || subprojectDetails?.name || "2-Person Dialogue Engine"}
+                                    </p>
                                 </div>
-                                <button onClick={() => setShowSubtopicModal(false)} className="text-neutral-400 hover:text-white p-1 rounded-lg">
+                                <button onClick={() => setShowSubtopicModal(false)} className="text-neutral-400 hover:text-white p-1 rounded-lg cursor-pointer">
                                     ✕
                                 </button>
                             </div>
 
                             <form onSubmit={handleSubtopicSubmit} className="p-6 space-y-4 overflow-y-auto flex-1">
+                                {topics.length > 1 && (
+                                    <div>
+                                        <label className="block text-xs font-bold uppercase text-neutral-400 mb-1.5">
+                                            Topic / Category (Optional)
+                                        </label>
+                                        <select
+                                            value={selectedTopicForSubtopic?._id || topics[0]?._id || ""}
+                                            onChange={(e) => {
+                                                const found = topics.find(t => t._id === e.target.value);
+                                                setSelectedTopicForSubtopic(found || null);
+                                            }}
+                                            className="w-full px-3.5 py-2.5 bg-neutral-800 border border-neutral-700 rounded-xl text-sm text-white focus:outline-none focus:border-indigo-500"
+                                        >
+                                            {topics.map(t => (
+                                                <option key={t._id} value={t._id}>{t.title}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                )}
+
                                 <div>
                                     <label className="block text-xs font-bold uppercase text-neutral-400 mb-1.5">
-                                        Scenario Title
+                                        Conversation / Scenario Title
                                     </label>
                                     <input
                                         type="text"
                                         value={subtopicForm.title}
                                         onChange={(e) => setSubtopicForm({ ...subtopicForm, title: e.target.value })}
-                                        placeholder="e.g. Card Blocking Scenario, Doctor Appointment Booking"
+                                        placeholder="e.g. Card Blocking Inquiry, Grocery Delivery Check, Doctor Booking"
                                         required
                                         className="w-full px-3.5 py-2.5 bg-neutral-800 border border-neutral-700 rounded-xl text-sm text-white focus:outline-none focus:border-indigo-500"
                                     />
@@ -998,7 +1130,7 @@ export default function AdminScriptedTopics() {
                                         type="text"
                                         value={subtopicForm.description}
                                         onChange={(e) => setSubtopicForm({ ...subtopicForm, description: e.target.value })}
-                                        placeholder="Brief scenario summary..."
+                                        placeholder="Brief scenario summary or context for contributors..."
                                         className="w-full px-3.5 py-2.5 bg-neutral-800 border border-neutral-700 rounded-xl text-sm text-white focus:outline-none focus:border-indigo-500"
                                     />
                                 </div>
@@ -1014,7 +1146,7 @@ export default function AdminScriptedTopics() {
                                         </span>
                                     </div>
                                     <p className="text-[11px] text-neutral-400 mb-2">
-                                        Enter each conversation exchange on a new line separated by <code className="bg-neutral-800 px-1 py-0.5 rounded text-white font-mono">||</code>.
+                                        Enter each conversation turn on a new line separated by <code className="bg-neutral-800 px-1 py-0.5 rounded text-white font-mono">||</code>.
                                     </p>
                                     <textarea
                                         value={subtopicForm.rawScript}
@@ -1087,7 +1219,7 @@ export default function AdminScriptedTopics() {
                                         Target Recording Frequency (Distinct Speaker Pairs)
                                     </label>
                                     <p className="text-[11px] text-neutral-500 mb-1.5">
-                                        How many times this scenario must be recorded by distinct speaker pairs. Speakers who complete it are never shown it again.
+                                        How many times this conversation must be recorded by distinct speaker pairs. Speakers who complete it are never shown it again.
                                     </p>
                                     <input
                                         type="number"
@@ -1108,7 +1240,7 @@ export default function AdminScriptedTopics() {
                                         className="rounded bg-neutral-800 border-neutral-600 text-indigo-600 focus:ring-0 cursor-pointer"
                                     />
                                     <label htmlFor="subtopicEnabled" className="text-xs font-bold text-neutral-300 cursor-pointer">
-                                        Enable this script scenario
+                                        Enable this conversation immediately
                                     </label>
                                 </div>
 
@@ -1116,15 +1248,15 @@ export default function AdminScriptedTopics() {
                                     <button
                                         type="button"
                                         onClick={() => setShowSubtopicModal(false)}
-                                        className="px-4 py-2.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-xs font-bold text-neutral-300"
+                                        className="px-4 py-2.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-xs font-bold text-neutral-300 cursor-pointer"
                                     >
                                         Cancel
                                     </button>
                                     <button
                                         type="submit"
-                                        className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs shadow-lg transition-all"
+                                        className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs shadow-lg transition-all cursor-pointer"
                                     >
-                                        {editingSubtopic ? "Save Scenario & Script" : "Create Scenario & Script"}
+                                        {editingSubtopic ? "Save Conversation" : "Create Conversation"}
                                     </button>
                                 </div>
                             </form>
@@ -1143,29 +1275,30 @@ export default function AdminScriptedTopics() {
                                         Bulk Upload 2-Person Conversation Scripts
                                     </h2>
                                 </div>
-                                <button onClick={() => setShowBulkModal(false)} className="text-neutral-400 hover:text-white p-1 rounded-lg">
+                                <button onClick={() => setShowBulkModal(false)} className="text-neutral-400 hover:text-white p-1 rounded-lg cursor-pointer">
                                     ✕
                                 </button>
                             </div>
 
                             <form onSubmit={handleBulkSubmit} className="p-6 space-y-4 overflow-y-auto flex-1">
-                                <div>
-                                    <label className="block text-xs font-bold uppercase text-neutral-400 mb-1.5">
-                                        Target Topic
-                                    </label>
-                                    <select
-                                        value={bulkTopicId}
-                                        onChange={(e) => setBulkTopicId(e.target.value)}
-                                        required
-                                        className="w-full px-3.5 py-2.5 bg-neutral-800 border border-neutral-700 rounded-xl text-sm text-white focus:outline-none focus:border-indigo-500"
-                                    >
-                                        {topics.map(t => (
-                                            <option key={t._id} value={t._id}>
-                                                {t.title}
-                                            </option>
-                                        ))}
-                                    </select>
-                                </div>
+                                {topics.length > 1 && (
+                                    <div>
+                                        <label className="block text-xs font-bold uppercase text-neutral-400 mb-1.5">
+                                            Target Topic / Category (Optional)
+                                        </label>
+                                        <select
+                                            value={bulkTopicId || topics[0]?._id || ""}
+                                            onChange={(e) => setBulkTopicId(e.target.value)}
+                                            className="w-full px-3.5 py-2.5 bg-neutral-800 border border-neutral-700 rounded-xl text-sm text-white focus:outline-none focus:border-indigo-500"
+                                        >
+                                            {topics.map(t => (
+                                                <option key={t._id} value={t._id}>
+                                                    {t.title}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                )}
 
                                 <div>
                                     <label className="block text-xs font-bold uppercase text-neutral-400 mb-1.5">
@@ -1204,17 +1337,17 @@ export default function AdminScriptedTopics() {
                                     <button
                                         type="button"
                                         onClick={() => setShowBulkModal(false)}
-                                        className="px-4 py-2.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-xs font-bold text-neutral-300"
+                                        className="px-4 py-2.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-xs font-bold text-neutral-300 cursor-pointer"
                                     >
                                         Cancel
                                     </button>
                                     <button
                                         type="submit"
                                         disabled={bulkUploading}
-                                        className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs shadow-lg transition-all flex items-center gap-2"
+                                        className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs shadow-lg transition-all flex items-center gap-2 cursor-pointer"
                                     >
                                         <Upload className="w-3.5 h-3.5" />
-                                        <span>{bulkUploading ? "Importing..." : "Import Scenarios"}</span>
+                                        <span>{bulkUploading ? "Importing..." : "Import Conversations"}</span>
                                     </button>
                                 </div>
                             </form>

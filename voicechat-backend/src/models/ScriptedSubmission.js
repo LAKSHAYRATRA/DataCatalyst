@@ -39,12 +39,25 @@ const scriptedSubmissionSchema = new mongoose.Schema(
                 turnIndex: { type: Number, required: true },
                 audioPath: { type: String, required: true },
                 durationSec: { type: Number, default: 0 },
-                text: { type: String, default: "" }
+                text: { type: String, default: "" },
+                status: {
+                    type: String,
+                    enum: ["pending", "approved", "rejected"],
+                    default: "pending"
+                },
+                rejectionReason: { type: String, default: null },
+                reviewNote: { type: String, default: null },
+                reviewedAt: { type: Date, default: null },
+                reviewedBy: {
+                    type: mongoose.Schema.Types.ObjectId,
+                    ref: "User",
+                    default: null
+                }
             }
         ],
         status: {
             type: String,
-            enum: ["pending_match", "matched", "cancelled"],
+            enum: ["pending_match", "matched", "needs_rerecord", "partially_approved", "approved", "rejected", "cancelled"],
             default: "pending_match",
             index: true
         },

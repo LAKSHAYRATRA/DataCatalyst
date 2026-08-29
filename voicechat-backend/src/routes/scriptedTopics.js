@@ -84,10 +84,13 @@ router.get("/enabled", async (req, res) => {
 
         let matchQuery = { isEnabled: true };
         if (queryLang) {
+            const cleanLang = String(queryLang).toLowerCase().trim();
+            const langRegex = new RegExp(`^${cleanLang}$`, "i");
             matchQuery.$or = [
                 { languages: { $size: 0 } },
                 { languages: null },
-                { languages: { $in: [queryLang] } }
+                { languages: { $in: [queryLang, cleanLang, langRegex] } },
+                { languages: { $elemMatch: { $regex: cleanLang, $options: "i" } } }
             ];
         }
 
@@ -95,6 +98,7 @@ router.get("/enabled", async (req, res) => {
         let userRecordedSubtopicIds = new Set();
         let userGender = null;
         let userActiveClaimsMap = new Map(); // subtopicId -> role
+        let userNeedsReRecordSubmissionsMap = new Map(); // subtopicId -> submission
 
         if (currentUserId) {
             const [userSessions, userSubmissions, userClaims, user] = await Promise.all([
@@ -106,7 +110,7 @@ router.get("/enabled", async (req, res) => {
                 ScriptedSubmission.find({
                     userId: currentUserId,
                     status: { $ne: "cancelled" }
-                }).select("subtopicId").lean(),
+                }).lean(),
                 ScriptedClaim.find({
                     userId: currentUserId,
                     status: "active"
@@ -114,23 +118,37 @@ router.get("/enabled", async (req, res) => {
                 User.findById(currentUserId).select("gender isAdmin isQA languageApplications").lean()
             ]);
 
+            // Track completed vs re-recording submissions
+            userSubmissions.forEach(s => {
+                if (s.status === "needs_rerecord") {
+                    userNeedsReRecordSubmissionsMap.set(String(s.subtopicId), s);
+                } else if (s.status !== "rejected") {
+                    userRecordedSubtopicIds.add(String(s.subtopicId));
+                }
+            });
+
             // Verify that the user has an approved scripted_call application for the requested language
             if (user && queryLang && req.query.preview !== "true") {
                 const targetCode = String(queryLang).toLowerCase().trim();
                 const isApproved = (user.languageApplications || []).some(
                     a => a.status === "approved" &&
                          a.applicationType === "scripted_call" &&
-                         String(a.languageCode || "").toLowerCase().trim() === targetCode
+                         (
+                             String(a.languageCode || "").toLowerCase().trim() === targetCode ||
+                             String(a.language || "").toLowerCase().trim() === targetCode ||
+                             targetCode.includes(String(a.languageCode || "").toLowerCase().trim())
+                         )
                 );
-                if (!isApproved) {
+                if (!isApproved && !user.isAdmin) {
                     return res.json({ topics: [] });
                 }
             }
 
-            userRecordedSubtopicIds = new Set([
-                ...userSessions.map(s => String(s.subtopicId)).filter(Boolean),
-                ...userSubmissions.map(s => String(s.subtopicId)).filter(Boolean)
-            ]);
+            userSessions.forEach(s => {
+                if (s.subtopicId && !userNeedsReRecordSubmissionsMap.has(String(s.subtopicId))) {
+                    userRecordedSubtopicIds.add(String(s.subtopicId));
+                }
+            });
 
             userClaims.forEach(c => {
                 userActiveClaimsMap.set(String(c.subtopicId), c.role);
@@ -158,7 +176,22 @@ router.get("/enabled", async (req, res) => {
             else if (claim.role === "speaker2") counts.speaker2 += 1;
         }
 
-        const topics = await ScriptedTopic.find(matchQuery).sort({ title: 1 });
+        // Guaranteed inclusion for topics that contain a needs_rerecord scenario for this contributor
+        const reRecordTopicIds = Array.from(userNeedsReRecordSubmissionsMap.values())
+            .map(s => s.topicId)
+            .filter(Boolean);
+
+        let finalTopicQuery = matchQuery;
+        if (reRecordTopicIds.length > 0) {
+            finalTopicQuery = {
+                $or: [
+                    matchQuery,
+                    { _id: { $in: reRecordTopicIds }, isEnabled: true }
+                ]
+            };
+        }
+
+        const topics = await ScriptedTopic.find(finalTopicQuery).sort({ title: 1 });
 
         const topicsWithSubtopicsRaw = await Promise.all(
             topics.map(async (topic) => {
@@ -170,6 +203,36 @@ router.get("/enabled", async (req, res) => {
                 const validSubtopics = [];
                 for (const sub of subtopics) {
                     const subIdStr = String(sub._id);
+
+                    // CASE 1: Contributor has rejected verse(s) requiring re-recording for this scenario
+                    const needsReRecordSub = userNeedsReRecordSubmissionsMap.get(subIdStr);
+                    if (needsReRecordSub) {
+                        const rejectedVerses = (needsReRecordSub.verses || []).filter(v => v.status === "rejected");
+                        const reasons = rejectedVerses.map(v => v.rejectionReason).filter(Boolean);
+                        const notes = rejectedVerses.map(v => v.reviewNote).filter(Boolean);
+
+                        validSubtopics.unshift({
+                            _id: sub._id,
+                            title: sub.title,
+                            description: sub.description,
+                            instructions: sub.instructions,
+                            rawScript: sub.rawScript,
+                            dialogueTurns: sub.dialogueTurns,
+                            speaker1Gender: (sub.speaker1Gender || "any").toLowerCase(),
+                            speaker2Gender: (sub.speaker2Gender || "any").toLowerCase(),
+                            eligibleRoles: [needsReRecordSub.role],
+                            isClaimedByMe: true,
+                            claimedRole: needsReRecordSub.role,
+                            frequency: sub.frequency || sub.maxCalls || 3,
+                            completedFrequency: 0,
+                            isReRecord: true,
+                            submissionId: needsReRecordSub._id,
+                            rejectedVersesCount: rejectedVerses.length,
+                            rejectedReasons: reasons,
+                            reviewNotes: notes
+                        });
+                        continue;
+                    }
 
                     // RULE 1: If speaker already recorded this scenario, never show it to them again
                     if (userRecordedSubtopicIds.has(subIdStr)) {
@@ -271,6 +334,7 @@ router.get("/enabled", async (req, res) => {
                     title: topic.title,
                     description: topic.description,
                     subtopics: validSubtopics,
+                    hasReRecord: validSubtopics.some(s => s.isReRecord)
                 };
             })
         );
@@ -278,9 +342,56 @@ router.get("/enabled", async (req, res) => {
         // Filter out topics where all subtopics are completed, locked by others, or incompatible
         const topicsWithSubtopics = topicsWithSubtopicsRaw.filter(t => t.subtopics.length > 0);
 
+        // ALWAYS SORT TOPICS WITH RE-RECORDS TO THE VERY TOP!
+        topicsWithSubtopics.sort((a, b) => {
+            if (a.hasReRecord && !b.hasReRecord) return -1;
+            if (!a.hasReRecord && b.hasReRecord) return 1;
+            return 0;
+        });
+
         res.json({ topics: topicsWithSubtopics, userGender });
     } catch (error) {
         res.status(500).json({ error: error.message });
+    }
+});
+
+// ── GET /api/scripted-topics/my-rerecords (Pending re-recordings for contributor) ──
+router.get("/my-rerecords", requireAuth(JWT_SECRET), async (req, res) => {
+    try {
+        const userId = req.user?._id || req.userId;
+        const reRecordSubmissions = await ScriptedSubmission.find({
+            userId,
+            status: "needs_rerecord"
+        })
+        .populate({
+            path: "subtopicId",
+            select: "title description dialogueTurns",
+            populate: { path: "topicId", select: "title" }
+        })
+        .sort({ updatedAt: -1 })
+        .lean();
+
+        const formatted = reRecordSubmissions.map(sub => {
+            const rejectedVerses = (sub.verses || []).filter(v => v.status === "rejected");
+            return {
+                submissionId: sub._id,
+                subtopicId: sub.subtopicId?._id || sub.subtopicId,
+                scenarioTitle: sub.subtopicId?.title || "Scripted Scenario",
+                topicTitle: sub.subtopicId?.topicId?.title || "Scripted Topic",
+                topicId: sub.subtopicId?.topicId?._id || null,
+                role: sub.role,
+                language: sub.language,
+                rejectedCount: rejectedVerses.length,
+                rejectionReasons: rejectedVerses.map(v => v.rejectionReason).filter(Boolean),
+                notes: rejectedVerses.map(v => v.reviewNote).filter(Boolean),
+                verses: sub.verses,
+                scenario: sub.subtopicId
+            };
+        });
+
+        res.json({ rerecords: formatted });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
     }
 });
 
@@ -318,45 +429,49 @@ router.post("/claim", requireAuth(JWT_SECRET), async (req, res) => {
             userId,
             status: { $ne: "cancelled" }
         });
-        if (existingSub) {
+        const isReRecording = existingSub && existingSub.status === "needs_rerecord";
+
+        if (existingSub && !isReRecording) {
             return res.status(400).json({ error: "You have already completed this scripted scenario." });
         }
 
-        const targetFrequency = sub.frequency !== undefined ? sub.frequency : (sub.maxCalls !== undefined ? sub.maxCalls : 3);
-        const approvedCount = await CallSession.countDocuments({
-            subtopicId,
-            callActuallyStarted: true,
-            callStatus: "approved"
-        });
-        const pendingCount = await CallSession.countDocuments({
-            subtopicId,
-            callActuallyStarted: true,
-            callStatus: "pending"
-        });
-        const totalCompletedOrPaired = approvedCount + pendingCount;
-
-        if (totalCompletedOrPaired >= targetFrequency) {
-            return res.status(400).json({ error: "This scenario has already reached its target quota." });
-        }
-
-        // Count existing submissions and active claims by other users for this role
-        const pendingRoleSubmissions = await ScriptedSubmission.countDocuments({
-            subtopicId,
-            role,
-            status: "pending_match"
-        });
-        const otherActiveRoleClaims = await ScriptedClaim.countDocuments({
-            subtopicId,
-            role,
-            status: "active",
-            userId: { $ne: userId }
-        });
-
-        const openRoleSlots = targetFrequency - totalCompletedOrPaired - pendingRoleSubmissions - otherActiveRoleClaims;
-        if (openRoleSlots <= 0) {
-            return res.status(409).json({
-                error: "This speaker role is currently claimed by another contributor. Please choose another scenario."
+        if (!isReRecording) {
+            const targetFrequency = sub.frequency !== undefined ? sub.frequency : (sub.maxCalls !== undefined ? sub.maxCalls : 3);
+            const approvedCount = await CallSession.countDocuments({
+                subtopicId,
+                callActuallyStarted: true,
+                callStatus: "approved"
             });
+            const pendingCount = await CallSession.countDocuments({
+                subtopicId,
+                callActuallyStarted: true,
+                callStatus: "pending"
+            });
+            const totalCompletedOrPaired = approvedCount + pendingCount;
+
+            if (totalCompletedOrPaired >= targetFrequency) {
+                return res.status(400).json({ error: "This scenario has already reached its target quota." });
+            }
+
+            // Count existing submissions and active claims by other users for this role
+            const pendingRoleSubmissions = await ScriptedSubmission.countDocuments({
+                subtopicId,
+                role,
+                status: "pending_match"
+            });
+            const otherActiveRoleClaims = await ScriptedClaim.countDocuments({
+                subtopicId,
+                role,
+                status: "active",
+                userId: { $ne: userId }
+            });
+
+            const openRoleSlots = targetFrequency - totalCompletedOrPaired - pendingRoleSubmissions - otherActiveRoleClaims;
+            if (openRoleSlots <= 0) {
+                return res.status(409).json({
+                    error: "This speaker role is currently claimed by another contributor. Please choose another scenario."
+                });
+            }
         }
 
         // Upsert or create active claim for this user
@@ -552,6 +667,316 @@ router.post("/submit-recording", requireAuth(JWT_SECRET), scriptedUpload.any(), 
     } catch (error) {
         console.error("[ScriptedTopics] Submit recording error:", error);
         res.status(500).json({ error: error.message || "Failed to submit recording" });
+    }
+});
+
+// GET /api/scripted-topics/submission-status/:subtopicId
+router.get("/submission-status/:subtopicId", requireAuth(JWT_SECRET), async (req, res) => {
+    try {
+        const userId = req.userId || req.user?._id || getOptionalUserId(req);
+        if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+        const submission = await ScriptedSubmission.findOne({
+            subtopicId: req.params.subtopicId,
+            userId,
+            status: { $ne: "cancelled" }
+        }).lean();
+
+        if (!submission) {
+            return res.json({ submission: null });
+        }
+
+        const versesWithUrls = (submission.verses || []).map(v => ({
+            turnIndex: v.turnIndex,
+            text: v.text,
+            durationSec: v.durationSec,
+            status: v.status || "pending",
+            rejectionReason: v.rejectionReason || null,
+            reviewNote: v.reviewNote || null,
+            audioUrl: `/api/scripted-topics/verse-audio/${submission._id}/${v.turnIndex}`
+        }));
+
+        res.json({
+            submission: {
+                _id: submission._id,
+                subtopicId: submission.subtopicId,
+                role: submission.role,
+                status: submission.status,
+                language: submission.language,
+                verses: versesWithUrls
+            }
+        });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// GET /api/scripted-topics/verse-audio/:submissionId/:turnIndex
+router.get("/verse-audio/:submissionId/:turnIndex", async (req, res) => {
+    try {
+        const { submissionId, turnIndex } = req.params;
+        const sub = await ScriptedSubmission.findById(submissionId).lean();
+        if (!sub) return res.status(404).json({ error: "Submission not found" });
+
+        const verse = (sub.verses || []).find(v => Number(v.turnIndex) === Number(turnIndex));
+        if (!verse || !verse.audioPath || !fs.existsSync(verse.audioPath)) {
+            return res.status(404).json({ error: "Verse audio file not found" });
+        }
+
+        const ext = path.extname(verse.audioPath).toLowerCase();
+        const contentType = ext === ".webm" ? "audio/webm" : (ext === ".mp3" ? "audio/mpeg" : (ext === ".ogg" ? "audio/ogg" : "audio/wav"));
+
+        const stat = fs.statSync(verse.audioPath);
+        const fileSize = stat.size;
+        const range = req.headers.range;
+
+        if (range) {
+            const parts = range.replace(/bytes=/, "").split("-");
+            const start = parseInt(parts[0], 10);
+            const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+            const chunksize = (end - start) + 1;
+            const file = fs.createReadStream(verse.audioPath, { start, end });
+            const head = {
+                "Content-Range": `bytes ${start}-${end}/${fileSize}`,
+                "Accept-Ranges": "bytes",
+                "Content-Length": chunksize,
+                "Content-Type": contentType,
+            };
+            res.writeHead(206, head);
+            file.pipe(res);
+        } else {
+            const head = {
+                "Content-Length": fileSize,
+                "Content-Type": contentType,
+                "Accept-Ranges": "bytes",
+            };
+            res.writeHead(200, head);
+            fs.createReadStream(verse.audioPath).pipe(res);
+        }
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// POST /api/scripted-topics/rerecord-verses
+router.post("/rerecord-verses", requireAuth(JWT_SECRET), scriptedUpload.any(), async (req, res) => {
+    try {
+        const userId = req.userId || req.user?._id || getOptionalUserId(req);
+        if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+        const { submissionId, subtopicId, role } = req.body;
+        let parsedVersesMeta = [];
+        try {
+            parsedVersesMeta = req.body.versesMeta ? JSON.parse(req.body.versesMeta) : [];
+        } catch (_) {}
+
+        const submission = await ScriptedSubmission.findOne({
+            _id: submissionId,
+            userId,
+            status: { $ne: "cancelled" }
+        });
+
+        if (!submission) {
+            return res.status(404).json({ error: "Submission not found" });
+        }
+
+        const files = req.files || [];
+        if (files.length === 0) {
+            return res.status(400).json({ error: "No re-recorded verses uploaded" });
+        }
+
+        // Map and update each re-recorded verse
+        for (let i = 0; i < files.length; i++) {
+            const file = files[i];
+            const meta = parsedVersesMeta[i] || {};
+            const turnIndex = Number(meta.turnIndex !== undefined ? meta.turnIndex : meta.index);
+
+            const vIdx = submission.verses.findIndex(v => Number(v.turnIndex) === turnIndex);
+            if (vIdx >= 0) {
+                submission.verses[vIdx].audioPath = file.path;
+                submission.verses[vIdx].durationSec = meta.durationSec || 0;
+                submission.verses[vIdx].status = "pending";
+                submission.verses[vIdx].rejectionReason = null;
+                submission.verses[vIdx].reviewNote = null;
+                submission.verses[vIdx].reviewedAt = null;
+                submission.verses[vIdx].reviewedBy = null;
+            } else {
+                submission.verses.push({
+                    turnIndex,
+                    audioPath: file.path,
+                    durationSec: meta.durationSec || 0,
+                    text: meta.text || "",
+                    status: "pending",
+                    rejectionReason: null,
+                    reviewNote: null
+                });
+            }
+        }
+
+        // Check if any verse is still rejected
+        const hasRejectedVerses = submission.verses.some(v => v.status === "rejected");
+        if (!hasRejectedVerses) {
+            submission.status = submission.pairedSubmissionId ? "matched" : "pending_match";
+        } else {
+            submission.status = "needs_rerecord";
+        }
+
+        await submission.save();
+
+        if (submission.callSessionId) {
+            const call = await CallSession.findById(submission.callSessionId);
+            if (call) {
+                const isUserA = String(submission.userId) === String(call.userA);
+                if (isUserA) {
+                    call.recordingAStatus = "pending";
+                    call.recordingARejectionReason = null;
+                } else {
+                    call.recordingBStatus = "pending";
+                    call.recordingBRejectionReason = null;
+                }
+                call.callStatus = "pending";
+                await call.save();
+            }
+        }
+
+        // If paired, trigger re-stitching
+        if (submission.pairedSubmissionId) {
+            const pairedSub = await ScriptedSubmission.findById(submission.pairedSubmissionId);
+            if (pairedSub) {
+                const s1Sub = submission.role === "speaker1" ? submission : pairedSub;
+                const s2Sub = submission.role === "speaker1" ? pairedSub : submission;
+                stitchScriptedPair(s1Sub, s2Sub).catch(err => {
+                    console.error("[ScriptedTopics] Re-stitching failed:", err);
+                });
+            }
+        }
+
+        res.json({
+            success: true,
+            message: "Re-recorded verses submitted successfully! Queued for review."
+        });
+    } catch (error) {
+        console.error("[ScriptedTopics] Re-record submit error:", error);
+        res.status(500).json({ error: error.message || "Failed to submit re-recorded verses" });
+    }
+});
+
+// GET /api/scripted-topics/call-dialogue/:callId
+router.get("/call-dialogue/:callId", async (req, res) => {
+    try {
+        const { callId } = req.params;
+        const call = await CallSession.findOne({ callId })
+            .populate("userA", "firstname lastname username email speaker_id")
+            .populate("userB", "firstname lastname username email speaker_id")
+            .lean();
+
+        if (!call) return res.status(404).json({ error: "Scripted call not found" });
+
+        // 1. Try finding submissions by callSessionId
+        let [s1Sub, s2Sub] = await Promise.all([
+            ScriptedSubmission.findOne({ callSessionId: call._id, role: "speaker1" }).lean(),
+            ScriptedSubmission.findOne({ callSessionId: call._id, role: "speaker2" }).lean()
+        ]);
+
+        // Fallback: If not found by callSessionId, find by subtopicId and users
+        if (!s1Sub || !s2Sub) {
+            const subtopicId = call.subtopicId || s1Sub?.subtopicId || s2Sub?.subtopicId;
+            if (subtopicId) {
+                if (!s1Sub && call.userA) {
+                    s1Sub = await ScriptedSubmission.findOne({
+                        subtopicId,
+                        userId: call.userA._id || call.userA,
+                        status: { $ne: "cancelled" }
+                    }).lean();
+                }
+                if (!s2Sub && call.userB) {
+                    s2Sub = await ScriptedSubmission.findOne({
+                        subtopicId,
+                        userId: call.userB._id || call.userB,
+                        status: { $ne: "cancelled" }
+                    }).lean();
+                }
+            }
+        }
+
+        // 2. Fetch the subtopic
+        const subtopicId = s1Sub?.subtopicId || s2Sub?.subtopicId || call.subtopicId;
+        let subtopic = null;
+        if (subtopicId) {
+            subtopic = await ScriptedSubtopic.findById(subtopicId).lean();
+        }
+
+        // 3. Fallback if subtopic dialogueTurns is empty, reconstruct turns from submissions
+        let rawDialogueTurns = subtopic?.dialogueTurns || [];
+        if (rawDialogueTurns.length === 0) {
+            const maxTurns = Math.max(s1Sub?.verses?.length || 0, s2Sub?.verses?.length || 0);
+            for (let i = 0; i < maxTurns; i++) {
+                const v1 = s1Sub?.verses?.find(v => Number(v.turnIndex) === i);
+                const v2 = s2Sub?.verses?.find(v => Number(v.turnIndex) === i);
+                rawDialogueTurns.push({
+                    speaker1: v1?.text || (v1 ? `Speaker 1 Verse ${i + 1}` : ""),
+                    speaker2: v2?.text || (v2 ? `Speaker 2 Verse ${i + 1}` : "")
+                });
+            }
+        }
+
+        const turns = [];
+        rawDialogueTurns.forEach((turn, idx) => {
+            // Speaker 1 Verse
+            const v1Obj = s1Sub?.verses?.find(v => Number(v.turnIndex) === idx);
+            if (turn.speaker1 || v1Obj) {
+                turns.push({
+                    turnIndex: idx,
+                    speakerRole: "speaker1",
+                    speakerLabel: "Speaker 1 (Host)",
+                    speakerUser: call.userA ? {
+                        id: String(call.userA._id || call.userA),
+                        name: `${call.userA.firstname || ""} ${call.userA.lastname || ""}`.trim() || call.userA.username || "Speaker 1",
+                        speaker_id: call.userA.speaker_id || null
+                    } : null,
+                    submissionId: s1Sub?._id || null,
+                    text: turn.speaker1 || v1Obj?.text || "",
+                    status: v1Obj?.status || "pending",
+                    rejectionReason: v1Obj?.rejectionReason || null,
+                    reviewNote: v1Obj?.reviewNote || null,
+                    durationSec: v1Obj?.durationSec || 0,
+                    audioUrl: s1Sub?._id ? `/api/scripted-topics/verse-audio/${s1Sub._id}/${idx}` : null
+                });
+            }
+
+            // Speaker 2 Verse
+            const v2Obj = s2Sub?.verses?.find(v => Number(v.turnIndex) === idx);
+            if (turn.speaker2 || v2Obj) {
+                turns.push({
+                    turnIndex: idx,
+                    speakerRole: "speaker2",
+                    speakerLabel: "Speaker 2 (Guest)",
+                    speakerUser: call.userB ? {
+                        id: String(call.userB._id || call.userB),
+                        name: `${call.userB.firstname || ""} ${call.userB.lastname || ""}`.trim() || call.userB.username || "Speaker 2",
+                        speaker_id: call.userB.speaker_id || null
+                    } : null,
+                    submissionId: s2Sub?._id || null,
+                    text: turn.speaker2 || v2Obj?.text || "",
+                    status: v2Obj?.status || "pending",
+                    rejectionReason: v2Obj?.rejectionReason || null,
+                    reviewNote: v2Obj?.reviewNote || null,
+                    durationSec: v2Obj?.durationSec || 0,
+                    audioUrl: s2Sub?._id ? `/api/scripted-topics/verse-audio/${s2Sub._id}/${idx}` : null
+                });
+            }
+        });
+
+        res.json({
+            call,
+            subtopic,
+            s1Submission: s1Sub,
+            s2Submission: s2Sub,
+            turns
+        });
+    } catch (err) {
+        console.error("[call-dialogue] Error:", err);
+        res.status(500).json({ error: err.message });
     }
 });
 

@@ -676,22 +676,24 @@ export default function AdminQA() {
                                     <div className="bg-neutral-700 p-3 rounded-lg">
                                         <div className="text-white font-semibold text-sm md:text-base">{getParticipantLabel(reviewing.userA, "A")}</div>
                                         {!isQaOnly && <div className="text-xs text-neutral-400 break-all">{reviewing.userA?.email}</div>}
-                                        {reviewing.questionerUserId?.toString() === reviewing.userA?._id?.toString() && (
+                                        {reviewing.userARole ? (
+                                            <div className="text-xs font-bold text-indigo-300 mt-1 inline-flex items-center gap-1 bg-indigo-950/60 px-2 py-0.5 rounded border border-indigo-800/50">🎭 {reviewing.userARole}</div>
+                                        ) : reviewing.questionerUserId?.toString() === reviewing.userA?._id?.toString() ? (
                                             <div className="text-xs text-warning-400 mt-1">Questioner</div>
-                                        )}
-                                        {reviewing.answererUserId?.toString() === reviewing.userA?._id?.toString() && (
+                                        ) : reviewing.answererUserId?.toString() === reviewing.userA?._id?.toString() ? (
                                             <div className="text-xs text-success-400 mt-1">Answerer</div>
-                                        )}
+                                        ) : null}
                                     </div>
                                     <div className="bg-neutral-700 p-3 rounded-lg">
                                         <div className="text-white font-semibold text-sm md:text-base">{getParticipantLabel(reviewing.userB, "B")}</div>
                                         {!isQaOnly && <div className="text-xs text-neutral-400 break-all">{reviewing.userB?.email}</div>}
-                                        {reviewing.questionerUserId?.toString() === reviewing.userB?._id?.toString() && (
+                                        {reviewing.userBRole ? (
+                                            <div className="text-xs font-bold text-emerald-300 mt-1 inline-flex items-center gap-1 bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-800/50">🎭 {reviewing.userBRole}</div>
+                                        ) : reviewing.questionerUserId?.toString() === reviewing.userB?._id?.toString() ? (
                                             <div className="text-xs text-warning-400 mt-1">Questioner</div>
-                                        )}
-                                        {reviewing.answererUserId?.toString() === reviewing.userB?._id?.toString() && (
+                                        ) : reviewing.answererUserId?.toString() === reviewing.userB?._id?.toString() ? (
                                             <div className="text-xs text-success-400 mt-1">Answerer</div>
-                                        )}
+                                        ) : null}
                                     </div>
                                 </div>
                             </div>

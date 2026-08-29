@@ -934,25 +934,34 @@ async function startActualCall(call) {
     (call.actualCallStartedAt - call.negotiationStartedAt) / 1000
   );
 
+  const updateFields = {
+    topicId: call.selectedTopic,
+    subtopicId: call.selectedSubtopic,
+    topicSelectedBy: call.topicSelectedBy,
+    topicSelectedAt: new Date(),
+    enableCallRoles: Boolean(call.enableCallRoles),
+    userARole: call.roleA || "",
+    userBRole: call.roleB || "",
+    negotiationEndedAt: call.actualCallStartedAt,
+    rolesConfirmedAt: call.actualCallStartedAt,
+    actualCallStartedAt: call.actualCallStartedAt,
+    callActuallyStarted: true,
+    negotiationDuration,
+  };
+
+  if (call.enableCallRoles) {
+    if (call.roleA === "questioner" || call.roleA === call.role1) {
+      updateFields.questionerUserId = call.userAId;
+      updateFields.answererUserId = call.userBId;
+    } else if (call.roleB === "questioner" || call.roleB === call.role1) {
+      updateFields.questionerUserId = call.userBId;
+      updateFields.answererUserId = call.userAId;
+    }
+  }
+
   await CallSession.updateOne(
     { callId: call.callId },
-    {
-      $set: {
-        topicId: call.selectedTopic,
-        subtopicId: call.selectedSubtopic,
-        topicSelectedBy: call.topicSelectedBy,
-        topicSelectedAt: new Date(),
-        questionerUserId:
-          call.roleA === "questioner" ? call.userAId : call.userBId,
-        answererUserId:
-          call.roleA === "answerer" ? call.userAId : call.userBId,
-        negotiationEndedAt: call.actualCallStartedAt,
-        rolesConfirmedAt: call.actualCallStartedAt,
-        actualCallStartedAt: call.actualCallStartedAt,
-        callActuallyStarted: true,
-        negotiationDuration,
-      },
-    }
+    { $set: updateFields }
   ).catch(() => {});
 
   io.to(call.a).emit("roles_confirmed", {
@@ -960,6 +969,7 @@ async function startActualCall(call) {
     peerRole: call.roleB,
     topicId: call.selectedTopic,
     subtopicId: call.selectedSubtopic,
+    enableCallRoles: Boolean(call.enableCallRoles),
   });
 
   io.to(call.b).emit("roles_confirmed", {
@@ -967,6 +977,7 @@ async function startActualCall(call) {
     peerRole: call.roleA,
     topicId: call.selectedTopic,
     subtopicId: call.selectedSubtopic,
+    enableCallRoles: Boolean(call.enableCallRoles),
   });
 }
 
@@ -1178,6 +1189,22 @@ io.on("connection", (socket) => {
 
     const now = new Date();
     const negotiationEndsAt = Date.now() + 4 * 60 * 1000;
+    const targetLangCode = String(socket.data.language || peer.data.language || "english").trim().toLowerCase();
+
+    let enableCallRoles = false;
+    let role1 = "Role 1";
+    let role2 = "Role 2";
+
+    try {
+      const langDoc = await Language.findOne({ code: targetLangCode }).lean();
+      if (langDoc) {
+        enableCallRoles = Boolean(langDoc.enableCallRoles);
+        if (langDoc.role1) role1 = langDoc.role1;
+        if (langDoc.role2) role2 = langDoc.role2;
+      }
+    } catch (langErr) {
+      console.warn("Could not query Language for call roles config:", langErr);
+    }
 
     calls.set(callId, {
       callId,
@@ -1194,9 +1221,12 @@ io.on("connection", (socket) => {
       topicSelectedBy: null,
       roleA: null,
       roleB: null,
+      enableCallRoles,
+      role1,
+      role2,
       rolesConfirmed: false,
       actualCallStartedAt: null,
-      language: socket.data.language || peer.data.language || "english",
+      language: targetLangCode,
       timer: null,
     });
 
@@ -1206,7 +1236,8 @@ io.on("connection", (socket) => {
       userB: peer.data.userId,
       startedAt: now,
       negotiationStartedAt: now,
-      language: socket.data.language || peer.data.language || "english",
+      language: targetLangCode,
+      enableCallRoles,
     }).catch(() => {});
 
     socket.emit("matched", {
@@ -1217,6 +1248,9 @@ io.on("connection", (socket) => {
       peerUsername: peer.data.username,
       negotiationMode: true,
       negotiationEndsAt,
+      enableCallRoles,
+      role1,
+      role2,
     });
     peer.emit("matched", {
       callId,
@@ -1226,6 +1260,9 @@ io.on("connection", (socket) => {
       peerUsername: socket.data.username,
       negotiationMode: true,
       negotiationEndsAt,
+      enableCallRoles,
+      role1,
+      role2,
     });
     } catch (e) {
       console.error("Error in find_match:", e);
@@ -1296,6 +1333,9 @@ io.on("connection", (socket) => {
       peerUserId,
       yourRole: myRole,
       peerRole,
+      enableCallRoles: Boolean(call.enableCallRoles),
+      role1: call.role1 || "Role 1",
+      role2: call.role2 || "Role 2",
       selectedTopic: call.selectedTopic,
       selectedSubtopic: call.selectedSubtopic,
       rolesConfirmed: call.rolesConfirmed,
@@ -1696,7 +1736,12 @@ io.on("connection", (socket) => {
   socket.on("call_start_initiated", () => {
     const callId = getCallIdForSocket(socket);
     const call = calls.get(callId);
-    if (!call || !call.roleA || !call.roleB) return;
+    if (!call) return;
+    if (call.enableCallRoles && (!call.roleA || !call.roleB)) return;
+
+    if (!call.rolesConfirmed) {
+      startActualCall(call);
+    }
 
     io.to(call.a).emit("call_start_initiated");
     io.to(call.b).emit("call_start_initiated");
@@ -1776,9 +1821,16 @@ try {
     { call_id: { $regex: targetCallId, $options: "i" } },
     { $set: { qa_verified_segments_count: 0, transcription_status: "IN_TRANSCRIPTION" } }
   );
-  console.log(`Reset ${resSeg.modifiedCount} segments of call ${targetCallId} to unreviewed.`);
+  // Ensure scripted calls stay in pending until fully approved (never stuck in rejected)
+  const resetScriptedCalls = await CallSession.updateMany(
+    { callId: /^scripted_/, callStatus: "rejected" },
+    { $set: { callStatus: "pending", recordingAStatus: "pending", recordingBStatus: "pending" } }
+  );
+  if (resetScriptedCalls.modifiedCount > 0) {
+    console.log(`Reset ${resetScriptedCalls.modifiedCount} scripted calls from rejected to pending.`);
+  }
 } catch (e) {
-  console.error("QA Payrate / Segment reset error:", e.message);
+  console.error("QA Payrate / Segment / Scripted Call reset error:", e.message);
 }
 
 import { startPurgeIntroRecordingsCron } from "./jobs/purgeIntroRecordings.js";

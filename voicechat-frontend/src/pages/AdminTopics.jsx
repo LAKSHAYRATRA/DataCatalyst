@@ -1,12 +1,20 @@
 import React, { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useParams, Link } from "react-router-dom";
+import { Radio, Globe, FolderKanban, ArrowLeft } from "lucide-react";
 import { apiGet, apiPostJson, apiPutJson, apiDeleteJson } from "../lib/api.js";
 import AdminNav from "../components/AdminNav.jsx";
 
+function capitalize(str) {
+    if (!str) return "";
+    return str.charAt(0).toUpperCase() + str.slice(1);
+}
+
 export default function AdminTopics() {
     const navigate = useNavigate();
+    const { langCode, subprojectCode } = useParams();
     const [topics, setTopics] = useState([]);
     const [systemLanguages, setSystemLanguages] = useState([]);
+    const [subprojectDetails, setSubprojectDetails] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
     const [activeTab, setActiveTab] = useState("active"); // "active" | "disabled"
@@ -25,12 +33,17 @@ export default function AdminTopics() {
     useEffect(() => {
         loadTopics();
         loadLanguages();
-    }, []);
+    }, [langCode, subprojectCode]);
 
     async function loadLanguages() {
         try {
             const data = await apiGet("/api/languages");
-            setSystemLanguages(data.languages || []);
+            const list = data.languages || [];
+            setSystemLanguages(list);
+            if (subprojectCode) {
+                const found = list.find(l => l.code.toLowerCase() === subprojectCode.toLowerCase());
+                if (found) setSubprojectDetails(found);
+            }
         } catch (e) {
             console.error("Failed to load languages:", e);
         }
@@ -39,7 +52,8 @@ export default function AdminTopics() {
     async function loadTopics() {
         try {
             setLoading(true);
-            const data = await apiGet("/api/admin/topics");
+            const queryUrl = subprojectCode ? `/api/admin/topics?subproject=${encodeURIComponent(subprojectCode)}` : "/api/admin/topics";
+            const data = await apiGet(queryUrl);
             const loadedTopics = data.topics || [];
             setTopics(loadedTopics);
 
@@ -128,7 +142,7 @@ export default function AdminTopics() {
             setTopicForm({ title: topic.title, description: topic.description || "", isEnabled: topic.isEnabled, languages: topic.languages || [] });
         } else {
             setEditingTopic(null);
-            setTopicForm({ title: "", description: "", isEnabled: true, languages: [] });
+            setTopicForm({ title: "", description: "", isEnabled: true, languages: subprojectCode ? [subprojectCode] : [] });
         }
         setShowTopicModal(true);
     }
@@ -272,13 +286,40 @@ export default function AdminTopics() {
 
             {/* Content */}
             <div className="max-w-7xl mx-auto px-4 md:px-6 py-6 md:py-12">
+                {/* Breadcrumb if navigating through Language & Subproject */}
+                {langCode && subprojectCode && (
+                    <div className="flex items-center gap-2 text-xs font-semibold text-neutral-400 mb-4 pb-3 border-b border-neutral-800/80">
+                        <Link to="/admin/topics" className="hover:text-primary-400 flex items-center gap-1">
+                            <Radio className="w-3.5 h-3.5" />
+                            <span>Call Topics</span>
+                        </Link>
+                        <span>/</span>
+                        <Link to={`/admin/topics/${encodeURIComponent(langCode)}/subprojects`} className="hover:text-primary-400 flex items-center gap-1">
+                            <Globe className="w-3.5 h-3.5" />
+                            <span>{capitalize(langCode)}</span>
+                        </Link>
+                        <span>/</span>
+                        <span className="text-white flex items-center gap-1">
+                            <FolderKanban className="w-3.5 h-3.5 text-primary-400" />
+                            <span>{subprojectDetails?.projectName || subprojectDetails?.name || subprojectCode}</span>
+                        </span>
+                        <span>/</span>
+                        <span className="text-primary-400">Topics</span>
+                    </div>
+                )}
+
                 <div className="flex flex-col md:flex-row items-start md:items-center justify-between mb-6 md:mb-8 gap-4 border-b border-neutral-800 pb-6">
                     <div>
-                        <h1 className="text-2xl md:text-3xl font-bold text-white mb-2 flex items-center gap-3">
-                            Topics Management
-                        </h1>
+                        <div className="flex items-center gap-2 mb-1">
+                            <Link to={langCode ? `/admin/topics/${encodeURIComponent(langCode)}/subprojects` : "/admin/topics"} className="p-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-400 hover:text-white transition-colors mr-1">
+                                <ArrowLeft className="w-4 h-4" />
+                            </Link>
+                            <h1 className="text-2xl md:text-3xl font-bold text-white flex items-center gap-3">
+                                {subprojectDetails ? `${subprojectDetails.projectName || subprojectDetails.name} Topics` : "Topics Management"}
+                            </h1>
+                        </div>
                         <p className="text-sm md:text-base text-neutral-400">
-                            Configure conversation topics, adjust call limits, and manage active pipeline status
+                            {subprojectDetails ? `Manage conversation topics, scripts, and call quotas for ${subprojectDetails.name}` : "Configure conversation topics, adjust call limits, and manage active pipeline status"}
                         </p>
                     </div>
 

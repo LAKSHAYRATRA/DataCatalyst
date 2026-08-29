@@ -107,6 +107,12 @@ export default function AdminScriptedCallsReview() {
     const [lockTimerSeconds, setLockTimerSeconds] = useState(900);
     const [lockExpired, setLockExpired] = useState(false);
     const [allLanguages, setAllLanguages] = useState([]);
+    const [dialogueData, setDialogueData] = useState(null);
+    const [dialogueLoading, setDialogueLoading] = useState(false);
+    const [playingVerseIndex, setPlayingVerseIndex] = useState(null);
+    const [verseAudioBlobs, setVerseAudioBlobs] = useState({});
+    const [loadingVerseAudio, setLoadingVerseAudio] = useState(null);
+    const verseAudioRef = useRef(null);
 
     const audioRefs = useRef({});
 
@@ -135,21 +141,23 @@ export default function AdminScriptedCallsReview() {
     }, [page, statusFilter, languageFilter]);
 
     useEffect(() => {
-        if (!reviewing) return;
-        setLockTimerSeconds(900);
-        setLockExpired(false);
-        const interval = setInterval(() => {
-            setLockTimerSeconds((prev) => {
-                if (prev <= 1) {
-                    clearInterval(interval);
-                    setLockExpired(true);
-                    return 0;
-                }
-                return prev - 1;
-            });
-        }, 1000);
-        return () => clearInterval(interval);
-    }, [reviewing]);
+        let interval = null;
+        if (reviewing && lockTimerSeconds > 0 && !lockExpired) {
+            interval = setInterval(() => {
+                setLockTimerSeconds(prev => {
+                    if (prev <= 1) {
+                        setLockExpired(true);
+                        clearInterval(interval);
+                        return 0;
+                    }
+                    return prev - 1;
+                });
+            }, 1000);
+        }
+        return () => {
+            if (interval) clearInterval(interval);
+        };
+    }, [reviewing, lockTimerSeconds, lockExpired]);
 
     async function loadCalls() {
         setLoadingCalls(true);
@@ -172,6 +180,11 @@ export default function AdminScriptedCallsReview() {
         try {
             await apiPostJson(`/api/admin/qa/calls/${call.callId}/lock`);
             setReviewing(call);
+            setDialogueData(null);
+            setPlayingVerseIndex(null);
+            setLockTimerSeconds(15 * 60);
+            setLockExpired(false);
+
             const userAId = String(call.userA?._id || call.userA || "userA");
             const userBId = String(call.userB?._id || call.userB || "userB");
 
@@ -187,6 +200,16 @@ export default function AdminScriptedCallsReview() {
                 [userAId]: call.recordingAQCResult || null,
                 [userBId]: call.recordingBQCResult || null
             });
+
+            setDialogueLoading(true);
+            try {
+                const dData = await apiFetch(`/api/scripted-topics/call-dialogue/${call.callId}`);
+                setDialogueData(dData);
+            } catch (dErr) {
+                console.error("Failed to load dialogue turns:", dErr);
+            } finally {
+                setDialogueLoading(false);
+            }
         } catch (err) {
             await loadCalls();
             Swal.fire({
@@ -199,13 +222,279 @@ export default function AdminScriptedCallsReview() {
     }
 
     async function closeCallReview() {
+        if (verseAudioRef.current) {
+            verseAudioRef.current.pause();
+        }
         if (reviewing?.callId) {
             try {
                 await apiPostJson(`/api/admin/qa/calls/${reviewing.callId}/unlock`);
             } catch {}
         }
         setReviewing(null);
+        setDialogueData(null);
+        setPlayingVerseIndex(null);
         setLockExpired(false);
+    }
+
+    async function playVerseAudio(turnKey, audioUrl) {
+        if (!audioUrl) {
+            Swal.fire("Audio Missing", "No recording found for this verse.", "info");
+            return;
+        }
+
+        try {
+            let blobUrl = verseAudioBlobs[turnKey];
+            if (!blobUrl) {
+                setLoadingVerseAudio(turnKey);
+                const fullUrl = audioUrl.startsWith("http") ? audioUrl : `${BACKEND_URL}${audioUrl}`;
+                const audioBlob = await fetchDirectAudioBlob(fullUrl);
+                blobUrl = URL.createObjectURL(audioBlob);
+                setVerseAudioBlobs(prev => ({ ...prev, [turnKey]: blobUrl }));
+            }
+        } catch (err) {
+            console.error("Verse audio load failed:", err);
+            Swal.fire("Playback Failed", err.message || "Failed to load verse audio chunk", "error");
+        } finally {
+            setLoadingVerseAudio(null);
+        }
+    }
+
+    function handleApproveVerse(submissionId, turnIndex) {
+        if (!submissionId) {
+            Swal.fire("Error", "Submission ID missing for this verse", "error");
+            return;
+        }
+        if (dialogueData?.turns) {
+            const updatedTurns = dialogueData.turns.map(t => {
+                if (String(t.submissionId) === String(submissionId) && Number(t.turnIndex) === Number(turnIndex)) {
+                    return { ...t, status: "approved", rejectionReason: null, reviewNote: null };
+                }
+                return t;
+            });
+            setDialogueData(prev => ({ ...prev, turns: updatedTurns }));
+        }
+    }
+
+    async function handleRejectVerse(submissionId, turnIndex, speakerLabel) {
+        if (!submissionId) {
+            Swal.fire("Error", "Submission ID missing for this verse", "error");
+            return;
+        }
+
+        const { value: formValues } = await Swal.fire({
+            title: `Reject Verse (${speakerLabel})`,
+            html: `
+                <div class="space-y-3 text-left">
+                    <p class="text-xs text-neutral-400">Select reason for re-recording:</p>
+                    <select id="swal-reject-reason" class="w-full p-2.5 bg-neutral-900 border border-neutral-700 rounded-lg text-sm text-white focus:outline-none focus:border-indigo-500">
+                        <option value="Mispronunciation / Script Deviation">Mispronunciation / Script Deviation</option>
+                        <option value="Background Noise / Distortion">Background Noise / Distortion</option>
+                        <option value="Low Volume / Unclear Speech">Low Volume / Unclear Speech</option>
+                        <option value="Unnatural Pace / Hesitation">Unnatural Pace / Hesitation</option>
+                        <option value="Cut Off / Incomplete Verse">Cut Off / Incomplete Verse</option>
+                        <option value="Custom">Custom</option>
+                    </select>
+                    <div id="swal-custom-container" style="display: none;" class="space-y-1.5 pt-1">
+                        <label class="text-[11px] font-bold text-neutral-400 block">Enter Detailed Custom Reason / Note:</label>
+                        <textarea id="swal-custom-note" rows="3" placeholder="Enter detailed note for contributor (e.g., Please pronounce 'technology' clearly without background noise)..." class="w-full p-2.5 bg-neutral-900 border border-amber-500/80 rounded-lg text-xs text-white placeholder-neutral-500 focus:outline-none"></textarea>
+                    </div>
+                </div>
+            `,
+            didOpen: () => {
+                const select = document.getElementById("swal-reject-reason");
+                const customDiv = document.getElementById("swal-custom-container");
+                select.addEventListener("change", (e) => {
+                    if (e.target.value === "Custom") {
+                        customDiv.style.display = "block";
+                        document.getElementById("swal-custom-note")?.focus();
+                    } else {
+                        customDiv.style.display = "none";
+                    }
+                });
+            },
+            focusConfirm: false,
+            showCancelButton: true,
+            confirmButtonText: "Set Re-record Flag",
+            confirmButtonColor: "#ef4444",
+            cancelButtonColor: "#525252",
+            preConfirm: () => {
+                const selectReason = document.getElementById("swal-reject-reason").value;
+                if (selectReason === "Custom") {
+                    const customNote = document.getElementById("swal-custom-note")?.value?.trim();
+                    if (!customNote) {
+                        Swal.showValidationMessage("Please enter your detailed custom rejection note!");
+                        return false;
+                    }
+                    return { reason: "Custom", note: customNote };
+                } else {
+                    return { reason: selectReason, note: selectReason };
+                }
+            }
+        });
+
+        if (!formValues) return;
+
+        if (dialogueData?.turns) {
+            const updatedTurns = dialogueData.turns.map(t => {
+                if (String(t.submissionId) === String(submissionId) && Number(t.turnIndex) === Number(turnIndex)) {
+                    return {
+                        ...t,
+                        status: "rejected",
+                        rejectionReason: formValues.reason,
+                        reviewNote: formValues.note.trim()
+                    };
+                }
+                return t;
+            });
+            setDialogueData(prev => ({ ...prev, turns: updatedTurns }));
+        }
+    }
+
+    function handleApproveAllVerses() {
+        if (!dialogueData?.turns) return;
+        const updatedTurns = dialogueData.turns.map(t => ({
+            ...t,
+            status: "approved",
+            rejectionReason: null,
+            reviewNote: null
+        }));
+        setDialogueData(prev => ({ ...prev, turns: updatedTurns }));
+    }
+
+    async function handleSubmitFinalReview() {
+        if (!reviewing || !dialogueData?.turns || dialogueData.turns.length === 0) return;
+
+        const turns = dialogueData.turns;
+        const pendingTurns = turns.filter(t => t.status !== "approved" && t.status !== "rejected");
+
+        if (pendingTurns.length > 0) {
+            const result = await Swal.fire({
+                icon: "warning",
+                title: "Unreviewed Verses Remaining",
+                text: `There are ${pendingTurns.length} unreviewed verse(s). Would you like to approve all remaining verses and submit?`,
+                showCancelButton: true,
+                confirmButtonText: "Approve Remaining & Submit",
+                confirmButtonColor: "#10b981",
+                cancelButtonText: "Continue Reviewing",
+                cancelButtonColor: "#525252"
+            });
+
+            if (!result.isConfirmed) return;
+
+            // Mark remaining as approved
+            turns.forEach(t => {
+                if (t.status !== "approved" && t.status !== "rejected") {
+                    t.status = "approved";
+                    t.rejectionReason = null;
+                    t.reviewNote = null;
+                }
+            });
+        }
+
+        const rejectedCount = turns.filter(t => t.status === "rejected").length;
+        const approvedCount = turns.filter(t => t.status === "approved").length;
+
+        const decisions = turns.map(t => ({
+            submissionId: t.submissionId,
+            turnIndex: t.turnIndex,
+            status: t.status,
+            rejectionReason: t.rejectionReason,
+            reviewNote: t.reviewNote
+        }));
+
+        setActionLoading("submitting_review");
+        try {
+            const res = await apiPostJson(`/api/admin/qa/scripted/call/${reviewing.callId}/submit-review`, {
+                decisions
+            });
+
+            await Swal.fire({
+                icon: "success",
+                title: res.allApproved ? "Scripted Call Approved!" : "QA Review Submitted",
+                text: res.allApproved 
+                    ? `All ${approvedCount} verses approved. Call status marked as Approved.`
+                    : `Submitted successfully! ${rejectedCount} verse(s) flagged for contributor re-recording. Call remains in pending until completed.`,
+                confirmButtonColor: "#6366f1"
+            });
+
+            await closeCallReview();
+            await loadCalls();
+        } catch (err) {
+            console.error("Submit review failed:", err);
+            Swal.fire("Submission Failed", err.message || "Failed to submit scripted review.", "error");
+        } finally {
+            setActionLoading(null);
+        }
+    }
+
+    async function handleApproveSubmission(submissionId, speakerName) {
+        if (!submissionId) return;
+        const confirm = await Swal.fire({
+            title: `Approve All Verses for ${speakerName}?`,
+            text: "This will mark all verses recorded by this speaker as approved.",
+            icon: "question",
+            showCancelButton: true,
+            confirmButtonText: "Yes, Approve All",
+            confirmButtonColor: "#10b981"
+        });
+        if (!confirm.isConfirmed) return;
+
+        setActionLoading(`sub_${submissionId}`);
+        try {
+            await apiPostJson(`/api/admin/qa/scripted/submission/${submissionId}/approve-all`);
+            if (dialogueData?.turns) {
+                const updatedTurns = dialogueData.turns.map(t => {
+                    if (String(t.submissionId) === String(submissionId)) {
+                        return { ...t, status: "approved", rejectionReason: null };
+                    }
+                    return t;
+                });
+                setDialogueData(prev => ({ ...prev, turns: updatedTurns }));
+            }
+            Swal.fire("Approved", `All verses for ${speakerName} have been approved.`, "success");
+            await loadCalls();
+        } catch (err) {
+            Swal.fire("Action Failed", err.message || "Failed to approve verses", "error");
+        } finally {
+            setActionLoading(null);
+        }
+    }
+
+    async function handleApproveEntireCall(callId) {
+        const confirm = await Swal.fire({
+            title: "Approve Entire Scripted Dialogue?",
+            text: "This will approve all verses for both Speaker 1 and Speaker 2, completing the QA audit for this scripted call.",
+            icon: "success",
+            showCancelButton: true,
+            confirmButtonText: "Yes, Approve Entire Dialogue",
+            confirmButtonColor: "#10b981"
+        });
+        if (!confirm.isConfirmed) return;
+
+        setActionLoading("call_all");
+        try {
+            await apiPostJson(`/api/admin/qa/scripted/call/${callId}/approve-all`);
+            if (dialogueData?.turns) {
+                const updatedTurns = dialogueData.turns.map(t => ({
+                    ...t,
+                    status: "approved",
+                    rejectionReason: null
+                }));
+                setDialogueData(prev => ({ ...prev, turns: updatedTurns }));
+            }
+            setReviewing(prev => ({
+                ...prev,
+                callStatus: "approved",
+                recordingAStatus: "approved",
+                recordingBStatus: "approved"
+            }));
+            Swal.fire("Success", "Entire scripted dialogue approved!", "success");
+            await loadCalls();
+        } catch (err) {
+            Swal.fire("Action Failed", err.message || "Failed to approve dialogue", "error");
+        } finally {
+            setActionLoading(null);
+        }
     }
 
     async function playAudio(callId, targetSpeaker) {
@@ -530,31 +819,67 @@ export default function AdminScriptedCallsReview() {
 
                             {/* Modal Body */}
                             <div className="p-6 overflow-y-auto space-y-6">
-                                {/* Top Stereo Audio Player */}
-                                <div className="p-4 rounded-xl bg-gradient-to-r from-emerald-950/40 via-neutral-800 to-indigo-950/40 border border-neutral-700/80 space-y-3">
-                                    <div className="flex items-center justify-between">
+                                {/* Top Control Bar & Full Stereo Audio */}
+                                <div className="p-4 rounded-xl bg-gradient-to-r from-emerald-950/40 via-neutral-800 to-indigo-950/40 border border-neutral-700/80 space-y-4">
+                                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
                                         <div className="flex items-center gap-2">
                                             <Sparkles className="w-4 h-4 text-emerald-400" />
-                                            <span className="text-xs font-bold text-white uppercase tracking-wider">
-                                                Full Stitched Conversation (Stereo Dual-Channel)
-                                            </span>
+                                            <div>
+                                                <span className="text-xs font-bold text-white uppercase tracking-wider block">
+                                                    Full Stitched Conversation (Dual-Channel Stereo)
+                                                </span>
+                                                <span className="text-[11px] text-neutral-400">
+                                                    Left Channel: Speaker 1 (Host) • Right Channel: Speaker 2 (Guest)
+                                                </span>
+                                            </div>
                                         </div>
-                                        <span className="text-xs text-neutral-400 font-mono">
-                                            Left: Spk A • Right: Spk B
-                                        </span>
+
+                                        {/* Global Bulk Actions */}
+                                        <div className="flex items-center flex-wrap gap-2">
+                                            {dialogueData?.s1Submission?._id && (
+                                                <button
+                                                    onClick={() => handleApproveSubmission(dialogueData.s1Submission._id, "Speaker 1")}
+                                                    disabled={actionLoading === `sub_${dialogueData.s1Submission._id}`}
+                                                    className="px-3 py-1.5 rounded-lg bg-primary-700/80 hover:bg-primary-600 border border-primary-500/50 text-white font-semibold text-xs transition-all disabled:opacity-50 flex items-center gap-1.5"
+                                                >
+                                                    <Check className="w-3.5 h-3.5" />
+                                                    <span>Approve All S1 Verses</span>
+                                                </button>
+                                            )}
+                                            {dialogueData?.s2Submission?._id && (
+                                                <button
+                                                    onClick={() => handleApproveSubmission(dialogueData.s2Submission._id, "Speaker 2")}
+                                                    disabled={actionLoading === `sub_${dialogueData.s2Submission._id}`}
+                                                    className="px-3 py-1.5 rounded-lg bg-indigo-700/80 hover:bg-indigo-600 border border-indigo-500/50 text-white font-semibold text-xs transition-all disabled:opacity-50 flex items-center gap-1.5"
+                                                >
+                                                    <Check className="w-3.5 h-3.5" />
+                                                    <span>Approve All S2 Verses</span>
+                                                </button>
+                                            )}
+                                            <button
+                                                onClick={() => handleApproveEntireCall(reviewing.callId)}
+                                                disabled={actionLoading === "call_all"}
+                                                className="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 font-bold text-xs text-white shadow-md transition-all disabled:opacity-50 flex items-center gap-1.5"
+                                            >
+                                                <Check className="w-4 h-4" />
+                                                <span>Approve Entire Dialogue</span>
+                                            </button>
+                                        </div>
                                     </div>
-                                    <div className="flex items-center gap-2">
+
+                                    {/* Stereo Player */}
+                                    <div className="flex items-center gap-2 pt-1">
                                         <button
                                             onClick={() => playAudio(reviewing.callId, "stereo")}
                                             disabled={loadingAudio === `${reviewing.callId}_stereo`}
-                                            className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 font-bold text-xs text-white shadow-md transition-all disabled:opacity-50"
+                                            className="flex-1 flex items-center justify-center gap-2 py-2 rounded-xl bg-neutral-750 hover:bg-neutral-700 font-semibold text-xs text-neutral-200 border border-neutral-600 transition-all disabled:opacity-50"
                                         >
                                             {loadingAudio === `${reviewing.callId}_stereo` ? (
-                                                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                                <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
                                             ) : (
                                                 <>
-                                                    <Play className="w-4 h-4 fill-white" />
-                                                    <span>Play Full Stitched Stereo Audio</span>
+                                                    <Play className="w-3.5 h-3.5 fill-current text-emerald-400" />
+                                                    <span>Play Full Merged Conversation</span>
                                                 </>
                                             )}
                                         </button>
@@ -569,202 +894,297 @@ export default function AdminScriptedCallsReview() {
                                     )}
                                 </div>
 
-                                {/* Per-Speaker Review Cards */}
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                    {[
-                                        { user: reviewing.userA, side: "A", roleLabel: "Speaker A (Host)", status: reviewing.recordingAStatus, file: reviewing.recordingAFile, isHost: true },
-                                        { user: reviewing.userB, side: "B", roleLabel: "Speaker B (Guest)", status: reviewing.recordingBStatus, file: reviewing.recordingBFile, isHost: false }
-                                    ].map(({ user, side, roleLabel, status, file, isHost }) => {
-                                        const userId = String(user?._id || user || (isHost ? "userA" : "userB"));
-                                        const audioKey = `${reviewing.callId}_${userId}`;
-                                        const selectedReasons = getSelectedReasons(userId);
+                                {/* Phrase-by-Phrase / Verse-by-Verse Review Stream */}
+                                <div className="space-y-4">
+                                    {(() => {
+                                        const turns = dialogueData?.turns || [];
+                                        const approvedCount = turns.filter(t => t.status === "approved").length;
+                                        const rejectedCount = turns.filter(t => t.status === "rejected").length;
+                                        const pendingCount = turns.filter(t => t.status !== "approved" && t.status !== "rejected").length;
 
                                         return (
-                                            <div key={side} className="p-5 rounded-2xl bg-neutral-800/80 border border-neutral-700/80 flex flex-col justify-between space-y-4 shadow-lg">
-                                                <div className="space-y-3">
-                                                    {/* Header */}
-                                                    <div className="flex items-center justify-between pb-2 border-b border-neutral-700/60">
-                                                        <div>
-                                                            <div className={`text-xs font-bold uppercase tracking-wider ${isHost ? 'text-primary-400' : 'text-indigo-400'}`}>
-                                                                {roleLabel}
-                                                            </div>
-                                                            <div className="text-sm font-semibold text-white mt-0.5">
-                                                                {user?.firstname || (isHost ? "Speaker A" : "Speaker B")} {user?.lastname || ""}
-                                                            </div>
-                                                            <div className="text-[11px] font-mono text-neutral-400">
-                                                                {user?.speakerId || user?.username || userId}
-                                                            </div>
-                                                        </div>
-                                                        <StatusBadge status={status} />
+                                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-neutral-750">
+                                                <div>
+                                                    <div className="flex items-center gap-2">
+                                                        <Radio className="w-4 h-4 text-primary-400" />
+                                                        <h3 className="text-sm font-bold text-white">
+                                                            Phrase-by-Phrase Script Audit
+                                                        </h3>
                                                     </div>
-
-                                                    {/* Audio Player */}
-                                                    <div>
-                                                        <label className="block text-[10px] text-neutral-400 font-bold uppercase mb-1.5">
-                                                            Audio Waveform & Playback
-                                                        </label>
-                                                        {audioUrls[audioKey] ? (
-                                                            <div className="space-y-2">
-                                                                <AudioVisualizer 
-                                                                    url={audioUrls[audioKey]}
-                                                                    audioRef={{ current: audioRefs.current[audioKey] }} 
-                                                                />
-                                                                <audio 
-                                                                    ref={el => audioRefs.current[audioKey] = el}
-                                                                    controls 
-                                                                    src={audioUrls[audioKey]} 
-                                                                    className="w-full h-8 rounded" 
-                                                                />
-                                                            </div>
-                                                        ) : (
-                                                            <button
-                                                                onClick={() => playAudio(reviewing.callId, userId)}
-                                                                disabled={loadingAudio === audioKey}
-                                                                className={`w-full py-2.5 rounded-xl font-bold text-xs text-white shadow-md transition-all flex items-center justify-center gap-2 ${isHost ? 'bg-primary-600 hover:bg-primary-500' : 'bg-indigo-600 hover:bg-indigo-500'} disabled:opacity-50`}
-                                                            >
-                                                                {loadingAudio === audioKey ? (
-                                                                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                                                                ) : (
-                                                                    <>
-                                                                        <Play className="w-4 h-4 fill-white" />
-                                                                        <span>Play {roleLabel} Audio</span>
-                                                                    </>
-                                                                )}
-                                                            </button>
-                                                        )}
-                                                    </div>
-
-                                                    {/* Audio QC Analyzer Card */}
-                                                    <div className="pt-2 border-t border-neutral-700/60">
-                                                        <button
-                                                            onClick={() => runAudioQC(reviewing.callId, userId)}
-                                                            disabled={qcLoading[userId]}
-                                                            className="w-full py-1.5 px-3 rounded-lg bg-neutral-750 hover:bg-neutral-700 text-xs font-semibold text-neutral-200 border border-neutral-600 flex items-center justify-center gap-1.5 transition-all disabled:opacity-50"
-                                                        >
-                                                            {qcLoading[userId] ? (
-                                                                <>
-                                                                    <div className="w-3.5 h-3.5 border-2 border-primary-400 border-t-transparent rounded-full animate-spin" />
-                                                                    <span>Running QC Analyzer...</span>
-                                                                </>
-                                                            ) : (
-                                                                <>
-                                                                    <Activity className="w-3.5 h-3.5 text-primary-400" />
-                                                                    <span>{qcResults[userId] ? "Re-run Audio QC Analyzer" : "Run Audio QC Analyzer"}</span>
-                                                                </>
-                                                            )}
-                                                        </button>
-
-                                                        {qcErrors[userId] && (
-                                                            <div className="mt-1.5 text-[11px] text-rose-400 font-medium">
-                                                                ⚠️ {qcErrors[userId]}
-                                                            </div>
-                                                        )}
-
-                                                        {qcResults[userId] && (
-                                                            <div className="mt-2 p-2.5 rounded-xl bg-neutral-900/60 border border-neutral-700/60 text-[11px] space-y-2">
-                                                                <div className="flex justify-between">
-                                                                    <span className="text-neutral-400">YAMNet Noise:</span>
-                                                                    <span className="font-bold text-emerald-400">
-                                                                        {qcResults[userId].yamnet?.rating_label || "Pass"}
-                                                                    </span>
-                                                                </div>
-                                                                {qcResults[userId].freq && (
-                                                                    <div className="grid grid-cols-2 gap-2 text-neutral-300">
-                                                                        <div>Bit Verdict: <span className="font-bold">{qcResults[userId].freq.bit_verdict || "24-bit"}</span></div>
-                                                                        <div>Noise Floor: <span className="font-bold">{qcResults[userId].freq.noise_floor_db || "-60"} dBFS</span></div>
-                                                                    </div>
-                                                                )}
-                                                            </div>
-                                                        )}
-                                                    </div>
-
-                                                    {/* Review Note */}
-                                                    <div>
-                                                        <label className="block text-[10px] text-neutral-400 font-bold uppercase mb-1">
-                                                            Review Note
-                                                        </label>
-                                                        <textarea
-                                                            rows={2}
-                                                            value={recordingNotes[userId] || ""}
-                                                            onChange={(e) => setRecordingNotes(prev => ({ ...prev, [userId]: e.target.value }))}
-                                                            placeholder={`Add specific feedback for ${roleLabel}...`}
-                                                            className="w-full p-2.5 rounded-xl bg-neutral-900/80 border border-neutral-700 text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-primary-500 resize-none"
-                                                        />
-                                                    </div>
-
-                                                    {/* Rejection Reasons Selector */}
-                                                    <div className="p-2.5 rounded-xl bg-neutral-900/60 border border-neutral-700/60 space-y-1.5">
-                                                        <div className="text-[10px] font-bold text-neutral-400 uppercase flex items-center justify-between">
-                                                            <span>Rejection Reason(s)</span>
-                                                            <span className="text-[9px] text-neutral-500 font-normal">Required if rejecting</span>
-                                                        </div>
-                                                        <div className="flex flex-wrap gap-2 pt-1">
-                                                            {[
-                                                                { id: "Off-Topic Conversation", label: "🗣️ Off-Topic" },
-                                                                { id: "Noisy", label: "🔊 Noisy" },
-                                                                { id: "Script Deviation", label: "🎙️ Script Deviation" }
-                                                            ].map(r => (
-                                                                <label key={r.id} className="inline-flex items-center gap-1.5 text-xs text-neutral-300 cursor-pointer select-none bg-neutral-800/80 px-2 py-1 rounded-lg border border-neutral-700 hover:border-neutral-600 transition-colors">
-                                                                    <input
-                                                                        type="checkbox"
-                                                                        checked={selectedReasons.includes(r.id)}
-                                                                        onChange={() => toggleReason(userId, r.id)}
-                                                                        className="w-3.5 h-3.5 text-rose-600 bg-neutral-900 border-neutral-600 rounded focus:ring-rose-500 cursor-pointer"
-                                                                    />
-                                                                    <span>{r.label}</span>
-                                                                </label>
-                                                            ))}
-                                                        </div>
-                                                    </div>
+                                                    <p className="text-xs text-neutral-400 mt-0.5">
+                                                        Review dialogue chunk by chunk in sequence. Once all verses are decided, submit the final review below.
+                                                    </p>
                                                 </div>
 
-                                                {/* Action Buttons */}
-                                                <div className="grid grid-cols-2 gap-2 pt-2 border-t border-neutral-700/60">
-                                                    <button
-                                                        onClick={() => actOnRecording(reviewing.callId, userId, "approve")}
-                                                        disabled={actionLoading === `approve_${userId}`}
-                                                        className="py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-md transition-all disabled:opacity-40 flex items-center justify-center gap-1"
-                                                    >
-                                                        {actionLoading === `approve_${userId}` ? (
-                                                            <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                                                        ) : (
-                                                            <>
-                                                                <Check className="w-3.5 h-3.5" />
-                                                                <span>Approve</span>
-                                                            </>
+                                                <div className="flex items-center gap-2 flex-wrap">
+                                                    <div className="flex items-center gap-1.5 text-xs font-bold">
+                                                        <span className="px-2 py-0.5 rounded bg-emerald-950/80 text-emerald-300 border border-emerald-700/50">
+                                                            {approvedCount} Approved
+                                                        </span>
+                                                        {rejectedCount > 0 && (
+                                                            <span className="px-2 py-0.5 rounded bg-rose-950/80 text-rose-300 border border-rose-700/50">
+                                                                {rejectedCount} Re-record
+                                                            </span>
                                                         )}
-                                                    </button>
+                                                        {pendingCount > 0 && (
+                                                            <span className="px-2 py-0.5 rounded bg-amber-950/80 text-amber-300 border border-amber-700/50">
+                                                                {pendingCount} Pending
+                                                            </span>
+                                                        )}
+                                                    </div>
 
-                                                    <button
-                                                        onClick={() => actOnRecording(reviewing.callId, userId, "reject")}
-                                                        disabled={actionLoading === `reject_${userId}`}
-                                                        className="py-2 px-3 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs shadow-md transition-all disabled:opacity-40 flex items-center justify-center gap-1"
-                                                    >
-                                                        {actionLoading === `reject_${userId}` ? (
-                                                            <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                                                        ) : (
-                                                            <>
-                                                                <X className="w-3.5 h-3.5" />
-                                                                <span>Reject</span>
-                                                            </>
-                                                        )}
-                                                    </button>
+                                                    {turns.length > 0 && (
+                                                        <button
+                                                            onClick={handleApproveAllVerses}
+                                                            className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/40 text-xs font-bold transition-all cursor-pointer shadow-sm"
+                                                        >
+                                                            <CheckCircle2 className="w-3.5 h-3.5" />
+                                                            <span>Approve All Verses</span>
+                                                        </button>
+                                                    )}
                                                 </div>
                                             </div>
                                         );
-                                    })}
+                                    })()}
+
+                                    {dialogueLoading ? (
+                                        <div className="py-12 flex flex-col items-center justify-center gap-2 text-neutral-400">
+                                            <div className="w-6 h-6 border-2 border-primary-500 border-t-transparent rounded-full animate-spin" />
+                                            <span className="text-xs">Loading dialogue turns & individual verse audio...</span>
+                                        </div>
+                                    ) : !dialogueData?.turns || dialogueData.turns.length === 0 ? (
+                                        <div className="py-8 text-center text-xs text-neutral-400 bg-neutral-800/40 rounded-xl border border-neutral-800">
+                                            No dialogue verses found for this scripted conversation.
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-3">
+                                            {dialogueData.turns.map((turn, idx) => {
+                                                const isS1 = turn.speakerRole === "speaker1";
+                                                const turnKey = `${turn.speakerRole}_${turn.turnIndex}`;
+                                                const isPlaying = playingVerseIndex === turnKey;
+                                                const isLoading = loadingVerseAudio === turnKey;
+                                                const submissionId = turn.submissionId;
+
+                                                return (
+                                                    <div
+                                                        key={idx}
+                                                        className={`p-4 rounded-xl border transition-all ${
+                                                            turn.status === "approved"
+                                                                ? "bg-emerald-950/20 border-emerald-800/40"
+                                                                : turn.status === "rejected"
+                                                                ? "bg-rose-950/25 border-rose-800/50"
+                                                                : "bg-neutral-800/80 border-neutral-700/80"
+                                                        }`}
+                                                    >
+                                                        {/* Verse Header */}
+                                                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2.5 border-b border-neutral-700/40">
+                                                            <div className="flex items-center gap-2 flex-wrap">
+                                                                <span className="text-[11px] font-mono font-bold px-2 py-0.5 rounded bg-neutral-900 text-neutral-300 border border-neutral-700">
+                                                                    Turn {idx + 1}
+                                                                </span>
+                                                                <span className={`text-xs font-bold px-2.5 py-0.5 rounded-full ${
+                                                                    isS1 
+                                                                        ? "bg-primary-900/60 text-primary-300 border border-primary-700/50" 
+                                                                        : "bg-indigo-900/60 text-indigo-300 border border-indigo-700/50"
+                                                                }`}>
+                                                                    {turn.speakerLabel}
+                                                                </span>
+                                                                <span className="text-xs font-semibold text-neutral-300">
+                                                                    {turn.speakerUser?.name || "Contributor"}
+                                                                </span>
+                                                                {turn.speakerUser?.speaker_id && (
+                                                                    <span className="text-[10px] font-mono text-neutral-400">
+                                                                        ({turn.speakerUser.speaker_id})
+                                                                    </span>
+                                                                )}
+                                                            </div>
+
+                                                            {/* Status Badge */}
+                                                            <div>
+                                                                {turn.status === "approved" ? (
+                                                                    <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-900/60 text-emerald-300 border border-emerald-600/50">
+                                                                        <Check className="w-3 h-3" />
+                                                                        <span>Marked Approved</span>
+                                                                    </span>
+                                                                ) : turn.status === "rejected" ? (
+                                                                    <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-rose-900/60 text-rose-300 border border-rose-600/50">
+                                                                        <X className="w-3 h-3" />
+                                                                        <span>Marked Re-record</span>
+                                                                    </span>
+                                                                ) : (
+                                                                    <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-amber-900/60 text-amber-300 border border-amber-600/50">
+                                                                        <Clock className="w-3 h-3" />
+                                                                        <span>Unreviewed</span>
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                        </div>
+
+                                                        {/* Verse Content & Player */}
+                                                        <div className="py-3 space-y-2.5">
+                                                            {/* Script Text */}
+                                                            <div className="text-sm font-medium text-white leading-relaxed bg-neutral-900/60 p-3 rounded-lg border border-neutral-750">
+                                                                "{turn.text}"
+                                                            </div>
+
+                                                            {/* Reviewer Note / Rejection Reason if flagged */}
+                                                            {turn.status === "rejected" && (
+                                                                <div className="p-2.5 rounded-lg bg-rose-900/30 border border-rose-700/50 text-xs space-y-1">
+                                                                    <div className="font-bold text-rose-300 flex items-center gap-1">
+                                                                        <span>⚠️ Rejection Reason:</span>
+                                                                        <span className="text-rose-200 font-normal">{turn.rejectionReason || "Needs re-recording"}</span>
+                                                                    </div>
+                                                                    {turn.reviewNote && (
+                                                                        <div className="text-neutral-300 text-[11px]">
+                                                                            <span className="font-semibold text-rose-400">Reviewer Note: </span>
+                                                                            "{turn.reviewNote}"
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                            )}
+
+                                                            {/* Audio Controls & Actions */}
+                                                            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pt-2 border-t border-neutral-700/40">
+                                                                {/* Audio Player with Native Browser Forward/Backward Controls */}
+                                                                <div className="flex-1 flex flex-col sm:flex-row sm:items-center gap-3">
+                                                                    {verseAudioBlobs[turnKey] ? (
+                                                                        <div className="flex items-center gap-2 w-full max-w-md">
+                                                                            <audio
+                                                                                src={verseAudioBlobs[turnKey]}
+                                                                                controls
+                                                                                autoPlay
+                                                                                className="w-full h-8 rounded-lg bg-neutral-900 border border-neutral-700"
+                                                                            />
+                                                                        </div>
+                                                                    ) : (
+                                                                        <button
+                                                                            onClick={() => playVerseAudio(turnKey, turn.audioUrl)}
+                                                                            disabled={isLoading}
+                                                                            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg font-bold text-xs shadow-md transition-all cursor-pointer ${
+                                                                                isS1
+                                                                                    ? "bg-primary-600 hover:bg-primary-500 text-white"
+                                                                                    : "bg-indigo-600 hover:bg-indigo-500 text-white"
+                                                                            }`}
+                                                                        >
+                                                                            {isLoading ? (
+                                                                                <>
+                                                                                    <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                                                                    <span>Loading Player...</span>
+                                                                                </>
+                                                                            ) : (
+                                                                                <>
+                                                                                    <Play className="w-3.5 h-3.5 fill-white" />
+                                                                                    <span>Play Chunk ({turn.durationSec ? `${turn.durationSec.toFixed(1)}s` : 'Audio'})</span>
+                                                                                </>
+                                                                            )}
+                                                                        </button>
+                                                                    )}
+
+                                                                </div>
+
+                                                                {/* Granular Approve & Reject Buttons */}
+                                                                <div className="flex items-center gap-2 shrink-0">
+                                                                    <button
+                                                                        onClick={() => handleApproveVerse(submissionId, turn.turnIndex)}
+                                                                        className={`flex items-center gap-1 px-3 py-1.5 rounded-lg font-bold text-xs shadow transition-all cursor-pointer ${
+                                                                            turn.status === "approved"
+                                                                                ? "bg-emerald-600 text-white ring-2 ring-emerald-400"
+                                                                                : "bg-neutral-700 hover:bg-emerald-600 text-neutral-200 hover:text-white"
+                                                                        }`}
+                                                                    >
+                                                                        <Check className="w-3.5 h-3.5" />
+                                                                        <span>Approve</span>
+                                                                    </button>
+
+                                                                    <button
+                                                                        onClick={() => handleRejectVerse(submissionId, turn.turnIndex, turn.speakerLabel)}
+                                                                        className={`flex items-center gap-1 px-3 py-1.5 rounded-lg font-bold text-xs shadow transition-all cursor-pointer ${
+                                                                            turn.status === "rejected"
+                                                                                ? "bg-rose-600 text-white ring-2 ring-rose-400"
+                                                                                : "bg-neutral-700 hover:bg-rose-600 text-neutral-200 hover:text-white"
+                                                                        }`}
+                                                                    >
+                                                                        <X className="w-3.5 h-3.5" />
+                                                                        <span>Reject / Re-record</span>
+                                                                    </button>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
                                 </div>
                             </div>
 
-                            {/* Modal Footer */}
-                            <div className="p-4 border-t border-neutral-750 bg-neutral-800/60 flex items-center justify-end">
-                                <button
-                                    onClick={closeCallReview}
-                                    className="px-5 py-2 rounded-xl bg-neutral-700 hover:bg-neutral-600 text-xs font-bold text-neutral-200 transition-colors"
-                                >
-                                    Close Modal
-                                </button>
-                            </div>
+                            {/* Modal Footer with Review Summary & Submit Button */}
+                            {(() => {
+                                const turns = dialogueData?.turns || [];
+                                const approvedCount = turns.filter(t => t.status === "approved").length;
+                                const rejectedCount = turns.filter(t => t.status === "rejected").length;
+                                const pendingCount = turns.filter(t => t.status !== "approved" && t.status !== "rejected").length;
+                                const isSubmitting = actionLoading === "submitting_review";
+
+                                return (
+                                    <div className="p-4 border-t border-neutral-750 bg-neutral-900 flex flex-col sm:flex-row sm:items-center justify-between gap-3 sticky bottom-0 z-10">
+                                        <div className="flex items-center gap-2 text-xs">
+                                            {pendingCount > 0 ? (
+                                                <div className="flex items-center gap-1.5 text-amber-400 font-bold">
+                                                    <Clock className="w-4 h-4" />
+                                                    <span>{pendingCount} of {turns.length} verses unreviewed</span>
+                                                </div>
+                                            ) : rejectedCount > 0 ? (
+                                                <div className="flex items-center gap-1.5 text-rose-400 font-bold">
+                                                    <AlertCircle className="w-4 h-4" />
+                                                    <span>{rejectedCount} re-record request(s), {approvedCount} approved</span>
+                                                </div>
+                                            ) : (
+                                                <div className="flex items-center gap-1.5 text-emerald-400 font-bold">
+                                                    <CheckCircle2 className="w-4 h-4" />
+                                                    <span>All {turns.length} verses marked approved</span>
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        <div className="flex items-center gap-3 justify-end">
+                                            <button
+                                                onClick={closeCallReview}
+                                                disabled={isSubmitting}
+                                                className="px-4 py-2.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-xs font-bold text-neutral-300 transition-colors cursor-pointer"
+                                            >
+                                                Cancel
+                                            </button>
+
+                                            <button
+                                                onClick={handleSubmitFinalReview}
+                                                disabled={isSubmitting || turns.length === 0}
+                                                className={`flex items-center gap-2 px-6 py-2.5 rounded-xl font-bold text-xs shadow-lg transition-all cursor-pointer ${
+                                                    rejectedCount > 0
+                                                        ? "bg-gradient-to-r from-rose-600 to-amber-600 hover:from-rose-500 hover:to-amber-500 text-white"
+                                                        : "bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-900/30"
+                                                }`}
+                                            >
+                                                {isSubmitting ? (
+                                                    <>
+                                                        <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                                        <span>Submitting Decisions...</span>
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <CheckCircle2 className="w-4 h-4" />
+                                                        <span>
+                                                            {rejectedCount > 0
+                                                                ? `Submit Decision (${rejectedCount} Re-records)`
+                                                                : `Submit & Approve Call (${approvedCount}/${turns.length})`}
+                                                        </span>
+                                                    </>
+                                                )}
+                                            </button>
+                                        </div>
+                                    </div>
+                                );
+                            })()}
                         </div>
                     </div>
                 )}

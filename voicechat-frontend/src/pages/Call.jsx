@@ -105,6 +105,9 @@ export default function Call() {
   const [topicConfirmed, setTopicConfirmed] = useState(false);
   const [myRole, setMyRole] = useState(null);
   const [peerRole, setPeerRole] = useState(null);
+  const [enableCallRoles, setEnableCallRoles] = useState(false);
+  const [role1Name, setRole1Name] = useState("Role 1");
+  const [role2Name, setRole2Name] = useState("Role 2");
   const [showCountdown, setShowCountdown] = useState(false);
   const [countdownValue, setCountdownValue] = useState(5);
   const [showInstructionModal, setShowInstructionModal] = useState(false);
@@ -918,6 +921,9 @@ export default function Call() {
         setSelectedSubtopic(null);
         setMyRole(null);
         setPeerRole(null);
+        setEnableCallRoles(Boolean(payload.enableCallRoles));
+        setRole1Name(payload.role1 || "Role 1");
+        setRole2Name(payload.role2 || "Role 2");
 
         // Timer logic for negotiation (local countdown)
         const interval = setInterval(() => {
@@ -1217,6 +1223,9 @@ export default function Call() {
             selectedTopic={selectedTopic}
             selectedSubtopic={selectedSubtopic}
             topicConfirmed={topicConfirmed}
+            enableCallRoles={enableCallRoles}
+            role1Name={role1Name}
+            role2Name={role2Name}
             myRole={myRole}
             peerRole={peerRole}
             showCountdown={showCountdown}

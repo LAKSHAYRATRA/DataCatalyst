@@ -263,6 +263,34 @@ export default function LanguageApply() {
             setMyApps(appsRes?.applications || []);
             setGlobalLanguages(langsRes?.languages || []);
             setScriptedLanguages((scriptedRes?.languages || []).filter(l => l.enabled));
+
+            const params = new URLSearchParams(window.location.search);
+            const pType = params.get("type");
+            const pCode = params.get("code") || params.get("lang");
+            const pCompany = params.get("company") || params.get("companyId");
+            if (pType) {
+                const normType = pType === "scripted" ? "scripted_call" : pType;
+                setApplicationType(normType);
+            } else if (pCompany) {
+                setApplicationType("phrase");
+            }
+            if (pCompany) {
+                const cleanComp = String(pCompany).trim().toLowerCase();
+                const matchedCompany = (companiesRes?.companies || []).find(c => 
+                    String(c.name || "").trim().toLowerCase() === cleanComp ||
+                    String(c.projectName || "").trim().toLowerCase() === cleanComp ||
+                    String(c._id || "").toLowerCase() === cleanComp
+                );
+                const compName = matchedCompany ? matchedCompany.name : pCompany;
+                setSelectedCompany(compName);
+
+                if (matchedCompany && Array.isArray(matchedCompany.languages) && matchedCompany.languages.length === 1 && !pCode) {
+                    setSelectedLanguage(matchedCompany.languages[0]);
+                }
+            }
+            if (pCode) {
+                setSelectedLanguage(pCode);
+            }
         } catch (e) {
             console.error("Load error:", e);
             setError("Failed to load projects: " + e.message);
@@ -845,18 +873,16 @@ export default function LanguageApply() {
                                                          const comp = companies.find(c => c.name === selectedCompany);
                                                          if (!comp || !comp.languages) return null;
                                                          const compLangs = comp.languages.map(l => String(l).toLowerCase());
-                                                         
                                                          return compLangs.map(code => {
-                                                              const match = globalLanguages.find(g => g.code?.toLowerCase() === code);
-                                                              const displayName = match ? match.name : (code.charAt(0).toUpperCase() + code.slice(1));
-                                                              const st = getStatus(selectedCompany, code, 'phrase');
-                                                              const statusSuffix = st === 'pending' ? ' (Already Applied - Pending)' : st === 'approved' ? ' (Already Applied - Approved)' : '';
-                                                              return (
-                                                                  <option key={code} value={code}>
-                                                                      {displayName}{statusSuffix}
-                                                                  </option>
-                                                              );
-                                                           });
+                                                             const displayName = code.charAt(0).toUpperCase() + code.slice(1);
+                                                             const st = getStatus(selectedCompany, code, 'phrase');
+                                                             const statusSuffix = st === 'pending' ? ' (Already Applied - Pending)' : st === 'approved' ? ' (Already Applied - Approved)' : '';
+                                                             return (
+                                                                 <option key={code} value={code}>
+                                                                     {displayName}{statusSuffix}
+                                                                 </option>
+                                                             );
+                                                         });
                                                      }
                                                      if (applicationType === 'scripted_call') {
                                                          return scriptedLanguages.filter(lang => {

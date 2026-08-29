@@ -2,7 +2,7 @@ import React from 'react';
 import TopicSelector from './TopicSelector';
 import RoleSelector from './RoleSelector';
 import CountdownOverlay from '../CountdownOverlay';
-import { Clock, Users, BookOpen, AlertCircle, X } from 'lucide-react';
+import { Clock, Users, BookOpen, AlertCircle, X, Play, Check } from 'lucide-react';
 
 export default function NegotiationPhase({
     negotiationTimer,
@@ -12,6 +12,9 @@ export default function NegotiationPhase({
     selectedTopic,
     selectedSubtopic,
     topicConfirmed,
+    enableCallRoles = false,
+    role1Name = "Role 1",
+    role2Name = "Role 2",
     myRole,
     peerRole,
     showCountdown,
@@ -80,7 +83,9 @@ export default function NegotiationPhase({
                     <div>
                         <h2 className="text-2xl font-black text-white tracking-tight">Negotiation Phase</h2>
                         <p className="text-xs text-neutral-400 mt-1 max-w-md mx-auto">
-                            Claim a conversation topic with your partner and confirm your speaking roles before the call starts.
+                            {enableCallRoles
+                                ? "Claim a conversation topic with your partner and confirm your speaking roles before the call starts."
+                                : "Claim and confirm a conversation topic with your partner to begin the call."}
                         </p>
                     </div>
 
@@ -106,15 +111,51 @@ export default function NegotiationPhase({
                     onConfirm={onConfirmTopic}
                 />
 
-                {/* Step 2: Role Selection */}
+                {/* Step 2: Role Selection (If Roles Enabled) OR Direct Start Call (If Roles Disabled) */}
                 {topicConfirmed && (
-                    <RoleSelector
-                        myRole={myRole}
-                        peerRole={peerRole}
-                        onSelectRole={onSelectRole}
-                        onStartCall={onStartCall}
-                        onEndConversation={onEndConversation}
-                    />
+                    enableCallRoles ? (
+                        <RoleSelector
+                            myRole={myRole}
+                            peerRole={peerRole}
+                            role1Name={role1Name}
+                            role2Name={role2Name}
+                            onSelectRole={onSelectRole}
+                            onStartCall={onStartCall}
+                            onEndConversation={onEndConversation}
+                        />
+                    ) : (
+                        <div className="bg-neutral-900/90 border border-neutral-800 rounded-3xl p-6 md:p-8 shadow-xl backdrop-blur-xl animate-scale-in text-white space-y-6 text-center">
+                            <div className="flex flex-col items-center space-y-2">
+                                <div className="w-12 h-12 rounded-2xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center justify-center">
+                                    <Check className="w-6 h-6" />
+                                </div>
+                                <h3 className="text-lg font-black text-white">Topic Confirmed!</h3>
+                                <p className="text-xs text-neutral-400 max-w-md">
+                                    You and your partner are ready to start the conversation. Click below when both of you are ready!
+                                </p>
+                            </div>
+
+                            <div className="flex flex-col items-center gap-3 pt-2">
+                                <button
+                                    type="button"
+                                    onClick={onStartCall}
+                                    className="px-8 py-3.5 rounded-2xl bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-500 hover:from-emerald-500 hover:to-teal-400 text-white font-black text-sm shadow-xl shadow-emerald-950/40 transition-all flex items-center justify-center gap-2 cursor-pointer transform hover:scale-[1.02]"
+                                >
+                                    <Play className="w-4 h-4 fill-current" />
+                                    <span>Start 20-Min Call</span>
+                                </button>
+
+                                <button
+                                    type="button"
+                                    onClick={onEndConversation}
+                                    className="px-5 py-2 rounded-2xl border border-rose-900/40 bg-rose-950/20 text-rose-400 hover:bg-rose-900/40 hover:text-white transition-all flex items-center gap-1.5 text-xs font-bold cursor-pointer"
+                                >
+                                    <X className="w-3.5 h-3.5" />
+                                    <span>Cancel / End Conversation</span>
+                                </button>
+                            </div>
+                        </div>
+                    )
                 )}
             </div>
 

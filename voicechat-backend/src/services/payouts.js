@@ -7,6 +7,12 @@ import { PhraseRejection } from "../models/PhraseRejection.js";
 import { Language } from "../models/Language.js";
 import { Project } from "../models/Project.js";
 import { Company } from "../models/Company.js";
+import { Topic } from "../models/Topic.js";
+import { Subtopic } from "../models/Subtopic.js";
+import { ScriptedTopic } from "../models/ScriptedTopic.js";
+import { ScriptedSubtopic } from "../models/ScriptedSubtopic.js";
+import { ScriptedSubmission } from "../models/ScriptedSubmission.js";
+import { ScriptedLanguage } from "../models/ScriptedLanguage.js";
 
 function roundCurrency(value) {
   return Math.round(value * 100) / 100;
@@ -26,7 +32,9 @@ function getCallEntryForUser(call, userId) {
   let durationMinutes;
   let reviewNote;
 
-  const canonicalMin = (call.actualCallDuration && Number(call.actualCallDuration) > 0)
+  const isScripted = String(call.callId || "").startsWith("scripted_") || call.endReason === "scripted_completed";
+
+  const canonicalMin = (!isScripted && call.actualCallDuration && Number(call.actualCallDuration) > 0)
     ? Math.round((Number(call.actualCallDuration) / 60) * 100) / 100
     : 0;
 
@@ -35,17 +43,26 @@ function getCallEntryForUser(call, userId) {
     peer = call.userB;
     status = call.recordingAStatus || "pending";
     payoutUsd = Number(call.recordingAPayoutUsd) || 0;
-    durationMinutes = canonicalMin || Number(call.recordingADurationMinutes) || 0;
+    durationMinutes = isScripted
+      ? (Number(call.recordingADurationMinutes) || 0)
+      : (canonicalMin || Number(call.recordingADurationMinutes) || 0);
     reviewNote = call.recordingAReviewNote || call.reviewNotes || null;
   } else if (String(call.userB?._id || call.userB) === normalizedUserId) {
     me = call.userB;
     peer = call.userA;
     status = call.recordingBStatus || "pending";
     payoutUsd = Number(call.recordingBPayoutUsd) || 0;
-    durationMinutes = canonicalMin || Number(call.recordingBDurationMinutes) || 0;
+    durationMinutes = isScripted
+      ? (Number(call.recordingBDurationMinutes) || 0)
+      : (canonicalMin || Number(call.recordingBDurationMinutes) || 0);
     reviewNote = call.recordingBReviewNote || call.reviewNotes || null;
   } else {
     return null;
+  }
+
+  // For scripted calls, ensure payout is strictly calculated on user's own recorded duration
+  if (isScripted && (!payoutUsd || payoutUsd === 0) && durationMinutes > 0 && call.languageHourlyPayout) {
+    payoutUsd = roundCurrency((call.languageHourlyPayout * durationMinutes) / 60);
   }
 
   const reviewedByObj = call.reviewedBy ? {
@@ -59,8 +76,8 @@ function getCallEntryForUser(call, userId) {
     startedAt: call.startedAt || null,
     endedAt: call.endedAt || null,
     language: call.language || null,
-    topic: call.topicId?.title || "-",
-    subtopic: call.subtopicId?.title || "-",
+    topic: call.topicTitle || call.topic || call.topicId?.title || "-",
+    subtopic: call.subtopicTitle || call.subtopic || call.subtopicId?.title || "-",
     peer: peer ? {
       id: String(peer._id || peer),
       username: peer.username || `${peer.firstname || ""} ${peer.lastname || ""}`.trim() || "Unknown",
@@ -158,17 +175,108 @@ async function loadUsers(userIds) {
 
 async function loadCallsForUsers(userIds) {
   const ids = userIds.map((id) => String(id));
-  return CallSession.find({
+  const calls = await CallSession.find({
     callActuallyStarted: true,
     $or: [{ userA: { $in: ids } }, { userB: { $in: ids } }],
   })
     .populate("userA", "firstname lastname username email")
     .populate("userB", "firstname lastname username email")
-    .populate("topicId", "title")
-    .populate("subtopicId", "title")
     .populate("reviewedBy", "firstname lastname username email")
     .sort({ startedAt: -1 })
     .lean();
+
+  const allTopicIds = Array.from(new Set(calls.map(c => String(c.topicId || "")).filter(Boolean)));
+  const allSubtopicIds = Array.from(new Set(calls.map(c => String(c.subtopicId || "")).filter(Boolean)));
+
+  const [topics, subtopics, sTopics, sSubtopics, sLangs, langs, scriptedSubs] = await Promise.all([
+    allTopicIds.length ? Topic.find({ _id: { $in: allTopicIds } }).select("title").lean() : [],
+    allSubtopicIds.length ? Subtopic.find({ _id: { $in: allSubtopicIds } }).select("title topicId").lean() : [],
+    allTopicIds.length ? ScriptedTopic.find({ _id: { $in: allTopicIds } }).select("title").lean() : [],
+    allSubtopicIds.length ? ScriptedSubtopic.find({ _id: { $in: allSubtopicIds } }).select("title topicId").lean() : [],
+    ScriptedLanguage.find({}).select("code hourlyPayout").lean(),
+    Language.find({}).select("code hourlyPayout").lean(),
+    ScriptedSubmission.find({ userId: { $in: ids } }).select("subtopicId userId verses status").lean()
+  ]);
+
+  const langPayoutMap = new Map();
+  langs.forEach(l => langPayoutMap.set(String(l.code || "").toLowerCase().trim(), Number(l.hourlyPayout) || 0));
+  sLangs.forEach(l => langPayoutMap.set(String(l.code || "").toLowerCase().trim(), Number(l.hourlyPayout) || 0));
+
+  // Map user submission verses audio duration: key: `${subtopicId}_${userId}` -> durationMinutes
+  const subDurationMap = new Map();
+  scriptedSubs.forEach(sub => {
+    const key = `${String(sub.subtopicId)}_${String(sub.userId)}`;
+    const durSec = (sub.verses || []).reduce((acc, v) => acc + (Number(v.durationSec) || 0), 0);
+    if (durSec > 0) {
+      subDurationMap.set(key, Math.max(0.01, +(durSec / 60).toFixed(2)));
+    }
+  });
+
+  const topicMap = new Map();
+  topics.forEach(t => topicMap.set(String(t._id), t.title));
+  sTopics.forEach(t => topicMap.set(String(t._id), t.title));
+
+  const subtopicMap = new Map();
+  subtopics.forEach(s => subtopicMap.set(String(s._id), s));
+  sSubtopics.forEach(s => subtopicMap.set(String(s._id), s));
+
+  // Also fetch any parent topic IDs from the subtopics that might be missing
+  const missingTopicIds = [];
+  subtopicMap.forEach(sub => {
+    if (sub.topicId && !topicMap.has(String(sub.topicId))) {
+      missingTopicIds.push(sub.topicId);
+    }
+  });
+
+  if (missingTopicIds.length > 0) {
+    const [moreT, moreST] = await Promise.all([
+      Topic.find({ _id: { $in: missingTopicIds } }).select("title").lean(),
+      ScriptedTopic.find({ _id: { $in: missingTopicIds } }).select("title").lean()
+    ]);
+    moreT.forEach(t => topicMap.set(String(t._id), t.title));
+    moreST.forEach(t => topicMap.set(String(t._id), t.title));
+  }
+
+  calls.forEach(c => {
+    const tId = String(c.topicId || "");
+    const sId = String(c.subtopicId || "");
+    const isScripted = String(c.callId || "").startsWith("scripted_") || c.endReason === "scripted_completed";
+    
+    const subObj = subtopicMap.get(sId);
+    const foundSubtopicTitle = subObj ? subObj.title : null;
+    const parentTopicId = subObj && subObj.topicId ? String(subObj.topicId) : null;
+    const foundTopicTitle = topicMap.get(tId) || (parentTopicId ? topicMap.get(parentTopicId) : null);
+
+    c.topicTitle = foundTopicTitle || (isScripted ? "Scripted Conversation" : "-");
+    c.subtopicTitle = foundSubtopicTitle || "-";
+    c.topic = c.topicTitle;
+    c.subtopic = c.subtopicTitle;
+
+    const langCode = String(c.language || "english").toLowerCase().trim();
+    c.languageHourlyPayout = langPayoutMap.get(langCode) || 0;
+
+    if (isScripted) {
+      const userAId = String(c.userA?._id || c.userA || "");
+      const userBId = String(c.userB?._id || c.userB || "");
+      const durA = subDurationMap.get(`${sId}_${userAId}`);
+      const durB = subDurationMap.get(`${sId}_${userBId}`);
+
+      if (durA !== undefined) {
+        c.recordingADurationMinutes = durA;
+        if (c.languageHourlyPayout > 0) {
+          c.recordingAPayoutUsd = roundCurrency((c.languageHourlyPayout * durA) / 60);
+        }
+      }
+      if (durB !== undefined) {
+        c.recordingBDurationMinutes = durB;
+        if (c.languageHourlyPayout > 0) {
+          c.recordingBPayoutUsd = roundCurrency((c.languageHourlyPayout * durB) / 60);
+        }
+      }
+    }
+  });
+
+  return calls;
 }
 
 async function loadPaymentsForUsers(userIds) {

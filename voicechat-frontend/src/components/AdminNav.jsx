@@ -77,7 +77,7 @@ export default function AdminNav() {
     useEffect(() => {
         const path = location.pathname;
         setOpenMenus({
-            calls: ['/admin/calls', '/admin/topics', '/admin/qa', '/admin/qa-payments', '/admin/languages', '/admin/call-apps'].includes(path),
+            calls: ['/admin/calls', '/admin/topics', '/admin/qa', '/admin/qa-payments', '/admin/languages', '/admin/call-apps'].some(p => path.startsWith(p)),
             scriptedCalls: ['/admin/scripted-calls-review', '/admin/scripted-qa', '/admin/scripted-call-apps', '/admin/scripted-languages', '/admin/scripted-topics'].some(p => path.startsWith(p)),
             transcription: ['/admin/segmentation', '/admin/transcription'].includes(path),
             users: ['/admin/users', '/admin/payouts', '/admin/finances', '/admin/pan-verification', '/admin/agreements'].some(p => path.startsWith(p)),
@@ -193,7 +193,7 @@ export default function AdminNav() {
                                             )}
                                             {isAdmin && (
                                                 <Link to="/admin/topics" onClick={() => setIsMobileMenuOpen(false)}
-                                                    className={`flex items-center px-3 py-2 rounded-lg text-xs font-semibold transition-all ${isActive('/admin/topics') ? 'bg-neutral-700 text-warning-400' : 'text-neutral-400 hover:text-white'}`}>
+                                                    className={`flex items-center px-3 py-2 rounded-lg text-xs font-semibold transition-all ${location.pathname.startsWith('/admin/topics') ? 'bg-neutral-700 text-warning-400' : 'text-neutral-400 hover:text-white'}`}>
                                                     <span>Topic</span>
                                                 </Link>
                                             )}
@@ -245,7 +245,7 @@ export default function AdminNav() {
                                                 <span>Scripted Calls Review</span>
                                             </Link>
                                             <Link to="/admin/scripted-topics" onClick={() => setIsMobileMenuOpen(false)}
-                                                className={`flex items-center px-3 py-2 rounded-lg text-xs font-semibold transition-all ${isActive('/admin/scripted-topics') ? 'bg-neutral-700 text-warning-400' : 'text-neutral-400 hover:text-white'}`}>
+                                                className={`flex items-center px-3 py-2 rounded-lg text-xs font-semibold transition-all ${location.pathname.startsWith('/admin/scripted-topics') ? 'bg-neutral-700 text-warning-400' : 'text-neutral-400 hover:text-white'}`}>
                                                 <span>Scripted Call Topics</span>
                                             </Link>
                                             <Link to="/admin/scripted-languages" onClick={() => setIsMobileMenuOpen(false)}
