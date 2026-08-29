@@ -72,6 +72,7 @@ export default function AdminScriptedLanguages() {
     const [modalMaxHoursPerContributor, setModalMaxHoursPerContributor] = useState("");
     const [modalMaxDailyCallLimit, setModalMaxDailyCallLimit] = useState("5");
     const [modalNoisy, setModalNoisy] = useState(false);
+    const [modalEnabled, setModalEnabled] = useState(true);
     const [modalEnableCallRoles, setModalEnableCallRoles] = useState(false);
     const [modalRole1, setModalRole1] = useState("Speaker 1");
     const [modalRole2, setModalRole2] = useState("Speaker 2");
@@ -104,12 +105,35 @@ export default function AdminScriptedLanguages() {
         }
     }
 
+    async function toggleGroupEnable(g) {
+        const next = !g.enabled;
+        const subprojectIds = (g.subprojects || []).map(s => s._id);
+        if (subprojectIds.length === 0) return;
+
+        setSaving(g.slug);
+        try {
+            await Promise.all(subprojectIds.map(id => patch(`/api/admin/scripted-languages/${id}`, { enabled: next })));
+            setLanguages(prev => prev.map(l => {
+                if (subprojectIds.includes(l._id)) {
+                    return { ...l, enabled: next, ...(next ? {} : { isBoosted: false }) };
+                }
+                return l;
+            }));
+            setSuccess(`Scripted Language "${g.baseName}" is now ${next ? "active" : "disabled"} (${subprojectIds.length} subproject${subprojectIds.length !== 1 ? 's' : ''}).`);
+            setTimeout(() => setSuccess(""), 3000);
+        } catch (e) {
+            setError(e.message);
+        } finally {
+            setSaving(null);
+        }
+    }
+
     async function toggleEnable(lang) {
         const next = !lang.enabled;
         setSaving(lang._id);
         try {
             const data = await patch(`/api/admin/scripted-languages/${lang._id}`, { enabled: next });
-            setLanguages(prev => prev.map(l => l._id === lang._id ? data.language : l));
+            setLanguages(prev => prev.map(l => l._id === lang._id ? data.language || { ...l, enabled: next } : l));
             setSuccess(`Scripted Language "${lang.name}" ${next ? "activated" : "disabled"}.`);
             setTimeout(() => setSuccess(""), 3000);
         } catch (e) {
@@ -154,6 +178,7 @@ export default function AdminScriptedLanguages() {
         setModalMaxHoursPerContributor("");
         setModalMaxDailyCallLimit("5");
         setModalNoisy(false);
+        setModalEnabled(true);
         setModalEnableCallRoles(false);
         setModalRole1("Role 1");
         setModalRole2("Role 2");
@@ -172,6 +197,7 @@ export default function AdminScriptedLanguages() {
         setModalMaxHoursPerContributor(language.maxHoursPerContributor !== undefined && language.maxHoursPerContributor !== -1 ? String(language.maxHoursPerContributor) : "");
         setModalMaxDailyCallLimit(language.maxDailyCallLimit !== undefined ? String(language.maxDailyCallLimit) : "5");
         setModalNoisy(!!language.noisy);
+        setModalEnabled(language.enabled !== undefined ? !!language.enabled : true);
         setModalEnableCallRoles(!!language.enableCallRoles);
         setModalRole1(language.role1 || "Role 1");
         setModalRole2(language.role2 || "Role 2");
@@ -191,6 +217,7 @@ export default function AdminScriptedLanguages() {
         setModalMaxHoursPerContributor("");
         setModalMaxDailyCallLimit("5");
         setModalNoisy(false);
+        setModalEnabled(true);
         setModalEnableCallRoles(false);
         setModalRole1("Role 1");
         setModalRole2("Role 2");
@@ -259,6 +286,7 @@ export default function AdminScriptedLanguages() {
                 maxHoursPerContributor,
                 maxDailyCallLimit,
                 noisy: modalNoisy,
+                enabled: modalEnabled,
                 enableCallRoles: modalEnableCallRoles,
                 role1: modalEnableCallRoles ? role1 : "Role 1",
                 role2: modalEnableCallRoles ? role2 : "Role 2",
@@ -275,10 +303,11 @@ export default function AdminScriptedLanguages() {
                     code,
                 });
                 setLanguages(prev => [...prev, data.language].sort((a, b) => a.name.localeCompare(b.name)));
-                setSuccess(`Scripted Language "${name}" created and set as active.`);
+                setSuccess(`Scripted Language "${name}" created.`);
             }
             setTimeout(() => setSuccess(""), 3000);
             closeModal();
+            await load();
         } catch (err) {
             setModalError(err.message);
         } finally {
@@ -509,14 +538,19 @@ export default function AdminScriptedLanguages() {
                                             </div>
                                         </div>
 
-                                        <span className={`px-3 py-1 rounded-full text-xs font-extrabold uppercase tracking-wider flex items-center gap-1.5 ${
-                                            g.enabled 
-                                                ? "bg-emerald-900/60 text-emerald-300 border border-emerald-700/60" 
-                                                : "bg-neutral-800 text-neutral-400 border border-neutral-700"
-                                        }`}>
+                                        <button
+                                            onClick={() => toggleGroupEnable(g)}
+                                            disabled={saving === g.slug}
+                                            title={`Click to ${g.enabled ? 'disable' : 'activate'} all scripted subprojects for ${g.baseName}`}
+                                            className={`px-3 py-1 rounded-full text-xs font-extrabold uppercase tracking-wider flex items-center gap-1.5 transition-all cursor-pointer hover:scale-105 ${
+                                                g.enabled 
+                                                    ? "bg-emerald-900/60 text-emerald-300 border border-emerald-700/60 hover:bg-emerald-800/80" 
+                                                    : "bg-neutral-800 text-neutral-400 border border-neutral-700 hover:bg-neutral-700 hover:text-white"
+                                            }`}
+                                        >
                                             <span className={`w-1.5 h-1.5 rounded-full ${g.enabled ? 'bg-emerald-400' : 'bg-neutral-500'}`} />
-                                            <span>{g.enabled ? "Active" : "Disabled"}</span>
-                                        </span>
+                                            <span>{saving === g.slug ? "Updating..." : g.enabled ? "Active" : "Disabled"}</span>
+                                        </button>
                                     </div>
 
                                     {/* Subprojects Previews */}
@@ -809,6 +843,35 @@ export default function AdminScriptedLanguages() {
                                             placeholder="Leave empty for unlimited"
                                             className="w-full px-3.5 py-2.5 bg-neutral-800 border border-neutral-700 rounded-xl text-sm text-white focus:outline-none focus:border-primary-500 font-mono"
                                         />
+                                    </div>
+                                </div>
+
+                                <div className="space-y-2.5 pt-1">
+                                    <div className="flex items-center gap-2.5">
+                                        <input
+                                            type="checkbox"
+                                            id="enabled-scripted-lang-checkbox"
+                                            checked={modalEnabled}
+                                            onChange={e => setModalEnabled(e.target.checked)}
+                                            className="w-4 h-4 text-emerald-600 bg-neutral-800 border-neutral-700 rounded focus:ring-emerald-500"
+                                        />
+                                        <label htmlFor="enabled-scripted-lang-checkbox" className="text-xs font-semibold text-neutral-300 select-none cursor-pointer flex items-center gap-1.5">
+                                            <span className={`w-2 h-2 rounded-full ${modalEnabled ? 'bg-emerald-400' : 'bg-neutral-500'}`} />
+                                            <span>Enable this Scripted Language (Active)</span>
+                                        </label>
+                                    </div>
+
+                                    <div className="flex items-center gap-2.5">
+                                        <input
+                                            type="checkbox"
+                                            id="noisy-scripted-lang-checkbox"
+                                            checked={modalNoisy}
+                                            onChange={e => setModalNoisy(e.target.checked)}
+                                            className="w-4 h-4 text-primary-600 bg-neutral-800 border-neutral-700 rounded focus:ring-primary-500"
+                                        />
+                                        <label htmlFor="noisy-scripted-lang-checkbox" className="text-xs font-semibold text-neutral-300 select-none cursor-pointer">
+                                            Noisy Environment (Bypasses YAMNet noise scanning)
+                                        </label>
                                     </div>
                                 </div>
 

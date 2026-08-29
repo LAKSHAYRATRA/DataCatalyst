@@ -73,6 +73,7 @@ export default function AdminLanguages() {
     const [modalMaxHoursPerContributor, setModalMaxHoursPerContributor] = useState("");
     const [modalMaxDailyCallLimit, setModalMaxDailyCallLimit] = useState("5");
     const [modalNoisy, setModalNoisy] = useState(false);
+    const [modalEnabled, setModalEnabled] = useState(true);
     const [modalEnableCallRoles, setModalEnableCallRoles] = useState(false);
     const [modalRole1, setModalRole1] = useState("Role 1");
     const [modalRole2, setModalRole2] = useState("Role 2");
@@ -294,6 +295,7 @@ export default function AdminLanguages() {
         setModalMaxHoursPerContributor("");
         setModalMaxDailyCallLimit("5");
         setModalNoisy(false);
+        setModalEnabled(true);
         setModalEnableCallRoles(false);
         setModalRole1("Role 1");
         setModalRole2("Role 2");
@@ -315,6 +317,7 @@ export default function AdminLanguages() {
         );
         setModalMaxDailyCallLimit(String(language.maxDailyCallLimit ?? 5));
         setModalNoisy(!!language.noisy);
+        setModalEnabled(language.enabled !== undefined ? !!language.enabled : true);
         setModalEnableCallRoles(!!language.enableCallRoles);
         setModalRole1(language.role1 || "Role 1");
         setModalRole2(language.role2 || "Role 2");
@@ -333,6 +336,7 @@ export default function AdminLanguages() {
         setModalMaxHoursPerContributor("");
         setModalMaxDailyCallLimit("5");
         setModalNoisy(false);
+        setModalEnabled(true);
         setModalEnableCallRoles(false);
         setModalRole1("Role 1");
         setModalRole2("Role 2");
@@ -386,6 +390,7 @@ export default function AdminLanguages() {
                 maxHoursPerContributor: maxHours,
                 maxDailyCallLimit,
                 noisy: modalNoisy,
+                enabled: modalEnabled,
                 enableCallRoles: modalEnableCallRoles,
                 role1: modalEnableCallRoles ? role1 : "Role 1",
                 role2: modalEnableCallRoles ? role2 : "Role 2",
@@ -406,6 +411,29 @@ export default function AdminLanguages() {
                 : e.message);
         } finally {
             setModalSaving(false);
+        }
+    }
+
+    async function toggleGroupEnable(g) {
+        const next = !g.enabled;
+        const subprojectIds = (g.subprojects || []).map(s => s._id);
+        if (subprojectIds.length === 0) return;
+
+        setSaving(g.slug);
+        try {
+            await Promise.all(subprojectIds.map(id => patch(`/api/admin/languages/${id}`, { enabled: next })));
+            setLanguages(prev => prev.map(l => {
+                if (subprojectIds.includes(l._id)) {
+                    return { ...l, enabled: next, ...(next ? {} : { isBoosted: false }) };
+                }
+                return l;
+            }));
+            setSuccess(`Call Language "${g.baseName}" is now ${next ? "active" : "disabled"} (${subprojectIds.length} subproject${subprojectIds.length !== 1 ? 's' : ''}).`);
+            setTimeout(() => setSuccess(""), 3000);
+        } catch (e) {
+            setError(e.message);
+        } finally {
+            setSaving(null);
         }
     }
 
@@ -656,14 +684,19 @@ export default function AdminLanguages() {
                                             </div>
                                         </div>
 
-                                        <span className={`px-3 py-1 rounded-full text-xs font-extrabold uppercase tracking-wider flex items-center gap-1.5 ${
-                                            g.enabled 
-                                                ? "bg-emerald-900/60 text-emerald-300 border border-emerald-700/60" 
-                                                : "bg-neutral-800 text-neutral-400 border border-neutral-700"
-                                        }`}>
+                                        <button
+                                            onClick={() => toggleGroupEnable(g)}
+                                            disabled={saving === g.slug}
+                                            title={`Click to ${g.enabled ? 'disable' : 'activate'} all subprojects for ${g.baseName}`}
+                                            className={`px-3 py-1 rounded-full text-xs font-extrabold uppercase tracking-wider flex items-center gap-1.5 transition-all cursor-pointer hover:scale-105 ${
+                                                g.enabled 
+                                                    ? "bg-emerald-900/60 text-emerald-300 border border-emerald-700/60 hover:bg-emerald-800/80" 
+                                                    : "bg-neutral-800 text-neutral-400 border border-neutral-700 hover:bg-neutral-700 hover:text-white"
+                                            }`}
+                                        >
                                             <span className={`w-1.5 h-1.5 rounded-full ${g.enabled ? 'bg-emerald-400' : 'bg-neutral-500'}`} />
-                                            <span>{g.enabled ? "Active" : "Disabled"}</span>
-                                        </span>
+                                            <span>{saving === g.slug ? "Updating..." : g.enabled ? "Active" : "Disabled"}</span>
+                                        </button>
                                     </div>
 
                                     {/* Subprojects Previews */}
@@ -942,17 +975,33 @@ export default function AdminLanguages() {
                                 </div>
                             </div>
 
-                            <div className="flex items-center gap-2.5 pt-1">
-                                <input
-                                    type="checkbox"
-                                    id="noisy-lang-checkbox"
-                                    checked={modalNoisy}
-                                    onChange={e => setModalNoisy(e.target.checked)}
-                                    className="w-4 h-4 text-primary-600 bg-neutral-800 border-neutral-700 rounded focus:ring-primary-500"
-                                />
-                                <label htmlFor="noisy-lang-checkbox" className="text-xs font-semibold text-neutral-300 select-none cursor-pointer">
-                                    Noisy Language (Bypasses YAMNet noise scanning)
-                                </label>
+                            <div className="space-y-2.5 pt-1">
+                                <div className="flex items-center gap-2.5">
+                                    <input
+                                        type="checkbox"
+                                        id="enabled-lang-checkbox"
+                                        checked={modalEnabled}
+                                        onChange={e => setModalEnabled(e.target.checked)}
+                                        className="w-4 h-4 text-emerald-600 bg-neutral-800 border-neutral-700 rounded focus:ring-emerald-500"
+                                    />
+                                    <label htmlFor="enabled-lang-checkbox" className="text-xs font-semibold text-neutral-300 select-none cursor-pointer flex items-center gap-1.5">
+                                        <span className={`w-2 h-2 rounded-full ${modalEnabled ? 'bg-emerald-400' : 'bg-neutral-500'}`} />
+                                        <span>Enable this Language for Live Calls (Active)</span>
+                                    </label>
+                                </div>
+
+                                <div className="flex items-center gap-2.5">
+                                    <input
+                                        type="checkbox"
+                                        id="noisy-lang-checkbox"
+                                        checked={modalNoisy}
+                                        onChange={e => setModalNoisy(e.target.checked)}
+                                        className="w-4 h-4 text-primary-600 bg-neutral-800 border-neutral-700 rounded focus:ring-primary-500"
+                                    />
+                                    <label htmlFor="noisy-lang-checkbox" className="text-xs font-semibold text-neutral-300 select-none cursor-pointer">
+                                        Noisy Language (Bypasses YAMNet noise scanning)
+                                    </label>
+                                </div>
                             </div>
 
                             <div className="pt-4 border-t border-neutral-800 flex items-center justify-end gap-3">

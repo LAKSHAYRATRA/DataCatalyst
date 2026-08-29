@@ -80,6 +80,7 @@ export default function AdminScriptedLanguageSubprojects() {
     const [modalMaxHoursPerContributor, setModalMaxHoursPerContributor] = useState("");
     const [modalMaxDailyCallLimit, setModalMaxDailyCallLimit] = useState("5");
     const [modalNoisy, setModalNoisy] = useState(false);
+    const [modalEnabled, setModalEnabled] = useState(true);
     const [modalIsBoosted, setModalIsBoosted] = useState(false);
     const [modalEnableCallRoles, setModalEnableCallRoles] = useState(true);
     const [modalRole1, setModalRole1] = useState("Role 1");
@@ -165,6 +166,7 @@ export default function AdminScriptedLanguageSubprojects() {
         setModalMaxHoursPerContributor("");
         setModalMaxDailyCallLimit("5");
         setModalNoisy(false);
+        setModalEnabled(true);
         setModalIsBoosted(false);
         setModalEnableCallRoles(true);
         setModalRole1("Role 1");
@@ -183,6 +185,7 @@ export default function AdminScriptedLanguageSubprojects() {
         setModalMaxHoursPerContributor(sub.maxHoursPerContributor !== undefined && sub.maxHoursPerContributor !== -1 ? String(sub.maxHoursPerContributor) : "");
         setModalMaxDailyCallLimit(sub.maxDailyCallLimit !== undefined ? String(sub.maxDailyCallLimit) : "5");
         setModalNoisy(!!sub.noisy);
+        setModalEnabled(sub.enabled !== undefined ? !!sub.enabled : true);
         setModalIsBoosted(!!sub.isBoosted);
         setModalEnableCallRoles(sub.enableCallRoles !== undefined ? !!sub.enableCallRoles : true);
         setModalRole1(sub.role1 || "Role 1");
@@ -241,6 +244,7 @@ export default function AdminScriptedLanguageSubprojects() {
                 maxHoursPerContributor: maxHours,
                 maxDailyCallLimit,
                 noisy: modalNoisy,
+                enabled: modalEnabled,
                 isBoosted: modalIsBoosted,
                 enableCallRoles: modalEnableCallRoles,
                 role1: modalEnableCallRoles ? role1 : "Role 1",
@@ -871,17 +875,33 @@ export default function AdminScriptedLanguageSubprojects() {
                                 </div>
                             </div>
 
-                            <div className="flex items-center gap-2.5 pt-1">
-                                <input
-                                    type="checkbox"
-                                    id="noisy-scripted-subproject-checkbox"
-                                    checked={modalNoisy}
-                                    onChange={e => setModalNoisy(e.target.checked)}
-                                    className="w-4 h-4 text-primary-600 bg-neutral-800 border-neutral-700 rounded focus:ring-primary-500"
-                                />
-                                <label htmlFor="noisy-scripted-subproject-checkbox" className="text-xs font-semibold text-neutral-300 select-none cursor-pointer">
-                                    Noisy Language (Bypasses YAMNet noise scanning)
-                                </label>
+                            <div className="space-y-2.5 pt-1">
+                                <div className="flex items-center gap-2.5">
+                                    <input
+                                        type="checkbox"
+                                        id="enabled-scripted-subproject-checkbox"
+                                        checked={modalEnabled}
+                                        onChange={e => setModalEnabled(e.target.checked)}
+                                        className="w-4 h-4 text-emerald-600 bg-neutral-800 border-neutral-700 rounded focus:ring-emerald-500"
+                                    />
+                                    <label htmlFor="enabled-scripted-subproject-checkbox" className="text-xs font-semibold text-neutral-300 select-none cursor-pointer flex items-center gap-1.5">
+                                        <span className={`w-2 h-2 rounded-full ${modalEnabled ? 'bg-emerald-400' : 'bg-neutral-500'}`} />
+                                        <span>Enable this Scripted Subproject (Active)</span>
+                                    </label>
+                                </div>
+
+                                <div className="flex items-center gap-2.5">
+                                    <input
+                                        type="checkbox"
+                                        id="noisy-scripted-subproject-checkbox"
+                                        checked={modalNoisy}
+                                        onChange={e => setModalNoisy(e.target.checked)}
+                                        className="w-4 h-4 text-primary-600 bg-neutral-800 border-neutral-700 rounded focus:ring-primary-500"
+                                    />
+                                    <label htmlFor="noisy-scripted-subproject-checkbox" className="text-xs font-semibold text-neutral-300 select-none cursor-pointer">
+                                        Noisy Language (Bypasses YAMNet noise scanning)
+                                    </label>
+                                </div>
                             </div>
 
                             <div className="flex items-center gap-2.5 pt-1">
