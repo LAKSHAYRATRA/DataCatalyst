@@ -99,6 +99,68 @@ export async function getRecommendedProjects(req, res) {
       });
     }
 
+    // If authenticated user is present, filter out projects user has applied for, or been rejected/blacklisted from
+    if (req.user && Array.isArray(req.user.languageApplications)) {
+      const userApps = req.user.languageApplications;
+      const norm = str => String(str || "").replace(/_downloaded$/i, "").trim().toLowerCase();
+
+      recommended = recommended.filter(proj => {
+        const projIdentifiers = [
+          norm(proj.code),
+          norm(proj.companyId),
+          norm(proj.id),
+          norm(proj.projectName),
+          norm(proj.title),
+          String(proj.id || "").trim().toLowerCase(),
+          String(proj.code || "").trim().toLowerCase()
+        ].filter(Boolean);
+
+        if (proj.type === "phrase") {
+          const matchingApps = userApps.filter(a => {
+            const appType = a.applicationType || (a.companyId ? "phrase" : "call");
+            if (appType !== "phrase") return false;
+            const appIdentifiers = [
+              norm(a.companyId),
+              norm(a.projectName),
+              String(a.companyId || "").trim().toLowerCase()
+            ].filter(Boolean);
+            return appIdentifiers.some(ai => projIdentifiers.includes(ai));
+          });
+
+          if (matchingApps.length === 0) return true;
+
+          // Never recommend if rejected or blacklisted
+          if (matchingApps.some(a => a.status === "rejected" || a.status === "blacklisted")) {
+            return false;
+          }
+
+          // If project has specific languages
+          const projLangs = Array.isArray(proj.languages) && proj.languages.length > 0
+            ? proj.languages.map(l => norm(l))
+            : [norm(proj.language)].filter(Boolean);
+
+          if (projLangs.length > 0) {
+            return projLangs.some(l => !matchingApps.find(a => norm(a.languageCode || a.language) === l));
+          }
+
+          return false;
+        }
+
+        if (proj.type === "call" || proj.type === "scripted_call") {
+          const app = userApps.find(a => {
+            const appType = a.applicationType || (a.companyId ? "phrase" : "call");
+            if (appType !== proj.type) return false;
+            const appLang = norm(a.languageCode || a.language);
+            return projIdentifiers.includes(appLang);
+          });
+          if (app) return false;
+          return true;
+        }
+
+        return true;
+      });
+    }
+
     res.json({ success: true, projects: recommended });
   } catch (error) {
     console.error("getRecommendedProjects error:", error);

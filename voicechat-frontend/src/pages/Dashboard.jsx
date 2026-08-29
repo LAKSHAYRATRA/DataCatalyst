@@ -75,35 +75,59 @@ export default function Dashboard() {
 
     // Filter out projects that the contributor is already approved, pending, blacklisted, OR rejected from
     const isEligibleForRecommendation = (project) => {
-        const projCode = String(project.code || project.companyId || "").trim().toLowerCase();
-        const projId = String(project.id || "").trim().toLowerCase();
-        const projTitle = String(project.projectName || project.title || "").trim().toLowerCase();
+        if (!project) return false;
+
+        const norm = (val) => String(val || "").replace(/_downloaded$/i, "").trim().toLowerCase();
+
+        const projIdentifiers = [
+            norm(project.code),
+            norm(project.companyId),
+            norm(project.id),
+            norm(project.projectName),
+            norm(project.title),
+            String(project.id || "").trim().toLowerCase(),
+            String(project.code || "").trim().toLowerCase(),
+            String(project.companyId || "").trim().toLowerCase()
+        ].filter(Boolean);
 
         if (project.type === "phrase") {
             const projectLanguages = Array.isArray(project.languages) && project.languages.length > 0
-                ? project.languages.map(l => String(l).toLowerCase().trim())
-                : [String(project.language || "").toLowerCase().trim()].filter(Boolean);
+                ? project.languages.map(l => norm(l))
+                : [norm(project.language)].filter(Boolean);
 
             const companyApps = (myApps || []).filter(a => {
-                const appType = a.applicationType || "phrase";
+                const appType = a.applicationType || (a.companyId ? "phrase" : "call");
                 if (appType !== "phrase") return false;
-                const appComp = String(a.companyId || "").trim().toLowerCase();
-                const appProj = String(a.projectName || "").trim().toLowerCase();
-                return appComp === projCode || appComp === projId || appProj === projTitle || appProj === projCode;
+
+                const appIdentifiers = [
+                    norm(a.companyId),
+                    norm(a.cleanCompanyId),
+                    norm(a.matchedCompanyDbId),
+                    norm(a.projectName),
+                    norm(a.companyName),
+                    String(a.companyId || "").trim().toLowerCase(),
+                    String(a.matchedCompanyDbId || "").trim().toLowerCase()
+                ].filter(Boolean);
+
+                return appIdentifiers.some(ai => projIdentifiers.includes(ai));
             });
 
             // If user has no applications for this company, it's eligible
             if (companyApps.length === 0) return true;
 
-            // If user was rejected from ANY application in this company, do NOT recommend it
-            const hasRejected = companyApps.some(a => a.status === "rejected");
-            if (hasRejected) return false;
+            // If user was rejected or blacklisted from ANY application in this company, do NOT recommend it
+            const hasRejectedOrBlacklisted = companyApps.some(a => a.status === "rejected" || a.status === "blacklisted");
+            if (hasRejectedOrBlacklisted) return false;
+
+            // If user has a pending application for this company, do NOT recommend
+            const hasPending = companyApps.some(a => a.status === "pending");
+            if (hasPending) return false;
 
             // If project has specific languages, check if there are unapplied languages (not applied/pending/approved/blacklisted/rejected)
             if (projectLanguages.length > 0) {
                 return projectLanguages.some(lang => {
-                    const appForLang = companyApps.find(a => String(a.languageCode || a.language || "").toLowerCase().trim() === lang);
-                    return !appForLang; // only eligible if completely unapplied
+                    const appForLang = companyApps.find(a => norm(a.languageCode || a.language) === lang);
+                    return !appForLang; // only eligible if completely unapplied for this language
                 });
             }
 
@@ -114,8 +138,10 @@ export default function Dashboard() {
         if (project.type === "call" || project.type === "scripted_call") {
             const app = (myApps || []).find(a => {
                 const appType = a.applicationType || (a.companyId ? "phrase" : "call");
-                const appLang = String(a.languageCode || a.language || "").trim().toLowerCase();
-                return appType === project.type && appLang === projCode;
+                if (appType !== project.type) return false;
+                const appLang = norm(a.languageCode || a.language);
+                const appProj = norm(a.projectName);
+                return projIdentifiers.includes(appLang) || projIdentifiers.includes(appProj);
             });
             // If user has applied for this call / scripted project (approved, pending, blacklisted, OR rejected), do NOT recommend
             if (app) return false;

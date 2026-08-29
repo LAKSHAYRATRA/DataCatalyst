@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { requireAuth } from "../auth.js";
+import { requireAuth, optionalAuth } from "../auth.js";
 import { getProjects, getRecommendedProjects, updateProjectRates } from "../controllers/projectController.js";
 
 const JWT_SECRET = process.env.JWT_SECRET;
@@ -13,7 +13,7 @@ const requireAdmin = (req, res, next) => {
 };
 
 // Recommended & Boosted projects (Available for dashboard)
-router.get("/recommended", getRecommendedProjects);
+router.get("/recommended", optionalAuth(JWT_SECRET), getRecommendedProjects);
 
 // Both contributors and admins need to see projects
 router.get("/", requireAuth(JWT_SECRET), getProjects);

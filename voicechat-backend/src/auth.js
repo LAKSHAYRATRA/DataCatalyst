@@ -57,3 +57,39 @@ export function requireAuth(jwtSecret) {
     }
   };
 }
+
+export function optionalAuth(jwtSecret) {
+  return async (req, res, next) => {
+    const secret = jwtSecret || process.env.JWT_SECRET;
+    let token = req.cookies?.vc_token;
+
+    if (!token) {
+      const header = req.headers.authorization || "";
+      const [kind, headerToken] = header.split(" ");
+      if (kind === "Bearer" && headerToken) {
+        token = headerToken;
+      }
+    }
+
+    if (!token && req.query.token) {
+      token = req.query.token;
+    }
+
+    if (!token) {
+      return next();
+    }
+
+    try {
+      const payload = verifyToken(token, secret);
+      const user = await User.findById(payload.sub);
+      if (user && (payload.tokenVersion === undefined || user.tokenVersion === payload.tokenVersion)) {
+        req.userId = payload.sub;
+        req.user = user;
+      }
+    } catch (e) {
+      // ignore invalid token for optional auth
+    }
+    next();
+  };
+}
+

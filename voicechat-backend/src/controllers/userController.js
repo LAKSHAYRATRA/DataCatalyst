@@ -193,36 +193,38 @@ export async function getMyLanguageApplications(req, res) {
     
     let applications = user?.languageApplications || [];
 
-    if (!req.user.isAdmin) {
-      const activeCompanies = await Phrase.aggregate([
-        { $match: { status: { $in: ["pending", "locked", "rejected"] } } },
-        { $group: { _id: "$companyId", count: { $sum: 1 } } },
-        { $match: { count: { $gte: 1 } } }
-      ]);
-      const activeNames = activeCompanies.map(c => String(c._id).trim()).filter(Boolean);
-
-      applications = applications.filter(app => {
-        if (app.status === "approved") return true; // Always retain approved applications
-        if (app.applicationType === "phrase" || !app.applicationType) {
-          const appCompany = String(app.companyId || "").trim();
-          return activeNames.includes(appCompany);
-        }
-        return true; // Keep call applications
-      });
-    }
-
-    const companies = await Company.find({}).select("name projectName").lean();
-    const companyMap = {};
+    const companies = await Company.find({}).select("name projectName _id").lean();
+    const companyInfoMap = new Map();
     for (const c of companies) {
-      companyMap[c._id.toString()] = c.projectName || c.name;
-      companyMap[c.name] = c.projectName || c.name;
+      const info = {
+        companyId: c._id.toString(),
+        companyName: c.name,
+        projectName: c.projectName || c.name,
+        cleanName: c.name.replace(/_downloaded$/i, "").trim()
+      };
+      const keys = [
+        c._id.toString().toLowerCase(),
+        c.name.toLowerCase(),
+        c.name.replace(/_downloaded$/i, "").trim().toLowerCase(),
+        (c.projectName || "").toLowerCase().trim()
+      ].filter(Boolean);
+
+      for (const k of keys) {
+        companyInfoMap.set(k, info);
+      }
     }
 
     applications = applications.map(app => {
-      const key = app.companyId ? app.companyId.toString() : "";
+      const rawComp = String(app.companyId || "").trim().toLowerCase();
+      const rawCleanComp = rawComp.replace(/_downloaded$/i, "").trim();
+      const matchedInfo = companyInfoMap.get(rawComp) || companyInfoMap.get(rawCleanComp);
+
       return {
         ...app,
-        projectName: companyMap[key] || app.companyId || ""
+        projectName: matchedInfo?.projectName || app.projectName || app.companyId || "",
+        companyName: matchedInfo?.companyName || app.companyId || "",
+        cleanCompanyId: matchedInfo?.cleanName || rawCleanComp,
+        matchedCompanyDbId: matchedInfo?.companyId || ""
       };
     });
 
