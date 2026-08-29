@@ -28,6 +28,8 @@ function formatUserResponse(user) {
     lastname: user.lastname || "",
     username: user.username || "",
     email: user.email,
+    mobileNumber: user.mobileNumber || user.phone || "",
+    phone: user.mobileNumber || user.phone || "",
     isAdmin: user.isAdmin || false,
     isQA: user.isQA || false,
     qaLanguageCode: user.qaLanguageCode || user.qaLanguageCodes?.[0] || null,
@@ -138,6 +140,7 @@ export async function signup(req, res) {
   const pincode = String(req.body?.address?.pincode || "").trim();
   const microphoneBrand = String(req.body?.microphoneBrand || "").trim();
   const microphoneModel = String(req.body?.microphoneModel || "").trim();
+  const mobileNumber = String(req.body?.mobileNumber || req.body?.phone || "").trim();
   const accent = String(req.body?.accent || "").trim();
   const dialect = String(req.body?.dialect || "").trim();
   const dob = req.body?.dob;
@@ -163,6 +166,10 @@ export async function signup(req, res) {
     !isNonEmptyString(otpCode)
   ) {
     return res.status(400).json({ error: "invalid_input" });
+  }
+
+  if (mobileNumber && !/^\+?[0-9\s\-]{10,15}$/.test(mobileNumber)) {
+    return res.status(400).json({ error: "invalid_mobile_number" });
   }
 
   if (!["male", "female", "other"].includes(gender))
@@ -217,6 +224,8 @@ export async function signup(req, res) {
     lastname,
     username,
     email,
+    mobileNumber: mobileNumber || null,
+    phone: mobileNumber || null,
     passwordHash,
     gender,
     regionalLanguage,

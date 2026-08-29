@@ -336,7 +336,120 @@ function RequireProfileFields({ children }) {
   );
 }
 
+function CompulsoryMobileModal({ userInfo, onComplete }) {
+  const [mobileNumber, setMobileNumber] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    const cleanDigits = mobileNumber.replace(/[^0-9]/g, "");
+    if (!cleanDigits || cleanDigits.length !== 10) {
+      setError("Please enter a valid 10-digit mobile number.");
+      return;
+    }
+    if (!/^[6-9]\d{9}$/.test(cleanDigits)) {
+      setError("Please enter a valid 10-digit Indian mobile number starting with 6, 7, 8, or 9.");
+      return;
+    }
+
+    setError("");
+    setLoading(true);
+    try {
+      const res = await apiPatchJson("/api/user/mobile-number", {
+        mobileNumber: cleanDigits,
+      });
+      const updatedUser = {
+        ...userInfo,
+        mobileNumber: res.user?.mobileNumber || cleanDigits,
+        phone: res.user?.phone || cleanDigits,
+      };
+      setUserInfo(updatedUser);
+      onComplete(updatedUser);
+    } catch (err) {
+      setError(err.message || "Failed to save mobile number. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-neutral-950/95 backdrop-blur-xl flex items-center justify-center p-4 z-[999999] animate-fade-in select-none">
+      <div className="bg-neutral-900 border border-neutral-700/80 rounded-3xl p-8 max-w-md w-full shadow-2xl relative overflow-hidden animate-scale-up text-white">
+        {/* Ambient Glows */}
+        <div className="absolute -top-24 -right-24 w-52 h-52 bg-primary-600/25 rounded-full blur-3xl pointer-events-none" />
+        <div className="absolute -bottom-24 -left-24 w-52 h-52 bg-amber-500/15 rounded-full blur-3xl pointer-events-none" />
+
+        <div className="text-center relative z-10">
+          <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-tr from-primary-600 via-primary-500 to-amber-500 rounded-2xl mb-4 shadow-xl shadow-primary-950/60 text-white">
+            <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" />
+            </svg>
+          </div>
+          <h2 className="text-2xl font-black text-white tracking-tight">Mobile Number Required</h2>
+          <p className="text-xs text-neutral-400 mt-2 leading-relaxed">
+            To ensure account verification, live call notifications, and access to all platform features, please provide your active 10-digit mobile number.
+          </p>
+        </div>
+
+        <form onSubmit={handleSubmit} className="mt-6 space-y-4 relative z-10">
+          <div>
+            <label className="block text-xs font-bold uppercase tracking-wider text-neutral-300 mb-2">
+              Mobile Number <span className="text-error-400">*</span>
+            </label>
+            <div className="relative flex rounded-xl border border-neutral-700 focus-within:border-primary-500 bg-neutral-800/80 transition-all">
+              <span className="inline-flex items-center gap-1.5 px-3.5 rounded-l-xl bg-neutral-800 border-r border-neutral-700 text-neutral-300 text-sm font-bold">
+                <span>🇮🇳</span>
+                <span className="text-xs text-neutral-400">+91</span>
+              </span>
+              <input
+                type="tel"
+                inputMode="numeric"
+                maxLength={10}
+                autoFocus
+                className="w-full px-4 py-3 bg-transparent text-white placeholder-neutral-500 text-base font-mono tracking-widest focus:outline-none"
+                placeholder="9876543210"
+                value={mobileNumber}
+                onChange={(e) => setMobileNumber(e.target.value.replace(/[^0-9]/g, "").slice(0, 10))}
+              />
+            </div>
+            <p className="text-[11px] text-neutral-500 mt-1.5 flex items-center gap-1">
+              <svg className="w-3.5 h-3.5 text-primary-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <span>Compulsory step to unlock platform access.</span>
+            </p>
+          </div>
+
+          {error && (
+            <div className="bg-error-900/30 border border-error-800 text-error-300 px-3.5 py-2.5 rounded-xl text-xs flex items-center gap-2">
+              <span className="text-base">⚠️</span>
+              <span>{error}</span>
+            </div>
+          )}
+
+          <button
+            type="submit"
+            disabled={loading || mobileNumber.replace(/[^0-9]/g, "").length !== 10}
+            className="w-full py-3.5 rounded-xl bg-primary-600 hover:bg-primary-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold text-sm shadow-lg shadow-primary-900/30 transition-all cursor-pointer flex items-center justify-center gap-2"
+          >
+            {loading ? (
+              <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+            ) : (
+              <>
+                <span>Save & Access Platform</span>
+                <span className="text-base font-black">→</span>
+              </>
+            )}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
+  const [currentUser, setCurrentUser] = useState(getUserInfo());
   const [loading, setLoading] = useState(true);
   const { pathname } = useLocation();
 
@@ -364,8 +477,10 @@ export default function App() {
       try {
         const data = await apiGet("/api/auth/me");
         setUserInfo(data.user);
+        setCurrentUser(data.user);
       } catch (e) {
         await clearToken();
+        setCurrentUser(null);
       } finally {
         setLoading(false);
       }
@@ -382,9 +497,19 @@ export default function App() {
     );
   }
 
+  const needsMobileNumber = !!currentUser && !isPublicRoute && !currentUser.mobileNumber && !currentUser.phone;
+
   return (
     <SystemCheckProvider>
       <RainbowCursor />
+      {needsMobileNumber && (
+        <CompulsoryMobileModal
+          userInfo={currentUser}
+          onComplete={(updated) => {
+            setCurrentUser(updated);
+          }}
+        />
+      )}
       <Routes>
         <Route path="/login" element={<RedirectIfAuthenticated><Login /></RedirectIfAuthenticated>} />
         <Route path="/signup" element={<RedirectIfAuthenticated><Signup /></RedirectIfAuthenticated>} />

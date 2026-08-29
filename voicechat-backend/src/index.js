@@ -91,6 +91,7 @@ import {
   uploadPanCard,
   updateUpiId,
   updateProfileCompletion,
+  updateMobileNumber,
   updateUserNoiseGate,
 } from "./controllers/userController.js";
 
@@ -299,6 +300,7 @@ app.post(
 );
 app.post("/api/user/upi", requireAuth(JWT_SECRET), updateUpiId);
 app.patch("/api/user/profile-completion", requireAuth(JWT_SECRET), updateProfileCompletion);
+app.patch("/api/user/mobile-number", requireAuth(JWT_SECRET), updateMobileNumber);
 
 // Contributor Agreement
 app.get("/api/user/contributor-agreement/status", requireAuth(JWT_SECRET), getContributorAgreementStatus);

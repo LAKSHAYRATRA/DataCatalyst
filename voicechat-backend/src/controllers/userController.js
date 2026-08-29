@@ -1317,12 +1317,80 @@ export async function updateProfileCompletion(req, res) {
         lastname: user.lastname,
         username: user.username,
         email: user.email,
+        mobileNumber: user.mobileNumber || user.phone || "",
+        phone: user.mobileNumber || user.phone || "",
         isAdmin: user.isAdmin,
         isQA: user.isQA,
         accountStatus: user.accountStatus,
         accent: user.accent,
         dialect: user.dialect,
         contributorAgreement: user.contributorAgreement
+      }
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+}
+
+// PATCH /api/user/mobile-number
+export async function updateMobileNumber(req, res) {
+  try {
+    const rawNumber = String(req.body?.mobileNumber || req.body?.phone || "").trim();
+    if (!rawNumber) {
+      return res.status(400).json({ error: "Mobile number is required." });
+    }
+
+    const digitsOnly = rawNumber.replace(/[^0-9]/g, "");
+    if (digitsOnly.length < 10 || digitsOnly.length > 15) {
+      return res.status(400).json({ error: "Please enter a valid 10-digit mobile number." });
+    }
+
+    const cleanNumber = rawNumber.startsWith("+") ? `+${digitsOnly}` : digitsOnly;
+
+    const user = await User.findByIdAndUpdate(
+      req.user._id,
+      { $set: { mobileNumber: cleanNumber, phone: cleanNumber } },
+      { new: true }
+    );
+
+    if (!user) return res.status(404).json({ error: "User not found" });
+
+    const ca = user.contributorAgreement || {};
+    res.json({
+      message: "Mobile number updated successfully",
+      user: {
+        id: user._id.toString(),
+        firstname: user.firstname || "",
+        lastname: user.lastname || "",
+        username: user.username || "",
+        email: user.email,
+        mobileNumber: user.mobileNumber || user.phone || "",
+        phone: user.mobileNumber || user.phone || "",
+        isAdmin: user.isAdmin || false,
+        isQA: user.isQA || false,
+        qaLanguageCode: user.qaLanguageCode || user.qaLanguageCodes?.[0] || null,
+        qaLanguageCodes: user.qaLanguageCodes || [],
+        perCallPayrate: user.perCallPayrate !== undefined ? user.perCallPayrate : 0,
+        hourlyPhrasePayrate: user.hourlyPhrasePayrate !== undefined ? user.hourlyPhrasePayrate : 0,
+        dailyCallLimit: user.dailyCallLimit,
+        accountStatus: user.accountStatus || "pending_intro",
+        isDisabled: !!user.isDisabled,
+        accent: user.accent || null,
+        dialect: user.dialect || null,
+        languageApplications: (user.languageApplications || []).map(a => ({
+          companyId: a.companyId,
+          languageCode: a.languageCode,
+          applicationType: a.applicationType || "call",
+          status: a.status
+        })),
+        contributorAgreement: {
+          signed: !!ca.signed,
+          agreementVersion: ca.agreementVersion || null,
+          signedAt: ca.signedAt || null,
+          adminReviewStatus: ca.adminReviewStatus || null,
+          adminReviewReason: ca.adminReviewReason || null,
+          assignedAgreementDoc: ca.assignedAgreementDoc || "default",
+        },
       }
     });
   } catch (e) {

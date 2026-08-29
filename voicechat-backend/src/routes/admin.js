@@ -5038,7 +5038,7 @@ router.get("/users", async (req, res) => {
 
         const total = await User.countDocuments(filter);
         const users = await User.find(filter)
-            .select('username email firstname lastname dailyCallLimit overallCallLimit dailyPhraseLimit overallPhraseLimit accountStatus isDisabled createdAt')
+            .select('username email firstname lastname mobileNumber phone dailyCallLimit overallCallLimit dailyPhraseLimit overallPhraseLimit accountStatus isDisabled createdAt')
             .sort({ createdAt: -1 })
             .skip(skip)
             .limit(limit);
@@ -5071,7 +5071,7 @@ router.get("/users/pending", async (req, res) => {
             ];
         }
         const users = await User.find(filter)
-            .select('username email firstname lastname gender regionalLanguage locality address microphoneBrand microphoneModel introRecordingFile createdAt')
+            .select('username email firstname lastname mobileNumber phone gender regionalLanguage locality address microphoneBrand microphoneModel introRecordingFile createdAt')
             .sort({ createdAt: -1 });
         res.json({ users });
     } catch (error) {
@@ -9430,7 +9430,7 @@ router.get("/contributor-agreements/approved-users", async (req, res) => {
             ];
         }
         const users = await User.find(filter)
-            .select("firstname lastname email username speaker_id dailyCallLimit overallCallLimit dailyPhraseLimit overallPhraseLimit isDisabled contributorAgreement.signedAt contributorAgreement.adminReviewedAt contributorAgreement.agreementVersion contributorAgreement.s3Key")
+            .select("firstname lastname email username mobileNumber phone speaker_id dailyCallLimit overallCallLimit dailyPhraseLimit overallPhraseLimit isDisabled contributorAgreement.signedAt contributorAgreement.adminReviewedAt contributorAgreement.agreementVersion contributorAgreement.s3Key")
             .sort({ "contributorAgreement.adminReviewedAt": -1 })
             .lean();
         res.json({
@@ -9440,6 +9440,7 @@ router.get("/contributor-agreements/approved-users", async (req, res) => {
                 lastname: u.lastname,
                 email: u.email,
                 username: u.username,
+                mobileNumber: u.mobileNumber || u.phone || null,
                 speaker_id: u.speaker_id,
                 dailyCallLimit: u.dailyCallLimit,
                 overallCallLimit: u.overallCallLimit,

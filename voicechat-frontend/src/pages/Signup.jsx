@@ -69,10 +69,10 @@ export default function Signup() {
   const [globalError, setGlobalError] = useState("");
   const [fieldErrors, setFieldErrors] = useState({});
 
-  // Step 1: Personal
   const [firstname, setFirstname] = useState("");
   const [lastname, setLastname] = useState("");
   const [email, setEmail] = useState("");
+  const [mobileNumber, setMobileNumber] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [gender, setGender] = useState("");
@@ -137,6 +137,8 @@ export default function Signup() {
       if (!lastname.trim()) errors.lastname = "Last name is required";
       if (!email.trim()) errors.email = "Email is required";
       else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) errors.email = "Enter a valid email address";
+      if (!mobileNumber.trim()) errors.mobileNumber = "Mobile number is required";
+      else if (!/^[6-9]\d{9}$/.test(mobileNumber.replace(/[^0-9]/g, ""))) errors.mobileNumber = "Enter a valid 10-digit mobile number";
       if (!password) errors.password = "Password is required";
       else if (password.length < 6) errors.password = "Password must be at least 6 characters";
       if (password !== confirmPassword) errors.confirmPassword = "Passwords do not match";
@@ -231,6 +233,7 @@ export default function Signup() {
         firstname,
         lastname,
         email,
+        mobileNumber: mobileNumber.trim(),
         password,
         gender,
         regionalLanguage,
@@ -296,6 +299,23 @@ export default function Signup() {
               <FormField label="Email Address" id="email" required error={fieldErrors.email}>
                 <input id="email" type="email" className={inputClass} placeholder="john@example.com"
                   value={email} onChange={e => setEmail(e.target.value)} autoComplete="email" />
+              </FormField>
+
+              <FormField label="Mobile Number (10 Digits)" id="mobileNumber" required error={fieldErrors.mobileNumber}>
+                <div className="relative flex rounded-xl shadow-sm">
+                  <span className="inline-flex items-center px-3.5 rounded-l-xl border border-r-0 border-neutral-300 bg-neutral-100 text-neutral-600 text-sm font-bold">
+                    🇮🇳 +91
+                  </span>
+                  <input
+                    id="mobileNumber"
+                    type="tel"
+                    maxLength={10}
+                    className="input w-full rounded-l-none font-mono tracking-wider"
+                    placeholder="9876543210"
+                    value={mobileNumber}
+                    onChange={e => setMobileNumber(e.target.value.replace(/[^0-9]/g, "").slice(0, 10))}
+                  />
+                </div>
               </FormField>
 
               <div className="grid grid-cols-2 gap-3">

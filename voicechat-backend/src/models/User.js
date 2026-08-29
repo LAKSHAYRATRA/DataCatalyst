@@ -21,6 +21,8 @@ const userSchema = new mongoose.Schema(
     tokenVersion: { type: Number, default: 0 },
     isEmailVerified: { type: Boolean, default: false },
     dob: { type: Date, required: true },
+    mobileNumber: { type: String, default: null, trim: true },
+    phone: { type: String, default: null, trim: true },
 
     // New profile fields
     gender: {

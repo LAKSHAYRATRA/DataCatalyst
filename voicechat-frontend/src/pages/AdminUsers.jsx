@@ -543,7 +543,14 @@ export default function AdminUsers() {
                                                 <span className="text-white font-semibold">{user.firstname} {user.lastname}</span>
                                                 <span className="text-neutral-400 text-sm">@{user.username}</span>
                                             </div>
-                                            <div className="text-sm text-neutral-400">{user.email}</div>
+                                            <div className="flex items-center gap-3 text-sm text-neutral-400">
+                                                <span>{user.email}</span>
+                                                {(user.mobileNumber || user.phone) && (
+                                                    <span className="text-primary-400 font-mono text-xs bg-primary-950/60 border border-primary-800 px-2 py-0.5 rounded-full">
+                                                        📱 {user.mobileNumber || user.phone}
+                                                    </span>
+                                                )}
+                                            </div>
                                             <div className="flex flex-wrap gap-2 mt-2 text-xs">
                                                 <span className="bg-neutral-700 text-neutral-300 rounded px-2 py-0.5">{user.gender}</span>
                                                 <span className="bg-neutral-700 text-neutral-300 rounded px-2 py-0.5">{user.regionalLanguage}</span>
@@ -667,7 +674,14 @@ export default function AdminUsers() {
                                                     <div className="text-sm text-white font-medium">{user.username}</div>
                                                     <div className="text-xs text-neutral-400">{user.firstname} {user.lastname}</div>
                                                 </td>
-                                                <td className="hidden md:table-cell px-4 py-4 text-sm text-neutral-300">{user.email}</td>
+                                                <td className="hidden md:table-cell px-4 py-4 text-sm text-neutral-300">
+                                                    <div>{user.email}</div>
+                                                    {user.mobileNumber || user.phone ? (
+                                                        <div className="text-xs text-primary-400 font-mono mt-0.5">📱 {user.mobileNumber || user.phone}</div>
+                                                    ) : (
+                                                        <div className="text-xs text-neutral-500 italic mt-0.5">No phone</div>
+                                                    )}
+                                                </td>
                                                 <td className="px-4 py-4">
                                                      <div className="flex flex-col gap-1 items-start">
                                                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${STATUS_BADGE[user.accountStatus] || STATUS_BADGE.pending_intro}`}>
@@ -820,7 +834,12 @@ export default function AdminUsers() {
                                                         <div className="text-white font-medium">{`${u.firstname || ""} ${u.lastname || ""}`.trim() || "—"}</div>
                                                         <div className="text-xs text-neutral-400">@{u.username}</div>
                                                     </td>
-                                                    <td className="px-4 py-3 text-neutral-300">{u.email}</td>
+                                                    <td className="px-4 py-3 text-neutral-300">
+                                                        <div>{u.email}</div>
+                                                        {u.mobileNumber || u.phone ? (
+                                                            <div className="text-xs text-primary-400 font-mono mt-0.5">📱 {u.mobileNumber || u.phone}</div>
+                                                        ) : null}
+                                                    </td>
                                                     <td className="px-4 py-3 text-neutral-400 whitespace-nowrap">{u.signedAt ? new Date(u.signedAt).toLocaleDateString() : "—"}</td>
                                                     <td className="px-4 py-3 text-neutral-400 whitespace-nowrap">{u.approvedAt ? new Date(u.approvedAt).toLocaleDateString() : "—"}</td>
                                                     <td className="px-4 py-3 text-neutral-400 text-xs">{u.agreementVersion || "—"}</td>
