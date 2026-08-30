@@ -145,28 +145,30 @@ export default function AdminCompanyContributorsSummary() {
     }
   }
 
-  async function handleUpdateNoiseGate(userObj, noiseGateDb) {
+  async function handleUpdateAudioConfig(userObj, configData) {
     try {
-      await apiPostJson("/api/admin/contributors/update-noise-gate", {
+      await apiPostJson("/api/admin/contributors/update-audio-config", {
         userId: userObj._id,
         applicationType: "phrase",
         companyId: id,
         languageCode: selectedLangCode,
-        noiseGateDb: parseInt(noiseGateDb) || 0
+        noiseGateDb: parseInt(configData.noiseGateDb) || 0,
+        notch5kEnabled: configData.notch5kEnabled === true || configData.notch5kEnabled === "true",
+        deHissMode: configData.deHissMode || "off",
+        deEsserMode: configData.deEsserMode || "off"
       });
       const Toast = Swal.mixin({
         toast: true,
         position: "top-end",
         showConfirmButton: false,
-        timer: 2000,
+        timer: 2500,
         timerProgressBar: true,
         background: "#1f2937",
         color: "#fff"
       });
-      const valNum = parseInt(noiseGateDb) || 0;
       Toast.fire({
         icon: "success",
-        title: `Noise gate updated to ${valNum === 0 ? "RAW (0 dB)" : valNum + " dB"}`
+        title: `Audio configurations updated for ${userObj.firstname || userObj.username}`
       });
       fetchData();
     } catch (e) {
@@ -180,50 +182,99 @@ export default function AdminCompanyContributorsSummary() {
     }
   }
 
-  async function openSetNoiseGateModal(userObj) {
-    const currentVal = userObj.noiseGateDb !== undefined ? userObj.noiseGateDb : 0;
+  async function openEditAudioConfigModal(userObj) {
+    const currentGate = userObj.noiseGateDb !== undefined ? userObj.noiseGateDb : 0;
+    const currentNotch = userObj.notch5kEnabled !== undefined ? userObj.notch5kEnabled : false;
+    const currentDeHiss = userObj.deHissMode || "off";
+    const currentDeEsser = userObj.deEsserMode || "off";
+
     const compName = company ? (company.projectName || company.name) : "Company";
     const langName = selectedLangData ? selectedLangData.name : (selectedLangCode || "");
 
-    const { value: inputDb } = await Swal.fire({
-      title: "Set Custom Noise Gate",
+    const { value: formValues } = await Swal.fire({
+      title: "Edit Audio DSP Configurations",
       html: `
-        <div class="text-left text-xs text-neutral-300 mb-3 space-y-1.5 bg-neutral-800 p-3 rounded-lg border border-neutral-700">
-          <div><strong class="text-white">Contributor:</strong> ${userObj.firstname} ${userObj.lastname} (@${userObj.username})</div>
-          <div><strong class="text-warning-400">Company ID:</strong> ${compName}</div>
-          <div><strong class="text-warning-400">Language:</strong> ${langName}</div>
-          <div class="text-neutral-400 text-[11px] pt-1.5 border-t border-neutral-700/60 mt-2">
-            Enter custom noise gate attenuation in dB (e.g. <code>-12</code>, <code>-10</code>, <code>-6</code>, or <code>0</code> for RAW unedited audio). This setting applies <strong>ONLY</strong> to this contributor for <strong>${compName} (${langName})</strong>.
+        <div class="text-left text-xs text-neutral-300 mb-4 space-y-1.5 bg-neutral-850 p-3.5 rounded-xl border border-neutral-700 shadow-inner">
+          <div class="flex justify-between items-center"><strong class="text-white text-sm">${userObj.firstname} ${userObj.lastname}</strong> <span class="font-mono text-warning-400 font-bold">${userObj.speaker_id}</span></div>
+          <div><strong class="text-neutral-400">Workload Scope:</strong> <span class="text-warning-400 font-semibold">${compName} (${langName})</span></div>
+          <div class="text-neutral-400 text-[11px] pt-1.5 border-t border-neutral-700/60 mt-1.5">
+            Settings apply automatically to this contributor in real-time when recording for this workload.
+          </div>
+        </div>
+
+        <div class="space-y-3.5 text-left text-xs">
+          <div>
+            <label class="block font-bold text-neutral-300 uppercase tracking-wider mb-1 flex items-center justify-between">
+              <span>1. Noise Gate (dB)</span>
+              <span class="text-[10px] font-normal text-neutral-400">Attenuates silence pauses</span>
+            </label>
+            <select id="swal-noise-gate" class="w-full bg-neutral-800 border border-neutral-600 rounded-lg p-2.5 text-white font-semibold focus:ring-2 focus:ring-warning-500">
+              <option value="0" ${currentGate === 0 ? "selected" : ""}>0 dB (RAW / Disabled)</option>
+              <option value="-6" ${currentGate === -6 ? "selected" : ""}>-6 dB (Light Attenuation)</option>
+              <option value="-10" ${currentGate === -10 ? "selected" : ""}>-10 dB (Medium Attenuation)</option>
+              <option value="-12" ${currentGate === -12 ? "selected" : ""}>-12 dB (Standard Attenuation)</option>
+              <option value="-15" ${currentGate === -15 ? "selected" : ""}>-15 dB (Heavy Attenuation)</option>
+              <option value="-18" ${currentGate === -18 ? "selected" : ""}>-18 dB (Maximum Attenuation)</option>
+            </select>
+          </div>
+
+          <div>
+            <label class="block font-bold text-neutral-300 uppercase tracking-wider mb-1 flex items-center justify-between">
+              <span>2. 5 kHz Static Whine Filter</span>
+              <span class="text-[10px] font-normal text-neutral-400">Removes USB 5kHz static line</span>
+            </label>
+            <select id="swal-notch5k" class="w-full bg-neutral-800 border border-neutral-600 rounded-lg p-2.5 text-white font-semibold focus:ring-2 focus:ring-warning-500">
+              <option value="true" ${currentNotch ? "selected" : ""}>Enabled (Active Notch at 5000 Hz)</option>
+              <option value="false" ${!currentNotch ? "selected" : ""}>Disabled (Off / Bypassed)</option>
+            </select>
+          </div>
+
+          <div>
+            <label class="block font-bold text-neutral-300 uppercase tracking-wider mb-1 flex items-center justify-between">
+              <span>3. De-Hiss Filter (Air & Hiss)</span>
+              <span class="text-[10px] font-normal text-neutral-400">High-shelf pre-amp noise cut</span>
+            </label>
+            <select id="swal-dehiss" class="w-full bg-neutral-800 border border-neutral-600 rounded-lg p-2.5 text-white font-semibold focus:ring-2 focus:ring-warning-500">
+              <option value="off" ${currentDeHiss === "off" ? "selected" : ""}>Off (Full Spectrum)</option>
+              <option value="14k" ${currentDeHiss === "14k" ? "selected" : ""}>14 kHz (Light Air Hiss Cut)</option>
+              <option value="12k" ${currentDeHiss === "12k" ? "selected" : ""}>12 kHz (Standard Preamp Hiss Cut)</option>
+              <option value="10k" ${currentDeHiss === "10k" ? "selected" : ""}>10 kHz (Maximum Static Cut)</option>
+            </select>
+          </div>
+
+          <div>
+            <label class="block font-bold text-neutral-300 uppercase tracking-wider mb-1 flex items-center justify-between">
+              <span>4. De-Esser (Sibilance Control)</span>
+              <span class="text-[10px] font-normal text-neutral-400">Tames sharp "S"/"Sh" pierce</span>
+            </label>
+            <select id="swal-deesser" class="w-full bg-neutral-800 border border-neutral-600 rounded-lg p-2.5 text-white font-semibold focus:ring-2 focus:ring-warning-500">
+              <option value="off" ${currentDeEsser === "off" ? "selected" : ""}>Off (No De-Essing)</option>
+              <option value="light" ${currentDeEsser === "light" ? "selected" : ""}>Light (-3 dB Attenuation)</option>
+              <option value="medium" ${currentDeEsser === "medium" ? "selected" : ""}>Medium (-6 dB Recommended)</option>
+              <option value="strong" ${currentDeEsser === "strong" ? "selected" : ""}>Strong (-9 dB Maximum)</option>
+            </select>
           </div>
         </div>
       `,
-      input: "text",
-      inputValue: String(currentVal),
-      inputPlaceholder: "Enter dB e.g. -12 or 0",
       showCancelButton: true,
-      confirmButtonText: "Apply Noise Gate",
+      confirmButtonText: "Save Audio Configurations",
       cancelButtonText: "Cancel",
       confirmButtonColor: "#ea580c",
       cancelButtonColor: "#475569",
       background: "#1f2937",
       color: "#fff",
-      inputValidator: (value) => {
-        if (value === null || value === undefined || String(value).trim() === "") {
-          return "Please enter a dB number (e.g. -12 or 0)";
-        }
-        const num = parseInt(value);
-        if (isNaN(num)) {
-          return "Please enter a valid integer (e.g. -12, -10, -6, 0)";
-        }
-        if (num > 0 || num < -60) {
-          return "dB value must be between 0 (RAW) and -60 dB";
-        }
-        return null;
+      preConfirm: () => {
+        return {
+          noiseGateDb: document.getElementById("swal-noise-gate").value,
+          notch5kEnabled: document.getElementById("swal-notch5k").value === "true",
+          deHissMode: document.getElementById("swal-dehiss").value,
+          deEsserMode: document.getElementById("swal-deesser").value
+        };
       }
     });
 
-    if (inputDb !== undefined && inputDb !== null) {
-      handleUpdateNoiseGate(userObj, inputDb);
+    if (formValues) {
+      handleUpdateAudioConfig(userObj, formValues);
     }
   }
 
@@ -599,7 +650,7 @@ export default function AdminCompanyContributorsSummary() {
                                 <th className="px-4 py-2.5 text-left">Pending Dur.</th>
                                 <th className="px-4 py-2.5 text-left">Appr. / Rej. %</th>
                                 <th className="px-4 py-2.5 text-left">Status</th>
-                                <th className="px-4 py-2.5 text-left">Noise Gate (dB)</th>
+                                <th className="px-4 py-2.5 text-left">Audio DSP Configs</th>
                                 <th className="px-4 py-2.5 text-right">Actions</th>
                               </tr>
                             </thead>
@@ -628,20 +679,46 @@ export default function AdminCompanyContributorsSummary() {
                                     )}
                                   </td>
                                   <td className="px-4 py-2.5">
-                                    <div className="flex items-center gap-2">
-                                      <span className={`px-2 py-0.5 text-[11px] font-mono font-bold rounded-md border ${
+                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                      <span className={`px-1.5 py-0.5 text-[10px] font-mono font-bold rounded border ${
                                         (u.noiseGateDb || 0) === 0 
-                                          ? "bg-neutral-800 text-neutral-300 border-neutral-700" 
+                                          ? "bg-neutral-800 text-neutral-400 border-neutral-700" 
                                           : "bg-warning-950/80 text-warning-400 border-warning-700/60"
-                                      }`}>
-                                        {(u.noiseGateDb || 0) === 0 ? "0 dB (RAW)" : `${u.noiseGateDb} dB`}
+                                      }`} title="Noise Gate">
+                                        Gate: {(u.noiseGateDb || 0) === 0 ? "RAW" : `${u.noiseGateDb}dB`}
                                       </span>
+
+                                      <span className={`px-1.5 py-0.5 text-[10px] font-mono font-bold rounded border ${
+                                        u.notch5kEnabled 
+                                          ? "bg-emerald-950/80 text-emerald-400 border-emerald-700/60" 
+                                          : "bg-neutral-800 text-neutral-400 border-neutral-700"
+                                      }`} title="5kHz Whine / Static Notch Filter">
+                                        5kHz: {u.notch5kEnabled ? "ON" : "OFF"}
+                                      </span>
+
+                                      <span className={`px-1.5 py-0.5 text-[10px] font-mono font-bold rounded border ${
+                                        u.deHissMode && u.deHissMode !== "off"
+                                          ? "bg-cyan-950/80 text-cyan-400 border-cyan-700/60" 
+                                          : "bg-neutral-800 text-neutral-400 border-neutral-700"
+                                      }`} title="De-Hiss Filter">
+                                        Hiss: {u.deHissMode && u.deHissMode !== "off" ? u.deHissMode : "OFF"}
+                                      </span>
+
+                                      <span className={`px-1.5 py-0.5 text-[10px] font-mono font-bold rounded border ${
+                                        u.deEsserMode && u.deEsserMode !== "off"
+                                          ? "bg-purple-950/80 text-purple-400 border-purple-700/60" 
+                                          : "bg-neutral-800 text-neutral-400 border-neutral-700"
+                                      }`} title="De-Esser">
+                                        Ess: {u.deEsserMode && u.deEsserMode !== "off" ? u.deEsserMode : "OFF"}
+                                      </span>
+
                                       <button
-                                        onClick={() => openSetNoiseGateModal(u)}
-                                        className="px-2 py-1 bg-neutral-700 hover:bg-neutral-600 text-warning-400 hover:text-warning-300 text-[11px] font-semibold rounded-lg transition-colors border border-neutral-600 flex items-center gap-1 shadow-sm"
+                                        onClick={() => openEditAudioConfigModal(u)}
+                                        className="px-2 py-1 bg-neutral-700 hover:bg-neutral-600 text-warning-400 hover:text-warning-300 text-[11px] font-semibold rounded-lg transition-colors border border-neutral-600 flex items-center gap-1 shadow-sm ml-1"
+                                        title="Edit Noise Gate, 5kHz Filter, De-Hisser & De-Esser"
                                       >
                                         <Sliders className="w-3 h-3" />
-                                        Set Noise Gate
+                                        Edit Configurations
                                       </button>
                                     </div>
                                   </td>

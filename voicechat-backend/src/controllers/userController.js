@@ -1405,19 +1405,25 @@ export async function updateMobileNumber(req, res) {
   }
 }
 
-// ─── POST /api/language-applications/noise-gate ──────────────────────────────
+// ─── POST /api/language-applications/noise-gate (and /audio-config) ─────────
 export async function updateUserNoiseGate(req, res) {
   try {
-    const { applicationType, companyId, languageCode, noiseGateDb } = req.body;
+    const { applicationType, companyId, languageCode, noiseGateDb, notch5kEnabled, deHissMode, deEsserMode } = req.body;
     const user = await User.findById(req.user._id);
     if (!user) {
       return res.status(404).json({ error: "User not found" });
     }
 
     const rawVal = parseInt(noiseGateDb);
-    const gateValue = isNaN(rawVal) ? 0 : Math.min(0, Math.max(-60, rawVal));
+    const gateValue = isNaN(rawVal) ? (user.noiseGateDb || 0) : Math.min(0, Math.max(-60, rawVal));
+    const notchVal = notch5kEnabled !== undefined ? !!notch5kEnabled : (user.notch5kEnabled || false);
+    const deHissVal = ["off", "14k", "12k", "10k"].includes(deHissMode) ? deHissMode : (user.deHissMode || "off");
+    const deEsserVal = ["off", "light", "medium", "strong"].includes(deEsserMode) ? deEsserMode : (user.deEsserMode || "off");
 
     user.noiseGateDb = gateValue;
+    user.notch5kEnabled = notchVal;
+    user.deHissMode = deHissVal;
+    user.deEsserMode = deEsserVal;
 
     if (!user.languageApplications) {
       user.languageApplications = [];
@@ -1467,6 +1473,9 @@ export async function updateUserNoiseGate(req, res) {
       }
 
       app.noiseGateDb = gateValue;
+      app.notch5kEnabled = notchVal;
+      app.deHissMode = deHissVal;
+      app.deEsserMode = deEsserVal;
       updatedApp = true;
     });
 
@@ -1477,6 +1486,9 @@ export async function updateUserNoiseGate(req, res) {
         languageCode: reqLang,
         status: "approved",
         noiseGateDb: gateValue,
+        notch5kEnabled: notchVal,
+        deHissMode: deHissVal,
+        deEsserMode: deEsserVal,
         appliedAt: new Date()
       });
     }
@@ -1486,11 +1498,16 @@ export async function updateUserNoiseGate(req, res) {
 
     res.json({
       success: true,
-      message: `Noise gate updated to ${gateValue === 0 ? "RAW (0 dB)" : gateValue + " dB"}.`,
-      noiseGateDb: gateValue
+      message: "Audio configurations updated successfully.",
+      noiseGateDb: gateValue,
+      notch5kEnabled: notchVal,
+      deHissMode: deHissVal,
+      deEsserMode: deEsserVal
     });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
 }
+
+export const updateUserAudioConfig = updateUserNoiseGate;
 

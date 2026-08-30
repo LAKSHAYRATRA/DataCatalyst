@@ -6458,6 +6458,9 @@ function calculateDemographics(items) {
             status: item.appStatus || "pending",
             appliedAt: item.appliedAt || null,
             noiseGateDb: item.noiseGateDb !== undefined ? item.noiseGateDb : (u.noiseGateDb || 0),
+            notch5kEnabled: item.notch5kEnabled !== undefined ? item.notch5kEnabled : (u.notch5kEnabled || false),
+            deHissMode: item.deHissMode || u.deHissMode || "off",
+            deEsserMode: item.deEsserMode || u.deEsserMode || "off",
             approvedSeconds: item.approvedSeconds || 0,
             rejectedSeconds: item.rejectedSeconds || 0,
             pendingSeconds: item.pendingSeconds || 0,
@@ -6645,10 +6648,10 @@ router.get("/languages/:id/contributors-summary", async (req, res) => {
     }
 });
 
-// POST /api/admin/contributors/update-noise-gate
-router.post("/contributors/update-noise-gate", async (req, res) => {
+// POST /api/admin/contributors/update-audio-config (and /update-noise-gate alias)
+const updateContributorAudioConfigHandler = async (req, res) => {
     try {
-        const { userId, applicationType, companyId, languageCode, noiseGateDb } = req.body;
+        const { userId, applicationType, companyId, languageCode, noiseGateDb, notch5kEnabled, deHissMode, deEsserMode } = req.body;
         if (!userId) {
             return res.status(400).json({ error: "userId is required" });
         }
@@ -6659,7 +6662,10 @@ router.post("/contributors/update-noise-gate", async (req, res) => {
         }
 
         const rawVal = parseInt(noiseGateDb);
-        const gateValue = isNaN(rawVal) ? 0 : Math.min(0, Math.max(-60, rawVal));
+        const gateValue = isNaN(rawVal) ? (user.noiseGateDb || 0) : Math.min(0, Math.max(-60, rawVal));
+        const notchVal = notch5kEnabled !== undefined ? !!notch5kEnabled : (user.notch5kEnabled || false);
+        const deHissVal = ["off", "14k", "12k", "10k"].includes(deHissMode) ? deHissMode : (user.deHissMode || "off");
+        const deEsserVal = ["off", "light", "medium", "strong"].includes(deEsserMode) ? deEsserMode : (user.deEsserMode || "off");
 
         if (!user.languageApplications) {
             user.languageApplications = [];
@@ -6709,6 +6715,9 @@ router.post("/contributors/update-noise-gate", async (req, res) => {
             }
 
             app.noiseGateDb = gateValue;
+            app.notch5kEnabled = notchVal;
+            app.deHissMode = deHissVal;
+            app.deEsserMode = deEsserVal;
             updatedApp = true;
         });
 
@@ -6719,23 +6728,35 @@ router.post("/contributors/update-noise-gate", async (req, res) => {
                 languageCode: reqLang,
                 status: "approved",
                 noiseGateDb: gateValue,
+                notch5kEnabled: notchVal,
+                deHissMode: deHissVal,
+                deEsserMode: deEsserVal,
                 appliedAt: new Date()
             });
         }
 
         user.noiseGateDb = gateValue;
+        user.notch5kEnabled = notchVal;
+        user.deHissMode = deHissVal;
+        user.deEsserMode = deEsserVal;
 
         user.markModified("languageApplications");
         await user.save();
 
         res.json({
-            message: `Noise gate set to ${gateValue === 0 ? "RAW (0 dB)" : gateValue + " dB"} for ${user.firstname || user.username}.`,
-            noiseGateDb: gateValue
+            message: `Audio configurations updated for ${user.firstname || user.username}.`,
+            noiseGateDb: gateValue,
+            notch5kEnabled: notchVal,
+            deHissMode: deHissVal,
+            deEsserMode: deEsserVal
         });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
-});
+};
+
+router.post("/contributors/update-audio-config", updateContributorAudioConfigHandler);
+router.post("/contributors/update-noise-gate", updateContributorAudioConfigHandler);
 
 // POST /api/admin/languages/:id/remove-contributor
 router.post("/languages/:id/remove-contributor", async (req, res) => {
@@ -6959,7 +6980,10 @@ router.get("/companies/:id/contributors-summary", async (req, res) => {
                     user: u,
                     appStatus: app.status || "pending",
                     appliedAt: app.appliedAt,
-                    noiseGateDb: app.noiseGateDb !== undefined ? app.noiseGateDb : (u.noiseGateDb || 0)
+                    noiseGateDb: app.noiseGateDb !== undefined ? app.noiseGateDb : (u.noiseGateDb || 0),
+                    notch5kEnabled: app.notch5kEnabled !== undefined ? app.notch5kEnabled : (u.notch5kEnabled || false),
+                    deHissMode: app.deHissMode || u.deHissMode || "off",
+                    deEsserMode: app.deEsserMode || u.deEsserMode || "off"
                 });
             }
         }
@@ -6967,7 +6991,7 @@ router.get("/companies/:id/contributors-summary", async (req, res) => {
         // Populate users for phrases if contributorId exists
         const contributorIds = phrases.map(p => p.contributorId).filter(Boolean);
         const contributorUsers = await User.find({ _id: { $in: contributorIds } })
-            .select("firstname lastname email username gender dob speaker_id locality address createdAt languageApplications").lean();
+            .select("firstname lastname email username gender dob speaker_id locality address createdAt languageApplications notch5kEnabled deHissMode deEsserMode noiseGateDb").lean();
         const contributorUserMap = new Map(contributorUsers.map(u => [String(u._id), u]));
 
         for (const p of phrases) {
@@ -6999,12 +7023,18 @@ router.get("/companies/:id/contributors-summary", async (req, res) => {
                 }
 
                 const noiseVal = matchingApp?.noiseGateDb !== undefined ? matchingApp.noiseGateDb : (existing?.noiseGateDb !== undefined ? existing.noiseGateDb : (u.noiseGateDb || 0));
+                const notchVal = matchingApp?.notch5kEnabled !== undefined ? matchingApp.notch5kEnabled : (existing?.notch5kEnabled !== undefined ? existing.notch5kEnabled : (u.notch5kEnabled || false));
+                const deHissVal = matchingApp?.deHissMode || existing?.deHissMode || u.deHissMode || "off";
+                const deEsserVal = matchingApp?.deEsserMode || existing?.deEsserMode || u.deEsserMode || "off";
 
                 langObj.usersMap.set(String(u._id), {
                     user: u,
                     appStatus: currentStatus,
                     appliedAt: existing?.appliedAt || matchingApp?.appliedAt || p.recordedAt || u.createdAt,
-                    noiseGateDb: noiseVal
+                    noiseGateDb: noiseVal,
+                    notch5kEnabled: notchVal,
+                    deHissMode: deHissVal,
+                    deEsserMode: deEsserVal
                 });
             }
         }

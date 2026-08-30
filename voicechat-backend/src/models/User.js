@@ -116,9 +116,15 @@ const userSchema = new mongoose.Schema(
         reviewedAt: { type: Date, default: null },
         qcResult: { type: mongoose.Schema.Types.Mixed, default: null },
         noiseGateDb: { type: Number, default: 0 }, // 0 = Disabled (RAW), -6, -10, -12, -15 dB
+        notch5kEnabled: { type: Boolean, default: false }, // 5kHz Static Whine Filter
+        deHissMode: { type: String, enum: ["off", "14k", "12k", "10k"], default: "off" }, // High-frequency hiss roll-off
+        deEsserMode: { type: String, enum: ["off", "light", "medium", "strong"], default: "off" }, // Sibilance control
       },
     ],
     noiseGateDb: { type: Number, default: 0 }, // Default noise gate setting for contributor
+    notch5kEnabled: { type: Boolean, default: false },
+    deHissMode: { type: String, enum: ["off", "14k", "12k", "10k"], default: "off" },
+    deEsserMode: { type: String, enum: ["off", "light", "medium", "strong"], default: "off" },
     
     // Speaker ID (e.g. spk_1, spk_2, ...)
     speaker_id: { type: String, unique: true, sparse: true, default: null },

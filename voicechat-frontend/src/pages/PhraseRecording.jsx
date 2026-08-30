@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Mic, Square, Play, Pause, UploadCloud, CheckCircle2, Clock, DollarSign, FolderGit2, RotateCcw, Sliders, Volume2, Settings, X, Activity, AlertCircle, RefreshCw, Send, Loader2 } from 'lucide-react';
+import { Mic, Square, Play, Pause, UploadCloud, CheckCircle2, Clock, DollarSign, FolderGit2, RotateCcw, Sliders, Volume2, Settings, X, Activity, AlertCircle, RefreshCw, Send, Loader2, Sparkles, Radio, Shield } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { apiGet, apiPostJson } from '../lib/api';
 import { encodeWAV } from '../utils/wavBuilder.js';
@@ -163,6 +163,9 @@ export default function PhraseRecording() {
   }, [approvedApps, projectName, language]);
 
   const activeNoiseGateDb = activeApp?.noiseGateDb !== undefined ? activeApp.noiseGateDb : (userInfo?.noiseGateDb || 0);
+  const activeNotch5k = activeApp?.notch5kEnabled !== undefined ? activeApp.notch5kEnabled : (userInfo?.notch5kEnabled ?? true);
+  const activeDeHiss = activeApp?.deHissMode || userInfo?.deHissMode || "off";
+  const activeDeEsser = activeApp?.deEsserMode || userInfo?.deEsserMode || "off";
 
   const [rawPcm, setRawPcm] = useState(null);
   const [recordedLufs, setRecordedLufs] = useState(null);
@@ -241,8 +244,14 @@ export default function PhraseRecording() {
     
     const source = testCtx.createMediaStreamSource(testStream);
     const workletNode = new AudioWorkletNode(testCtx, "pcm-processor");
-    workletNode.port.postMessage({ type: "setNoiseGate", noiseGateDb: activeNoiseGateDb });
-    workletNode.port.postMessage({ type: "setGainBoost", gainBoost: micGainMultiplier });
+    workletNode.port.postMessage({
+      type: "setAudioConfig",
+      noiseGateDb: activeNoiseGateDb,
+      gainBoost: micGainMultiplier,
+      notch5kEnabled: activeNotch5k,
+      deHissMode: activeDeHiss,
+      deEsserMode: activeDeEsser
+    });
 
     const gain = testCtx.createGain();
     gain.gain.value = 0;
@@ -283,14 +292,21 @@ export default function PhraseRecording() {
     }, 1000);
   };
 
-  async function handleNoiseGateChange(newDbVal) {
-    const valNum = parseInt(newDbVal) || 0;
+  async function handleAudioConfigChange(changes) {
+    const newNoiseGateDb = changes.noiseGateDb !== undefined ? (parseInt(changes.noiseGateDb) || 0) : activeNoiseGateDb;
+    const newNotch5k = changes.notch5kEnabled !== undefined ? changes.notch5kEnabled : activeNotch5k;
+    const newDeHiss = changes.deHissMode !== undefined ? changes.deHissMode : activeDeHiss;
+    const newDeEsser = changes.deEsserMode !== undefined ? changes.deEsserMode : activeDeEsser;
+
     try {
       await apiPostJson('/api/language-applications/noise-gate', {
         applicationType: 'phrase',
         companyId: projectName,
         languageCode: language,
-        noiseGateDb: valNum
+        noiseGateDb: newNoiseGateDb,
+        notch5kEnabled: newNotch5k,
+        deHissMode: newDeHiss,
+        deEsserMode: newDeEsser
       });
 
       setApprovedApps(prevApps => {
@@ -300,7 +316,13 @@ export default function PhraseRecording() {
           const langMatch = !language || String(app.languageCode || "").toLowerCase().trim() === String(language || "").toLowerCase().trim();
           if (compMatch && langMatch && (app.applicationType || 'phrase') === 'phrase') {
             updated = true;
-            return { ...app, noiseGateDb: valNum };
+            return {
+              ...app,
+              noiseGateDb: newNoiseGateDb,
+              notch5kEnabled: newNotch5k,
+              deHissMode: newDeHiss,
+              deEsserMode: newDeEsser
+            };
           }
           return app;
         });
@@ -309,7 +331,10 @@ export default function PhraseRecording() {
             applicationType: 'phrase',
             companyId: projectName,
             languageCode: language,
-            noiseGateDb: valNum,
+            noiseGateDb: newNoiseGateDb,
+            notch5kEnabled: newNotch5k,
+            deHissMode: newDeHiss,
+            deEsserMode: newDeEsser,
             status: 'approved'
           });
         }
@@ -317,31 +342,31 @@ export default function PhraseRecording() {
       });
 
       if (workletNodeRef.current) {
-        workletNodeRef.current.port.postMessage({ type: "setNoiseGate", noiseGateDb: valNum });
+        workletNodeRef.current.port.postMessage({
+          type: "setAudioConfig",
+          noiseGateDb: newNoiseGateDb,
+          gainBoost: micGainMultiplier,
+          notch5kEnabled: newNotch5k,
+          deHissMode: newDeHiss,
+          deEsserMode: newDeEsser
+        });
       }
 
       const Toast = Swal.mixin({
         toast: true,
         position: "top-end",
         showConfirmButton: false,
-        timer: 2000,
+        timer: 1500,
         timerProgressBar: true,
         background: "#1f2937",
         color: "#fff"
       });
       Toast.fire({
         icon: "success",
-        title: `Noise gate set to ${valNum === 0 ? "RAW (0 dB)" : valNum + " dB"}`
+        title: "Audio settings updated"
       });
     } catch (err) {
-      console.error("Failed to update noise gate:", err);
-      Swal.fire({
-        title: "Error",
-        text: err.message || "Failed to update noise gate",
-        icon: "error",
-        background: "#1f2937",
-        color: "#fff"
-      });
+      console.error("Failed to update audio configuration:", err);
     }
   }
 
@@ -698,8 +723,14 @@ export default function PhraseRecording() {
       const workletNode = new AudioWorkletNode(audioCtx, 'pcm-processor');
       workletNodeRef.current = workletNode;
 
-      workletNode.port.postMessage({ type: "setNoiseGate", noiseGateDb: activeNoiseGateDb });
-      workletNode.port.postMessage({ type: "setGainBoost", gainBoost: mult });
+      workletNode.port.postMessage({
+        type: "setAudioConfig",
+        noiseGateDb: activeNoiseGateDb,
+        gainBoost: mult,
+        notch5kEnabled: activeNotch5k,
+        deHissMode: activeDeHiss,
+        deEsserMode: activeDeEsser
+      });
 
       const gain = audioCtx.createGain();
       gain.gain.value = 0;
@@ -1093,14 +1124,31 @@ export default function PhraseRecording() {
                       onClick={() => setShowMicSettingsModal(true)}
                       disabled={loading || activeSlotId !== null}
                       className="input w-full bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700 text-neutral-800 dark:text-neutral-200 font-semibold flex items-center justify-between transition-all"
-                      title="Configure Noise Gate and Gain Control"
+                      title="Configure Noise Gate, 5kHz Notch, De-Hiss, De-Esser & Gain Control"
                     >
-                      <span className="flex items-center gap-2">
-                        <Settings className="w-4 h-4 text-primary-500" /> Mic Settings
+                      <span className="flex items-center gap-1.5 truncate mr-1">
+                        <Settings className="w-4 h-4 text-primary-500 shrink-0" /> <span className="truncate">Mic & Audio DSP</span>
                       </span>
-                      <span className="text-xs font-mono font-bold px-2 py-0.5 rounded bg-primary-100 dark:bg-primary-900/40 text-primary-600 dark:text-primary-400">
-                        {micGainPercent > 0 ? `+${micGainPercent}%` : `${micGainPercent}%`} | {activeNoiseGateDb}dB
-                      </span>
+                      <div className="flex items-center gap-1 shrink-0">
+                        {activeNotch5k && (
+                          <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-600 dark:text-emerald-400">
+                            5k
+                          </span>
+                        )}
+                        {activeDeHiss !== "off" && (
+                          <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-600 dark:text-cyan-400">
+                            {activeDeHiss}
+                          </span>
+                        )}
+                        {activeDeEsser !== "off" && (
+                          <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-600 dark:text-purple-400">
+                            Ess
+                          </span>
+                        )}
+                        <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-primary-100 dark:bg-primary-900/40 text-primary-600 dark:text-primary-400">
+                          {activeNoiseGateDb}dB
+                        </span>
+                      </div>
                     </button>
                   </div>
                 </div>
@@ -1108,21 +1156,21 @@ export default function PhraseRecording() {
             {/* Mic Settings Popup Modal */}
             <AnimatePresence>
               {showMicSettingsModal && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
                   <motion.div 
                     initial={{ opacity: 0, scale: 0.95 }}
                     animate={{ opacity: 1, scale: 1 }}
                     exit={{ opacity: 0, scale: 0.95 }}
-                    className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-2xl p-6 w-full max-w-md shadow-2xl relative"
+                    className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-2xl p-6 w-full max-w-lg shadow-2xl relative max-h-[90vh] overflow-y-auto"
                   >
-                    <div className="flex items-center justify-between border-b border-neutral-200 dark:border-neutral-800 pb-4 mb-5">
+                    <div className="flex items-center justify-between border-b border-neutral-200 dark:border-neutral-800 pb-4 mb-4">
                       <div className="flex items-center gap-3">
                         <div className="bg-primary-500/10 text-primary-500 p-2 rounded-xl">
                           <Settings className="w-5 h-5" />
                         </div>
                         <div>
-                          <h3 className="font-bold text-lg text-neutral-900 dark:text-neutral-100">Microphone Settings</h3>
-                          <p className="text-xs text-neutral-500">Noise gate & gain adjustment</p>
+                          <h3 className="font-bold text-lg text-neutral-900 dark:text-neutral-100">Audio DSP & Mic Settings</h3>
+                          <p className="text-xs text-neutral-500">Real-time filters, noise gate & gain</p>
                         </div>
                       </div>
                       <button 
@@ -1133,31 +1181,88 @@ export default function PhraseRecording() {
                       </button>
                     </div>
 
-                    {/* Noise Gate Section */}
-                    <div className="mb-6">
-                      <label className="block text-xs font-bold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider mb-2 flex items-center gap-2">
-                        <Sliders className="w-4 h-4 text-warning-500" /> Noise Gate
-                      </label>
-                      <select 
-                        className="input w-full font-semibold border-warning-500/40 text-warning-700 dark:text-warning-300" 
-                        value={activeNoiseGateDb} 
-                        onChange={(e) => handleNoiseGateChange(e.target.value)}
-                        disabled={loading || activeSlotId !== null}
-                      >
-                        <option value={0}>0 dB (RAW / Off)</option>
-                        <option value={-6}>-6 dB (Light Attenuation)</option>
-                        <option value={-10}>-10 dB (Medium Attenuation)</option>
-                        <option value={-12}>-12 dB (Strong Attenuation)</option>
-                        <option value={-15}>-15 dB (Heavy Attenuation)</option>
-                        <option value={-18}>-18 dB (Maximum Attenuation)</option>
-                      </select>
-                      <p className="text-[11px] text-neutral-500 mt-1">Attenuates background room noise during quiet pauses.</p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-5">
+                      {/* Noise Gate Section */}
+                      <div className="bg-neutral-50 dark:bg-neutral-800/60 p-3.5 rounded-xl border border-neutral-200 dark:border-neutral-700/60">
+                        <label className="block text-xs font-bold text-neutral-700 dark:text-neutral-300 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
+                          <Sliders className="w-3.5 h-3.5 text-warning-500" /> Noise Gate
+                        </label>
+                        <select 
+                          className="input w-full font-semibold text-xs py-2 border-warning-500/40 text-warning-700 dark:text-warning-300 bg-white dark:bg-neutral-800" 
+                          value={activeNoiseGateDb} 
+                          onChange={(e) => handleAudioConfigChange({ noiseGateDb: e.target.value })}
+                          disabled={loading || activeSlotId !== null}
+                        >
+                          <option value={0}>0 dB (RAW / Off)</option>
+                          <option value={-6}>-6 dB (Light)</option>
+                          <option value={-10}>-10 dB (Medium)</option>
+                          <option value={-12}>-12 dB (Standard)</option>
+                          <option value={-15}>-15 dB (Heavy)</option>
+                          <option value={-18}>-18 dB (Maximum)</option>
+                        </select>
+                        <p className="text-[10px] text-neutral-500 mt-1">Attenuates silence between words.</p>
+                      </div>
+
+                      {/* 5 kHz Notch Filter */}
+                      <div className="bg-neutral-50 dark:bg-neutral-800/60 p-3.5 rounded-xl border border-neutral-200 dark:border-neutral-700/60">
+                        <label className="block text-xs font-bold text-neutral-700 dark:text-neutral-300 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
+                          <Radio className="w-3.5 h-3.5 text-emerald-500" /> 5 kHz Whine Filter
+                        </label>
+                        <select 
+                          className="input w-full font-semibold text-xs py-2 border-emerald-500/40 text-emerald-700 dark:text-emerald-300 bg-white dark:bg-neutral-800" 
+                          value={activeNotch5k ? "true" : "false"} 
+                          onChange={(e) => handleAudioConfigChange({ notch5kEnabled: e.target.value === "true" })}
+                          disabled={loading || activeSlotId !== null}
+                        >
+                          <option value="true">Enabled (Removes 5kHz line)</option>
+                          <option value="false">Disabled (Bypassed)</option>
+                        </select>
+                        <p className="text-[10px] text-neutral-500 mt-1">Eliminates USB coil whine / 5kHz line.</p>
+                      </div>
+
+                      {/* De-Hiss Filter */}
+                      <div className="bg-neutral-50 dark:bg-neutral-800/60 p-3.5 rounded-xl border border-neutral-200 dark:border-neutral-700/60">
+                        <label className="block text-xs font-bold text-neutral-700 dark:text-neutral-300 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
+                          <Sparkles className="w-3.5 h-3.5 text-cyan-500" /> De-Hiss Filter
+                        </label>
+                        <select 
+                          className="input w-full font-semibold text-xs py-2 border-cyan-500/40 text-cyan-700 dark:text-cyan-300 bg-white dark:bg-neutral-800" 
+                          value={activeDeHiss} 
+                          onChange={(e) => handleAudioConfigChange({ deHissMode: e.target.value })}
+                          disabled={loading || activeSlotId !== null}
+                        >
+                          <option value="off">Off (Full Spectrum)</option>
+                          <option value="14k">14 kHz (Light Air Cut)</option>
+                          <option value="12k">12 kHz (Standard Clean)</option>
+                          <option value="10k">10 kHz (Max Hiss Cut)</option>
+                        </select>
+                        <p className="text-[10px] text-neutral-500 mt-1">High-shelf cut for preamp white noise.</p>
+                      </div>
+
+                      {/* De-Esser */}
+                      <div className="bg-neutral-50 dark:bg-neutral-800/60 p-3.5 rounded-xl border border-neutral-200 dark:border-neutral-700/60">
+                        <label className="block text-xs font-bold text-neutral-700 dark:text-neutral-300 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
+                          <Shield className="w-3.5 h-3.5 text-purple-500" /> De-Esser (Sibilance)
+                        </label>
+                        <select 
+                          className="input w-full font-semibold text-xs py-2 border-purple-500/40 text-purple-700 dark:text-purple-300 bg-white dark:bg-neutral-800" 
+                          value={activeDeEsser} 
+                          onChange={(e) => handleAudioConfigChange({ deEsserMode: e.target.value })}
+                          disabled={loading || activeSlotId !== null}
+                        >
+                          <option value="off">Off (No De-Essing)</option>
+                          <option value="light">Light (-3 dB)</option>
+                          <option value="medium">Medium (-6 dB)</option>
+                          <option value="strong">Strong (-9 dB)</option>
+                        </select>
+                        <p className="text-[10px] text-neutral-500 mt-1">Softens harsh "S" and "Sh" sounds.</p>
+                      </div>
                     </div>
 
                     {/* Gain Control Section */}
-                    <div className="mb-6">
+                    <div className="mb-5 bg-neutral-50 dark:bg-neutral-800/40 p-4 rounded-xl border border-neutral-200 dark:border-neutral-700/60">
                       <div className="flex items-center justify-between mb-2">
-                        <label className="block text-xs font-bold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider flex items-center gap-2">
+                        <label className="block text-xs font-bold text-neutral-700 dark:text-neutral-300 uppercase tracking-wider flex items-center gap-2">
                           <Volume2 className="w-4 h-4 text-success-500" /> Volume / Gain Control
                         </label>
                         <span className={`text-xs font-mono font-bold px-2.5 py-0.5 rounded-full ${micGainPercent < 0 ? 'bg-error-100 dark:bg-error-900/30 text-error-600 dark:text-error-400' : micGainPercent > 0 ? 'bg-success-100 dark:bg-success-900/30 text-success-600 dark:text-success-400' : 'bg-neutral-200 dark:bg-neutral-700 text-neutral-700 dark:text-neutral-300'}`}>
@@ -1174,7 +1279,7 @@ export default function PhraseRecording() {
                         disabled={loading || activeSlotId !== null}
                         className="w-full h-2 bg-neutral-200 dark:bg-neutral-700 rounded-lg appearance-none cursor-pointer accent-success-500"
                       />
-                      <div className="flex justify-between text-[11px] text-neutral-400 font-mono font-semibold px-0.5 mt-1">
+                      <div className="flex justify-between text-[10px] text-neutral-400 font-mono font-semibold px-0.5 mt-1">
                         <span>-100% (Mute)</span>
                         <span>0% (Raw Input)</span>
                         <span>+100% (2x Louder)</span>
@@ -1183,7 +1288,7 @@ export default function PhraseRecording() {
 
                     {/* LUFS Calibration Section */}
                     {enforceLufs !== false && (
-                      <div className="mb-6 p-4 rounded-2xl border border-primary-500/30 bg-primary-950/20 dark:bg-neutral-800/90 text-neutral-900 dark:text-white shadow-inner">
+                      <div className="mb-5 p-4 rounded-2xl border border-primary-500/30 bg-primary-950/20 dark:bg-neutral-800/90 text-neutral-900 dark:text-white shadow-inner">
                         <div className="flex items-center justify-between mb-2">
                           <label className="block text-xs font-bold text-primary-600 dark:text-primary-400 uppercase tracking-wider flex items-center gap-2">
                             <Activity className="w-4 h-4 text-primary-500" /> Check LUFS (3s Calibration)
@@ -1192,14 +1297,14 @@ export default function PhraseRecording() {
                         </div>
 
                         <p className="text-xs text-neutral-600 dark:text-neutral-300 mb-3 font-medium">
-                          Click below and speak naturally for 3 seconds to test your mic volume calibration.
+                          Click below and speak naturally for 3 seconds to test your mic volume calibration with active DSP.
                         </p>
 
                         <button
                           type="button"
                           onClick={runLufsTest}
                           disabled={isLufsTesting || activeSlotId !== null || loading}
-                          className={`w-full py-3 px-4 rounded-xl font-bold text-xs transition-all flex items-center justify-center gap-2 shadow-md ${
+                          className={`w-full py-2.5 px-4 rounded-xl font-bold text-xs transition-all flex items-center justify-center gap-2 shadow-md ${
                             isLufsTesting 
                               ? "bg-error-600 text-white animate-pulse" 
                               : "bg-primary-600 hover:bg-primary-500 text-white shadow-primary-600/20"
@@ -1219,7 +1324,7 @@ export default function PhraseRecording() {
 
                         {/* LUFS Result Display */}
                         {lufsResult && (
-                          <div className={`mt-3 p-3.5 rounded-xl border flex items-center justify-between text-xs font-bold shadow-sm ${
+                          <div className={`mt-3 p-3 rounded-xl border flex items-center justify-between text-xs font-bold shadow-sm ${
                             lufsResult.status === "pass" 
                               ? "bg-emerald-500/15 border-emerald-500/40 text-emerald-700 dark:text-emerald-300"
                               : lufsResult.status === "no_speech"
@@ -1245,12 +1350,12 @@ export default function PhraseRecording() {
                       </div>
                     )}
 
-                    <div className="flex justify-end pt-2">
+                    <div className="flex justify-end pt-1">
                       <button 
                         onClick={() => setShowMicSettingsModal(false)}
-                        className="btn btn-primary w-full py-2.5"
+                        className="btn btn-primary w-full py-2.5 font-bold"
                       >
-                        Done
+                        Done & Apply Settings
                       </button>
                     </div>
                   </motion.div>
