@@ -238,7 +238,8 @@ export default function AdminCompanyContributorsSummary() {
               <option value="off" ${currentDeHiss === "off" ? "selected" : ""}>Off (Full Spectrum)</option>
               <option value="14k" ${currentDeHiss === "14k" ? "selected" : ""}>14 kHz (Light Air Hiss Cut)</option>
               <option value="12k" ${currentDeHiss === "12k" ? "selected" : ""}>12 kHz (Standard Preamp Hiss Cut)</option>
-              <option value="10k" ${currentDeHiss === "10k" ? "selected" : ""}>10 kHz (Maximum Static Cut)</option>
+              <option value="10k" ${currentDeHiss === "10k" ? "selected" : ""}>10 kHz (Strong Static Cut)</option>
+              <option value="8k" ${currentDeHiss === "8k" ? "selected" : ""}>8 kHz (Heavy Noise Cut)</option>
             </select>
           </div>
 

@@ -240,7 +240,7 @@ export default function PhraseRecording() {
     const testCtx = new AudioCtx({ sampleRate: 48000 });
     if (testCtx.state === "suspended") await testCtx.resume();
 
-    try { await testCtx.audioWorklet.addModule("/pcm-worklet.js"); } catch {}
+    try { await testCtx.audioWorklet.addModule("/pcm-worklet.js?v=" + Date.now()); } catch {}
     
     const source = testCtx.createMediaStreamSource(testStream);
     const workletNode = new AudioWorkletNode(testCtx, "pcm-processor");
@@ -714,7 +714,7 @@ export default function PhraseRecording() {
 
       const source = audioCtx.createMediaStreamSource(stream);
       try {
-        await audioCtx.audioWorklet.addModule('/pcm-worklet.js');
+        await audioCtx.audioWorklet.addModule('/pcm-worklet.js?v=' + Date.now());
       } catch (wErr) {
         console.warn('Worklet module note:', wErr);
       }
@@ -1234,7 +1234,8 @@ export default function PhraseRecording() {
                           <option value="off">Off (Full Spectrum)</option>
                           <option value="14k">14 kHz (Light Air Cut)</option>
                           <option value="12k">12 kHz (Standard Clean)</option>
-                          <option value="10k">10 kHz (Max Hiss Cut)</option>
+                          <option value="10k">10 kHz (Strong Hiss Cut)</option>
+                          <option value="8k">8 kHz (Heavy Noise Cut)</option>
                         </select>
                         <p className="text-[10px] text-neutral-500 mt-1">High-shelf cut for preamp white noise.</p>
                       </div>

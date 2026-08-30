@@ -1417,7 +1417,7 @@ export async function updateUserNoiseGate(req, res) {
     const rawVal = parseInt(noiseGateDb);
     const gateValue = isNaN(rawVal) ? (user.noiseGateDb || 0) : Math.min(0, Math.max(-60, rawVal));
     const notchVal = notch5kEnabled !== undefined ? !!notch5kEnabled : (user.notch5kEnabled || false);
-    const deHissVal = ["off", "14k", "12k", "10k"].includes(deHissMode) ? deHissMode : (user.deHissMode || "off");
+    const deHissVal = ["off", "14k", "12k", "10k", "8k"].includes(deHissMode) ? deHissMode : (user.deHissMode || "off");
     const deEsserVal = ["off", "light", "medium", "strong"].includes(deEsserMode) ? deEsserMode : (user.deEsserMode || "off");
 
     user.noiseGateDb = gateValue;
