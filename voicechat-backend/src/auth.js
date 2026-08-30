@@ -40,8 +40,8 @@ export function requireAuth(jwtSecret) {
 
       // Verify token version for single session enforcement
       const user = await User.findById(payload.sub);
-      if (!user) {
-        return res.status(401).json({ error: "unauthorized" });
+      if (!user || user.isDeleted || user.status === "blacklisted" || user.isBlacklisted) {
+        return res.status(401).json({ success: false, error: "Account deactivated or deleted" });
       }
 
       // If token has version, it must match user's version

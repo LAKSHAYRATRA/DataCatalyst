@@ -108,7 +108,7 @@ const userSchema = new mongoose.Schema(
         applicationType: { type: String, enum: ["call", "phrase", "scripted_call"], default: "phrase" },
         companyId: { type: String, trim: true, default: null },
         languageCode: { type: String, required: true, lowercase: true, trim: true },
-        status: { type: String, enum: ["pending", "approved", "rejected"], default: "pending" },
+        status: { type: String, enum: ["pending", "approved", "rejected", "blacklisted"], default: "pending" },
         recordingFile: { type: String, default: null },
         sampleRecordings: [{ type: mongoose.Schema.Types.Mixed, default: [] }],
         appliedAt: { type: Date, default: Date.now },

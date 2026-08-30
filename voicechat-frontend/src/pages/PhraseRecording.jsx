@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Mic, Square, Play, UploadCloud, CheckCircle2, Clock, DollarSign, FolderGit2, RotateCcw, Sliders, Volume2, Settings, X, Activity } from 'lucide-react';
+import { Mic, Square, Play, Pause, UploadCloud, CheckCircle2, Clock, DollarSign, FolderGit2, RotateCcw, Sliders, Volume2, Settings, X, Activity, AlertCircle, RefreshCw, Send, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { apiGet, apiPostJson } from '../lib/api';
 import { encodeWAV } from '../utils/wavBuilder.js';
@@ -981,100 +981,129 @@ export default function PhraseRecording() {
         </div>
       </motion.div>
 
-      {/* Progress Bar */}
-      <motion.div 
-        initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.1 }}
-        className="mb-8"
-      >
-        <div className="flex justify-between items-end mb-2">
-            <div>
-                <h3 className="text-sm font-bold text-neutral-400 uppercase tracking-wider">Daily Phrase Limit</h3>
-                <p className="text-xl font-bold text-white">
-                    {stats.phrasesRecordedToday} <span className="text-neutral-500 text-lg">/ {stats.dailyPhraseLimit === -1 ? '∞' : stats.dailyPhraseLimit}</span>
-                </p>
+      {!serverUserRoles.isAdmin && !serverUserRoles.isQA && serverUserRoles.loaded && approvedCompanies.length === 0 ? (
+        <motion.div 
+          initial={{ opacity: 0, scale: 0.98 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="card text-center py-16 px-6 max-w-2xl mx-auto space-y-4"
+        >
+          <div className="w-16 h-16 bg-amber-500/10 text-amber-500 rounded-full flex items-center justify-center mx-auto mb-2">
+            <AlertCircle className="w-8 h-8" />
+          </div>
+          <h2 className="text-2xl font-bold text-white">No Approved Phrase Projects</h2>
+          <p className="text-neutral-400 text-sm max-w-md mx-auto">
+            You do not currently have access to any active phrase projects. If you were recently removed or reset, please submit an application for an active project.
+          </p>
+          <div className="pt-4 flex justify-center gap-3">
+            <button
+              onClick={() => navigate('/language-apply?type=phrase')}
+              className="btn btn-primary px-6 py-2.5 flex items-center gap-2"
+            >
+              Apply for Projects →
+            </button>
+            <button
+              onClick={() => navigate('/dashboard')}
+              className="btn btn-secondary px-6 py-2.5"
+            >
+              Return to Dashboard
+            </button>
+          </div>
+        </motion.div>
+      ) : (
+        <>
+          {/* Progress Bar */}
+          <motion.div 
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.1 }}
+            className="mb-8"
+          >
+            <div className="flex justify-between items-end mb-2">
+                <div>
+                    <h3 className="text-sm font-bold text-neutral-400 uppercase tracking-wider">Daily Phrase Limit</h3>
+                    <p className="text-xl font-bold text-white">
+                        {stats.phrasesRecordedToday} <span className="text-neutral-500 text-lg">/ {stats.dailyPhraseLimit === -1 ? '∞' : stats.dailyPhraseLimit}</span>
+                    </p>
+                </div>
+                {stats.dailyPhraseLimit !== -1 && (
+                    <div className="text-sm font-medium text-neutral-400">
+                        {Math.round((stats.phrasesRecordedToday / stats.dailyPhraseLimit) * 100)}%
+                    </div>
+                )}
             </div>
             {stats.dailyPhraseLimit !== -1 && (
-                <div className="text-sm font-medium text-neutral-400">
-                    {Math.round((stats.phrasesRecordedToday / stats.dailyPhraseLimit) * 100)}%
+                <div className="h-3 w-full bg-neutral-800 rounded-full overflow-hidden border border-neutral-700">
+                    <div 
+                        className={`h-full transition-all duration-1000 ${stats.phrasesRecordedToday >= stats.dailyPhraseLimit ? 'bg-error-500' : 'bg-primary-500'}`}
+                        style={{ width: `${Math.min(100, (stats.phrasesRecordedToday / stats.dailyPhraseLimit) * 100)}%` }}
+                    />
                 </div>
             )}
-        </div>
-        {stats.dailyPhraseLimit !== -1 && (
-            <div className="h-3 w-full bg-neutral-800 rounded-full overflow-hidden border border-neutral-700">
-                <div 
-                    className={`h-full transition-all duration-1000 ${stats.phrasesRecordedToday >= stats.dailyPhraseLimit ? 'bg-error-500' : 'bg-primary-500'}`}
-                    style={{ width: `${Math.min(100, (stats.phrasesRecordedToday / stats.dailyPhraseLimit) * 100)}%` }}
-                />
-            </div>
-        )}
-      </motion.div>
+          </motion.div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        
-        {/* Workspace */}
-        <motion.div 
-          initial={{ x: -20, opacity: 0 }}
-          animate={{ x: 0, opacity: 1 }}
-          transition={{ delay: 0.1 }}
-          className="lg:col-span-2 space-y-6"
-        >
-          <div className="card">
-            <h2 className="text-lg font-semibold mb-4">1. Fetch a Phrase</h2>
-            
-            <div className="flex flex-col sm:flex-row gap-4 mb-4">
-              <div className="flex-1">
-                <label className="block text-xs font-bold text-neutral-500 uppercase tracking-wider mb-2 flex items-center gap-2">
-                  <FolderGit2 className="w-4 h-4" /> Project
-                </label>
-                <select 
-                  className="input w-full"
-                  value={projectName} 
-                  onChange={(e) => {
-                    setProjectName(e.target.value);
-                  }}
-                  disabled={loading || activeSlotId !== null}
-                >
-                  {approvedCompanies.map(c => (
-                    <option key={c.id} value={c.id}>{c.label}</option>
-                  ))}
-                </select>
-              </div>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            {/* Workspace */}
+            <motion.div 
+              initial={{ x: -20, opacity: 0 }}
+              animate={{ x: 0, opacity: 1 }}
+              transition={{ delay: 0.1 }}
+              className="lg:col-span-2 space-y-6"
+            >
+              <div className="card">
+                <h2 className="text-lg font-semibold mb-4">1. Fetch a Phrase</h2>
+                
+                <div className="flex flex-col sm:flex-row gap-4 mb-4">
+                  <div className="flex-1">
+                    <label className="block text-xs font-bold text-neutral-500 uppercase tracking-wider mb-2 flex items-center gap-2">
+                      <FolderGit2 className="w-4 h-4" /> Project
+                    </label>
+                    <select 
+                      className="input w-full"
+                      value={projectName} 
+                      onChange={(e) => {
+                        setProjectName(e.target.value);
+                      }}
+                      disabled={loading || activeSlotId !== null}
+                    >
+                      {approvedCompanies.map(c => (
+                        <option key={c.id} value={c.id}>{c.label}</option>
+                      ))}
+                    </select>
+                  </div>
 
-              <div className="flex-1">
-                <label className="block text-xs font-bold text-neutral-500 uppercase tracking-wider mb-2 flex items-center gap-2">
-                  <Mic className="w-4 h-4" /> Language
-                </label>
-                <select 
-                  className="input w-full capitalize" 
-                  value={language} 
-                  onChange={(e) => {
-                    setLanguage(e.target.value);
-                  }}
-                  disabled={loading || activeSlotId !== null}
-                >
-                  {availableLanguages.map(lang => (
-                    <option key={lang} value={lang}>{lang}</option>
-                  ))}
-                </select>
-              </div>
+                  <div className="flex-1">
+                    <label className="block text-xs font-bold text-neutral-500 uppercase tracking-wider mb-2 flex items-center gap-2">
+                      <Mic className="w-4 h-4" /> Language
+                    </label>
+                    <select 
+                      className="input w-full capitalize" 
+                      value={language} 
+                      onChange={(e) => {
+                        setLanguage(e.target.value);
+                      }}
+                      disabled={loading || activeSlotId !== null}
+                    >
+                      {availableLanguages.map(lang => (
+                        <option key={lang} value={lang}>{lang}</option>
+                      ))}
+                    </select>
+                  </div>
 
-              <div className="flex-1 flex items-end">
-                <button 
-                  type="button"
-                  onClick={() => setShowMicSettingsModal(true)}
-                  disabled={loading || activeSlotId !== null}
-                  className="input w-full bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700 text-neutral-800 dark:text-neutral-200 font-semibold flex items-center justify-between transition-all"
-                  title="Configure Noise Gate and Gain Control"
-                >
-                  <span className="flex items-center gap-2">
-                    <Settings className="w-4 h-4 text-primary-500" /> Mic Settings
-                  </span>
-                  <span className="text-xs font-mono font-bold px-2 py-0.5 rounded bg-primary-100 dark:bg-primary-900/40 text-primary-600 dark:text-primary-400">
-                    {micGainPercent > 0 ? `+${micGainPercent}%` : `${micGainPercent}%`} | {activeNoiseGateDb}dB
-                  </span>
-                </button>
-              </div>
-            </div>
+                  <div className="flex-1 flex items-end">
+                    <button 
+                      type="button"
+                      onClick={() => setShowMicSettingsModal(true)}
+                      disabled={loading || activeSlotId !== null}
+                      className="input w-full bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700 text-neutral-800 dark:text-neutral-200 font-semibold flex items-center justify-between transition-all"
+                      title="Configure Noise Gate and Gain Control"
+                    >
+                      <span className="flex items-center gap-2">
+                        <Settings className="w-4 h-4 text-primary-500" /> Mic Settings
+                      </span>
+                      <span className="text-xs font-mono font-bold px-2 py-0.5 rounded bg-primary-100 dark:bg-primary-900/40 text-primary-600 dark:text-primary-400">
+                        {micGainPercent > 0 ? `+${micGainPercent}%` : `${micGainPercent}%`} | {activeNoiseGateDb}dB
+                      </span>
+                    </button>
+                  </div>
+                </div>
 
             {/* Mic Settings Popup Modal */}
             <AnimatePresence>
@@ -1520,6 +1549,8 @@ export default function PhraseRecording() {
         </motion.div>
 
       </div>
+      </>
+    )}
     </div>
   </div>
 );

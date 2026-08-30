@@ -482,20 +482,43 @@ export async function getAvailablePhrase(req, res) {
     const waitingTestCompanies = [];
 
     const isAppApproved = (compId) => {
-      return (user.languageApplications || []).some(a => 
-          (a.applicationType === "phrase" || !a.applicationType) && 
-          a.status === "approved" && 
-          String(a.companyId || "").replace(/_downloaded$/, "").trim().toLowerCase() === String(compId).replace(/_downloaded$/, "").trim().toLowerCase() &&
-          String(a.languageCode || "").trim().toLowerCase() === reqLang
-      );
+      const targetClean = String(compId || "").replace(/_downloaded$/, "").trim().toLowerCase();
+      const compObj = companies.find(c => String(c.name || "").toLowerCase().trim() === targetClean || String(c._id) === targetClean);
+      const identifiers = [
+        targetClean,
+        compObj?.name?.toLowerCase()?.trim(),
+        compObj?.projectName?.toLowerCase()?.trim(),
+        String(compObj?._id || "").toLowerCase()
+      ].filter(Boolean);
+
+      return (user.languageApplications || []).some(a => {
+          const isPhrase = a.applicationType === "phrase" || !a.applicationType;
+          if (!isPhrase || a.status !== "approved") return false;
+          const aComp = String(a.companyId || "").replace(/_downloaded$/, "").trim().toLowerCase();
+          const compMatches = identifiers.includes(aComp);
+          const langMatches = !reqLang || String(a.languageCode || "").trim().toLowerCase() === reqLang;
+          return compMatches && langMatches;
+      });
     };
 
     const isAppRejected = (compId) => {
-      return (user.languageApplications || []).some(a => 
-          (a.applicationType === "phrase" || !a.applicationType) && 
-          (a.status === "rejected" || a.status === "blocked") && 
-          String(a.companyId || "").replace(/_downloaded$/, "").trim().toLowerCase() === String(compId).replace(/_downloaded$/, "").trim().toLowerCase()
-      );
+      const targetClean = String(compId || "").replace(/_downloaded$/, "").trim().toLowerCase();
+      const compObj = companies.find(c => String(c.name || "").toLowerCase().trim() === targetClean || String(c._id) === targetClean);
+      const identifiers = [
+        targetClean,
+        compObj?.name?.toLowerCase()?.trim(),
+        compObj?.projectName?.toLowerCase()?.trim(),
+        String(compObj?._id || "").toLowerCase()
+      ].filter(Boolean);
+
+      return (user.languageApplications || []).some(a => {
+          const isPhrase = a.applicationType === "phrase" || !a.applicationType;
+          if (!isPhrase || (a.status !== "rejected" && a.status !== "blocked")) return false;
+          const aComp = String(a.companyId || "").replace(/_downloaded$/, "").trim().toLowerCase();
+          const compMatches = identifiers.includes(aComp) || !aComp;
+          const langMatches = !reqLang || String(a.languageCode || "").trim().toLowerCase() === reqLang;
+          return compMatches && langMatches;
+      });
     };
 
     const rejectedCompanyIds = (user.languageApplications || [])

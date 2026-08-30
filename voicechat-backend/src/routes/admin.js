@@ -1426,7 +1426,11 @@ async function approveLanguageApplication(req, res) {
 
             if (aLang === languageCode && aType === appType) {
                 if (appType === "phrase") {
-                    if (!appComp || aComp === appComp) {
+                    if (appComp && aComp === appComp) {
+                        a.status = "approved";
+                        a.reviewedBy = req.user._id;
+                        a.reviewedAt = new Date();
+                    } else if (!appComp && !aComp) {
                         a.status = "approved";
                         a.reviewedBy = req.user._id;
                         a.reviewedAt = new Date();
@@ -3393,6 +3397,7 @@ sharedLanguageReviewRouter.post("/calls/bulk-delete", bulkDeleteCallsHandler);
 sharedLanguageReviewRouter.delete("/calls/:callId", deleteSingleCallHandler);
 sharedLanguageReviewRouter.get("/languages", getLanguagesHandler);
 router.use("/", sharedLanguageReviewRouter);
+router.use("/qa", sharedLanguageReviewRouter);
 
 // All routes below this line require full admin access
 router.use(requireAuth(JWT_SECRET));
@@ -7201,20 +7206,20 @@ router.post("/companies/:id/remove-contributor", async (req, res) => {
         }
 
         let updated = false;
-        // Mark matching phrase applications for this company as rejected
+        const reqLang = String(languageCode || "").toLowerCase().trim();
+        const isAll = !reqLang || reqLang === "all" || reqLang === "any";
+
+        // Mark matching phrase applications for this company (and any legacy generic entries for this language) as rejected
         user.languageApplications.forEach(app => {
             if (app.applicationType === "phrase" || !app.applicationType) {
                 const appComp = String(app.companyId || "").replace(/_downloaded$/, "").trim().toLowerCase();
                 const compMatches = companyIdentifiers.some(id => id.replace(/_downloaded$/, "").trim().toLowerCase() === appComp);
-                if (compMatches) {
-                    const reqLang = String(languageCode || "").toLowerCase().trim();
-                    const appLang = String(app.languageCode || "").toLowerCase().trim();
-                    if (!reqLang || appLang === reqLang) {
-                        app.status = "rejected";
-                        app.reviewedAt = new Date();
-                        app.reviewedBy = req.user._id;
-                        updated = true;
-                    }
+                const appLang = String(app.languageCode || "").toLowerCase().trim();
+                if ((compMatches || !appComp) && (isAll || appLang === reqLang)) {
+                    app.status = "rejected";
+                    app.reviewedAt = new Date();
+                    app.reviewedBy = req.user._id;
+                    updated = true;
                 }
             }
         });
@@ -7224,7 +7229,7 @@ router.post("/companies/:id/remove-contributor", async (req, res) => {
             user.languageApplications.push({
                 applicationType: "phrase",
                 companyId: company.name,
-                languageCode: (languageCode || "english").toLowerCase().trim(),
+                languageCode: (!reqLang || reqLang === "all" || reqLang === "any") ? "english" : reqLang,
                 status: "rejected",
                 appliedAt: new Date(),
                 reviewedAt: new Date(),
@@ -7276,16 +7281,17 @@ router.post("/companies/:id/reset-contributor", async (req, res) => {
             return res.status(404).json({ error: "User not found" });
         }
 
+        const reqLang = String(languageCode || "").toLowerCase().trim();
+        const isAll = !reqLang || reqLang === "all" || reqLang === "any";
+
         if (user.languageApplications) {
             user.languageApplications = user.languageApplications.filter(app => {
                 if (app.applicationType && app.applicationType !== "phrase") return true;
                 const appComp = String(app.companyId || "").replace(/_downloaded$/, "").trim().toLowerCase();
                 const compMatches = companyIdentifiers.some(id => id.replace(/_downloaded$/, "").trim().toLowerCase() === appComp);
-                if (!compMatches) return true;
-
-                const reqLang = String(languageCode || "").toLowerCase().trim();
                 const appLang = String(app.languageCode || "").toLowerCase().trim();
-                if (!reqLang || appLang === reqLang) {
+
+                if ((compMatches || !appComp) && (isAll || appLang === reqLang)) {
                     return false; // Remove matching phrase application
                 }
                 return true;

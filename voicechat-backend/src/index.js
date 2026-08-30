@@ -463,8 +463,11 @@ async function cleanupRecording(socket, endedAt, callIdOverride) {
     await new Promise(r => setTimeout(r, 100));
 
     return new Promise(async (resolve) => {
+      let finalUploadPath = tempPath || "";
+      let totalCallDurationSec = 0;
+      let startedAt = null;
+      let endedAtSafe = endedAt || new Date();
       try {
-        let finalUploadPath = tempPath;
         if (tempPath.endsWith(".pcm")) {
           try {
             let session = await CallSession.findOne({ callId });
@@ -513,7 +516,7 @@ async function cleanupRecording(socket, endedAt, callIdOverride) {
 
             // Compute master duration across all sources without ever clipping or truncating real speech!
             const streamSeqDuration = (streamObj?.maxSeq !== undefined && streamObj.maxSeq >= 0 ? (streamObj.maxSeq + 1) * 0.5 : 0);
-            const totalCallDurationSec = Math.max(rawDurationSec, streamSeqDuration, currentSizeSec, peerSeqSec, peerSizeSec, 1);
+            totalCallDurationSec = Math.max(rawDurationSec, streamSeqDuration, currentSizeSec, peerSeqSec, peerSizeSec, 1);
 
             const sampleRate = 48000;
             const bytesPerSample = 4; // float32
@@ -637,12 +640,18 @@ async function cleanupRecording(socket, endedAt, callIdOverride) {
           const callsLocalDir = path.join(process.cwd(), "recordings", "calls");
           if (!fs.existsSync(callsLocalDir)) fs.mkdirSync(callsLocalDir, { recursive: true });
           
-          const localBackupName = `${callId}_${socket.data.userId || "user"}_${Date.now()}.${finalUploadPath.split('.').pop()}`;
+          const fileToBackup = (finalUploadPath && fs.existsSync(finalUploadPath)) ? finalUploadPath : (tempPath && fs.existsSync(tempPath) ? tempPath : null);
+          const ext = fileToBackup ? fileToBackup.split('.').pop() : 'flac';
+          const localBackupName = `${callId}_${socket.data.userId || "user"}_${Date.now()}.${ext}`;
           const localBackupPath = path.join(callsLocalDir, localBackupName);
 
-          fs.copyFileSync(finalUploadPath, localBackupPath);
-          console.log(`Saved local fallback call recording to: ${localBackupPath}`);
-          resolve(`local:${localBackupName}`);
+          if (fileToBackup) {
+            fs.copyFileSync(fileToBackup, localBackupPath);
+            console.log(`Saved local fallback call recording to: ${localBackupPath}`);
+            resolve(`local:${localBackupName}`);
+          } else {
+            resolve(null);
+          }
         } catch (backupErr) {
           console.error("Failed to save local fallback recording:", backupErr);
           resolve(null);
@@ -911,6 +920,7 @@ async function endCall(callId, reason) {
   // Give clients 20s grace window to complete SACK audit and missing chunk upload before fallback cleanup
   setTimeout(async () => {
     try {
+      const endedAt = call?.endedAt || new Date();
       const socketA = call.a ? io.sockets.sockets.get(call.a) : null;
       const socketB = call.b ? io.sockets.sockets.get(call.b) : null;
 
@@ -1872,6 +1882,58 @@ try {
   );
   if (cleanupNegotiationCalls.modifiedCount > 0) {
     console.log(`Cleaned up ${cleanupNegotiationCalls.modifiedCount} negotiation-only calls from pending.`);
+  }
+
+  // Fix & reconcile historical phrase application states for users
+  try {
+    const usersWithPhraseApps = await User.find({ "languageApplications.0": { $exists: true } });
+    let totalFixed = 0;
+    for (const u of usersWithPhraseApps) {
+      if (!Array.isArray(u.languageApplications) || u.languageApplications.length === 0) continue;
+      
+      let modified = false;
+      const phraseApps = u.languageApplications.filter(a => a.applicationType === "phrase" || !a.applicationType);
+      
+      if (phraseApps.length > 0) {
+        // Find languages that have an explicit rejection
+        const rejectedLangs = new Set(
+          phraseApps.filter(a => a.status === "rejected" || a.status === "blocked")
+                    .map(a => String(a.languageCode || "").toLowerCase().trim())
+                    .filter(Boolean)
+        );
+
+        // Filter out legacy generic phrase applications with no companyId if there are company-specific applications or if rejected
+        const cleanedApps = u.languageApplications.filter(a => {
+          const isPhrase = a.applicationType === "phrase" || !a.applicationType;
+          if (!isPhrase) return true;
+          const aLang = String(a.languageCode || "").toLowerCase().trim();
+          const aComp = String(a.companyId || "").trim();
+          
+          // If this is a generic entry with no companyId:
+          if (!aComp) {
+            // If the user already has specific company applications for this language or is rejected, drop the orphan generic entry
+            const hasSpecific = phraseApps.some(p => p !== a && String(p.languageCode || "").toLowerCase().trim() === aLang && Boolean(String(p.companyId || "").trim()));
+            if (hasSpecific || rejectedLangs.has(aLang) || a.status === "approved") {
+              modified = true;
+              return false; // Remove ghost generic entry
+            }
+          }
+          return true;
+        });
+
+        if (modified) {
+          u.languageApplications = cleanedApps;
+          u.markModified("languageApplications");
+          await u.save();
+          totalFixed++;
+        }
+      }
+    }
+    if (totalFixed > 0) {
+      console.log(`Reconciled and fixed legacy phrase applications for ${totalFixed} users.`);
+    }
+  } catch (appErr) {
+    console.error("Phrase application reconciliation error:", appErr.message);
   }
 } catch (e) {
   console.error("QA Payrate / Segment / Scripted Call reset error:", e.message);
