@@ -1004,6 +1004,101 @@ export async function sendUpiRequestEmail(to, firstName = "there") {
     });
 }
 
+/**
+ * Send an OTP email to an administrator authorizing the promotion of a user to Admin status.
+ * @param {string} to - Admin's email
+ * @param {string} otp - 6-digit OTP code
+ * @param {object} targetUser - { username, email, firstname, lastname }
+ */
+export async function sendAdminPromotionOtpEmail(to, otp, targetUser) {
+    const subject = `🔐 Security Authorization: Make @${targetUser.username} an Admin`;
+
+    const html = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+</head>
+<body style="margin:0;padding:0;background:#090d16;font-family:'Segoe UI',Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#090d16;padding:40px 0;">
+    <tr>
+      <td align="center">
+        <table width="500" cellpadding="0" cellspacing="0" style="background:#131b2e;border-radius:18px;overflow:hidden;box-shadow:0 12px 40px rgba(0,0,0,0.6);border:1px solid #1e293b;">
+          <!-- Header -->
+          <tr>
+            <td style="background:linear-gradient(135deg,#7c3aed,#4f46e5);padding:32px;text-align:center;">
+              <div style="width:60px;height:60px;background:rgba(255,255,255,0.18);border-radius:16px;text-align:center;line-height:60px;margin:0 auto 12px auto;display:block;">
+                <span style="font-size:30px;line-height:60px;vertical-align:middle;">👑</span>
+              </div>
+              <h1 style="margin:0;color:#fff;font-size:22px;font-weight:800;letter-spacing:-0.5px;">Admin Privileges Authorization</h1>
+              <p style="margin:6px 0 0;color:rgba(255,255,255,0.8);font-size:13px;font-weight:500;">High-Security Privilege Escalation</p>
+            </td>
+          </tr>
+          <!-- Body -->
+          <tr>
+            <td style="padding:36px 40px;">
+              <h2 style="margin:0 0 10px;color:#f8fafc;font-size:18px;font-weight:700;">Promote Contributor to Admin</h2>
+              <p style="margin:0 0 20px;color:#94a3b8;font-size:14px;line-height:1.6;">
+                You have requested to grant full <strong>Administrator Privileges</strong> to the following contributor:
+              </p>
+              
+              <!-- Target User Info Card -->
+              <div style="background:#0b1120;border:1px solid #334155;border-radius:12px;padding:16px;margin-bottom:24px;">
+                <table width="100%" cellpadding="0" cellspacing="0">
+                  <tr>
+                    <td style="color:#64748b;font-size:12px;padding-bottom:6px;font-weight:600;text-transform:uppercase;">Target Contributor:</td>
+                    <td style="color:#f1f5f9;font-size:14px;font-weight:700;padding-bottom:6px;text-align:right;">${targetUser.firstname || ""} ${targetUser.lastname || ""} (@${targetUser.username})</td>
+                  </tr>
+                  <tr>
+                    <td style="color:#64748b;font-size:12px;font-weight:600;text-transform:uppercase;">Email:</td>
+                    <td style="color:#a5b4fc;font-size:13px;font-family:monospace;font-weight:600;text-align:right;">${targetUser.email}</td>
+                  </tr>
+                </table>
+              </div>
+
+              <p style="margin:0 0 12px;color:#e2e8f0;font-size:13px;line-height:1.5;">
+                Enter this 6-digit one-time authorization code on the website to confirm:
+              </p>
+
+              <!-- OTP Box -->
+              <div style="background:#090d16;border:2px solid #8b5cf6;border-radius:14px;padding:22px;text-align:center;margin-bottom:24px;box-shadow:0 0 20px rgba(139,92,246,0.2);">
+                <span style="font-size:40px;font-weight:800;letter-spacing:10px;color:#c084fc;font-family:monospace;">${otp}</span>
+                <p style="margin:8px 0 0;color:#64748b;font-size:11px;font-weight:600;">EXPIRES IN 10 MINUTES</p>
+              </div>
+
+              <div style="background:#1e1b4b;border-left:4px solid #a855f7;padding:12px 16px;border-radius:6px;margin-bottom:20px;">
+                <p style="margin:0;color:#e9d5ff;font-size:12px;line-height:1.5;">
+                  ⚠️ <strong>Security Notice:</strong> Administrators have full access to view recordings, edit user profiles, manage payouts, and configure projects. Only grant this to trusted personnel.
+                </p>
+              </div>
+
+              <p style="margin:0;color:#64748b;font-size:12px;line-height:1.6;text-align:center;">
+                If you did not initiate this request, someone may be attempting unauthorized changes. Please check your admin session immediately.
+              </p>
+            </td>
+          </tr>
+          <!-- Footer -->
+          <tr>
+            <td style="background:#0b1120;padding:16px 40px;text-align:center;border-top:1px solid #1e293b;">
+              <p style="margin:0;color:#475569;font-size:11px;">© 2026 Voclara / DataCatalyst Security. All rights reserved.</p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+
+    await transporter.sendMail({
+        from: `"Voclara Security" <${GMAIL_USER}>`,
+        to,
+        subject,
+        html,
+    });
+}
+
 
 
 

@@ -147,6 +147,166 @@ export default function AdminUsers() {
         }
     }
 
+    async function handleMakeAdmin(user) {
+        const targetId = user._id || user.userId;
+        const targetUsername = user.username;
+        const targetEmail = user.email;
+
+        // Step 1: Prompt confirmation to initiate OTP
+        const confirm = await Swal.fire({
+            title: "👑 Promote to Admin?",
+            html: `
+                <div class="text-left text-sm space-y-3">
+                    <p class="text-neutral-300">Are you sure you want to promote <b>${targetUsername}</b> to a full <b>Administrator</b>?</p>
+                    <div class="bg-neutral-900 p-3 rounded-lg border border-neutral-700 font-mono text-xs text-purple-300">
+                        <div><b>User:</b> ${targetUsername}</div>
+                        <div><b>Email:</b> ${targetEmail}</div>
+                    </div>
+                    <p class="text-amber-400 text-xs">⚠️ A 6-digit security authorization code (OTP) will be sent to your admin email address to confirm this action.</p>
+                </div>
+            `,
+            icon: "warning",
+            showCancelButton: true,
+            confirmButtonColor: "#7c3aed",
+            cancelButtonColor: "#374151",
+            confirmButtonText: "Send OTP to My Email",
+            cancelButtonText: "Cancel",
+            background: "#18181b",
+            color: "#ffffff"
+        });
+
+        if (!confirm.isConfirmed) return;
+
+        // Step 2: Request OTP
+        Swal.fire({
+            title: "Sending OTP...",
+            text: "Please wait while we send the verification code to your email.",
+            allowOutsideClick: false,
+            background: "#18181b",
+            color: "#ffffff",
+            didOpen: () => {
+                Swal.showLoading();
+            }
+        });
+
+        try {
+            const reqRes = await apiPostJson(`/api/admin/users/${targetId}/make-admin/request-otp`, {});
+            const adminEmail = reqRes.adminEmail || "your email";
+
+            // Step 3: Prompt for OTP with custom styled input
+            const otpPrompt = await Swal.fire({
+                title: "Enter Verification Code",
+                html: `
+                    <div class="text-left text-sm space-y-3">
+                        <p class="text-neutral-300">We have sent a 6-digit OTP to your admin email: <br/><b class="text-purple-400 font-mono">${adminEmail}</b></p>
+                        <p class="text-xs text-neutral-400">Enter the code below to authorize promoting <b>@${targetUsername}</b> to Admin.</p>
+                        <input id="swal-admin-otp" type="text" maxlength="6" placeholder="123456" 
+                            class="w-full text-center text-3xl font-mono tracking-[8px] bg-neutral-900 border-2 border-purple-500 rounded-xl p-3 text-white focus:outline-none focus:ring-2 focus:ring-purple-400" 
+                            autofocus />
+                        <p class="text-[11px] text-neutral-500 text-center">Code expires in 10 minutes. Check your SPAM folder if not in inbox.</p>
+                    </div>
+                `,
+                icon: "info",
+                showCancelButton: true,
+                confirmButtonColor: "#7c3aed",
+                cancelButtonColor: "#374151",
+                confirmButtonText: "Verify & Make Admin",
+                cancelButtonText: "Cancel",
+                background: "#18181b",
+                color: "#ffffff",
+                preConfirm: () => {
+                    const otp = document.getElementById("swal-admin-otp")?.value?.trim();
+                    if (!otp || otp.length !== 6 || !/^\d{6}$/.test(otp)) {
+                        Swal.showValidationMessage("Please enter a valid 6-digit numeric OTP");
+                        return false;
+                    }
+                    return otp;
+                }
+            });
+
+            if (!otpPrompt.isConfirmed || !otpPrompt.value) return;
+
+            const otp = otpPrompt.value;
+
+            // Step 4: Verify OTP
+            Swal.fire({
+                title: "Promoting User...",
+                text: "Verifying authorization code...",
+                allowOutsideClick: false,
+                background: "#18181b",
+                color: "#ffffff",
+                didOpen: () => {
+                    Swal.showLoading();
+                }
+            });
+
+            const verifyRes = await apiPostJson(`/api/admin/users/${targetId}/make-admin/verify-otp`, { otp });
+
+            await Swal.fire({
+                title: "👑 Promotion Successful!",
+                text: verifyRes.message || `User @${targetUsername} has been promoted to Administrator.`,
+                icon: "success",
+                confirmButtonColor: "#7c3aed",
+                background: "#18181b",
+                color: "#ffffff"
+            });
+
+            // Refresh lists
+            if (tab === "all") loadUsers();
+            else if (tab === "approved") loadApprovedUsers();
+            else loadPending();
+        } catch (err) {
+            Swal.fire({
+                title: "Error",
+                text: err.message || "Failed to complete admin promotion.",
+                icon: "error",
+                background: "#18181b",
+                color: "#ffffff"
+            });
+        }
+    }
+
+    async function handleRevokeAdmin(user) {
+        const targetId = user._id || user.userId;
+        const targetUsername = user.username;
+
+        const confirm = await Swal.fire({
+            title: "Revoke Admin Privileges?",
+            text: `Are you sure you want to remove administrator privileges from @${targetUsername}?`,
+            icon: "warning",
+            showCancelButton: true,
+            confirmButtonColor: "#dc2626",
+            cancelButtonColor: "#374151",
+            confirmButtonText: "Yes, Revoke Admin",
+            background: "#18181b",
+            color: "#ffffff"
+        });
+
+        if (!confirm.isConfirmed) return;
+
+        try {
+            await apiPostJson(`/api/admin/users/${targetId}/revoke-admin`, {});
+            Swal.fire({
+                title: "Admin Revoked",
+                text: `@${targetUsername} is no longer an administrator.`,
+                icon: "success",
+                background: "#18181b",
+                color: "#ffffff"
+            });
+            if (tab === "all") loadUsers();
+            else if (tab === "approved") loadApprovedUsers();
+            else loadPending();
+        } catch (err) {
+            Swal.fire({
+                title: "Error",
+                text: err.message || "Failed to revoke admin privileges.",
+                icon: "error",
+                background: "#18181b",
+                color: "#ffffff"
+            });
+        }
+    }
+
     async function submitJsonUpdate() {
         if (!jsonModalUser) return;
         try {
@@ -687,6 +847,11 @@ export default function AdminUsers() {
                                                 </td>
                                                 <td className="px-4 py-4">
                                                      <div className="flex flex-col gap-1 items-start">
+                                                         {user.isAdmin && (
+                                                             <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-purple-900/80 text-purple-200 border border-purple-600 shadow-sm gap-1">
+                                                                 👑 Admin
+                                                             </span>
+                                                         )}
                                                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${STATUS_BADGE[user.accountStatus] || STATUS_BADGE.pending_intro}`}>
                                                              {STATUS_LABEL[user.accountStatus] || "-"}
                                                          </span>
@@ -711,6 +876,23 @@ export default function AdminUsers() {
                                                 </td>
                                                 <td className="px-4 py-4 text-xs">
                                                      <div className="flex flex-wrap gap-2">
+                                                         {user.isAdmin ? (
+                                                             <button
+                                                                 onClick={() => handleRevokeAdmin(user)}
+                                                                 className="text-purple-300 hover:text-purple-200 font-medium bg-purple-900/30 hover:bg-purple-900/50 border border-purple-500/40 px-3 py-1.5 rounded transition-colors flex items-center gap-1"
+                                                                 title="Revoke administrator privileges"
+                                                             >
+                                                                 👑 Revoke Admin
+                                                             </button>
+                                                         ) : (
+                                                             <button
+                                                                 onClick={() => handleMakeAdmin(user)}
+                                                                 className="text-purple-200 hover:text-white font-medium bg-purple-600/30 hover:bg-purple-600/50 border border-purple-500/60 px-3 py-1.5 rounded transition-colors flex items-center gap-1 shadow-sm"
+                                                                 title="Promote user to Administrator with Email OTP Authorization"
+                                                             >
+                                                                 👑 Make Admin
+                                                             </button>
+                                                         )}
                                                          <button
                                                              onClick={() => toggleDisableUser(user._id, user.username, user.isDisabled)}
                                                              className={`font-medium px-3 py-1.5 rounded transition-colors flex items-center gap-1 ${user.isDisabled
@@ -834,7 +1016,14 @@ export default function AdminUsers() {
                                             .map(u => (
                                                 <tr key={u.userId} className="hover:bg-neutral-700/30 transition-colors">
                                                     <td className="px-4 py-3">
-                                                        <div className="text-white font-medium">{`${u.firstname || ""} ${u.lastname || ""}`.trim() || "—"}</div>
+                                                        <div className="flex items-center gap-1.5 flex-wrap">
+                                                            <span className="text-white font-medium">{`${u.firstname || ""} ${u.lastname || ""}`.trim() || "—"}</span>
+                                                            {u.isAdmin && (
+                                                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-900/80 text-purple-200 border border-purple-600 shadow-sm">
+                                                                    👑 Admin
+                                                                </span>
+                                                            )}
+                                                        </div>
                                                         <div className="text-xs text-neutral-400">@{u.username}</div>
                                                     </td>
                                                     <td className="px-4 py-3 text-neutral-300">
@@ -853,6 +1042,23 @@ export default function AdminUsers() {
                                                     <td className="px-4 py-3 text-neutral-400 text-xs">{u.agreementVersion || "—"}</td>
                                                     <td className="px-4 py-3">
                                                         <div className="flex flex-wrap gap-2">
+                                                            {u.isAdmin ? (
+                                                                <button
+                                                                    onClick={() => handleRevokeAdmin(u)}
+                                                                    className="px-3 py-1.5 rounded-md font-medium text-xs border border-purple-500/40 bg-purple-900/30 text-purple-300 hover:bg-purple-900/50 transition-colors flex items-center gap-1"
+                                                                    title="Revoke administrator privileges"
+                                                                >
+                                                                    👑 Revoke Admin
+                                                                </button>
+                                                            ) : (
+                                                                <button
+                                                                    onClick={() => handleMakeAdmin(u)}
+                                                                    className="px-3 py-1.5 rounded-md font-medium text-xs border border-purple-500/60 bg-purple-600/30 text-purple-200 hover:bg-purple-600/50 transition-colors flex items-center gap-1 shadow-sm"
+                                                                    title="Promote user to Administrator with Email OTP Authorization"
+                                                                >
+                                                                    👑 Make Admin
+                                                                </button>
+                                                            )}
                                                             <button
                                                                 onClick={() => toggleDisableUser(u.userId, u.username, u.isDisabled)}
                                                                 className={`px-3 py-1.5 rounded-md font-medium text-xs border transition-colors flex items-center gap-1 ${u.isDisabled

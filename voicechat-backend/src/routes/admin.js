@@ -24,11 +24,12 @@ import { Ambiguity } from "../models/Ambiguity.js";
 import { QaFlag } from "../models/QaFlag.js";
 import { Company } from "../models/Company.js";
 import { Counter } from "../models/Counter.js";
+import { OtpCode } from "../models/OtpCode.js";
 import { getPayoutOverview, getSingleUserPayout, getFinancesOverview } from "../services/payouts.js";
 import { ListObjectsV2Command, DeleteObjectCommand, GetObjectCommand, CopyObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
 import { s3Client, BUCKET_NAME } from "../config/s3.js";
 import { streamS3ToWav, getWavStream, getWavBuffer } from "../utils/ffmpeg-stream.js";
-import { sendAgreementRejectionEmail, sendIntroApprovalEmail, sendIntroRejectionEmail, sendIntroFinalDeletionEmail, sendAgreementApprovedEmail, sendProjectApplicationApprovedEmail, sendProjectApplicationRejectedEmail, sendUpiRequestEmail } from "../util/emailService.js";
+import { sendAgreementRejectionEmail, sendIntroApprovalEmail, sendIntroRejectionEmail, sendIntroFinalDeletionEmail, sendAgreementApprovedEmail, sendProjectApplicationApprovedEmail, sendProjectApplicationRejectedEmail, sendUpiRequestEmail, sendAdminPromotionOtpEmail, generateOtp } from "../util/emailService.js";
 import { updateLimitAndBlacklist } from "../services/limitService.js";
 import { spawn } from "child_process";
 import os from "os";
@@ -5032,7 +5033,10 @@ router.get("/users", async (req, res) => {
         const limit = parseInt(req.query.limit) || 20;
         const skip = (page - 1) * limit;
 
-        const filter = { isAdmin: false, isDeleted: { $ne: true } };
+        const filter = { isDeleted: { $ne: true } };
+        if (req.query.isAdmin !== undefined) {
+            filter.isAdmin = req.query.isAdmin === "true";
+        }
         if (req.query.accountStatus) filter.accountStatus = req.query.accountStatus;
         if (req.query.search) {
             const searchRegex = new RegExp(req.query.search.trim(), "i");
@@ -5046,7 +5050,7 @@ router.get("/users", async (req, res) => {
 
         const total = await User.countDocuments(filter);
         const users = await User.find(filter)
-            .select('username email firstname lastname mobileNumber phone dailyCallLimit overallCallLimit dailyPhraseLimit overallPhraseLimit accountStatus isDisabled createdAt')
+            .select('username email firstname lastname mobileNumber phone dailyCallLimit overallCallLimit dailyPhraseLimit overallPhraseLimit accountStatus isDisabled isAdmin createdAt')
             .sort({ createdAt: -1 })
             .skip(skip)
             .limit(limit);
@@ -5409,6 +5413,154 @@ router.post("/users/:userId/resend-agreement", async (req, res) => {
         await user.save();
         res.json({ message: `Agreement reset successfully (${agreementDoc}). User will be required to re-sign on next login.`, success: true });
     } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Request OTP to promote user to Admin
+router.post("/users/:userId/make-admin/request-otp", async (req, res) => {
+    try {
+        if (!req.user || !req.user.isAdmin) {
+            return res.status(403).json({ error: "Only administrators can authorize admin promotions" });
+        }
+
+        const targetUser = await User.findById(req.params.userId);
+        if (!targetUser) return res.status(404).json({ error: "Target user not found" });
+
+        if (targetUser.isAdmin) {
+            return res.status(400).json({ error: "User is already an administrator" });
+        }
+
+        // Generate 6-digit OTP
+        const otp = generateOtp();
+        const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
+        // Invalidate any existing make_admin OTP for this admin & target
+        await OtpCode.deleteMany({ email: req.user.email, type: "make_admin" });
+
+        await OtpCode.create({
+            email: req.user.email,
+            code: otp,
+            type: "make_admin",
+            targetUserId: targetUser._id,
+            expiresAt,
+            used: false
+        });
+
+        // Send OTP email to the currently logged in admin's email address
+        await sendAdminPromotionOtpEmail(req.user.email, otp, {
+            username: targetUser.username,
+            email: targetUser.email,
+            firstname: targetUser.firstname,
+            lastname: targetUser.lastname
+        });
+
+        res.json({
+            success: true,
+            message: `OTP sent to your email (${req.user.email}). Please enter it to authorize making @${targetUser.username} an admin.`,
+            adminEmail: req.user.email,
+            targetUsername: targetUser.username
+        });
+    } catch (error) {
+        console.error("make-admin/request-otp error:", error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Verify OTP and complete Make Admin promotion
+router.post("/users/:userId/make-admin/verify-otp", async (req, res) => {
+    try {
+        if (!req.user || !req.user.isAdmin) {
+            return res.status(403).json({ error: "Only administrators can authorize admin promotions" });
+        }
+
+        const { otp } = req.body;
+        if (!otp || String(otp).trim().length !== 6) {
+            return res.status(400).json({ error: "A valid 6-digit OTP is required" });
+        }
+
+        const targetUser = await User.findById(req.params.userId);
+        if (!targetUser) return res.status(404).json({ error: "Target user not found" });
+
+        if (targetUser.isAdmin) {
+            return res.status(400).json({ error: "User is already an administrator" });
+        }
+
+        // Find valid OTP record
+        const otpRecord = await OtpCode.findOne({
+            email: req.user.email,
+            type: "make_admin",
+            code: String(otp).trim(),
+            targetUserId: targetUser._id,
+            used: false,
+            expiresAt: { $gt: new Date() }
+        });
+
+        if (!otpRecord) {
+            return res.status(400).json({ error: "Invalid or expired OTP. Please request a new code." });
+        }
+
+        // Mark OTP as used
+        otpRecord.used = true;
+        await otpRecord.save();
+
+        // Promote target user to Admin
+        targetUser.isAdmin = true;
+        targetUser.adminPromotedBy = req.user._id;
+        targetUser.adminPromotedAt = new Date();
+        await targetUser.save();
+
+        res.json({
+            success: true,
+            message: `User @${targetUser.username} (${targetUser.email}) has been successfully promoted to Administrator!`,
+            user: {
+                _id: targetUser._id,
+                username: targetUser.username,
+                email: targetUser.email,
+                isAdmin: true
+            }
+        });
+    } catch (error) {
+        console.error("make-admin/verify-otp error:", error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Revoke Admin status
+router.post("/users/:userId/revoke-admin", async (req, res) => {
+    try {
+        if (!req.user || !req.user.isAdmin) {
+            return res.status(403).json({ error: "Only administrators can revoke admin privileges" });
+        }
+
+        if (String(req.user._id) === String(req.params.userId)) {
+            return res.status(400).json({ error: "You cannot revoke your own administrator privileges" });
+        }
+
+        const targetUser = await User.findById(req.params.userId);
+        if (!targetUser) return res.status(404).json({ error: "Target user not found" });
+
+        if (!targetUser.isAdmin) {
+            return res.status(400).json({ error: "User is not an administrator" });
+        }
+
+        targetUser.isAdmin = false;
+        targetUser.adminPromotedBy = null;
+        targetUser.adminPromotedAt = null;
+        await targetUser.save();
+
+        res.json({
+            success: true,
+            message: `Administrator privileges have been revoked for @${targetUser.username}.`,
+            user: {
+                _id: targetUser._id,
+                username: targetUser.username,
+                email: targetUser.email,
+                isAdmin: false
+            }
+        });
+    } catch (error) {
+        console.error("revoke-admin error:", error);
         res.status(500).json({ error: error.message });
     }
 });
@@ -9469,7 +9621,7 @@ router.get("/contributor-agreements/approved-users", async (req, res) => {
             ];
         }
         const users = await User.find(filter)
-            .select("firstname lastname email username mobileNumber phone speaker_id dailyCallLimit overallCallLimit dailyPhraseLimit overallPhraseLimit isDisabled contributorAgreement.signedAt contributorAgreement.adminReviewedAt contributorAgreement.agreementVersion contributorAgreement.s3Key")
+            .select("firstname lastname email username mobileNumber phone speaker_id dailyCallLimit overallCallLimit dailyPhraseLimit overallPhraseLimit isDisabled isAdmin contributorAgreement.signedAt contributorAgreement.adminReviewedAt contributorAgreement.agreementVersion contributorAgreement.s3Key")
             .sort({ "contributorAgreement.adminReviewedAt": -1 })
             .lean();
         res.json({
@@ -9486,6 +9638,7 @@ router.get("/contributor-agreements/approved-users", async (req, res) => {
                 dailyPhraseLimit: u.dailyPhraseLimit,
                 overallPhraseLimit: u.overallPhraseLimit,
                 isDisabled: !!u.isDisabled,
+                isAdmin: !!u.isAdmin,
                 signedAt: u.contributorAgreement?.signedAt || null,
                 approvedAt: u.contributorAgreement?.adminReviewedAt || null,
                 agreementVersion: u.contributorAgreement?.agreementVersion || null,

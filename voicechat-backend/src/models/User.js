@@ -142,6 +142,10 @@ const userSchema = new mongoose.Schema(
     // Account disable and deletion state
     isDisabled: { type: Boolean, default: false },
     isDeleted: { type: Boolean, default: false },
+
+    // Admin promotion audit tracking
+    adminPromotedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+    adminPromotedAt: { type: Date, default: null },
   },
   { timestamps: true }
 );
