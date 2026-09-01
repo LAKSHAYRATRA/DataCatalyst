@@ -1,9 +1,10 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { PhoneCall, FileText, CheckCircle2, Mic, Sliders, Volume2, Settings, X, Activity, Radio } from "lucide-react";
+import { PhoneCall, FileText, CheckCircle2, Mic, Sliders, Volume2, Settings, X, Activity, Radio, Sparkles, RotateCcw } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import Swal from "sweetalert2";
 import Nav from "../components/Nav.jsx";
+import SpectrogramViewer from "../components/SpectrogramViewer.jsx";
 import { apiGet } from "../lib/api.js";
 import { encodeWAV } from "../utils/wavBuilder.js";
 
@@ -138,6 +139,10 @@ export default function LanguageApply() {
     const [recordedLufs, setRecordedLufs] = useState(null);
     const [enforceLufs, setEnforceLufs] = useState(true);
 
+    const [showAnalysis, setShowAnalysis] = useState(false);
+    const [isAnalyzing, setIsAnalyzing] = useState(false);
+    const [aiAudit, setAiAudit] = useState(null);
+
     const [showMicSettingsModal, setShowMicSettingsModal] = useState(false);
     const [activeNoiseGateDb, setActiveNoiseGateDb] = useState(0);
 
@@ -190,7 +195,7 @@ export default function LanguageApply() {
         const testCtx = new AudioCtx({ sampleRate: 48000 });
         if (testCtx.state === "suspended") await testCtx.resume();
 
-        try { await testCtx.audioWorklet.addModule("/pcm-worklet.js"); } catch {}
+        try { await testCtx.audioWorklet.addModule("/pcm-worklet.js?v=" + Date.now()); } catch {}
 
         const source = testCtx.createMediaStreamSource(testStream);
         const workletNode = new AudioWorkletNode(testCtx, "pcm-processor");
@@ -428,22 +433,12 @@ export default function LanguageApply() {
                          echoCancellation: false,
                          noiseSuppression: false,
                          autoGainControl: false,
-                         channelCount: { ideal: 2 },
+                         channelCount: 1,
                          sampleRate: { ideal: 48000 }
                      }
                  });
              } catch (err) {
-                 try {
-                     stream = await navigator.mediaDevices.getUserMedia({
-                         audio: {
-                             echoCancellation: false,
-                             noiseSuppression: false,
-                             autoGainControl: false
-                         }
-                     });
-                 } catch (err2) {
-                     stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                 }
+                 stream = await navigator.mediaDevices.getUserMedia({ audio: true });
              }
              streamRef.current = stream;
              chunksRef.current = [];
@@ -453,14 +448,14 @@ export default function LanguageApply() {
              const trackSampleRate = settings.sampleRate || 48000;
 
              const AudioCtxClass = window.AudioContext || window.webkitAudioContext;
-             const audioCtx = new AudioCtxClass({ sampleRate: trackSampleRate });
+             const audioCtx = new AudioCtxClass(); // Native hardware driver rate (no Web Audio resampling!)
              audioCtxRef.current = audioCtx;
              if (audioCtx.state === "suspended") {
                  await audioCtx.resume();
              }
 
              try {
-                 await audioCtx.audioWorklet.addModule("/pcm-worklet.js");
+                 await audioCtx.audioWorklet.addModule("/pcm-worklet.js?v=" + Date.now());
              } catch (wErr) {
                  console.warn("Worklet module load note:", wErr);
              }
@@ -468,10 +463,6 @@ export default function LanguageApply() {
             const source = audioCtx.createMediaStreamSource(stream);
             const workletNode = new AudioWorkletNode(audioCtx, "pcm-processor");
             workletNodeRef.current = workletNode;
-
-            const assignedNoiseGateDb = activeNoiseGateDb || (userInfo?.noiseGateDb !== undefined ? userInfo.noiseGateDb : 0);
-            workletNode.port.postMessage({ type: "setNoiseGate", noiseGateDb: assignedNoiseGateDb });
-            workletNode.port.postMessage({ type: "setGainBoost", gainBoost: micGainMultiplier });
             
             workletNode.port.onmessage = (e) => {
                 chunksRef.current.push(new Float32Array(e.data));
@@ -500,6 +491,7 @@ export default function LanguageApply() {
 
     function stopRecording() {
         clearInterval(timerRef.current);
+        const currentRate = audioCtxRef.current ? audioCtxRef.current.sampleRate : 48000;
         if (workletNodeRef.current) {
             workletNodeRef.current.disconnect();
             workletNodeRef.current = null;
@@ -524,10 +516,10 @@ export default function LanguageApply() {
         setRawPcm(combined);
         let lufs = null;
         if (combined.length > 0) {
-            lufs = calculateEbuR128Lufs(combined, 48000);
+            lufs = calculateEbuR128Lufs(combined, currentRate);
         }
         setRecordedLufs(lufs);
-        const blob = encodeWAV(combined, 48000, 1);
+        const blob = encodeWAV(combined, currentRate, 1);
         setAudioBlob(blob);
         setAudioUrl(URL.createObjectURL(blob));
         setRecording(false);
@@ -1303,38 +1295,91 @@ export default function LanguageApply() {
                                         </div>
                                     )}
 
-                                    <div className="flex gap-3 w-full">
+                                    {/* Mel-Spectrogram & AI Static Noise Inspection */}
+                                    {showAnalysis && (
+                                        <div className="w-full pt-1 mb-2">
+                                            <SpectrogramViewer
+                                                audioUrl={audioUrl}
+                                                title={`Audition Spectrogram · ${applicationType === 'phrase' ? `Sample #${sampleIndex + 1}` : 'Voice Test'}`}
+                                                height={160}
+                                                autoRunAudit={true}
+                                                onAuditCompleted={(audit) => {
+                                                    setIsAnalyzing(false);
+                                                    setAiAudit(audit);
+                                                }}
+                                            />
+                                        </div>
+                                    )}
+
+                                    <div className="flex gap-2.5 w-full">
                                         {sampleIndex > 0 && applicationType === 'phrase' && samplePhrases.length > 1 && (
-                                            <button
-                                                onClick={handlePrevSample}
-                                                disabled={recording || loading}
-                                                className="px-4 py-2.5 border border-neutral-300 dark:border-neutral-700 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-800 rounded-xl text-sm font-semibold transition-colors"
-                                            >
-                                                ← Prev
-                                            </button>
+                                             <button
+                                                 onClick={handlePrevSample}
+                                                 disabled={recording || loading || isAnalyzing}
+                                                 className="px-3.5 py-2.5 border border-neutral-300 dark:border-neutral-700 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-800 rounded-xl text-xs font-semibold transition-colors disabled:opacity-50"
+                                             >
+                                                 ← Prev
+                                             </button>
                                         )}
                                         <button
-                                            onClick={() => { setAudioBlob(null); setAudioUrl(null); setRecordedLufs(null); setRawPcm(null); }}
-                                            className="flex-1 py-2.5 border border-neutral-300 dark:border-neutral-700 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-800 rounded-xl text-sm font-semibold transition-colors"
+                                            type="button"
+                                            onClick={() => { 
+                                                setAudioBlob(null); 
+                                                setAudioUrl(null); 
+                                                setRecordedLufs(null); 
+                                                setRawPcm(null); 
+                                                setShowAnalysis(false);
+                                                setIsAnalyzing(false);
+                                                setAiAudit(null);
+                                            }}
+                                            disabled={loading || isAnalyzing}
+                                            className="flex-1 py-2.5 px-3 border border-neutral-300 dark:border-neutral-700 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-800 rounded-xl text-xs font-semibold transition-colors flex items-center justify-center gap-1.5 disabled:opacity-50"
                                         >
-                                            Re-record
+                                            <RotateCcw className="w-3.5 h-3.5" /> Re-record
                                         </button>
+
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setShowAnalysis(true);
+                                                setIsAnalyzing(true);
+                                            }}
+                                            disabled={loading || isAnalyzing || !!aiAudit}
+                                            className="flex-1 py-2.5 px-3 bg-indigo-600 hover:bg-indigo-500 active:scale-[0.98] text-white rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all shadow-sm shadow-indigo-600/20 disabled:opacity-50"
+                                        >
+                                            {isAnalyzing ? (
+                                                <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                            ) : aiAudit ? (
+                                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-300" />
+                                            ) : (
+                                                <Sparkles className="w-3.5 h-3.5 text-indigo-200" />
+                                            )}
+                                            {isAnalyzing ? 'Analyzing...' : aiAudit ? 'Analyzed' : 'Analyze'}
+                                        </button>
+
                                         {applicationType === 'phrase' && samplePhrases.length > 1 && sampleIndex < samplePhrases.length - 1 ? (
                                             <button
-                                                onClick={handleNextSample}
-                                                disabled={!audioBlob || loading}
-                                                className="flex-1 btn-primary py-2.5 text-sm font-semibold disabled:opacity-50 flex items-center justify-center gap-1.5"
+                                                type="button"
+                                                onClick={() => {
+                                                    setShowAnalysis(false);
+                                                    setIsAnalyzing(false);
+                                                    setAiAudit(null);
+                                                    handleNextSample();
+                                                }}
+                                                disabled={!audioBlob || loading || isAnalyzing}
+                                                className="flex-1 btn-primary py-2.5 px-3 text-xs font-semibold disabled:opacity-50 flex items-center justify-center gap-1.5"
                                             >
-                                                <span>Next Sample ({sampleIndex + 2}/{samplePhrases.length})</span>
+                                                <span>Next ({sampleIndex + 2}/{samplePhrases.length})</span>
                                                 <span>→</span>
                                             </button>
                                         ) : (
                                             <button
+                                                type="button"
                                                 onClick={submit}
-                                                disabled={loading}
-                                                className="flex-1 btn-primary py-2.5 text-sm font-semibold disabled:opacity-50"
+                                                disabled={loading || isAnalyzing}
+                                                className="flex-1 btn-primary py-2.5 px-3 text-xs font-semibold disabled:opacity-50"
                                             >
-                                                {loading ? "Submitting…" : samplePhrases.length > 1 ? `Submit Application (${samplePhrases.length} Samples)` : "Submit Application"}
+                                                {loading ? "Submitting…" : samplePhrases.length > 1 ? `Submit (${samplePhrases.length} Samples)` : "Submit Application"}
                                             </button>
                                         )}
                                     </div>

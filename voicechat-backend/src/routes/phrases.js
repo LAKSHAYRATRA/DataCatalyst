@@ -31,6 +31,7 @@ import {
   deletePhraseAdmin,
   clearCompanyPhrases,
   deduplicateCompanyPhrases,
+  analyzeSpectrogramNoise,
 } from "../controllers/phraseController.js";
 
 const JWT_SECRET = process.env.JWT_SECRET;
@@ -98,6 +99,8 @@ router.post("/qa/lufs/:phraseId", requireAuth(JWT_SECRET), requireQAOrAdmin, che
 router.post("/qa/trim/:phraseId", requireAuth(JWT_SECRET), requireQAOrAdmin, trimPhraseAudio);
 router.post("/qa/revert-trim/:phraseId", requireAuth(JWT_SECRET), requireQAOrAdmin, revertTrimAudio);
 router.patch("/qa/text/:phraseId", requireAuth(JWT_SECRET), requireQAOrAdmin, updatePhraseText);
+router.post("/qa/analyze-spectrogram-noise", requireAuth(JWT_SECRET), analyzeSpectrogramNoise);
+router.post("/analyze-spectrogram-noise", requireAuth(JWT_SECRET), analyzeSpectrogramNoise);
 
 /* -------------------------------------------------------------------------- */
 /*                              Contributor Routes                            */

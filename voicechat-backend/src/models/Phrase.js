@@ -70,7 +70,10 @@ const phraseSchema = new mongoose.Schema(
     originalText: { type: String, default: null },
     editedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
     editedAt: { type: Date, default: null },
-    editedPhraseStatus: { type: String, enum: ["pending_admin", "approved", "rejected"], default: null }
+    editedPhraseStatus: { type: String, enum: ["pending_admin", "approved", "rejected"], default: null },
+
+    // Groq Vision Zero-Tolerance AI Spectrogram Audit
+    spectrogramAiAudit: { type: mongoose.Schema.Types.Mixed, default: null }
   },
   { timestamps: true }
 );

@@ -19,6 +19,7 @@ import ffmpeg from "fluent-ffmpeg";
 import ffmpegInstaller from "@ffmpeg-installer/ffmpeg";
 import { invokeAudioQC } from "../config/lambda.js";
 import { getWavBuffer } from "../utils/ffmpeg-stream.js";
+import { analyzeSpectrogramImage } from "../services/groqNoiseService.js";
 
 ffmpeg.setFfmpegPath(ffmpegInstaller.path);
 
@@ -2793,3 +2794,84 @@ export async function deduplicateCompanyPhrases(req, res) {
     res.status(500).json({ error: error.message });
   }
 }
+
+/**
+ * POST /api/phrases/qa/analyze-spectrogram-noise
+ * Hybrid AI & DSP Acoustic Noise Audit on Mel-Spectrogram & Raw .WAV
+ */
+export async function analyzeSpectrogramNoise(req, res) {
+  let tempAudioPath = null;
+  try {
+    const { phraseId, imageBase64, audioBase64 } = req.body;
+
+    if (!imageBase64) {
+      return res.status(400).json({ error: "Missing imageBase64 in request body." });
+    }
+
+    let dspTelemetry = null;
+    const { analyzeAudioDsp } = await import("../services/audioDspService.js");
+
+    // Case 1: In-memory audioBase64 from live recording client
+    if (audioBase64) {
+      try {
+        const rootDir = process.cwd();
+        const uploadsDir = path.resolve(rootDir, "uploads");
+        if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+        
+        tempAudioPath = path.join(uploadsDir, `temp_audit_${Date.now()}_${Math.random().toString(36).substring(7)}.wav`);
+        const cleanAudioBase64 = audioBase64.includes(",") ? audioBase64.split(",")[1] : audioBase64;
+        fs.writeFileSync(tempAudioPath, Buffer.from(cleanAudioBase64, "base64"));
+        
+        dspTelemetry = await analyzeAudioDsp(tempAudioPath);
+      } catch (err) {
+        console.warn("[analyzeSpectrogramNoise] Temporary audio decode error:", err.message);
+      }
+    }
+
+    // Case 2: If phraseId provided, locate raw audio on disk if dspTelemetry not yet populated
+    if (!dspTelemetry && phraseId) {
+      const isOid = mongoose.isValidObjectId(phraseId);
+      const phrase = isOid ? await Phrase.findById(phraseId) : await Phrase.findOne({ phraseId: phraseId });
+      
+      if (phrase?.audioFile) {
+        const rootDir = process.cwd();
+        const p1 = path.resolve(rootDir, "recordings", phrase.audioFile);
+        const p2 = path.resolve(rootDir, "uploads", phrase.audioFile);
+        const p3 = path.resolve(rootDir, phrase.audioFile);
+
+        const targetAudioPath = fs.existsSync(p1) ? p1 : (fs.existsSync(p2) ? p2 : (fs.existsSync(p3) ? p3 : null));
+        if (targetAudioPath) {
+          dspTelemetry = await analyzeAudioDsp(targetAudioPath);
+        }
+      }
+    }
+
+    // Call Groq Service with both Spectrogram Image + Raw .WAV DSP Telemetry
+    const auditResult = await analyzeSpectrogramImage(imageBase64, dspTelemetry);
+
+    // If phrase exists in DB, persist audit result
+    if (phraseId) {
+      const isOid = mongoose.isValidObjectId(phraseId);
+      const query = isOid ? { _id: phraseId } : { phraseId: phraseId };
+      await Phrase.findOneAndUpdate(query, {
+        spectrogramAiAudit: auditResult
+      });
+    }
+
+    return res.json({
+      success: true,
+      audit: auditResult
+    });
+  } catch (error) {
+    console.error("[analyzeSpectrogramNoise] Controller Error:", error);
+    return res.status(500).json({
+      success: false,
+      error: error.message || "Failed to perform AI spectrogram audit."
+    });
+  } finally {
+    if (tempAudioPath && fs.existsSync(tempAudioPath)) {
+      try { fs.unlinkSync(tempAudioPath); } catch {}
+    }
+  }
+}
+

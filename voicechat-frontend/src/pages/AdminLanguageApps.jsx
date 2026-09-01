@@ -1226,6 +1226,7 @@ export default function AdminLanguageApps() {
                                                         gainDb={20}
                                                         rangeDb={120}
                                                         height={180}
+                                                        allowReAudit={true}
                                                     />
                                                 </div>
                                             )}

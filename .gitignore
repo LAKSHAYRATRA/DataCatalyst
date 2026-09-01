@@ -74,3 +74,27 @@ test_stream_download.py
 reset-call.js
 *.csv
 ROW717*
+
+# Temporary testing scripts, test audio, and scratch spectrograms
+Isha_recordings/
+*.wav
+*.flac
+voicechat-backend/*.png
+voicechat-backend/test_*.js
+voicechat-backend/test_*.py
+voicechat-backend/generate_*.py
+voicechat-backend/compare_active_models.js
+voicechat-backend/list_groq_models.js
+voicechat-backend/tune_zero_tolerance.js
+voicechat-backend/insert_*.js
+voicechat-backend/seed_isha_phrase.js
+voicechat-backend/run_spectrogram_eval.js
+voicechat-backend/transcript_*.json
+voicechat-backend/scripts/inspect_*.py
+voicechat-backend/scripts/test_*.py
+voicechat-backend/scripts/transcribe_*.py
+voicechat-backend/scripts/analyze_*.js
+voicechat-backend/scripts/inspect_*.js
+voicechat-backend/scripts/upload_*.js
+voicechat-backend/scripts/generate_*.js
+voicechat-backend/scripts/check_*.js

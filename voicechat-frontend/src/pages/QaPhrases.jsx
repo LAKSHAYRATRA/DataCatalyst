@@ -1198,6 +1198,9 @@ export default function QaPhrases() {
                           gainDb={20}
                           rangeDb={120}
                           height={190}
+                          phraseId={p._id}
+                          initialAiAudit={p.spectrogramAiAudit}
+                          allowReAudit={true}
                         />
                       </div>
                     )}

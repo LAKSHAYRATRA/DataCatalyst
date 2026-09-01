@@ -6,6 +6,7 @@ import { encodeWAV } from '../utils/wavBuilder.js';
 import { getUserInfo } from '../lib/auth.js';
 import { useNavigate, Link } from 'react-router-dom';
 import Nav from "../components/Nav.jsx";
+import SpectrogramViewer from "../components/SpectrogramViewer.jsx";
 import Swal from 'sweetalert2';
 
 function calculateEbuR128Lufs(pcmSamples, sampleRate = 48000) {
@@ -679,7 +680,10 @@ export default function PhraseRecording() {
       audioUrl: null,
       duration: 0,
       recordedLufs: null,
-      rawPcm: null
+      rawPcm: null,
+      showAnalysis: false,
+      isAnalyzing: false,
+      aiAudit: null
     } : s));
 
     setActiveSlotId(slotId);
@@ -693,6 +697,7 @@ export default function PhraseRecording() {
             echoCancellation: false,
             noiseSuppression: false,
             autoGainControl: false,
+            channelCount: 1,
             sampleRate: { ideal: 48000 }
           }
         });
@@ -706,7 +711,7 @@ export default function PhraseRecording() {
       const trackSampleRate = settings.sampleRate || 48000;
 
       const AudioCtx = window.AudioContext || window.webkitAudioContext;
-      const audioCtx = new AudioCtx({ sampleRate: trackSampleRate });
+      const audioCtx = new AudioCtx(); // Native hardware driver rate (no browser sinc resampling!)
       if (audioCtx.state === 'suspended') {
         await audioCtx.resume();
       }
@@ -722,15 +727,6 @@ export default function PhraseRecording() {
       const mult = parseFloat((1.0 + ((parseInt(micGainPercent) || 0) / 100)).toFixed(2));
       const workletNode = new AudioWorkletNode(audioCtx, 'pcm-processor');
       workletNodeRef.current = workletNode;
-
-      workletNode.port.postMessage({
-        type: "setAudioConfig",
-        noiseGateDb: activeNoiseGateDb,
-        gainBoost: mult,
-        notch5kEnabled: activeNotch5k,
-        deHissMode: activeDeHiss,
-        deEsserMode: activeDeEsser
-      });
 
       const gain = audioCtx.createGain();
       gain.gain.value = 0;
@@ -769,11 +765,14 @@ export default function PhraseRecording() {
     if (targetId === null) return;
 
     if (timerRef.current) clearInterval(timerRef.current);
+    const currentRate = audioCtxRef.current ? audioCtxRef.current.sampleRate : 48000;
     if (streamRef.current) {
       streamRef.current.getTracks().forEach(t => t.stop());
+      streamRef.current = null;
     }
     if (audioCtxRef.current) {
       audioCtxRef.current.close().catch(() => {});
+      audioCtxRef.current = null;
     }
 
     let totalLen = 0;
@@ -791,8 +790,8 @@ export default function PhraseRecording() {
     let url = null;
 
     if (combined && combined.length > 0) {
-      score = calculateEbuR128Lufs(combined, 48000);
-      wavBlob = encodeWAV(combined, 48000, 1);
+      score = calculateEbuR128Lufs(combined, currentRate);
+      wavBlob = encodeWAV(combined, currentRate, 1);
       url = URL.createObjectURL(wavBlob);
     }
 
@@ -802,7 +801,10 @@ export default function PhraseRecording() {
       audioBlob: wavBlob,
       audioUrl: url,
       recordedLufs: score,
-      rawPcm: combined
+      rawPcm: combined,
+      showAnalysis: false,
+      isAnalyzing: false,
+      aiAudit: null
     } : s));
 
     setActiveSlotId(null);
@@ -816,7 +818,18 @@ export default function PhraseRecording() {
       audioUrl: null,
       duration: 0,
       recordedLufs: null,
-      rawPcm: null
+      rawPcm: null,
+      showAnalysis: false,
+      isAnalyzing: false,
+      aiAudit: null
+    } : s));
+  }
+
+  function handleAnalyzeSlot(slotId) {
+    setSlots(prev => prev.map(s => s.id === slotId ? {
+      ...s,
+      showAnalysis: true,
+      isAnalyzing: true
     } : s));
   }
 
@@ -1181,7 +1194,7 @@ export default function PhraseRecording() {
                       </button>
                     </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-5">
+                    <div className="mb-5">
                       {/* Noise Gate Section */}
                       <div className="bg-neutral-50 dark:bg-neutral-800/60 p-3.5 rounded-xl border border-neutral-200 dark:border-neutral-700/60">
                         <label className="block text-xs font-bold text-neutral-700 dark:text-neutral-300 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
@@ -1201,62 +1214,6 @@ export default function PhraseRecording() {
                           <option value={-18}>-18 dB (Maximum)</option>
                         </select>
                         <p className="text-[10px] text-neutral-500 mt-1">Attenuates silence between words.</p>
-                      </div>
-
-                      {/* 5 kHz Notch Filter */}
-                      <div className="bg-neutral-50 dark:bg-neutral-800/60 p-3.5 rounded-xl border border-neutral-200 dark:border-neutral-700/60">
-                        <label className="block text-xs font-bold text-neutral-700 dark:text-neutral-300 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
-                          <Radio className="w-3.5 h-3.5 text-emerald-500" /> 5 kHz Whine Filter
-                        </label>
-                        <select 
-                          className="input w-full font-semibold text-xs py-2 border-emerald-500/40 text-emerald-700 dark:text-emerald-300 bg-white dark:bg-neutral-800" 
-                          value={activeNotch5k ? "true" : "false"} 
-                          onChange={(e) => handleAudioConfigChange({ notch5kEnabled: e.target.value === "true" })}
-                          disabled={loading || activeSlotId !== null}
-                        >
-                          <option value="true">Enabled (Removes 5kHz line)</option>
-                          <option value="false">Disabled (Bypassed)</option>
-                        </select>
-                        <p className="text-[10px] text-neutral-500 mt-1">Eliminates USB coil whine / 5kHz line.</p>
-                      </div>
-
-                      {/* De-Hiss Filter */}
-                      <div className="bg-neutral-50 dark:bg-neutral-800/60 p-3.5 rounded-xl border border-neutral-200 dark:border-neutral-700/60">
-                        <label className="block text-xs font-bold text-neutral-700 dark:text-neutral-300 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
-                          <Sparkles className="w-3.5 h-3.5 text-cyan-500" /> De-Hiss Filter
-                        </label>
-                        <select 
-                          className="input w-full font-semibold text-xs py-2 border-cyan-500/40 text-cyan-700 dark:text-cyan-300 bg-white dark:bg-neutral-800" 
-                          value={activeDeHiss} 
-                          onChange={(e) => handleAudioConfigChange({ deHissMode: e.target.value })}
-                          disabled={loading || activeSlotId !== null}
-                        >
-                          <option value="off">Off (Full Spectrum)</option>
-                          <option value="14k">14 kHz (Light Air Cut)</option>
-                          <option value="12k">12 kHz (Standard Clean)</option>
-                          <option value="10k">10 kHz (Strong Hiss Cut)</option>
-                          <option value="8k">8 kHz (Heavy Noise Cut)</option>
-                        </select>
-                        <p className="text-[10px] text-neutral-500 mt-1">High-shelf cut for preamp white noise.</p>
-                      </div>
-
-                      {/* De-Esser */}
-                      <div className="bg-neutral-50 dark:bg-neutral-800/60 p-3.5 rounded-xl border border-neutral-200 dark:border-neutral-700/60">
-                        <label className="block text-xs font-bold text-neutral-700 dark:text-neutral-300 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
-                          <Shield className="w-3.5 h-3.5 text-purple-500" /> De-Esser (Sibilance)
-                        </label>
-                        <select 
-                          className="input w-full font-semibold text-xs py-2 border-purple-500/40 text-purple-700 dark:text-purple-300 bg-white dark:bg-neutral-800" 
-                          value={activeDeEsser} 
-                          onChange={(e) => handleAudioConfigChange({ deEsserMode: e.target.value })}
-                          disabled={loading || activeSlotId !== null}
-                        >
-                          <option value="off">Off (No De-Essing)</option>
-                          <option value="light">Light (-3 dB)</option>
-                          <option value="medium">Medium (-6 dB)</option>
-                          <option value="strong">Strong (-9 dB)</option>
-                        </select>
-                        <p className="text-[10px] text-neutral-500 mt-1">Softens harsh "S" and "Sh" sounds.</p>
                       </div>
                     </div>
 
@@ -1563,18 +1520,51 @@ export default function PhraseRecording() {
                           <audio src={slot.audioUrl} controls controlsList="nodownload noplaybackrate" className="w-full h-10" />
                         </div>
 
-                        <div className="flex gap-3">
+                        {/* Live Mel-Spectrogram & AI Static Noise Audit for Contributor */}
+                        {slot.showAnalysis && (
+                          <div className="w-full pt-1">
+                            <SpectrogramViewer 
+                              audioUrl={slot.audioUrl}
+                              title={`Mel-Spectrogram · Phrase #${index + 1}`}
+                              phraseId={phrase?._id || phrase?.phraseId || null}
+                              height={160}
+                              autoRunAudit={true}
+                              onAuditCompleted={(audit) => {
+                                setSlots(prev => prev.map(s => s.id === slot.id ? { ...s, isAnalyzing: false, aiAudit: audit } : s));
+                              }}
+                            />
+                          </div>
+                        )}
+
+                        <div className="flex gap-2.5">
                           <button
                             onClick={() => resetSlot(slot.id)}
-                            disabled={slot.isSubmitting}
-                            className="flex-1 py-2.5 px-4 border border-neutral-300 dark:border-neutral-700 hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-xl text-xs font-semibold text-neutral-700 dark:text-neutral-200 flex items-center justify-center gap-1.5 transition-colors"
+                            disabled={slot.isSubmitting || slot.isAnalyzing}
+                            className="flex-1 py-2.5 px-3 border border-neutral-300 dark:border-neutral-700 hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-xl text-xs font-semibold text-neutral-700 dark:text-neutral-200 flex items-center justify-center gap-1.5 transition-colors disabled:opacity-50"
                           >
                             <RotateCcw className="w-4 h-4" /> Re-record
                           </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleAnalyzeSlot(slot.id)}
+                            disabled={slot.isSubmitting || slot.isAnalyzing || !!slot.aiAudit}
+                            className="flex-1 py-2.5 px-3 bg-indigo-600 hover:bg-indigo-500 active:scale-[0.98] text-white rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all shadow-sm shadow-indigo-600/20 disabled:opacity-50"
+                          >
+                            {slot.isAnalyzing ? (
+                              <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                            ) : slot.aiAudit ? (
+                              <CheckCircle2 className="w-4 h-4 text-emerald-300" />
+                            ) : (
+                              <Sparkles className="w-4 h-4 text-indigo-200" />
+                            )}
+                            {slot.isAnalyzing ? 'Analyzing...' : slot.aiAudit ? 'Analyzed' : 'Analyze'}
+                          </button>
+
                           <button
                             onClick={() => submitSlot(slot.id)}
-                            disabled={slot.isSubmitting}
-                            className="flex-1 btn btn-primary flex items-center justify-center gap-1.5 py-2.5 px-4 text-xs font-semibold"
+                            disabled={slot.isSubmitting || slot.isAnalyzing}
+                            className="flex-1 btn btn-primary flex items-center justify-center gap-1.5 py-2.5 px-3 text-xs font-semibold disabled:opacity-50"
                           >
                             {slot.isSubmitting ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <UploadCloud className="w-4 h-4" />}
                             {slot.isSubmitting ? 'Submitting...' : 'Submit Phrase'}
