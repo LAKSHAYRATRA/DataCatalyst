@@ -58,8 +58,8 @@ try:
     time_std = np.std(db, axis=1)
     defect_boxes = []
 
-    # 1. Continuous Interference Lines / Whine / Notch: ONLY 2 kHz+ (2000Hz - 20000Hz)
-    scan_bins = np.where((freqs >= 2000) & (freqs <= 20000))[0]
+    # 1. Continuous Interference Lines / Whine / Notch: ONLY 2 kHz+ (2000Hz - 22000Hz)
+    scan_bins = np.where((freqs >= 2000) & (freqs <= 22000))[0]
     detected_lines = []
 
     for b in scan_bins:
@@ -71,8 +71,8 @@ try:
             full_diff = mean_full_spec[b] - full_med
             stdev = time_std[b]
 
-            # Case A: Persistent static tone line (active continuously across all time with low variance)
-            is_persistent_tone = (full_diff >= 3.5 and stdev < 4.0)
+            # Case A: Persistent static tone line (active continuously across time)
+            is_persistent_tone = (full_diff >= 1.6 and stdev < 7.0)
 
             # Case B: Tone line in silence/pause frames
             is_silence_tone = False
@@ -80,12 +80,12 @@ try:
                 sil_window = silence_spec[b-8:b+9]
                 sil_med = np.median(sil_window)
                 sil_diff = silence_spec[b] - sil_med
-                if sil_diff >= 5.0 and stdev < 5.5:
+                if sil_diff >= 1.8 and stdev < 7.5:
                     is_silence_tone = True
                     full_diff = max(full_diff, sil_diff)
 
             # Case C: Sharp notch cut / dead line (e.g. 5kHz notch filter)
-            is_notch = (full_diff <= -4.5 and stdev < 3.5)
+            is_notch = (full_diff <= -3.5 and stdev < 4.5)
 
             if is_persistent_tone or is_silence_tone:
                 detected_lines.append((b, f, full_diff, "PEAK"))
@@ -109,7 +109,7 @@ try:
                 best = max(cluster, key=lambda x: x[2])
                 f_tone = best[1]
                 diff_db = best[2]
-                sev = "Critical" if diff_db >= 4.0 else ("High" if diff_db >= 2.8 else "Medium")
+                sev = "Critical" if diff_db >= 3.5 else ("High" if diff_db >= 2.2 else "Medium")
                 y_norm = int(round((1.0 - (f_tone / 24000.0)) * 1000))
                 defect_boxes.append({
                     "id": len(defect_boxes) + 1,
@@ -125,7 +125,7 @@ try:
                 best = min(cluster, key=lambda x: x[2])
                 f_notch = best[1]
                 dip_db = best[2]
-                sev = "Critical" if dip_db <= -8.0 else ("High" if dip_db <= -5.5 else "Medium")
+                sev = "Critical" if dip_db <= -7.0 else ("High" if dip_db <= -4.5 else "Medium")
                 y_norm = int(round((1.0 - (f_notch / 24000.0)) * 1000))
                 defect_boxes.append({
                     "id": len(defect_boxes) + 1,
