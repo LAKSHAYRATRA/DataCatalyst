@@ -438,6 +438,7 @@ export default function PhraseRecording() {
   const audioChunksRef = useRef([]);
   const startTimeRef = useRef(null);
   const timerRef = useRef(null);
+  const recordingSessionRef = useRef(0);
 
   useEffect(() => {
     let isMounted = true;
@@ -673,6 +674,24 @@ export default function PhraseRecording() {
       await new Promise(r => setTimeout(r, 150));
     }
 
+    // Clean up any existing media stream / worklet to prevent stream bleeding or duplicate stuttering
+    if (workletNodeRef.current) {
+      try { workletNodeRef.current.port.onmessage = null; } catch {}
+      try { workletNodeRef.current.disconnect(); } catch {}
+      workletNodeRef.current = null;
+    }
+    if (streamRef.current) {
+      try { streamRef.current.getTracks().forEach(t => t.stop()); } catch {}
+      streamRef.current = null;
+    }
+    if (audioCtxRef.current) {
+      try { audioCtxRef.current.close().catch(() => {}); } catch {}
+      audioCtxRef.current = null;
+    }
+
+    const currentSessionId = Date.now();
+    recordingSessionRef.current = currentSessionId;
+
     setSlots(prev => prev.map(s => s.id === slotId ? {
       ...s,
       isRecording: true,
@@ -683,7 +702,9 @@ export default function PhraseRecording() {
       rawPcm: null,
       showAnalysis: false,
       isAnalyzing: false,
-      aiAudit: null
+      aiAudit: null,
+      submitError: null,
+      submitAttempt: 1
     } : s));
 
     setActiveSlotId(slotId);
@@ -732,7 +753,7 @@ export default function PhraseRecording() {
       gain.gain.value = 0;
 
       workletNode.port.onmessage = (event) => {
-        if (event.data) {
+        if (event.data && recordingSessionRef.current === currentSessionId) {
           audioChunksRef.current.push(new Float32Array(event.data));
         }
       };
@@ -766,12 +787,18 @@ export default function PhraseRecording() {
 
     if (timerRef.current) clearInterval(timerRef.current);
     const currentRate = audioCtxRef.current ? audioCtxRef.current.sampleRate : 48000;
+
+    if (workletNodeRef.current) {
+      try { workletNodeRef.current.port.onmessage = null; } catch {}
+      try { workletNodeRef.current.disconnect(); } catch {}
+      workletNodeRef.current = null;
+    }
     if (streamRef.current) {
-      streamRef.current.getTracks().forEach(t => t.stop());
+      try { streamRef.current.getTracks().forEach(t => t.stop()); } catch {}
       streamRef.current = null;
     }
     if (audioCtxRef.current) {
-      audioCtxRef.current.close().catch(() => {});
+      try { audioCtxRef.current.close().catch(() => {}); } catch {}
       audioCtxRef.current = null;
     }
 
@@ -804,7 +831,8 @@ export default function PhraseRecording() {
       rawPcm: combined,
       showAnalysis: false,
       isAnalyzing: false,
-      aiAudit: null
+      aiAudit: null,
+      submitError: null
     } : s));
 
     setActiveSlotId(null);
@@ -821,7 +849,9 @@ export default function PhraseRecording() {
       rawPcm: null,
       showAnalysis: false,
       isAnalyzing: false,
-      aiAudit: null
+      aiAudit: null,
+      submitError: null,
+      submitAttempt: 1
     } : s));
   }
 
@@ -903,24 +933,75 @@ export default function PhraseRecording() {
     }
 
     // Mark ONLY this slot as submitting
-    setSlots(prev => prev.map(s => s.id === slotId ? { ...s, isSubmitting: true } : s));
+    setSlots(prev => prev.map(s => s.id === slotId ? { ...s, isSubmitting: true, submitAttempt: 1, submitError: null } : s));
+
+    const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:3001";
+    const MAX_RETRIES = 3;
+    let lastError = null;
+    let success = false;
+
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        if (attempt > 1) {
+          setSlots(prev => prev.map(s => s.id === slotId ? { ...s, submitAttempt: attempt } : s));
+          await new Promise(r => setTimeout(r, (attempt - 1) * 1000));
+        }
+
+        const formData = new FormData();
+        formData.append('phraseId', slot.phrase._id);
+        formData.append('recording', slot.audioBlob, 'record.wav');
+        formData.append('duration', slot.duration);
+        if (lufsScore !== null && lufsScore !== undefined) {
+          formData.append('lufs', lufsScore);
+        }
+
+        const res = await fetch(BACKEND_URL + '/api/phrases/record', {
+          method: 'POST',
+          credentials: 'include',
+          body: formData
+        });
+
+        let data = null;
+        try {
+          data = await res.json();
+        } catch {}
+
+        if (!res.ok || !data?.success) {
+          const errMsg = data?.error || `Server returned error (${res.status})`;
+          if (res.status >= 400 && res.status < 500) {
+            throw new Error(errMsg);
+          }
+          lastError = new Error(errMsg);
+          continue; // Retry on 5xx server issues
+        }
+
+        success = true;
+        break; // Successfully submitted!
+      } catch (err) {
+        lastError = err;
+        if (err.message && (err.message.includes("allocated to speaker") || err.message.includes("limit") || err.message.includes("checked out"))) {
+          break; // Stop immediately on business rule rejections
+        }
+      }
+    }
+
+    if (!success) {
+      console.error('Submit slot error after retries:', lastError);
+      const errMsg = lastError?.message || 'Submission failed. Please check your connection and retry.';
+      setSlots(prev => prev.map(s => s.id === slotId ? { ...s, isSubmitting: false, submitError: errMsg } : s));
+      Swal.fire({
+        icon: 'error',
+        title: 'Submission Failed',
+        text: errMsg,
+        footer: 'Your audio is safe. Click "Retry Submission" to submit again.',
+        background: '#171717',
+        color: '#ffffff',
+        confirmButtonColor: '#3b82f6'
+      });
+      return;
+    }
 
     try {
-      const formData = new FormData();
-      formData.append('phraseId', slot.phrase._id);
-      formData.append('recording', slot.audioBlob, 'record.wav');
-      formData.append('duration', slot.duration);
-      if (lufsScore !== null && lufsScore !== undefined) {
-        formData.append('lufs', lufsScore);
-      }
-
-      const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:3001";
-      const res = await fetch(BACKEND_URL + '/api/phrases/record', {
-        method: 'POST',
-        credentials: 'include',
-        body: formData
-      });
-
       // Fetch 1 replacement phrase for ONLY slotId!
       const otherSlots = slots.filter(s => s.id !== slotId && s.phrase);
       const currentOtherIds = otherSlots.map(s => s.phrase._id);
@@ -974,14 +1055,18 @@ export default function PhraseRecording() {
         duration: 0,
         recordedLufs: null,
         rawPcm: null,
-        isSubmitting: false
+        showAnalysis: false,
+        isAnalyzing: false,
+        aiAudit: null,
+        isSubmitting: false,
+        submitError: null,
+        submitAttempt: 1
       } : s));
 
       fetchStats().catch(() => {});
     } catch (err) {
-      console.error('Submit slot error:', err);
+      console.error('Fetch next phrase error:', err);
       setSlots(prev => prev.map(s => s.id === slotId ? { ...s, isSubmitting: false } : s));
-      fetchStats().catch(() => {});
     }
   }
 
@@ -1564,10 +1649,20 @@ export default function PhraseRecording() {
                           <button
                             onClick={() => submitSlot(slot.id)}
                             disabled={slot.isSubmitting || slot.isAnalyzing}
-                            className="flex-1 btn btn-primary flex items-center justify-center gap-1.5 py-2.5 px-3 text-xs font-semibold disabled:opacity-50"
+                            className={`flex-1 btn ${slot.submitError ? 'bg-amber-600 hover:bg-amber-500 text-white shadow-amber-600/20' : 'btn-primary'} flex items-center justify-center gap-1.5 py-2.5 px-3 text-xs font-semibold disabled:opacity-50 transition-all`}
                           >
-                            {slot.isSubmitting ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <UploadCloud className="w-4 h-4" />}
-                            {slot.isSubmitting ? 'Submitting...' : 'Submit Phrase'}
+                            {slot.isSubmitting ? (
+                              <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                            ) : slot.submitError ? (
+                              <RefreshCw className="w-4 h-4" />
+                            ) : (
+                              <UploadCloud className="w-4 h-4" />
+                            )}
+                            {slot.isSubmitting
+                              ? (slot.submitAttempt > 1 ? `Retrying (${slot.submitAttempt}/3)...` : 'Submitting...')
+                              : slot.submitError
+                              ? 'Retry Submission'
+                              : 'Submit Phrase'}
                           </button>
                         </div>
                       </div>

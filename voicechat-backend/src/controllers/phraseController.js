@@ -938,10 +938,14 @@ export async function submitPhraseRecording(req, res) {
       return res.status(400).json({ error: "Phrase has already been successfully recorded." });
     }
 
-    // Guard against collision lock stealing
+    // Guard against collision lock stealing (only block if active lock belongs to another user)
     if (phrase.status === "locked" && phrase.lockedBy && phrase.lockedBy.toString() !== req.user._id.toString()) {
-      fs.unlinkSync(req.file.path);
-      return res.status(400).json({ error: "Phrase is currently checked out by another contributor. Please refresh." });
+      const lockAge = phrase.lockedAt ? Date.now() - new Date(phrase.lockedAt).getTime() : Infinity;
+      if (lockAge < 5 * 60 * 1000) {
+        fs.unlinkSync(req.file.path);
+        console.warn(`[submitPhraseRecording] 400: Phrase ${phraseId} actively checked out by another contributor ${phrase.lockedBy}`);
+        return res.status(400).json({ error: "Phrase is currently checked out by another contributor. Please refresh." });
+      }
     }
 
     // Verify speaker allocation if phrase is reserved for a specific speaker ID
@@ -950,6 +954,7 @@ export async function submitPhraseRecording(req, res) {
       const userSpk = req.user.speaker_id ? String(req.user.speaker_id).trim().toLowerCase() : "";
       if (String(targetSpk).trim().toLowerCase() !== userSpk) {
         fs.unlinkSync(req.file.path);
+        console.warn(`[submitPhraseRecording] 403: Speaker allocation mismatch for phrase ${phraseId}. Target: ${targetSpk}, User: ${userSpk}`);
         return res.status(403).json({ error: `This phrase is allocated to speaker ${targetSpk}. You cannot record it.` });
       }
     }

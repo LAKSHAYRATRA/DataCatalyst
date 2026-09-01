@@ -161,7 +161,8 @@ finally:
         except: pass
 `;
 
-    const py = spawn("python", ["-c", pythonScript, audioFilePath]);
+    const pythonCmd = process.platform === "win32" ? "python" : "python3";
+    const py = spawn(pythonCmd, ["-c", pythonScript, audioFilePath]);
     let stdout = "";
     let stderr = "";
 
