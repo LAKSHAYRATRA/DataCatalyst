@@ -285,6 +285,7 @@ export async function analyzeSpectrogramImage(base64Image, dspTelemetry = null) 
 
         const resJson = await response.json();
         const rawContent = resJson.choices?.[0]?.message?.content;
+        console.log(`[groqNoiseService] Received response from Groq (${modelId}):\n`, rawContent);
         if (!rawContent) {
           throw new Error("Empty response from Groq Vision model.");
         }
@@ -303,6 +304,7 @@ export async function analyzeSpectrogramImage(base64Image, dspTelemetry = null) 
 
         // Merge and sanitize boxes with Non-Maximum Suppression (NMS)
         const sanitizedBoxes = sanitizeDefectBoxes(parsed.defectBoxes || [], dspTelemetry?.defectBoxes || []);
+        console.log(`[groqNoiseService] Audit Summary -> Groq verdict: ${parsed.verdict}, Groq boxes: ${parsed.defectBoxes?.length || 0}, DSP boxes: ${dspTelemetry?.defectBoxes?.length || 0}, Final Sanitized Boxes: ${sanitizedBoxes.length}`);
         
         const hasDefects = sanitizedBoxes.length > 0;
 

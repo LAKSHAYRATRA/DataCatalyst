@@ -2813,6 +2813,8 @@ export async function analyzeSpectrogramNoise(req, res) {
       return res.status(400).json({ error: "Missing imageBase64 in request body." });
     }
 
+    console.log(`[analyzeSpectrogramNoise] Received request for phraseId: ${phraseId || "LIVE_BUFFER"}, audioBase64 length: ${audioBase64 ? audioBase64.length : 0}`);
+
     let dspTelemetry = null;
     const { analyzeAudioDsp } = await import("../services/audioDspService.js");
 
@@ -2846,10 +2848,15 @@ export async function analyzeSpectrogramNoise(req, res) {
 
         const targetAudioPath = fs.existsSync(p1) ? p1 : (fs.existsSync(p2) ? p2 : (fs.existsSync(p3) ? p3 : null));
         if (targetAudioPath) {
+          console.log(`[analyzeSpectrogramNoise] Found local audio on disk: ${targetAudioPath}`);
           dspTelemetry = await analyzeAudioDsp(targetAudioPath);
+        } else {
+          console.log(`[analyzeSpectrogramNoise] Phrase audioFile ${phrase.audioFile} not found locally.`);
         }
       }
     }
+
+    console.log(`[analyzeSpectrogramNoise] Final DSP Telemetry before Groq:`, JSON.stringify(dspTelemetry));
 
     // Call Groq Service with both Spectrogram Image + Raw .WAV DSP Telemetry
     const auditResult = await analyzeSpectrogramImage(imageBase64, dspTelemetry);

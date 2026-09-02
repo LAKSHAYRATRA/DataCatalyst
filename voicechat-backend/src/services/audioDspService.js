@@ -170,16 +170,19 @@ finally:
     py.stderr.on("data", (d) => { stderr += d.toString(); });
 
     py.on("close", (code) => {
+      console.log(`[audioDspService] Python process exited with code ${code}. Stderr: "${stderr.trim()}"`);
       try {
         const parsed = JSON.parse(stdout.trim());
+        console.log(`[audioDspService] DSP Result -> verdict: ${parsed.verdict}, defectBoxes: ${parsed.defectBoxes ? parsed.defectBoxes.length : 0}, error: ${parsed.error || "none"}`);
         resolve(parsed);
       } catch (err) {
-        console.warn("[audioDspService] Python output parse error:", stdout, stderr);
+        console.warn("[audioDspService] Python output parse error. Stdout:", stdout, "Stderr:", stderr);
         resolve({ success: false, error: stderr || "Failed to parse DSP output" });
       }
     });
 
     py.on("error", (err) => {
+      console.error("[audioDspService] Failed to spawn Python process:", err.message);
       resolve({ success: false, error: err.message });
     });
   });
