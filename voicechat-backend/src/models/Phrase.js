@@ -73,7 +73,16 @@ const phraseSchema = new mongoose.Schema(
     editedPhraseStatus: { type: String, enum: ["pending_admin", "approved", "rejected"], default: null },
 
     // Groq Vision Zero-Tolerance AI Spectrogram Audit
-    spectrogramAiAudit: { type: mongoose.Schema.Types.Mixed, default: null }
+    spectrogramAiAudit: { type: mongoose.Schema.Types.Mixed, default: null },
+
+    // Workload Deletion / Earnings Retention Archival
+    isArchivedFromCompanyWorkload: { type: Boolean, default: false, index: true },
+    archivedAt: { type: Date, default: null },
+    originalPhraseId: { type: String, default: null },
+
+    // Download Tracking (Replaces legacy _downloaded companyId mutation)
+    isDownloaded: { type: Boolean, default: false, index: true },
+    downloadedAt: { type: Date, default: null }
   },
   { timestamps: true }
 );

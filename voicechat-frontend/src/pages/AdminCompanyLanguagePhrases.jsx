@@ -20,7 +20,11 @@ import {
   X,
   Eye,
   EyeOff,
-  Upload
+  Upload,
+  UserX,
+  AlertCircle,
+  RefreshCw,
+  Info
 } from "lucide-react";
 import Swal from "sweetalert2";
 import { apiGet, apiPostJson, apiPatchJson, apiDeleteJson } from "../lib/api.js";
@@ -44,6 +48,35 @@ const STANDARD_FIELDS = [
   { key: "recordedAt", label: "Recorded Timestamp" },
   { key: "isSample", label: "Is Test Sample" }
 ];
+
+const getSpeakerInfo = (phrase) => {
+  const contributor = phrase.contributorId;
+  const spkId = contributor?.speaker_id || phrase.assigned_speaker_id || phrase.speaker_id || null;
+  const rawName = [contributor?.firstname, contributor?.lastname].filter(Boolean).join(" ").trim();
+  const name = rawName || (contributor?.username && contributor.username !== spkId ? contributor.username : null);
+
+  if (spkId && name) {
+    return { id: spkId, name, display: `${spkId} (${name})` };
+  }
+  if (spkId) return { id: spkId, name: null, display: spkId };
+  if (name) return { id: null, name, display: name };
+  return null;
+};
+
+const getQaReviewerInfo = (phrase) => {
+  const qaUser = phrase.qaId || phrase.firstQaReview?.qaId;
+  if (!qaUser) return null;
+  const spkId = qaUser.speaker_id || (qaUser.username && qaUser.username.startsWith("spk_") ? qaUser.username : null);
+  const rawName = [qaUser.firstname, qaUser.lastname].filter(Boolean).join(" ").trim();
+  const name = rawName || qaUser.username || "QA Reviewer";
+
+  if (spkId && name && spkId !== name) {
+    return { id: spkId, name, display: `${spkId} (${name})` };
+  }
+  if (spkId) return { id: spkId, name: null, display: spkId };
+  if (name) return { id: null, name, display: name };
+  return { id: null, name: "QA Reviewer", display: "QA Reviewer" };
+};
 
 export default function AdminCompanyLanguagePhrases() {
   const { id, language } = useParams();
@@ -75,6 +108,110 @@ export default function AdminCompanyLanguagePhrases() {
   const [uploadPastedJson, setUploadPastedJson] = useState("");
   const [uploadSpeakerId, setUploadSpeakerId] = useState("");
   const [uploadLoading, setUploadLoading] = useState(false);
+
+  // Delete Speaker Phrases Modal State
+  const [showDeleteSpeakerModal, setShowDeleteSpeakerModal] = useState(false);
+  const [speakersList, setSpeakersList] = useState([]);
+  const [loadingSpeakers, setLoadingSpeakers] = useState(false);
+  const [selectedSpeakerId, setSelectedSpeakerId] = useState("");
+  const [deletePending, setDeletePending] = useState(true);
+  const [deleteLocked, setDeleteLocked] = useState(true);
+  const [deleteRecorded, setDeleteRecorded] = useState(true);
+  const [deleteApproved, setDeleteApproved] = useState(true);
+  const [deleteSpeakerLoading, setDeleteSpeakerLoading] = useState(false);
+
+  const openDeleteSpeakerModal = async () => {
+    setShowDeleteSpeakerModal(true);
+    setLoadingSpeakers(true);
+    try {
+      const res = await apiGet(`/api/admin/companies/${id}/phrase-workloads/${encodeURIComponent(language)}/speakers`);
+      const list = res.speakers || [];
+      setSpeakersList(list);
+      if (list.length > 0) {
+        setSelectedSpeakerId(list[0].speakerId);
+      } else {
+        setSelectedSpeakerId("");
+      }
+    } catch (err) {
+      Swal.fire("Error", "Failed to fetch speakers: " + err.message, "error");
+    } finally {
+      setLoadingSpeakers(false);
+    }
+  };
+
+  const selectedSpeakerObj = speakersList.find(s => s.speakerId === selectedSpeakerId) || null;
+
+  const calculateTotalSelectedCount = () => {
+    if (!selectedSpeakerObj) return 0;
+    let total = 0;
+    if (deletePending) total += (selectedSpeakerObj.counts?.pending || 0);
+    if (deleteLocked) total += (selectedSpeakerObj.counts?.locked || 0);
+    if (deleteRecorded) total += (selectedSpeakerObj.counts?.recorded || 0) + (selectedSpeakerObj.counts?.rejected || 0);
+    if (deleteApproved) total += (selectedSpeakerObj.counts?.approved || 0);
+    return total;
+  };
+
+  const handleExecuteDeleteSpeakerPhrases = async () => {
+    if (!selectedSpeakerId) {
+      Swal.fire("No Speaker Selected", "Please select a speaker from the dropdown.", "warning");
+      return;
+    }
+
+    if (!deletePending && !deleteLocked && !deleteRecorded && !deleteApproved) {
+      Swal.fire("No Categories Selected", "Please select at least one phrase category to delete.", "warning");
+      return;
+    }
+
+    const totalToDelete = calculateTotalSelectedCount();
+
+    const result = await Swal.fire({
+      title: `Delete Phrases for "${selectedSpeakerObj?.displayName || selectedSpeakerId}"?`,
+      html: `
+        <div class="text-left space-y-2 text-sm text-neutral-300">
+          <p>You are about to process <b class="text-rose-400 font-bold">${totalToDelete} phrases</b> for this speaker in <b>${language.toUpperCase()}</b>:</p>
+          <ul class="list-disc pl-5 space-y-1 text-xs text-neutral-400">
+            ${deletePending ? `<li><b>${selectedSpeakerObj?.counts?.pending || 0} Pending phrases</b> will be permanently removed.</li>` : ''}
+            ${deleteLocked ? `<li><b>${selectedSpeakerObj?.counts?.locked || 0} Locked phrases</b> will be released and removed.</li>` : ''}
+            ${deleteRecorded ? `<li><b>${selectedSpeakerObj?.counts?.recorded || 0} Recorded phrases</b> will be evicted from QA review queue and their .wav audio files deleted.</li>` : ''}
+            ${deleteApproved ? `<li><b>${selectedSpeakerObj?.counts?.approved || 0} Approved phrases</b> will be removed from this company workload and audio purged, while preserving their earnings records on the contributor's Earnings tab.</li>` : ''}
+          </ul>
+          <p class="text-xs text-amber-400 mt-2 font-semibold">⚠️ This action cannot be reversed.</p>
+        </div>
+      `,
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonText: `Yes, Delete & Clean (${totalToDelete} Phrases)`,
+      confirmButtonColor: "#dc2626",
+      cancelButtonColor: "#404040"
+    });
+
+    if (!result.isConfirmed) return;
+
+    setDeleteSpeakerLoading(true);
+    try {
+      const res = await apiPostJson(`/api/admin/companies/${id}/phrase-workloads/${encodeURIComponent(language)}/delete-speaker-phrases`, {
+        speakerId: selectedSpeakerId,
+        deletePending,
+        deleteLocked,
+        deleteRecorded,
+        deleteApproved
+      });
+
+      setShowDeleteSpeakerModal(false);
+      Swal.fire({
+        icon: "success",
+        title: "Speaker Phrases Cleaned!",
+        text: res.message || `Processed ${res.totalProcessed} phrases.`,
+        timer: 3500
+      });
+
+      fetchPhrases(1, search, allocationFilter, statusFilter);
+    } catch (err) {
+      Swal.fire("Action Failed", err.message || "Failed to delete speaker phrases", "error");
+    } finally {
+      setDeleteSpeakerLoading(false);
+    }
+  };
 
   const extractPhrases = (json) => {
     if (Array.isArray(json)) return json;
@@ -612,7 +749,7 @@ export default function AdminCompanyLanguagePhrases() {
   return (
     <div className="min-h-screen bg-neutral-900 flex text-white transition-colors duration-300">
       <AdminNav />
-      <main className="flex-1 md:ml-64 p-6 md:p-8 max-w-7xl mx-auto text-neutral-100">
+      <main className="flex-1 md:ml-64 p-4 md:p-8 w-full max-w-[99%] 2xl:max-w-[1920px] mx-auto text-neutral-100">
         {/* Header Navigation */}
         <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-4">
@@ -784,6 +921,13 @@ export default function AdminCompanyLanguagePhrases() {
               <span>🔒</span> Allocate to Speaker
             </button>
             <button
+              onClick={openDeleteSpeakerModal}
+              className="px-3 py-1.5 bg-rose-700 hover:bg-rose-600 text-white font-bold text-xs rounded-lg transition-colors flex items-center gap-1.5 shadow-md shadow-rose-700/20"
+              title="Delete or clean allocated phrases for a specific speaker, purge recordings and QA reviews"
+            >
+              <UserX className="w-3.5 h-3.5" /> Delete Speaker Phrases
+            </button>
+            <button
               onClick={openExportModal}
               className="px-3 py-1.5 bg-primary-600 hover:bg-primary-500 text-white font-medium text-xs rounded-lg transition-colors flex items-center gap-1.5 shadow-md"
               title="Download JSON data of this company workload with customized tags"
@@ -829,14 +973,14 @@ export default function AdminCompanyLanguagePhrases() {
               <table className="w-full text-left text-sm border-collapse">
                 <thead>
                   <tr className="bg-neutral-900/90 border-b border-neutral-700 text-neutral-300 font-semibold text-xs uppercase tracking-wider">
-                    <th className="p-3.5">Phrase ID</th>
-                    <th className="p-3.5">Allocation</th>
-                    <th className="p-3.5 min-w-[240px]">Phrase Content / Text</th>
-                    <th className="p-3.5">Emotion / Domain</th>
-                    <th className="p-3.5">Style / Intent</th>
-                    <th className="p-3.5">Audio Attributes</th>
-                    <th className="p-3.5">Status</th>
-                    <th className="p-3.5 text-right">Actions</th>
+                    <th className="p-3 w-32 whitespace-nowrap">Phrase ID</th>
+                    <th className="p-3 w-36 whitespace-nowrap">Allocation</th>
+                    <th className="p-3 min-w-[260px]">Phrase Content / Text</th>
+                    <th className="p-3 w-28">Emotion</th>
+                    <th className="p-3 w-32">Style / Intent</th>
+                    <th className="p-3 w-24">Audio Attr</th>
+                    <th className="p-3 min-w-[200px] w-56">Status & Review</th>
+                    <th className="p-3 w-28 text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-neutral-700/60">
@@ -933,21 +1077,84 @@ export default function AdminCompanyLanguagePhrases() {
                           </div>
                         </td>
 
-                        {/* Status */}
-                        <td className="p-3.5 align-top text-xs">
-                          <span
-                            className={`inline-block px-2.5 py-1 rounded-full text-xs font-semibold capitalize ${
-                              phrase.status === "approved"
-                                ? "bg-success-900/40 text-success-300 border border-success-800/50"
-                                : phrase.status === "recorded"
-                                ? "bg-blue-900/40 text-blue-300 border border-blue-800/50"
-                                : phrase.status === "rejected"
-                                ? "bg-error-900/40 text-error-300 border border-error-800/50"
-                                : "bg-neutral-900 text-neutral-400 border border-neutral-700"
-                            }`}
-                          >
-                            {phrase.status}
-                          </span>
+                        {/* Status & Review Details */}
+                        <td className="p-3.5 align-top text-xs min-w-[210px]">
+                          <div className="space-y-2">
+                            {/* Status Badge */}
+                            <div>
+                              <span
+                                className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-semibold capitalize ${
+                                  phrase.status === "approved"
+                                    ? "bg-success-900/40 text-success-300 border border-success-800/50"
+                                    : phrase.status === "recorded"
+                                    ? "bg-blue-900/40 text-blue-300 border border-blue-800/50"
+                                    : phrase.status === "rejected"
+                                    ? "bg-error-900/40 text-error-300 border border-error-800/50"
+                                    : phrase.status === "locked"
+                                    ? "bg-amber-900/40 text-amber-300 border border-amber-800/50"
+                                    : "bg-neutral-900 text-neutral-400 border border-neutral-700"
+                                }`}
+                              >
+                                {phrase.status}
+                              </span>
+                            </div>
+
+                            {/* Recorded By Info */}
+                            {(() => {
+                              const spk = getSpeakerInfo(phrase);
+                              if (!spk) return null;
+                              return (
+                                <div className="text-[11px] bg-neutral-900/90 p-2 rounded-lg border border-neutral-700/70 text-neutral-300 leading-tight">
+                                  <div className="text-neutral-400 font-medium text-[10px] flex items-center justify-between gap-1">
+                                    <span className="flex items-center gap-1 font-semibold text-neutral-300">🎙️ Recorded By</span>
+                                    {phrase.duration > 0 && (
+                                      <span className="text-emerald-400 font-mono text-[10px] font-semibold">{phrase.duration.toFixed(1)}s</span>
+                                    )}
+                                  </div>
+                                  <div className="font-semibold text-sky-300 mt-1 flex flex-wrap items-center gap-1" title={spk.display}>
+                                    {spk.id && <span className="font-mono bg-sky-950/90 px-1.5 py-0.5 rounded text-sky-300 text-[10px] border border-sky-800/50">{spk.id}</span>}
+                                    {spk.name && <span className="text-neutral-200">{spk.name}</span>}
+                                  </div>
+                                </div>
+                              );
+                            })()}
+
+                            {/* Approved / QA Reviewed By Info */}
+                            {(() => {
+                              const qa = getQaReviewerInfo(phrase);
+                              if (!qa) return null;
+                              const isApproved = phrase.status === "approved";
+                              return (
+                                <div className={`text-[11px] p-2 rounded-lg border leading-tight ${
+                                  isApproved 
+                                    ? "bg-emerald-950/40 border-emerald-800/60 text-emerald-300" 
+                                    : "bg-rose-950/40 border-rose-800/60 text-rose-300"
+                                }`}>
+                                  <div className="font-medium text-[10px] flex items-center justify-between gap-1 opacity-90">
+                                    <span className="flex items-center gap-1 font-semibold">
+                                      {isApproved ? "✅ Approved By" : "❌ Reviewed By"}
+                                    </span>
+                                  </div>
+                                  <div className="font-semibold mt-1 flex flex-wrap items-center gap-1" title={qa.display}>
+                                    {qa.id && <span className={`font-mono px-1.5 py-0.5 rounded text-[10px] border ${
+                                      isApproved ? "bg-emerald-900/60 text-emerald-200 border-emerald-700/60" : "bg-rose-900/60 text-rose-200 border-rose-700/60"
+                                    }`}>{qa.id}</span>}
+                                    {qa.name && <span className={isApproved ? "text-emerald-100" : "text-rose-100"}>{qa.name}</span>}
+                                  </div>
+                                </div>
+                              );
+                            })()}
+
+                            {/* Locked By (if status is locked or lockedBy is set) */}
+                            {phrase.lockedBy && phrase.status === "locked" && (
+                              <div className="text-[11px] bg-amber-950/40 border border-amber-800/50 p-2 rounded-lg text-amber-300 leading-tight">
+                                <div className="font-medium text-[10px] opacity-80 font-semibold">🔒 In-Progress (Contributor):</div>
+                                <div className="font-semibold mt-1 text-amber-200">
+                                  {phrase.lockedBy.speaker_id || [phrase.lockedBy.firstname, phrase.lockedBy.lastname].filter(Boolean).join(" ") || phrase.lockedBy.username || "Contributor"}
+                                </div>
+                              </div>
+                            )}
+                          </div>
                         </td>
 
                         {/* Actions */}
@@ -1184,6 +1391,220 @@ export default function AdminCompanyLanguagePhrases() {
                   </div>
                 </>
               )}
+            </div>
+          </div>
+        )}
+        {/* Delete Speaker Phrases Modal */}
+        {showDeleteSpeakerModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+            <div 
+              className="bg-neutral-900 border border-neutral-700 rounded-3xl w-full max-w-xl shadow-2xl overflow-hidden text-white"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Modal Header */}
+              <div className="p-6 flex items-center justify-between border-b border-neutral-800 bg-neutral-950/60">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 rounded-2xl bg-rose-600/20 text-rose-400 border border-rose-500/30">
+                    <UserX className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                      <span>Delete Speaker Phrases</span>
+                      <span className="text-xs px-2 py-0.5 rounded-full font-bold uppercase tracking-wider bg-rose-950 text-rose-400 border border-rose-700">
+                        {language.toUpperCase()}
+                      </span>
+                    </h3>
+                    <p className="text-xs text-neutral-400 mt-0.5">
+                      Select a speaker to clean/delete allocated phrases, auto-purge audio, and evict from QA.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowDeleteSpeakerModal(false)}
+                  className="text-neutral-400 hover:text-white p-2 rounded-xl hover:bg-neutral-800 transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Modal Body */}
+              <div className="p-6 space-y-4">
+                {loadingSpeakers ? (
+                  <div className="py-12 text-center text-neutral-400 space-y-2">
+                    <Loader2 className="w-7 h-7 animate-spin text-rose-500 mx-auto" />
+                    <p className="text-xs">Loading allocated speakers for {language.toUpperCase()}...</p>
+                  </div>
+                ) : speakersList.length === 0 ? (
+                  <div className="py-8 text-center bg-neutral-950/50 rounded-2xl border border-neutral-800 p-4 space-y-2">
+                    <UserX className="w-8 h-8 text-neutral-500 mx-auto" />
+                    <h4 className="text-sm font-semibold text-neutral-300">No Allocated Speakers Found</h4>
+                    <p className="text-xs text-neutral-500 max-w-sm mx-auto">
+                      There are currently no phrases specifically reserved or allocated to any speaker in {language.toUpperCase()}.
+                    </p>
+                  </div>
+                ) : (
+                  <>
+                    {/* Speaker Selector Dropdown */}
+                    <div>
+                      <label className="block text-xs font-bold uppercase tracking-wider text-neutral-300 mb-1.5 flex items-center justify-between">
+                        <span>Select Speaker ID / Contributor</span>
+                        <span className="text-xs text-neutral-400">
+                          {speakersList.length} {speakersList.length === 1 ? 'speaker found' : 'speakers found'}
+                        </span>
+                      </label>
+                      <select
+                        value={selectedSpeakerId}
+                        onChange={(e) => setSelectedSpeakerId(e.target.value)}
+                        className="w-full p-3 bg-neutral-950 border border-neutral-700 text-white rounded-xl text-xs font-semibold focus:ring-2 focus:ring-rose-500 focus:border-rose-500"
+                      >
+                        {speakersList.map((spk) => (
+                          <option key={spk.speakerId} value={spk.speakerId}>
+                            {spk.displayName} ({spk.counts?.total || 0} total phrases)
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Category Checkboxes with Live Counts */}
+                    {selectedSpeakerObj && (
+                      <div className="space-y-2.5 pt-2">
+                        <label className="block text-xs font-bold uppercase tracking-wider text-neutral-300">
+                          Select Phrase Categories to Delete / Purge:
+                        </label>
+
+                        {/* 1. Pending (Unrecorded) */}
+                        <label className={`flex items-center justify-between p-3 rounded-xl border transition-all cursor-pointer ${
+                          deletePending ? 'bg-amber-950/20 border-amber-500/50 text-white' : 'bg-neutral-950/40 border-neutral-800 text-neutral-400'
+                        }`}>
+                          <div className="flex items-center gap-3">
+                            <input
+                              type="checkbox"
+                              checked={deletePending}
+                              onChange={(e) => setDeletePending(e.target.checked)}
+                              className="w-4 h-4 rounded accent-rose-500"
+                            />
+                            <div>
+                              <div className="text-xs font-bold flex items-center gap-1.5">
+                                <span>Allocated Pending (Unrecorded)</span>
+                              </div>
+                              <div className="text-[11px] text-neutral-400">Backlog phrases reserved for this speaker</div>
+                            </div>
+                          </div>
+                          <span className="text-xs font-mono font-bold px-2 py-0.5 rounded bg-amber-900/40 text-amber-300 border border-amber-700/50">
+                            {selectedSpeakerObj.counts?.pending || 0} phrases
+                          </span>
+                        </label>
+
+                        {/* 2. Locked (In-Progress) */}
+                        <label className={`flex items-center justify-between p-3 rounded-xl border transition-all cursor-pointer ${
+                          deleteLocked ? 'bg-violet-950/20 border-violet-500/50 text-white' : 'bg-neutral-950/40 border-neutral-800 text-neutral-400'
+                        }`}>
+                          <div className="flex items-center gap-3">
+                            <input
+                              type="checkbox"
+                              checked={deleteLocked}
+                              onChange={(e) => setDeleteLocked(e.target.checked)}
+                              className="w-4 h-4 rounded accent-rose-500"
+                            />
+                            <div>
+                              <div className="text-xs font-bold flex items-center gap-1.5">
+                                <span>Allocated Locked (In-Progress)</span>
+                              </div>
+                              <div className="text-[11px] text-neutral-400">Phrases currently claimed in an active session</div>
+                            </div>
+                          </div>
+                          <span className="text-xs font-mono font-bold px-2 py-0.5 rounded bg-violet-900/40 text-violet-300 border border-violet-700/50">
+                            {selectedSpeakerObj.counts?.locked || 0} phrases
+                          </span>
+                        </label>
+
+                        {/* 3. Recorded (In QA Review) */}
+                        <label className={`flex items-center justify-between p-3 rounded-xl border transition-all cursor-pointer ${
+                          deleteRecorded ? 'bg-blue-950/20 border-blue-500/50 text-white' : 'bg-neutral-950/40 border-neutral-800 text-neutral-400'
+                        }`}>
+                          <div className="flex items-center gap-3">
+                            <input
+                              type="checkbox"
+                              checked={deleteRecorded}
+                              onChange={(e) => setDeleteRecorded(e.target.checked)}
+                              className="w-4 h-4 rounded accent-rose-500"
+                            />
+                            <div>
+                              <div className="text-xs font-bold flex items-center gap-1.5">
+                                <span>Allocated Recorded (In QA Queue)</span>
+                                <span className="text-[10px] px-1.5 py-0.2 rounded bg-blue-900/60 text-blue-300 font-normal">Auto-evicts QA</span>
+                              </div>
+                              <div className="text-[11px] text-neutral-400">Recordings in review; .wav audio files will be deleted from S3</div>
+                            </div>
+                          </div>
+                          <span className="text-xs font-mono font-bold px-2 py-0.5 rounded bg-blue-900/40 text-blue-300 border border-blue-700/50">
+                            {(selectedSpeakerObj.counts?.recorded || 0) + (selectedSpeakerObj.counts?.rejected || 0)} phrases
+                          </span>
+                        </label>
+
+                        {/* 4. Approved (QA Passed) */}
+                        <label className={`flex items-center justify-between p-3 rounded-xl border transition-all cursor-pointer ${
+                          deleteApproved ? 'bg-emerald-950/20 border-emerald-500/50 text-white' : 'bg-neutral-950/40 border-neutral-800 text-neutral-400'
+                        }`}>
+                          <div className="flex items-center gap-3">
+                            <input
+                              type="checkbox"
+                              checked={deleteApproved}
+                              onChange={(e) => setDeleteApproved(e.target.checked)}
+                              className="w-4 h-4 rounded accent-rose-500"
+                            />
+                            <div>
+                              <div className="text-xs font-bold flex items-center gap-1.5">
+                                <span>Allocated Approved (Completed)</span>
+                                <span className="text-[10px] px-1.5 py-0.2 rounded bg-emerald-900/60 text-emerald-300 font-normal">Earnings Preserved</span>
+                              </div>
+                              <div className="text-[11px] text-neutral-400">Removed from admin workload & audio cleared; stays visible on Earnings tab</div>
+                            </div>
+                          </div>
+                          <span className="text-xs font-mono font-bold px-2 py-0.5 rounded bg-emerald-900/40 text-emerald-300 border border-emerald-700/50">
+                            {selectedSpeakerObj.counts?.approved || 0} phrases
+                          </span>
+                        </label>
+                      </div>
+                    )}
+
+                    {/* Automatic Action Summary Callout */}
+                    <div className="p-3 bg-neutral-950/70 border border-neutral-800 rounded-xl text-xs space-y-1.5 text-neutral-300">
+                      <div className="font-bold text-neutral-200 flex items-center gap-1.5">
+                        <Info className="w-3.5 h-3.5 text-rose-400" />
+                        <span>Automated Cascade Actions:</span>
+                      </div>
+                      <p className="text-[11px] text-neutral-400 leading-relaxed">
+                        • Phrases will be removed from this Company Workload table and language statistics.<br />
+                        • Audio recordings (<span className="font-mono text-neutral-300">.wav</span>) in S3/storage will be purged to free cloud space.<br />
+                        • Phrases in QA review will instantly disappear from Reviewers' queues.<br />
+                        • Approved earnings records remain untouched and visible on the contributor's Earnings dashboard.
+                      </p>
+                    </div>
+                  </>
+                )}
+              </div>
+
+              {/* Modal Footer */}
+              <div className="p-5 border-t border-neutral-800 bg-neutral-950/60 flex items-center justify-between">
+                <button
+                  type="button"
+                  onClick={() => setShowDeleteSpeakerModal(false)}
+                  disabled={deleteSpeakerLoading}
+                  className="px-4 py-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 text-xs font-bold rounded-xl transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleExecuteDeleteSpeakerPhrases}
+                  disabled={deleteSpeakerLoading || speakersList.length === 0 || calculateTotalSelectedCount() === 0}
+                  className="px-5 py-2 bg-rose-700 hover:bg-rose-600 disabled:opacity-50 text-white text-xs font-bold rounded-xl transition-colors flex items-center gap-2 shadow-lg shadow-rose-700/30 active:scale-95"
+                >
+                  {deleteSpeakerLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                  <span>Delete & Clean ({calculateTotalSelectedCount()} Phrases)</span>
+                </button>
+              </div>
             </div>
           </div>
         )}

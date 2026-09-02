@@ -114,10 +114,10 @@ export default function AdminMedia() {
   const handleDownloadCompany = async (companyName) => {
     const confirm = await Swal.fire({
       title: "Download Company Batch?",
-      text: `This will download a ZIP of all approved phrases for "${companyName}" and MOVE them to a "_downloaded" folder in S3.`,
+      text: `This will download a ZIP of all approved phrases for "${companyName}".`,
       icon: "info",
       showCancelButton: true,
-      confirmButtonText: "Yes, Download & Move",
+      confirmButtonText: "Yes, Download",
     });
 
     if (!confirm.isConfirmed) return;

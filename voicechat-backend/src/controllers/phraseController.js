@@ -293,8 +293,12 @@ export async function uploadPhrases(req, res) {
     const companyConfig = await Company.findOne({ name: targetCompanyName }).select("singlePhraseFrequency").lean();
     const targetFreq = companyConfig && Number.isInteger(companyConfig.singlePhraseFrequency) && companyConfig.singlePhraseFrequency >= 1 ? companyConfig.singlePhraseFrequency : 1;
 
-    // Scope existing phrase IDs and texts strictly to this target company and language
-    const existingDocs = await Phrase.find({ companyId: targetCompanyName, language: cleanLanguage }).select("phraseId text").lean();
+    // Scope existing phrase IDs and texts strictly to active phrases in this target company and language
+    const existingDocs = await Phrase.find({ 
+      companyId: targetCompanyName, 
+      language: cleanLanguage,
+      isArchivedFromCompanyWorkload: { $ne: true }
+    }).select("phraseId text").lean();
     const existingIds = new Set(existingDocs.map(d => d.phraseId));
     const existingTexts = new Set(existingDocs.map(d => d.text));
 
@@ -413,7 +417,9 @@ export async function getAvailablePhrase(req, res) {
       }
     }
 
-    const baseQuery = {};
+    const baseQuery = {
+      isArchivedFromCompanyWorkload: { $ne: true }
+    };
     if (language) {
       baseQuery.language = { $regex: new RegExp(`^${language}$`, "i") };
     }
@@ -1138,6 +1144,7 @@ export async function getQaQueue(req, res) {
       // 2. Fetch phrases currently locked by THIS QA reviewer
       let lockedForMe = await Phrase.find({
         status: "recorded",
+        isArchivedFromCompanyWorkload: { $ne: true },
         language: { $in: langRegex },
         qaLockedBy: req.user._id,
         qaLockedAt: { $gte: fifteenMinsAgo }
@@ -1152,6 +1159,7 @@ export async function getQaQueue(req, res) {
         
         const availablePhrases = await Phrase.find({
           status: "recorded",
+          isArchivedFromCompanyWorkload: { $ne: true },
           language: { $in: langRegex },
           _id: { $nin: currentlyLockedIds },
           "firstQaReview.qaId": { $ne: req.user._id },
@@ -1176,6 +1184,7 @@ export async function getQaQueue(req, res) {
           // Re-fetch populated locked list
           lockedForMe = await Phrase.find({
             status: "recorded",
+            isArchivedFromCompanyWorkload: { $ne: true },
             language: { $in: langRegex },
             qaLockedBy: req.user._id,
             qaLockedAt: { $gte: fifteenMinsAgo }
@@ -1204,14 +1213,15 @@ export async function getQaQueue(req, res) {
       return res.json({ phrases: phrasesLean });
     }
 
-    let query = {};
+    let query = { isArchivedFromCompanyWorkload: { $ne: true } };
     if (requestedStatus === "edited") {
       if (!req.user || !req.user.isAdmin) {
         return res.status(403).json({ error: "Only admins can access edited phrases queue" });
       }
-      query = { isEdited: true, editedPhraseStatus: { $nin: ["approved", "rejected"] } };
+      query.isEdited = true;
+      query.editedPhraseStatus = { $nin: ["approved", "rejected"] };
     } else {
-      query = { status: requestedStatus };
+      query.status = requestedStatus;
     }
 
     if (req.user && req.user.isQA && !req.user.isAdmin) {

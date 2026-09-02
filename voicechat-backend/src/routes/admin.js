@@ -8346,43 +8346,17 @@ ${"SPEAKER ID".padEnd(16)} | ${"NAME".padEnd(24)} | ${"GENDER".padEnd(8)} | ${"P
         // Wait for archive to finalize
         await archive.finalize();
 
-        // Background task to move files in S3 and update DB
+        // Mark phrases as downloaded without modifying companyId or moving S3 paths
         setTimeout(async () => {
-            if (isAlreadyDownloadedFolder) return;
-
-            for (const { key: oldKey, phrase } of successfullyProcessed) {
+            for (const { phrase } of successfullyProcessed) {
                 try {
-                    // Preserve phrase application files in place (do not move them to _downloaded)
-                    if (oldKey.includes("/phrase apps/")) {
-                        continue;
-                    }
-
-                    const newKey = oldKey.replace(`phrases/${companyFolder}/`, `phrases/${companyFolder}_downloaded/`);
-                    if (oldKey === newKey) continue;
-
-                    await s3Client.send(new CopyObjectCommand({
-                        Bucket: BUCKET_NAME,
-                        CopySource: `${BUCKET_NAME}/${oldKey}`,
-                        Key: newKey
-                    }));
-
-                    await s3Client.send(new DeleteObjectCommand({
-                        Bucket: BUCKET_NAME,
-                        Key: oldKey
-                    }));
-
-                    if (phrase) {
+                    if (phrase && !phrase.isDownloaded) {
                         await Phrase.updateOne(
                             { _id: phrase._id },
-                            { $set: {
-                                audioFile: newKey,
-                                companyId: (phrase.companyId && phrase.companyId.endsWith("_downloaded") ? phrase.companyId : (phrase.companyId || companyFolder) + "_downloaded")
-                            } }
+                            { $set: { isDownloaded: true, downloadedAt: new Date() } }
                         );
                     }
-                } catch (moveErr) {
-                    console.error(`Error moving ${oldKey} to downloaded folder:`, moveErr);
-                }
+                } catch (_) {}
             }
         }, 1000);
 
@@ -8673,6 +8647,7 @@ router.post("/backfill-speaker-ids", async (req, res) => {
             const { seq } = await Counter.findOneAndUpdate(
                 { _id: "speaker_id" },
                 { $inc: { seq: 1 } },
+                { upsert: true, new: true }
             );
             const speaker_id = `spk_${seq}`;
             await User.updateOne({ _id: user._id }, { $set: { speaker_id } });
@@ -8688,9 +8663,15 @@ router.post("/backfill-speaker-ids", async (req, res) => {
 router.get("/phrases/download-stats", requireAuth(JWT_SECRET), async (req, res) => {
     try {
         const stats = await Phrase.aggregate([
+            { $match: { isArchivedFromCompanyWorkload: { $ne: true } } },
             {
                 $group: {
-                    _id: { companyId: "$companyId", language: "$language", status: "$status" },
+                    _id: { 
+                        companyId: "$companyId", 
+                        language: "$language", 
+                        status: "$status",
+                        isDownloaded: { $ifNull: ["$isDownloaded", false] }
+                    },
                     count: { $sum: 1 }
                 }
             }
@@ -8701,8 +8682,9 @@ router.get("/phrases/download-stats", requireAuth(JWT_SECRET), async (req, res) 
 
         for (const item of stats) {
             const rawCompanyId = item._id.companyId || "Unknown";
-            const isDownloaded = rawCompanyId.endsWith("_downloaded");
-            const companyId = isDownloaded ? rawCompanyId.replace(/_downloaded$/, "") : rawCompanyId;
+            const isDownloadedLegacy = rawCompanyId.endsWith("_downloaded");
+            const isDownloaded = item._id.isDownloaded || isDownloadedLegacy;
+            const companyId = isDownloadedLegacy ? rawCompanyId.replace(/_downloaded$/, "") : rawCompanyId;
             const language = String(item._id.language || "other").toLowerCase().trim();
             const status = item._id.status;
 
@@ -8766,11 +8748,15 @@ router.get("/phrases/download-filter-options", requireAuth(JWT_SECRET), async (r
         if (!company) return res.status(400).json({ error: "Company name is required" });
 
         const companyFolder = company.replace(/[^a-zA-Z0-9_\-\ ]/g, "").trim();
+        const baseCompanyName = companyFolder.replace(/_downloaded$/, "");
         const targetStatus = (status === "recorded" || status === "pending") ? "recorded" : "approved";
 
         const targetCompanyIds = [
+            baseCompanyName,
             companyFolder,
+            `${baseCompanyName}_downloaded`,
             `${companyFolder}_downloaded`,
+            baseCompanyName.toLowerCase(),
             companyFolder.toLowerCase(),
             `${companyFolder.toLowerCase()}_downloaded`
         ];
@@ -9125,7 +9111,12 @@ router.get("/companies/:id/phrase-workloads", async (req, res) => {
         const companyRegex = new RegExp(`^${companyFolder}(_downloaded)?$`, "i");
 
         const langStats = await Phrase.aggregate([
-            { $match: { companyId: { $regex: companyRegex } } },
+            { 
+              $match: { 
+                companyId: { $regex: companyRegex },
+                isArchivedFromCompanyWorkload: { $ne: true }
+              } 
+            },
             { 
               $group: { 
                 _id: { $toLower: "$language" }, 
@@ -9214,7 +9205,8 @@ router.get("/companies/:id/phrase-workloads/:language", async (req, res) => {
         const language = String(req.params.language).trim().toLowerCase();
         const baseFilter = { 
             companyId: { $regex: companyRegex },
-            language: { $regex: new RegExp(`^${language}$`, "i") }
+            language: { $regex: new RegExp(`^${language}$`, "i") },
+            isArchivedFromCompanyWorkload: { $ne: true }
         };
 
         const filter = { ...baseFilter };
@@ -9344,7 +9336,42 @@ router.get("/companies/:id/phrase-workloads/:language", async (req, res) => {
             .sort({ isSample: -1, createdAt: -1 })
             .skip(skip)
             .limit(limit)
+            .populate("contributorId", "firstname lastname username speaker_id email")
+            .populate("qaId", "firstname lastname username speaker_id email")
+            .populate("firstQaReview.qaId", "firstname lastname username speaker_id email")
+            .populate("lockedBy", "firstname lastname username speaker_id email")
+            .populate("qaLockedBy", "firstname lastname username speaker_id email")
             .lean();
+
+        // Resolve user info for any phrases where contributorId is null but speaker_id string exists
+        const unpopulatedSpkIds = phrases
+            .filter(p => !p.contributorId && (p.assigned_speaker_id || p.speaker_id))
+            .map(p => p.assigned_speaker_id || p.speaker_id)
+            .filter(Boolean);
+
+        if (unpopulatedSpkIds.length > 0) {
+            const users = await User.find({
+                $or: [
+                    { speaker_id: { $in: unpopulatedSpkIds } },
+                    { username: { $in: unpopulatedSpkIds } }
+                ]
+            }).select("firstname lastname username speaker_id email").lean();
+
+            const userMap = new Map();
+            for (const u of users) {
+                if (u.speaker_id) userMap.set(u.speaker_id, u);
+                if (u.username) userMap.set(u.username, u);
+            }
+
+            for (const p of phrases) {
+                if (!p.contributorId) {
+                    const spk = p.assigned_speaker_id || p.speaker_id;
+                    if (spk && userMap.has(spk)) {
+                        p.contributorId = userMap.get(spk);
+                    }
+                }
+            }
+        }
 
         res.json({
             company,
@@ -9522,17 +9549,32 @@ router.post("/companies/:id/phrase-workloads/:language/unlock-all", async (req, 
         const company = await Company.findById(req.params.id);
         if (!company) return res.status(404).json({ error: "Company not found" });
 
-        const companyFolder = company.name.replace(/[^a-zA-Z0-9_\-\ ]/g, "").trim();
-        const companyRegex = new RegExp(`^${companyFolder}(_downloaded)?$`, "i");
+        const companyFolder = company.name.replace(/_downloaded$/i, "").replace(/[^a-zA-Z0-9_\-\ ]/g, "").trim();
+        const escName = companyFolder.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+        const companyRegex = new RegExp(`^${escName}(_downloaded)?$`, "i");
         const language = String(req.params.language).trim().toLowerCase();
 
+        const matchCompanies = [
+            { companyId: { $regex: companyRegex } }
+        ];
+        if (company.projectName) {
+            const escProj = company.projectName.replace(/_downloaded$/i, "").replace(/[^a-zA-Z0-9_\-\ ]/g, "").trim().replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+            matchCompanies.push({ companyId: { $regex: new RegExp(`^${escProj}(_downloaded)?$`, "i") } });
+            matchCompanies.push({ projectName: { $regex: new RegExp(`^${escProj}(_downloaded)?$`, "i") } });
+        }
+
         const filter = {
-            companyId: { $regex: companyRegex },
-            language: { $regex: new RegExp(`^${language}$`, "i") },
-            $or: [
-                { status: "locked" },
-                { lockedBy: { $ne: null } },
-                { qaLockedBy: { $ne: null } }
+            $or: matchCompanies,
+            language: { $regex: new RegExp(`^${language.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')}$`, "i") },
+            isArchivedFromCompanyWorkload: { $ne: true },
+            $and: [
+                {
+                    $or: [
+                        { status: "locked" },
+                        { lockedBy: { $ne: null } },
+                        { qaLockedBy: { $ne: null } }
+                    ]
+                }
             ]
         };
 
@@ -9545,6 +9587,10 @@ router.post("/companies/:id/phrase-workloads/:language/unlock-all", async (req, 
             p.lockedAt = null;
             p.qaLockedBy = null;
             p.qaLockedAt = null;
+            // Also normalize companyId if legacy _downloaded was present
+            if (p.companyId && p.companyId.endsWith("_downloaded")) {
+                p.companyId = p.companyId.replace(/_downloaded$/i, "").trim();
+            }
             await p.save();
             unlockedCount++;
         }
@@ -9553,6 +9599,304 @@ router.post("/companies/:id/phrase-workloads/:language/unlock-all", async (req, 
             success: true,
             unlockedCount,
             message: `Successfully unlocked ${unlockedCount} locked phrases for ${company.name} (${language.toUpperCase()}).`
+        });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+router.get("/companies/:id/phrase-workloads/:language/speakers", async (req, res) => {
+    try {
+        const company = await Company.findById(req.params.id);
+        if (!company) return res.status(404).json({ error: "Company not found" });
+
+        const companyFolder = company.name.replace(/[^a-zA-Z0-9_\-\ ]/g, "").trim();
+        const companyRegex = new RegExp(`^${companyFolder}(_downloaded)?$`, "i");
+        const language = String(req.params.language).trim().toLowerCase();
+
+        const baseMatch = {
+            companyId: { $regex: companyRegex },
+            language: { $regex: new RegExp(`^${language}$`, "i") },
+            isArchivedFromCompanyWorkload: { $ne: true }
+        };
+
+        const allocatedPhrases = await Phrase.find({
+            ...baseMatch,
+            $or: [
+                { assigned_speaker_id: { $nin: [null, ""] } },
+                { speaker_id: { $nin: [null, ""] } },
+                { contributorId: { $ne: null } }
+            ]
+        }).select("assigned_speaker_id speaker_id contributorId status lockedBy qaLockedBy").lean();
+
+        const speakerMap = new Map();
+        const contributorUserIds = new Set();
+
+        for (const p of allocatedPhrases) {
+            const rawSpk = p.assigned_speaker_id || p.speaker_id || (p.contributorId ? String(p.contributorId) : null);
+            if (!rawSpk) continue;
+
+            const spkKey = String(rawSpk).trim();
+            if (!speakerMap.has(spkKey)) {
+                speakerMap.set(spkKey, {
+                    speakerId: spkKey,
+                    contributorIds: new Set(),
+                    total: 0,
+                    pending: 0,
+                    locked: 0,
+                    recorded: 0,
+                    approved: 0,
+                    rejected: 0
+                });
+            }
+
+            const item = speakerMap.get(spkKey);
+            item.total++;
+            if (p.contributorId) {
+                item.contributorIds.add(String(p.contributorId));
+                contributorUserIds.add(String(p.contributorId));
+            }
+
+            if (p.status === "approved") {
+                item.approved++;
+            } else if (p.status === "recorded") {
+                item.recorded++;
+            } else if (p.status === "rejected") {
+                item.rejected++;
+            } else if (p.status === "locked" || p.lockedBy || p.qaLockedBy) {
+                item.locked++;
+            } else {
+                item.pending++;
+            }
+        }
+
+        const userFilters = [];
+        if (contributorUserIds.size > 0) {
+            userFilters.push({ _id: { $in: Array.from(contributorUserIds) } });
+        }
+        const speakerIdList = Array.from(speakerMap.keys());
+        if (speakerIdList.length > 0) {
+            userFilters.push({ speaker_id: { $in: speakerIdList } });
+        }
+
+        const users = userFilters.length > 0
+            ? await User.find({ $or: userFilters }).select("firstname lastname username email speaker_id").lean()
+            : [];
+
+        const userByObjId = new Map(users.map(u => [String(u._id), u]));
+        const userBySpkId = new Map(users.filter(u => u.speaker_id).map(u => [String(u.speaker_id).toLowerCase().trim(), u]));
+
+        const resultSpeakers = [];
+        for (const [spkKey, stats] of speakerMap.entries()) {
+            let matchedUser = userBySpkId.get(spkKey.toLowerCase());
+            if (!matchedUser && stats.contributorIds.size > 0) {
+                for (const cId of stats.contributorIds) {
+                    if (userByObjId.has(cId)) {
+                        matchedUser = userByObjId.get(cId);
+                        break;
+                    }
+                }
+            }
+
+            let displayName = spkKey;
+            let email = null;
+            if (matchedUser) {
+                const fullName = `${matchedUser.firstname || ""} ${matchedUser.lastname || ""}`.trim() || matchedUser.username;
+                displayName = `${spkKey} — ${fullName}`;
+                email = matchedUser.email || null;
+            }
+
+            resultSpeakers.push({
+                speakerId: spkKey,
+                displayName,
+                name: matchedUser ? `${matchedUser.firstname || ""} ${matchedUser.lastname || ""}`.trim() || matchedUser.username : null,
+                email,
+                counts: {
+                    total: stats.total,
+                    pending: stats.pending,
+                    locked: stats.locked,
+                    recorded: stats.recorded,
+                    approved: stats.approved,
+                    rejected: stats.rejected
+                }
+            });
+        }
+
+        resultSpeakers.sort((a, b) => b.counts.total - a.counts.total);
+
+        res.json({
+            success: true,
+            speakers: resultSpeakers
+        });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+router.post("/companies/:id/phrase-workloads/:language/delete-speaker-phrases", async (req, res) => {
+    try {
+        const company = await Company.findById(req.params.id);
+        if (!company) return res.status(404).json({ error: "Company not found" });
+
+        const companyFolder = company.name.replace(/[^a-zA-Z0-9_\-\ ]/g, "").trim();
+        const companyRegex = new RegExp(`^${companyFolder}(_downloaded)?$`, "i");
+        const language = String(req.params.language).trim().toLowerCase();
+
+        const {
+            speakerId,
+            deletePending = true,
+            deleteLocked = true,
+            deleteRecorded = true,
+            deleteApproved = true
+        } = req.body;
+
+        if (!speakerId) {
+            return res.status(400).json({ error: "Speaker ID is required." });
+        }
+
+        const cleanSpk = String(speakerId).trim();
+        const escapedSpk = cleanSpk.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+        const spkRegex = new RegExp(`^${escapedSpk}$`, "i");
+
+        const userMatch = await User.findOne({
+            $or: [
+                { speaker_id: { $regex: spkRegex } },
+                ...(mongoose.Types.ObjectId.isValid(cleanSpk) ? [{ _id: cleanSpk }] : [])
+            ]
+        }).select("_id speaker_id");
+
+        const speakerConditions = [
+            { assigned_speaker_id: { $regex: spkRegex } },
+            { speaker_id: { $regex: spkRegex } }
+        ];
+        if (userMatch) {
+            speakerConditions.push({ contributorId: userMatch._id });
+            if (userMatch.speaker_id) {
+                const escUserSpk = userMatch.speaker_id.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+                speakerConditions.push({ assigned_speaker_id: { $regex: new RegExp(`^${escUserSpk}$`, "i") } });
+                speakerConditions.push({ speaker_id: { $regex: new RegExp(`^${escUserSpk}$`, "i") } });
+            }
+        }
+
+        const baseMatch = {
+            companyId: { $regex: companyRegex },
+            language: { $regex: new RegExp(`^${language}$`, "i") },
+            isArchivedFromCompanyWorkload: { $ne: true },
+            $or: speakerConditions
+        };
+
+        const phrases = await Phrase.find(baseMatch);
+        if (phrases.length === 0) {
+            return res.json({
+                success: true,
+                message: `No active phrases found for speaker "${cleanSpk}".`,
+                deletedPendingCount: 0,
+                deletedLockedCount: 0,
+                deletedRecordedCount: 0,
+                archivedApprovedCount: 0,
+                totalProcessed: 0
+            });
+        }
+
+        const toHardDeleteIds = [];
+        const toArchiveIds = [];
+        const audioFilesToDelete = [];
+
+        let pendingCount = 0;
+        let lockedCount = 0;
+        let recordedCount = 0;
+        let approvedCount = 0;
+
+        for (const p of phrases) {
+            const isApproved = p.status === "approved";
+            const isRecorded = p.status === "recorded" || p.status === "rejected";
+            const isLocked = p.status === "locked" || Boolean(p.lockedBy) || Boolean(p.qaLockedBy);
+            const isPending = p.status === "pending" && !p.lockedBy;
+
+            let shouldProcess = false;
+
+            if (isApproved && deleteApproved) {
+                shouldProcess = true;
+                approvedCount++;
+                toArchiveIds.push(p._id);
+            } else if (isRecorded && deleteRecorded) {
+                shouldProcess = true;
+                recordedCount++;
+                toHardDeleteIds.push(p._id);
+            } else if (isLocked && deleteLocked) {
+                shouldProcess = true;
+                lockedCount++;
+                toHardDeleteIds.push(p._id);
+            } else if (isPending && deletePending) {
+                shouldProcess = true;
+                pendingCount++;
+                toHardDeleteIds.push(p._id);
+            }
+
+            if (shouldProcess) {
+                if (p.audioFile) audioFilesToDelete.push(p.audioFile);
+                if (p.originalAudioFile) audioFilesToDelete.push(p.originalAudioFile);
+            }
+        }
+
+        // Delete audio files from S3 and local storage
+        if (audioFilesToDelete.length > 0) {
+            await Promise.allSettled(
+                audioFilesToDelete.map(async (key) => {
+                    try {
+                        if (BUCKET_NAME && s3Client) {
+                            await s3Client.send(new DeleteObjectCommand({ Bucket: BUCKET_NAME, Key: key }));
+                        }
+                    } catch (err) {
+                        console.warn(`[DeleteSpeakerPhrases] S3 delete error for ${key}:`, err.message);
+                    }
+                    try {
+                        const localPath = path.join(process.cwd(), "uploads", key.replace(/^phrases\//, ""));
+                        if (fs.existsSync(localPath)) fs.unlinkSync(localPath);
+                    } catch (_) {}
+                })
+            );
+        }
+
+        // 1. Hard Delete pending, locked, recorded phrases
+        if (toHardDeleteIds.length > 0) {
+            await Phrase.deleteMany({ _id: { $in: toHardDeleteIds } });
+        }
+
+        // 2. Archive approved phrases (de-link from admin workload & QA, clear audio, preserve earnings, and free original phraseId for re-upload)
+        if (toArchiveIds.length > 0) {
+            for (const archId of toArchiveIds) {
+                const phraseObj = phrases.find(p => String(p._id) === String(archId));
+                const origId = phraseObj?.originalPhraseId || phraseObj?.phraseId || `ph_${archId}`;
+                await Phrase.updateOne(
+                    { _id: archId },
+                    {
+                        $set: {
+                            phraseId: `${origId}_archived_${archId}`,
+                            originalPhraseId: origId,
+                            isArchivedFromCompanyWorkload: true,
+                            audioFile: null,
+                            originalAudioFile: null,
+                            lockedBy: null,
+                            qaLockedBy: null,
+                            archivedAt: new Date()
+                        }
+                    }
+                );
+            }
+        }
+
+        const totalProcessed = toHardDeleteIds.length + toArchiveIds.length;
+
+        res.json({
+            success: true,
+            totalProcessed,
+            deletedPendingCount: pendingCount,
+            deletedLockedCount: lockedCount,
+            deletedRecordedCount: recordedCount,
+            archivedApprovedCount: approvedCount,
+            audioFilesDeletedCount: audioFilesToDelete.length,
+            message: `Successfully cleaned ${totalProcessed} phrases for ${cleanSpk} (${pendingCount} pending, ${lockedCount} locked, ${recordedCount} recorded/QA evicted, ${approvedCount} approved archived for earnings).`
         });
     } catch (e) {
         res.status(500).json({ error: e.message });
