@@ -74,6 +74,11 @@ test_stream_download.py
 reset-call.js
 *.csv
 ROW717*
+row717*
+Row717*
+*row717*
+*ROW717*
+*Row717*
 
 # Temporary testing scripts, test audio, and scratch spectrograms
 Isha_recordings/
