@@ -16,7 +16,8 @@ import {
   Globe,
   ArrowLeft,
   Building2,
-  Tag
+  Tag,
+  Shuffle
 } from "lucide-react";
 import Swal from "sweetalert2";
 import { apiGet } from "../lib/api.js";
@@ -42,6 +43,10 @@ export default function AdminPhraseDownloads() {
   const [downloadMode, setDownloadMode] = useState("all"); // 'all' | 'custom'
   const [dateFormat, setDateFormat] = useState("DD-MM-YYYY"); // 'DD-MM-YYYY' | 'YYYY-MM-DD'
   const [limitPerSpeakerMinutes, setLimitPerSpeakerMinutes] = useState("");
+  const [customNamingPattern, setCustomNamingPattern] = useState("{phraseId}");
+  const [samplePhrases, setSamplePhrases] = useState([]);
+  const [samplePhraseIndex, setSamplePhraseIndex] = useState(0);
+  const [dialogAvailableTags, setDialogAvailableTags] = useState([]);
 
   const getClientToken = () => {
     const vcCookie = document.cookie.split("; ").find((row) => row.startsWith("vc_token="));
@@ -88,6 +93,10 @@ export default function AdminPhraseDownloads() {
       setFilterOptionsData(options);
       setDialogTotalCount(res.totalCount || 0);
       setDialogFreshCount(res.freshCount || 0);
+      setCustomNamingPattern(res.namingPattern || "{phraseId}");
+      setSamplePhrases(res.samplePhrases || []);
+      setSamplePhraseIndex(0);
+      setDialogAvailableTags(res.availableTags || []);
 
       setSelectedFilterKey((prevKey) => {
         const keyToUse = prevKey && options.some(opt => opt.key === prevKey) ? prevKey : (options.length > 0 ? options[0].key : "");
@@ -115,6 +124,10 @@ export default function AdminPhraseDownloads() {
     setSelectedFilterKey("");
     setSelectedFilterValue("");
     setLimitPerSpeakerMinutes("");
+    setCustomNamingPattern("{phraseId}");
+    setSamplePhrases([]);
+    setSamplePhraseIndex(0);
+    setDialogAvailableTags([]);
     setFilterOptionsData([]);
     setDialogTotalCount(0);
     setDialogFreshCount(0);
@@ -131,6 +144,54 @@ export default function AdminPhraseDownloads() {
     }
   };
 
+  const getPreviewFilename = () => {
+    if (!customNamingPattern || !customNamingPattern.trim()) return "sample_preview.wav";
+    const sample = (samplePhrases && samplePhrases[samplePhraseIndex]) || {
+      phraseId: "phrase_101",
+      speaker_id: "spk_01",
+      client_spk_id: "SPK001",
+      first_name: "Jasvinder",
+      last_name: "Singh",
+      gender: "male",
+      language: "hindi",
+      recording_date: dateFormat === "YYYY-MM-DD" ? "2026-09-02" : "02-09-2026",
+      freq: "1",
+      spkfreq: "1",
+      baseName: "sample_audio"
+    };
+
+    let name = customNamingPattern
+      .replace(/{phraseId}/g, sample.phraseId || "")
+      .replace(/{phrase_id}/g, sample.phraseId || "")
+      .replace(/{language}/g, sample.language || "")
+      .replace(/{speaker_id}/gi, sample.speaker_id || "")
+      .replace(/{spk_id}/gi, sample.speaker_id || "")
+      .replace(/{speakerid}/gi, sample.speaker_id || "")
+      .replace(/{spkid}/gi, sample.speaker_id || "")
+      .replace(/{client_spk_id}/gi, sample.client_spk_id || sample.speaker_id || "")
+      .replace(/{client_speaker_id}/gi, sample.client_spk_id || sample.speaker_id || "")
+      .replace(/{Client_Speaker_ID}/g, sample.client_spk_id || sample.speaker_id || "")
+      .replace(/{first_name}/g, sample.first_name || "")
+      .replace(/{firstname}/g, sample.first_name || "")
+      .replace(/{last_name}/g, sample.last_name || "")
+      .replace(/{lastname}/g, sample.last_name || "")
+      .replace(/{recording_date}/g, sample.recording_date || "")
+      .replace(/{recorded_date}/g, sample.recording_date || "")
+      .replace(/{date}/g, sample.recording_date || "")
+      .replace(/{gender}/g, sample.gender || "")
+      .replace(/{freq}/g, sample.freq !== undefined ? String(sample.freq) : "")
+      .replace(/{spkfreq}/g, sample.spkfreq !== undefined ? String(sample.spkfreq) : "1")
+      .replace(/{baseName}/g, sample.baseName || "");
+
+    Object.keys(sample).forEach((k) => {
+      const reg = new RegExp(`{${k}}`, "gi");
+      name = name.replace(reg, String(sample[k] || ""));
+    });
+
+    name = name.replace(/[^a-zA-Z0-9_\-\ ]/g, "").trim();
+    return (name || "output") + ".wav";
+  };
+
   const executeDownload = async (isAll = false, isFresh = false) => {
     const targetCount = isFresh ? dialogFreshCount : dialogTotalCount;
     if (targetCount === 0) {
@@ -143,6 +204,10 @@ export default function AdminPhraseDownloads() {
 
     if (dialogLanguage && dialogLanguage !== "all") {
       url += `&language=${encodeURIComponent(dialogLanguage)}`;
+    }
+
+    if (customNamingPattern && customNamingPattern.trim()) {
+      url += `&namingPattern=${encodeURIComponent(customNamingPattern.trim())}`;
     }
 
     if (isFresh) {
@@ -960,6 +1025,106 @@ export default function AdminPhraseDownloads() {
                         </button>
                       )}
                     </div>
+                  </div>
+                </div>
+
+                {/* Custom Audio Naming Pattern & Live Preview */}
+                <div className="bg-neutral-800/90 border border-neutral-700/80 rounded-xl p-4 space-y-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div>
+                      <label className="block text-xs font-bold text-neutral-200 uppercase tracking-wider flex items-center gap-1.5">
+                        <Tag className="w-3.5 h-3.5 text-warning-400" />
+                        <span>Custom Audio File Naming Pattern</span>
+                      </label>
+                      <span className="text-[11px] text-neutral-400">
+                        Define how WAV audio files inside the ZIP are named. Click any tag to insert it.
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setCustomNamingPattern("{phraseId}")}
+                      className="text-[11px] text-neutral-400 hover:text-white underline self-start sm:self-auto cursor-pointer"
+                      title="Reset to default {phraseId}"
+                    >
+                      Reset to Default
+                    </button>
+                  </div>
+
+                  {/* Available Tag Chips */}
+                  <div className="flex flex-wrap items-center gap-1.5 text-xs">
+                    <span className="text-neutral-400 text-[11px] font-semibold">Tags:</span>
+                    {['{phraseId}', '{client_spk_id}', '{spk_id}', '{speaker_id}', '{first_name}', '{last_name}', '{gender}', '{recording_date}', '{language}', '{freq}', '{spkfreq}'].map((tag) => (
+                      <button
+                        type="button"
+                        key={tag}
+                        onClick={() => setCustomNamingPattern((prev) => (prev || '') + tag)}
+                        className="bg-neutral-900 hover:bg-neutral-700 text-neutral-300 px-2 py-0.5 rounded-lg border border-neutral-700 font-mono text-[11px] transition-colors cursor-pointer active:scale-95"
+                        title={`Click to append ${tag}`}
+                      >
+                        {tag}
+                      </button>
+                    ))}
+
+                    {/* Dynamic metadata tags from company configuration */}
+                    {dialogAvailableTags && dialogAvailableTags.length > 0 && dialogAvailableTags.map((tag) => (
+                      <button
+                        type="button"
+                        key={tag}
+                        onClick={() => setCustomNamingPattern((prev) => (prev || '') + `{${tag}}`)}
+                        className="bg-warning-950/60 hover:bg-warning-900/80 text-warning-300 border border-warning-700/60 px-2 py-0.5 rounded-lg font-mono text-[11px] font-semibold transition-colors cursor-pointer active:scale-95"
+                        title={`Click to append custom metadata tag {${tag}}`}
+                      >
+                        {`{${tag}}`}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Naming Pattern Input */}
+                  <div className="relative">
+                    <input
+                      type="text"
+                      value={customNamingPattern}
+                      onChange={(e) => setCustomNamingPattern(e.target.value)}
+                      placeholder="{spk_id}_{first_name}_{gender}_{recording_date}"
+                      className="w-full px-3.5 py-2.5 bg-neutral-900 border border-neutral-700 text-warning-300 text-xs font-mono font-bold rounded-xl focus:border-warning-500 focus:outline-none shadow-inner"
+                    />
+                  </div>
+
+                  {/* Live Filename Preview Box with Random Phrase Sample */}
+                  <div className="bg-neutral-950 p-3.5 rounded-xl border border-neutral-800 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5 text-xs font-bold text-neutral-300">
+                        <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
+                        <span>Live Filename Preview:</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setSamplePhraseIndex((prev) => (prev + 1) % (samplePhrases.length || 1))}
+                        disabled={samplePhrases.length <= 1}
+                        className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-neutral-800 hover:bg-neutral-750 text-neutral-300 hover:text-white border border-neutral-700 transition-colors disabled:opacity-40 cursor-pointer active:scale-95"
+                        title="Pick another random phrase data sample"
+                      >
+                        <Shuffle className="w-3 h-3 text-cyan-400" />
+                        <span>Shuffle Sample Data</span>
+                      </button>
+                    </div>
+
+                    <div className="font-mono text-xs font-bold text-emerald-400 bg-neutral-900/90 px-3.5 py-2 rounded-lg border border-emerald-900/60 break-all flex items-center gap-2">
+                      <span className="text-neutral-500 font-normal">preview:</span>
+                      <span className="text-emerald-300">{getPreviewFilename()}</span>
+                    </div>
+
+                    {/* Sample key-value inspect */}
+                    {samplePhrases.length > 0 && samplePhrases[samplePhraseIndex] && (
+                      <div className="pt-1.5 border-t border-neutral-800/80 text-[10px] text-neutral-400 flex items-center flex-wrap gap-x-3 gap-y-1">
+                        <span>Sample Contributor: <b className="text-neutral-200">{samplePhrases[samplePhraseIndex].first_name} {samplePhrases[samplePhraseIndex].last_name}</b></span>
+                        <span>Client Speaker ID: <b className="text-emerald-400 font-mono">{samplePhrases[samplePhraseIndex].client_spk_id}</b></span>
+                        <span>Speaker ID: <b className="text-warning-400 font-mono">{samplePhrases[samplePhraseIndex].speaker_id}</b></span>
+                        <span>Gender: <b className="text-neutral-200">{samplePhrases[samplePhraseIndex].gender}</b></span>
+                        <span>Date: <b className="text-neutral-200 font-mono">{samplePhrases[samplePhraseIndex].recording_date}</b></span>
+                        <span>Phrase ID: <b className="text-neutral-200 font-mono">{samplePhrases[samplePhraseIndex].phraseId}</b></span>
+                      </div>
+                    )}
                   </div>
                 </div>
               </>

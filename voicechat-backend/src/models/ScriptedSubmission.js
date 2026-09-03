@@ -47,6 +47,9 @@ const scriptedSubmissionSchema = new mongoose.Schema(
                 },
                 rejectionReason: { type: String, default: null },
                 reviewNote: { type: String, default: null },
+                originalAudioPath: { type: String, default: null },
+                originalDurationSec: { type: Number, default: 0 },
+                wasAudioTrimmed: { type: Boolean, default: false },
                 reviewedAt: { type: Date, default: null },
                 reviewedBy: {
                     type: mongoose.Schema.Types.ObjectId,

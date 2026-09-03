@@ -940,6 +940,7 @@ router.get("/call-dialogue/:callId", async (req, res) => {
                     rejectionReason: v1Obj?.rejectionReason || null,
                     reviewNote: v1Obj?.reviewNote || null,
                     durationSec: v1Obj?.durationSec || 0,
+                    wasAudioTrimmed: Boolean(v1Obj?.wasAudioTrimmed),
                     audioUrl: s1Sub?._id ? `/api/scripted-topics/verse-audio/${s1Sub._id}/${idx}` : null
                 });
             }
@@ -962,6 +963,7 @@ router.get("/call-dialogue/:callId", async (req, res) => {
                     rejectionReason: v2Obj?.rejectionReason || null,
                     reviewNote: v2Obj?.reviewNote || null,
                     durationSec: v2Obj?.durationSec || 0,
+                    wasAudioTrimmed: Boolean(v2Obj?.wasAudioTrimmed),
                     audioUrl: s2Sub?._id ? `/api/scripted-topics/verse-audio/${s2Sub._id}/${idx}` : null
                 });
             }

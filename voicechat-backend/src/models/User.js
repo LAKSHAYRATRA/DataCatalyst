@@ -119,6 +119,7 @@ const userSchema = new mongoose.Schema(
         notch5kEnabled: { type: Boolean, default: false }, // 5kHz Static Whine Filter
         deHissMode: { type: String, enum: ["off", "14k", "12k", "10k", "8k"], default: "off" }, // High-frequency hiss roll-off
         deEsserMode: { type: String, enum: ["off", "light", "medium", "strong"], default: "off" }, // Sibilance control
+        client_spk_id: { type: String, trim: true, default: "" }, // Client-assigned speaker ID (e.g. SPK001)
       },
     ],
     noiseGateDb: { type: Number, default: 0 }, // Default noise gate setting for contributor
@@ -128,6 +129,9 @@ const userSchema = new mongoose.Schema(
     
     // Speaker ID (e.g. spk_1, spk_2, ...)
     speaker_id: { type: String, unique: true, sparse: true, default: null },
+
+    // Fallback Client Speaker ID
+    client_spk_id: { type: String, trim: true, default: "" },
 
     accent: { type: String, default: null, trim: true },
     dialect: { type: String, default: null, trim: true },

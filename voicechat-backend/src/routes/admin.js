@@ -3186,6 +3186,142 @@ qaCallRouter.patch("/scripted/verse/:submissionId/:turnIndex/reject", async (req
     }
 });
 
+// Trim individual speaker turn audio
+qaCallRouter.post("/scripted/submission/:submissionId/turn/:turnIndex/trim", async (req, res) => {
+    let tempOutPath = null;
+    try {
+        const { submissionId, turnIndex } = req.params;
+        const { startTrimSec = 0, endTrimSec } = req.body;
+
+        const sub = await ScriptedSubmission.findById(submissionId);
+        if (!sub) return res.status(404).json({ error: "Scripted submission not found" });
+
+        const verse = (sub.verses || []).find(v => Number(v.turnIndex) === Number(turnIndex));
+        if (!verse) return res.status(404).json({ error: "Verse not found" });
+        if (!verse.audioPath) return res.status(400).json({ error: "No audio file recorded for this verse." });
+
+        const startSec = Math.max(0, Number(startTrimSec) || 0);
+        const endSec = Number(endTrimSec);
+
+        if (isNaN(endSec) || endSec <= startSec) {
+            return res.status(400).json({ error: "Invalid trim range: endTrimSec must be greater than startTrimSec." });
+        }
+
+        const candidates = [
+            verse.audioPath,
+            path.join(process.cwd(), verse.audioPath),
+            path.join(process.cwd(), "uploads", verse.audioPath),
+            path.join(process.cwd(), "recordings", verse.audioPath)
+        ];
+        const localAudio = candidates.find(c => fs.existsSync(c));
+        if (!localAudio) {
+            return res.status(404).json({ error: "Audio file not found on server disk." });
+        }
+
+        // 1. Backup original untrimmed audio if not backed up yet
+        if (!verse.originalAudioPath) {
+            const parsed = path.parse(localAudio);
+            const origDir = path.join(parsed.dir, "orig");
+            if (!fs.existsSync(origDir)) fs.mkdirSync(origDir, { recursive: true });
+            const origPath = path.join(origDir, `orig_${parsed.name}${parsed.ext}`);
+            try {
+                fs.copyFileSync(localAudio, origPath);
+                verse.originalAudioPath = origPath;
+                verse.originalDurationSec = verse.durationSec || 0;
+            } catch (bkErr) {
+                console.warn("[ScriptedTrim] Failed to create original audio backup:", bkErr.message);
+            }
+        }
+
+        // Always cut from original backup if available
+        let sourceAudio = localAudio;
+        if (verse.originalAudioPath && fs.existsSync(verse.originalAudioPath)) {
+            sourceAudio = verse.originalAudioPath;
+        }
+
+        const trimDuration = parseFloat((endSec - startSec).toFixed(2));
+        tempOutPath = path.join(os.tmpdir(), `scripted_turn_trim_${Date.now()}_${submissionId}_${turnIndex}.wav`);
+
+        await new Promise((resolve, reject) => {
+            ffmpeg(sourceAudio)
+                .setStartTime(startSec)
+                .setDuration(trimDuration)
+                .audioCodec("pcm_s16le")
+                .audioFrequency(48000)
+                .audioChannels(1)
+                .output(tempOutPath)
+                .on("end", resolve)
+                .on("error", (err) => reject(new Error("FFmpeg trim failed: " + err.message)))
+                .run();
+        });
+
+        // Copy trimmed file over the active audio file
+        fs.copyFileSync(tempOutPath, localAudio);
+        try { fs.unlinkSync(tempOutPath); } catch {}
+
+        verse.durationSec = trimDuration;
+        verse.wasAudioTrimmed = true;
+        await sub.save();
+
+        res.json({
+            success: true,
+            message: `Verse turn ${Number(turnIndex) + 1} trimmed to ${trimDuration}s!`,
+            duration: trimDuration,
+            verse
+        });
+    } catch (err) {
+        if (tempOutPath && fs.existsSync(tempOutPath)) {
+            try { fs.unlinkSync(tempOutPath); } catch {}
+        }
+        console.error("[ScriptedTrim] Error trimming verse turn:", err);
+        res.status(500).json({ error: err.message || "Failed to trim verse audio" });
+    }
+});
+
+// Revert individual speaker turn audio trim
+qaCallRouter.post("/scripted/submission/:submissionId/turn/:turnIndex/revert-trim", async (req, res) => {
+    try {
+        const { submissionId, turnIndex } = req.params;
+        const sub = await ScriptedSubmission.findById(submissionId);
+        if (!sub) return res.status(404).json({ error: "Scripted submission not found" });
+
+        const verse = (sub.verses || []).find(v => Number(v.turnIndex) === Number(turnIndex));
+        if (!verse) return res.status(404).json({ error: "Verse not found" });
+
+        if (!verse.originalAudioPath || !fs.existsSync(verse.originalAudioPath)) {
+            return res.status(400).json({ error: "No original untrimmed audio backup available to revert." });
+        }
+
+        const candidates = [
+            verse.audioPath,
+            path.join(process.cwd(), verse.audioPath),
+            path.join(process.cwd(), "uploads", verse.audioPath),
+            path.join(process.cwd(), "recordings", verse.audioPath)
+        ];
+        const localAudio = candidates.find(c => fs.existsSync(c));
+        if (!localAudio) {
+            return res.status(404).json({ error: "Audio file path not found on disk." });
+        }
+
+        // Restore original audio file
+        fs.copyFileSync(verse.originalAudioPath, localAudio);
+        const restoredDuration = verse.originalDurationSec || 0;
+        verse.durationSec = restoredDuration;
+        verse.wasAudioTrimmed = false;
+        await sub.save();
+
+        res.json({
+            success: true,
+            message: `Verse turn ${Number(turnIndex) + 1} restored to original audio (${restoredDuration}s).`,
+            duration: restoredDuration,
+            verse
+        });
+    } catch (err) {
+        console.error("[ScriptedTrim] Revert error:", err);
+        res.status(500).json({ error: err.message || "Failed to revert verse audio trim" });
+    }
+});
+
 qaCallRouter.post("/scripted/submission/:submissionId/approve-all", async (req, res) => {
     try {
         const { submissionId } = req.params;
@@ -6919,6 +7055,7 @@ function calculateDemographics(items) {
             dob: u.dob || null,
             age: age !== null && Number.isFinite(age) ? age : "N/A",
             speaker_id: u.speaker_id || `spk_${u._id}`,
+            client_spk_id: item.client_spk_id || u.client_spk_id || "",
             locality: u.locality || "N/A",
             state: u.address?.state || "N/A",
             status: item.appStatus || "pending",
@@ -7419,7 +7556,7 @@ router.get("/companies/:id/contributors-summary", async (req, res) => {
         const users = await User.find({
             "languageApplications.companyId": { $in: companyRegexes },
             "languageApplications.applicationType": "phrase"
-        }).select("firstname lastname email username gender dob speaker_id locality address languageApplications").lean();
+        }).select("firstname lastname email username gender dob speaker_id client_spk_id locality address languageApplications").lean();
 
         const languageMap = new Map(); // langCode -> { name, phrases: [], usersMap: new Map() }
 
@@ -7446,6 +7583,7 @@ router.get("/companies/:id/contributors-summary", async (req, res) => {
                     user: u,
                     appStatus: app.status || "pending",
                     appliedAt: app.appliedAt,
+                    client_spk_id: app.client_spk_id || u.client_spk_id || "",
                     noiseGateDb: app.noiseGateDb !== undefined ? app.noiseGateDb : (u.noiseGateDb || 0),
                     notch5kEnabled: app.notch5kEnabled !== undefined ? app.notch5kEnabled : (u.notch5kEnabled || false),
                     deHissMode: app.deHissMode || u.deHissMode || "off",
@@ -7457,7 +7595,7 @@ router.get("/companies/:id/contributors-summary", async (req, res) => {
         // Populate users for phrases if contributorId exists
         const contributorIds = phrases.map(p => p.contributorId).filter(Boolean);
         const contributorUsers = await User.find({ _id: { $in: contributorIds } })
-            .select("firstname lastname email username gender dob speaker_id locality address createdAt languageApplications notch5kEnabled deHissMode deEsserMode noiseGateDb").lean();
+            .select("firstname lastname email username gender dob speaker_id client_spk_id locality address createdAt languageApplications notch5kEnabled deHissMode deEsserMode noiseGateDb").lean();
         const contributorUserMap = new Map(contributorUsers.map(u => [String(u._id), u]));
 
         for (const p of phrases) {
@@ -7493,10 +7631,13 @@ router.get("/companies/:id/contributors-summary", async (req, res) => {
                 const deHissVal = matchingApp?.deHissMode || existing?.deHissMode || u.deHissMode || "off";
                 const deEsserVal = matchingApp?.deEsserMode || existing?.deEsserMode || u.deEsserMode || "off";
 
+                const clientSpkVal = matchingApp?.client_spk_id || existing?.client_spk_id || u.client_spk_id || "";
+
                 langObj.usersMap.set(String(u._id), {
                     user: u,
                     appStatus: currentStatus,
                     appliedAt: existing?.appliedAt || matchingApp?.appliedAt || p.recordedAt || u.createdAt,
+                    client_spk_id: clientSpkVal,
                     noiseGateDb: noiseVal,
                     notch5kEnabled: notchVal,
                     deHissMode: deHissVal,
@@ -7798,6 +7939,84 @@ router.post("/companies/:id/reset-contributor", async (req, res) => {
         await user.save();
 
         res.json({ message: `Phrase application for ${user.firstname || user.username} has been reset for ${company.projectName || company.name}. They can now apply again.` });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// POST /api/admin/companies/:id/update-contributor-client-speaker-id
+router.post("/companies/:id/update-contributor-client-speaker-id", async (req, res) => {
+    try {
+        const compParam = req.params.id;
+        const { userId, languageCode, client_spk_id } = req.body;
+        if (!userId) {
+            return res.status(400).json({ error: "userId is required" });
+        }
+
+        let company = null;
+        if (mongoose.Types.ObjectId.isValid(compParam)) {
+            company = await Company.findById(compParam).lean();
+        }
+        if (!company) {
+            const escaped = String(compParam).replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&');
+            company = await Company.findOne({
+                $or: [
+                    { name: { $regex: new RegExp(`^${escaped}$`, "i") } },
+                    { projectName: { $regex: new RegExp(`^${escaped}$`, "i") } }
+                ]
+            }).lean();
+        }
+        if (!company) {
+            return res.status(404).json({ error: "Company not found" });
+        }
+
+        const compName = company.name;
+        const compProj = company.projectName || company.name;
+        const baseName = compName.replace(/_downloaded$/, "").trim().toLowerCase();
+
+        const user = await User.findById(userId);
+        if (!user) {
+            return res.status(404).json({ error: "User not found" });
+        }
+
+        const cleanClientSpkId = String(client_spk_id !== undefined && client_spk_id !== null ? client_spk_id : "").trim();
+
+        // Update matching language application if found
+        let foundApp = false;
+        if (user.languageApplications && user.languageApplications.length > 0) {
+            for (const app of user.languageApplications) {
+                if (app.applicationType && app.applicationType !== "phrase") continue;
+                const aComp = String(app.companyId || "").replace(/_downloaded$/, "").trim().toLowerCase();
+                const matchesComp = aComp === baseName || aComp === compName.toLowerCase() || aComp === compProj.toLowerCase();
+                const matchesLang = !languageCode || String(app.languageCode || "").toLowerCase().trim() === String(languageCode).toLowerCase().trim();
+                if (matchesComp && matchesLang) {
+                    app.client_spk_id = cleanClientSpkId;
+                    foundApp = true;
+                }
+            }
+        }
+
+        // If no matching application was found, create one for this company & language
+        if (!foundApp) {
+            if (!user.languageApplications) user.languageApplications = [];
+            user.languageApplications.push({
+                applicationType: "phrase",
+                companyId: company.name,
+                languageCode: String(languageCode || "other").toLowerCase().trim(),
+                status: "approved",
+                client_spk_id: cleanClientSpkId
+            });
+        }
+
+        user.client_spk_id = cleanClientSpkId;
+        user.markModified("languageApplications");
+        await user.save();
+
+        res.json({
+            success: true,
+            client_spk_id: cleanClientSpkId,
+            message: `Updated client speaker ID to "${cleanClientSpkId}" for ${user.firstname || user.username}`
+        });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
@@ -8218,7 +8437,7 @@ router.get("/phrases/download-company", requireAuth(JWT_SECRET), async (req, res
         // Fetch the company config to read custom namingPattern
         const baseCompanyName = companyFolder.replace(/_downloaded$/, "");
         const companyDoc = await Company.findOne({ name: { $regex: new RegExp(`^${baseCompanyName}$`, "i") } }).lean();
-        const filenamePattern = companyDoc?.namingPattern || "{phraseId}";
+        const filenamePattern = (req.query.namingPattern || req.query.filenamePattern || companyDoc?.namingPattern || "{phraseId}").trim();
 
         // Target company IDs
         const isFreshOnly = type === "fresh_phrases" || req.query.isFresh === "true" || req.query.scope === "fresh";
@@ -8395,6 +8614,16 @@ router.get("/phrases/download-company", requireAuth(JWT_SECRET), async (req, res
                 spkfreq = idx !== -1 ? String(idx + 1) : "1";
             }
 
+            // Client Speaker ID resolution for this company
+            const baseCompName = String(companyFolder || "").replace(/_downloaded$/, "").trim().toLowerCase();
+            const matchingApp = (contributor.languageApplications || []).find(a => {
+                if (a.applicationType && a.applicationType !== "phrase") return false;
+                const aComp = String(a.companyId || "").replace(/_downloaded$/, "").trim().toLowerCase();
+                return aComp === baseCompName;
+            });
+            const clientSpkId = (matchingApp?.client_spk_id || contributor.client_spk_id || "").trim();
+            const effectiveClientSpkId = clientSpkId || speakerId || `spk_${contributor._id || "unknown"}`;
+
             // Compute flexible/custom filename from namingPattern
             const firstName = contributor.firstname ? String(contributor.firstname).trim() : (contributor.username || "");
             const lastName = contributor.lastname ? String(contributor.lastname).trim() : "";
@@ -8413,7 +8642,13 @@ router.get("/phrases/download-company", requireAuth(JWT_SECRET), async (req, res
                 .replace(/{phraseId}/g, phraseId || "")
                 .replace(/{phrase_id}/g, phraseId || "")
                 .replace(/{language}/g, phrase.language || "")
-                .replace(/{speaker_id}/g, speakerId || `spk_${contributor._id || "unknown"}`)
+                .replace(/{speaker_id}/gi, speakerId || `spk_${contributor._id || "unknown"}`)
+                .replace(/{spk_id}/gi, speakerId || `spk_${contributor._id || "unknown"}`)
+                .replace(/{speakerid}/gi, speakerId || `spk_${contributor._id || "unknown"}`)
+                .replace(/{spkid}/gi, speakerId || `spk_${contributor._id || "unknown"}`)
+                .replace(/{client_spk_id}/gi, effectiveClientSpkId)
+                .replace(/{client_speaker_id}/gi, effectiveClientSpkId)
+                .replace(/{Client_Speaker_ID}/g, effectiveClientSpkId)
                 .replace(/{first_name}/g, firstName)
                 .replace(/{firstname}/g, firstName)
                 .replace(/{last_name}/g, lastName)
@@ -8459,6 +8694,7 @@ router.get("/phrases/download-company", requireAuth(JWT_SECRET), async (req, res
 
             const speakerInfo = {
                 speaker_id: speakerId,
+                client_speaker_id: clientSpkId || speakerId,
                 gender: contributor.gender || "unknown",
                 age,
                 native_language: contributor.regionalLanguage || "unknown",
@@ -8495,6 +8731,8 @@ router.get("/phrases/download-company", requireAuth(JWT_SECRET), async (req, res
                 speaker_id: contributor.speaker_id || phrase.speaker_id || "",
                 text: phrase.text
             };
+
+            if (isAllowedKey("client_speaker_id") || isAllowedKey("client_spk_id")) utterance.client_speaker_id = clientSpkId || speakerId;
 
             if (isAllowedKey("emotion")) utterance.emotion = phrase.emotion || "neutral";
             if (isAllowedKey("style")) utterance.style = phrase.style || "conversational";
@@ -9179,13 +9417,64 @@ router.get("/phrases/download-filter-options", requireAuth(JWT_SECRET), async (r
             freshCount = phrases.filter(p => !String(p.companyId || "").endsWith("_downloaded")).length;
         }
 
+        const companyDoc = await Company.findOne({ name: { $regex: new RegExp(`^${baseCompanyName}$`, "i") } }).lean();
+        const namingPattern = companyDoc?.namingPattern || "{phraseId}";
+        const availableTags = companyDoc?.availableTags || [];
+
+        // Pick up to 10 random sample phrases to send for interactive live preview in the modal
+        const samplePhrases = [];
+        if (phrases.length > 0) {
+            const shuffled = [...phrases].sort(() => 0.5 - Math.random()).slice(0, 10);
+            for (const p of shuffled) {
+                const contributor = p.contributorId || {};
+                const speakerId = contributor.speaker_id || p.speaker_id || "spk_01";
+                const matchingApp = (contributor.languageApplications || []).find(a => {
+                    if (a.applicationType && a.applicationType !== "phrase") return false;
+                    const aComp = String(a.companyId || "").replace(/_downloaded$/, "").trim().toLowerCase();
+                    return aComp === baseCompanyName.toLowerCase();
+                });
+                const clientSpkId = (matchingApp?.client_spk_id || contributor.client_spk_id || "").trim();
+                const d = p.recordedAt ? new Date(p.recordedAt) : new Date();
+                const day = String(d.getDate()).padStart(2, "0");
+                const month = String(d.getMonth() + 1).padStart(2, "0");
+                const year = d.getFullYear();
+                const ddmmyyyy = `${day}-${month}-${year}`;
+                const yyyymmdd = `${year}-${month}-${day}`;
+                const recordingDate = reqDateFormat === "YYYY-MM-DD" ? yyyymmdd : ddmmyyyy;
+
+                samplePhrases.push({
+                    phraseId: p.phraseId || "phrase_101",
+                    speaker_id: speakerId,
+                    client_spk_id: clientSpkId || speakerId,
+                    first_name: contributor.firstname ? String(contributor.firstname).trim() : (contributor.username || "John"),
+                    last_name: contributor.lastname ? String(contributor.lastname).trim() : "Doe",
+                    gender: contributor.gender || "male",
+                    language: String(p.language || "hindi"),
+                    recording_date: recordingDate,
+                    freq: p.freq !== undefined && p.freq !== null ? String(p.freq) : "1",
+                    spkfreq: "1",
+                    baseName: p.audioFile ? path.basename(p.audioFile).replace(/\.[^.]+$/, "") : "audio_sample",
+                    emotion: p.emotion || "neutral",
+                    style: p.style || "conversational",
+                    intent: p.intent || "",
+                    pitch: p.pitch || "",
+                    speed: p.speed || "",
+                    volume: p.volume || "",
+                    ...(p.tags || {})
+                });
+            }
+        }
+
         res.json({
             success: true,
             company: companyFolder,
             status: targetStatus,
             totalCount: phrases.length,
             freshCount: freshCount,
-            filterOptions
+            filterOptions,
+            namingPattern,
+            availableTags,
+            samplePhrases
         });
     } catch (e) {
         console.error("download-filter-options error:", e);

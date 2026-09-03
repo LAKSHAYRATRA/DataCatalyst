@@ -412,7 +412,7 @@ export default function AdminCompanyConfig() {
             </p>
             <div className="flex flex-wrap items-center gap-1.5 mb-3 text-xs">
               <span className="text-neutral-400 text-[11px] font-semibold">Tags:</span>
-              {['{phraseId}', '{speaker_id}', '{first_name}', '{last_name}', '{gender}', '{recording_date}', '{language}', '{freq}', '{spkfreq}'].map(tag => (
+              {['{phraseId}', '{client_spk_id}', '{spk_id}', '{speaker_id}', '{first_name}', '{last_name}', '{gender}', '{recording_date}', '{language}', '{freq}', '{spkfreq}'].map(tag => (
                 <button
                   type="button"
                   key={tag}

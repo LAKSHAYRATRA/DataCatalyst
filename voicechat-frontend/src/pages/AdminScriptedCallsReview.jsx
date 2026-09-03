@@ -22,12 +22,14 @@ import {
     Users,
     Activity,
     BarChart2,
-    ZoomIn
+    ZoomIn,
+    Scissors
 } from "lucide-react";
 import AdminNav from "../components/AdminNav.jsx";
 import { getUserInfo } from "../lib/auth.js";
 import { fetchDirectAudioBlob } from "../lib/audioToWav.js";
 import AudioVisualizer from "../components/AudioVisualizer.jsx";
+import InteractiveWaveformTrimmer from "../components/InteractiveWaveformTrimmer.jsx";
 import Swal from "sweetalert2";
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:3001";
@@ -114,6 +116,15 @@ export default function AdminScriptedCallsReview() {
     const [verseAudioBlobs, setVerseAudioBlobs] = useState({});
     const [loadingVerseAudio, setLoadingVerseAudio] = useState(null);
     const verseAudioRef = useRef(null);
+
+    // Audio Trimming States for Scripted Turns
+    const [showTrimModal, setShowTrimModal] = useState(false);
+    const [trimmingTurn, setTrimmingTurn] = useState(null);
+    const [startTrimSec, setStartTrimSec] = useState(0);
+    const [endTrimSec, setEndTrimSec] = useState(0);
+    const [trimSaving, setTrimSaving] = useState(false);
+    const [trimAudioUrl, setTrimAudioUrl] = useState(null);
+    const trimAudioRef = useRef(null);
 
     const audioRefs = useRef({});
 
@@ -435,6 +446,160 @@ export default function AdminScriptedCallsReview() {
         }));
         setDialogueData(prev => ({ ...prev, turns: updatedTurns }));
     }
+
+    const openTrimModal = (turn) => {
+        setTrimmingTurn(turn);
+        const fullDur = Number(turn.durationSec) || 5;
+        setStartTrimSec(0);
+        setEndTrimSec(fullDur);
+        const baseAudioUrl = turn.audioUrl.startsWith("http") ? turn.audioUrl : `${BACKEND_URL}${turn.audioUrl}`;
+        setTrimAudioUrl(`${baseAudioUrl}?t=${Date.now()}`);
+        setShowTrimModal(true);
+    };
+
+    const handlePreviewTrim = () => {
+        if (!trimAudioRef.current) return;
+        const audio = trimAudioRef.current;
+        audio.currentTime = startTrimSec;
+        audio.play().catch(() => {});
+
+        const checkStop = () => {
+            if (audio.currentTime >= endTrimSec) {
+                audio.pause();
+                audio.removeEventListener("timeupdate", checkStop);
+            }
+        };
+        audio.addEventListener("timeupdate", checkStop);
+    };
+
+    const handleSaveTrim = async () => {
+        if (!trimmingTurn) return;
+        if (endTrimSec <= startTrimSec) {
+            Swal.fire({
+                icon: "warning",
+                title: "Invalid Trim Range",
+                text: "End time must be greater than start time.",
+                background: "#171717",
+                color: "#ffffff"
+            });
+            return;
+        }
+
+        setTrimSaving(true);
+        try {
+            const res = await apiPostJson(`/api/admin/qa/scripted/submission/${trimmingTurn.submissionId}/turn/${trimmingTurn.turnIndex}/trim`, {
+                startTrimSec: Number(startTrimSec),
+                endTrimSec: Number(endTrimSec)
+            });
+
+            if (res && res.success) {
+                const turnKey = `${trimmingTurn.speakerRole}_${trimmingTurn.turnIndex}`;
+                // Clear cached blob so player refetches the new trimmed audio
+                setVerseAudioBlobs(prev => {
+                    const copy = { ...prev };
+                    delete copy[turnKey];
+                    return copy;
+                });
+
+                if (dialogueData?.turns) {
+                    const updatedTurns = dialogueData.turns.map(t => {
+                        if (String(t.submissionId) === String(trimmingTurn.submissionId) && Number(t.turnIndex) === Number(trimmingTurn.turnIndex)) {
+                            return {
+                                ...t,
+                                durationSec: res.duration,
+                                wasAudioTrimmed: true
+                            };
+                        }
+                        return t;
+                    });
+                    setDialogueData(prev => ({ ...prev, turns: updatedTurns }));
+                }
+
+                setShowTrimModal(false);
+                setTrimmingTurn(null);
+
+                Swal.fire({
+                    icon: "success",
+                    title: "Audio Trimmed!",
+                    text: `Turn audio trimmed to ${res.duration}s!`,
+                    timer: 2000,
+                    showConfirmButton: false,
+                    background: "#171717",
+                    color: "#ffffff"
+                });
+            }
+        } catch (err) {
+            console.error("Failed to trim turn audio:", err);
+            Swal.fire({
+                icon: "error",
+                title: "Trim Failed",
+                text: err.message || "Failed to trim turn audio.",
+                background: "#171717",
+                color: "#ffffff"
+            });
+        } finally {
+            setTrimSaving(false);
+        }
+    };
+
+    const handleRevertTrim = async (turn) => {
+        const confirm = await Swal.fire({
+            title: "Revert Audio Trim?",
+            text: `Restore Turn ${turn.turnIndex + 1} to its original un-trimmed audio?`,
+            icon: "question",
+            showCancelButton: true,
+            confirmButtonText: "Yes, Revert",
+            confirmButtonColor: "#6366f1",
+            cancelButtonColor: "#525252",
+            background: "#171717",
+            color: "#ffffff"
+        });
+        if (!confirm.isConfirmed) return;
+
+        try {
+            const res = await apiPostJson(`/api/admin/qa/scripted/submission/${turn.submissionId}/turn/${turn.turnIndex}/revert-trim`);
+            if (res && res.success) {
+                const turnKey = `${turn.speakerRole}_${turn.turnIndex}`;
+                setVerseAudioBlobs(prev => {
+                    const copy = { ...prev };
+                    delete copy[turnKey];
+                    return copy;
+                });
+
+                if (dialogueData?.turns) {
+                    const updatedTurns = dialogueData.turns.map(t => {
+                        if (String(t.submissionId) === String(turn.submissionId) && Number(t.turnIndex) === Number(turn.turnIndex)) {
+                            return {
+                                ...t,
+                                durationSec: res.duration,
+                                wasAudioTrimmed: false
+                            };
+                        }
+                        return t;
+                    });
+                    setDialogueData(prev => ({ ...prev, turns: updatedTurns }));
+                }
+
+                Swal.fire({
+                    icon: "success",
+                    title: "Audio Restored!",
+                    text: `Restored to ${res.duration}s.`,
+                    timer: 2000,
+                    showConfirmButton: false,
+                    background: "#171717",
+                    color: "#ffffff"
+                });
+            }
+        } catch (err) {
+            Swal.fire({
+                icon: "error",
+                title: "Revert Failed",
+                text: err.message || "Failed to revert turn audio.",
+                background: "#171717",
+                color: "#ffffff"
+            });
+        }
+    };
 
     async function handleSubmitFinalReview() {
         if (!reviewing || !dialogueData?.turns || dialogueData.turns.length === 0) return;
@@ -1228,6 +1393,26 @@ export default function AdminScriptedCallsReview() {
                                                                         <X className="w-3.5 h-3.5" />
                                                                         <span>Reject / Re-record</span>
                                                                     </button>
+
+                                                                    <button
+                                                                        onClick={() => openTrimModal(turn)}
+                                                                        className="flex items-center gap-1 px-3 py-1.5 rounded-lg font-bold text-xs bg-purple-600/30 hover:bg-purple-600/50 text-purple-300 border border-purple-500/40 shadow transition-all cursor-pointer hover:text-white"
+                                                                        title="Trim Silence / Audio for this Turn"
+                                                                    >
+                                                                        <Scissors className="w-3.5 h-3.5" />
+                                                                        <span>Trim</span>
+                                                                    </button>
+
+                                                                    {turn.wasAudioTrimmed && (
+                                                                        <button
+                                                                            onClick={() => handleRevertTrim(turn)}
+                                                                            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg font-bold text-xs bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white border border-neutral-600 shadow transition-all cursor-pointer"
+                                                                            title="Revert to Original Untrimmed Audio"
+                                                                        >
+                                                                            <RotateCcw className="w-3.5 h-3.5" />
+                                                                            <span>Revert</span>
+                                                                        </button>
+                                                                    )}
                                                                 </div>
                                                             </div>
                                                         </div>
@@ -1306,6 +1491,131 @@ export default function AdminScriptedCallsReview() {
                                     </div>
                                 );
                             })()}
+                        </div>
+                    </div>
+                )}
+
+                {/* Trim Audio Modal for Scripted Speaker Turns */}
+                {showTrimModal && trimmingTurn && (
+                    <div 
+                        className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm"
+                        onClick={() => { setShowTrimModal(false); setTrimmingTurn(null); }}
+                    >
+                        <div 
+                            className="bg-neutral-900 border border-neutral-700/80 rounded-2xl p-6 w-full max-w-lg shadow-2xl relative text-left text-white animate-in fade-in zoom-in-95 duration-150"
+                            onClick={e => e.stopPropagation()}
+                        >
+                            <div className="flex items-center justify-between border-b border-neutral-800 pb-4 mb-5">
+                                <div className="flex items-center gap-3">
+                                    <div className="bg-purple-500/10 text-purple-400 p-2.5 rounded-xl border border-purple-500/20 text-lg">
+                                        ✂️
+                                    </div>
+                                    <div>
+                                        <h3 className="font-bold text-lg text-white">Trim Speaker Turn Silence</h3>
+                                        <p className="text-xs text-neutral-400 font-mono">Turn {trimmingTurn.turnIndex + 1} • {trimmingTurn.speakerLabel}</p>
+                                    </div>
+                                </div>
+                                <button
+                                    onClick={() => { setShowTrimModal(false); setTrimmingTurn(null); }}
+                                    className="p-2 text-neutral-400 hover:text-white rounded-lg transition-colors"
+                                >
+                                    ✕
+                                </button>
+                            </div>
+
+                            <div className="bg-neutral-950 p-4 rounded-xl border border-neutral-800 mb-6">
+                                <p className="text-sm font-medium text-neutral-300 italic mb-2">"{trimmingTurn.text}"</p>
+                                <div className="flex items-center justify-between text-xs text-neutral-400 font-mono">
+                                    <span>Original Duration: <b>{trimmingTurn.durationSec ? `${Number(trimmingTurn.durationSec).toFixed(2)}s` : "Unknown"}</b></span>
+                                    <span>Trimmed Duration: <b className="text-emerald-400">{(Math.max(0, endTrimSec - startTrimSec)).toFixed(2)}s</b></span>
+                                </div>
+                            </div>
+
+                            {/* Visual Audio Waveform Canvas with Draggable Handles */}
+                            <div className="mb-4">
+                                <InteractiveWaveformTrimmer
+                                    audioUrl={trimAudioUrl}
+                                    duration={Number(trimmingTurn.durationSec) || 5}
+                                    startTrimSec={startTrimSec}
+                                    endTrimSec={endTrimSec}
+                                    onTrimChange={(newStart, newEnd) => {
+                                        setStartTrimSec(newStart);
+                                        setEndTrimSec(newEnd);
+                                    }}
+                                />
+                            </div>
+
+                            {/* Hidden audio element for preview */}
+                            {trimAudioUrl && (
+                                <audio ref={trimAudioRef} src={trimAudioUrl} className="hidden" preload="metadata" />
+                            )}
+
+                            {/* Precise Numeric Time Inputs */}
+                            <div className="grid grid-cols-2 gap-4 mb-6">
+                                <div>
+                                    <label className="block text-[11px] font-bold text-emerald-400 uppercase tracking-wider mb-1">
+                                        Start Cut (Seconds):
+                                    </label>
+                                    <input
+                                        type="number"
+                                        step="0.05"
+                                        min="0"
+                                        max={Math.max(0, endTrimSec - 0.1)}
+                                        value={startTrimSec}
+                                        onChange={(e) => {
+                                            const val = parseFloat(e.target.value) || 0;
+                                            setStartTrimSec(Math.max(0, Math.min(val, endTrimSec - 0.1)));
+                                        }}
+                                        className="w-full bg-neutral-950 border border-neutral-800 text-emerald-400 font-mono font-bold text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-emerald-500"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-[11px] font-bold text-rose-400 uppercase tracking-wider mb-1">
+                                        End Cut (Seconds):
+                                    </label>
+                                    <input
+                                        type="number"
+                                        step="0.05"
+                                        min={startTrimSec + 0.1}
+                                        max={Number(trimmingTurn.durationSec) || 100}
+                                        value={endTrimSec}
+                                        onChange={(e) => {
+                                            const val = parseFloat(e.target.value) || (startTrimSec + 0.1);
+                                            setEndTrimSec(Math.min(Number(trimmingTurn.durationSec) || 100, Math.max(val, startTrimSec + 0.1)));
+                                        }}
+                                        className="w-full bg-neutral-950 border border-neutral-800 text-rose-400 font-mono font-bold text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-rose-500"
+                                    />
+                                </div>
+                            </div>
+
+                            {/* Action Buttons */}
+                            <div className="flex items-center gap-2 pt-2">
+                                <button
+                                    type="button"
+                                    onClick={() => { setShowTrimModal(false); setTrimmingTurn(null); }}
+                                    className="py-2.5 px-4 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 rounded-xl text-xs font-bold transition-colors"
+                                >
+                                    Cancel
+                                </button>
+
+                                <button
+                                    type="button"
+                                    onClick={handlePreviewTrim}
+                                    className="py-2.5 px-4 bg-neutral-800 hover:bg-neutral-700 text-amber-300 border border-amber-500/40 rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5"
+                                >
+                                    <Play className="w-3.5 h-3.5 fill-amber-400" />
+                                    <span>Preview Range</span>
+                                </button>
+
+                                <button
+                                    type="button"
+                                    onClick={handleSaveTrim}
+                                    disabled={trimSaving}
+                                    className="flex-1 py-2.5 px-4 bg-purple-600 hover:bg-purple-500 text-white rounded-xl text-xs font-bold transition-colors flex items-center justify-center gap-2 disabled:opacity-50 shadow-md shadow-purple-600/20 active:scale-95 cursor-pointer"
+                                >
+                                    {trimSaving ? "Trimming..." : "✂️ Save Trim"}
+                                </button>
+                            </div>
                         </div>
                     </div>
                 )}

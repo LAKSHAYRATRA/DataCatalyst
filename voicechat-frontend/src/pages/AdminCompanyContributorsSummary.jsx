@@ -14,7 +14,8 @@ import {
   Clock,
   XCircle,
   RotateCcw,
-  Sliders
+  Sliders,
+  Edit3
 } from "lucide-react";
 import Swal from "sweetalert2";
 import { apiGet, apiPostJson } from "../lib/api.js";
@@ -276,6 +277,92 @@ export default function AdminCompanyContributorsSummary() {
 
     if (formValues) {
       handleUpdateAudioConfig(userObj, formValues);
+    }
+  }
+
+  async function openEditClientSpeakerIdModal(userObj) {
+    const currentClientSpkId = userObj.client_spk_id || "";
+    const compName = company ? (company.projectName || company.name) : "Company";
+    const langName = selectedLangData ? selectedLangData.name : (selectedLangCode || "");
+
+    const { value: newClientSpkId } = await Swal.fire({
+      title: "Edit Client Assigned Speaker ID",
+      html: `
+        <div class="text-left text-xs text-neutral-300 mb-4 space-y-1.5 bg-neutral-850 p-3.5 rounded-xl border border-neutral-700 shadow-inner">
+          <div class="flex justify-between items-center">
+            <strong class="text-white text-sm">${userObj.firstname || ""} ${userObj.lastname || ""}</strong> 
+            <span class="font-mono text-warning-400 font-bold">${userObj.speaker_id || ""}</span>
+          </div>
+          <div><strong class="text-neutral-400">Username:</strong> <span class="text-neutral-200">@${userObj.username || ""}</span></div>
+          <div><strong class="text-neutral-400">Scope:</strong> <span class="text-warning-400 font-semibold">${compName} (${langName})</span></div>
+          <div class="text-neutral-400 text-[11px] pt-1.5 border-t border-neutral-700/60 mt-1.5">
+            This ID will be used in phrase download naming patterns via the <code class="text-warning-400 font-mono font-bold">{client_spk_id}</code> tag.
+          </div>
+        </div>
+
+        <div class="text-left text-xs space-y-2">
+          <label class="block font-bold text-neutral-200 uppercase tracking-wider">
+            Client Assigned Speaker ID (Box)
+          </label>
+          <input 
+            id="swal-client-spk-id" 
+            type="text" 
+            value="${currentClientSpkId}" 
+            placeholder="e.g. SPK001, SPK016..." 
+            class="w-full bg-neutral-800 border border-neutral-600 rounded-lg p-3 text-white font-mono font-bold text-sm focus:outline-none focus:ring-2 focus:ring-warning-500"
+          />
+        </div>
+      `,
+      showCancelButton: true,
+      confirmButtonText: "Save Client Speaker ID",
+      cancelButtonText: "Cancel",
+      confirmButtonColor: "#ea580c",
+      cancelButtonColor: "#475569",
+      background: "#1f2937",
+      color: "#fff",
+      didOpen: () => {
+        const input = document.getElementById("swal-client-spk-id");
+        if (input) {
+          input.focus();
+          input.select();
+        }
+      },
+      preConfirm: () => {
+        const input = document.getElementById("swal-client-spk-id");
+        return input ? input.value.trim() : "";
+      }
+    });
+
+    if (newClientSpkId !== undefined) {
+      try {
+        await apiPostJson(`/api/admin/companies/${id}/update-contributor-client-speaker-id`, {
+          userId: userObj._id,
+          languageCode: selectedLangCode,
+          client_spk_id: newClientSpkId
+        });
+        const Toast = Swal.mixin({
+          toast: true,
+          position: "top-end",
+          showConfirmButton: false,
+          timer: 2500,
+          timerProgressBar: true,
+          background: "#1f2937",
+          color: "#fff"
+        });
+        Toast.fire({
+          icon: "success",
+          title: `Client Speaker ID updated to "${newClientSpkId || "(none)"}"`
+        });
+        fetchData();
+      } catch (e) {
+        Swal.fire({
+          title: "Error",
+          text: e.message,
+          icon: "error",
+          background: "#1f2937",
+          color: "#fff"
+        });
+      }
     }
   }
 
@@ -625,6 +712,7 @@ export default function AdminCompanyContributorsSummary() {
                         (u.username || "").toLowerCase().includes(q) ||
                         (u.email || "").toLowerCase().includes(q) ||
                         (u.speaker_id || "").toLowerCase().includes(q) ||
+                        (u.client_spk_id || "").toLowerCase().includes(q) ||
                         (u.state || "").toLowerCase().includes(q)
                       );
                     });
@@ -658,7 +746,17 @@ export default function AdminCompanyContributorsSummary() {
                             <tbody className="divide-y divide-neutral-700/80">
                               {filtered.map(u => (
                                 <tr key={u._id} className="hover:bg-neutral-700/40">
-                                  <td className="px-4 py-2.5 font-mono text-warning-400 font-semibold">{u.speaker_id}</td>
+                                  <td className="px-4 py-2.5">
+                                    <div className="font-mono text-warning-400 font-semibold">{u.speaker_id}</div>
+                                    {u.client_spk_id ? (
+                                      <div className="text-[10px] text-emerald-400 font-medium mt-0.5 flex items-center gap-1">
+                                        <span className="text-neutral-400">Client ID:</span>
+                                        <span className="font-mono font-bold bg-emerald-950/80 px-1 py-0.5 rounded border border-emerald-800/60">{u.client_spk_id}</span>
+                                      </div>
+                                    ) : (
+                                      <div className="text-[10px] text-neutral-500 italic mt-0.5">No Client ID</div>
+                                    )}
+                                  </td>
                                   <td className="px-4 py-2.5 font-medium text-white">
                                     {u.firstname} {u.lastname}
                                     <div className="text-[10px] text-neutral-400 font-normal">@{u.username}</div>
@@ -723,23 +821,34 @@ export default function AdminCompanyContributorsSummary() {
                                       </button>
                                     </div>
                                   </td>
-                                  <td className="px-4 py-2.5 text-right">
-                                    {userTab === "approved" && (
-                                      <button
-                                        onClick={() => handleRemoveContributor(u)}
-                                        className="px-2.5 py-1 bg-red-600/90 hover:bg-red-600 text-white text-[11px] font-bold rounded-lg transition-colors shadow-sm whitespace-nowrap"
-                                      >
-                                        Remove Contributor
-                                      </button>
-                                    )}
-                                    {userTab === "rejected" && (
-                                      <button
-                                        onClick={() => handleResetContributor(u)}
-                                        className="px-2.5 py-1 bg-blue-600/90 hover:bg-blue-600 text-white text-[11px] font-bold rounded-lg transition-colors shadow-sm whitespace-nowrap inline-flex items-center gap-1"
-                                      >
-                                        <RotateCcw className="w-3 h-3" /> Reset Application
-                                      </button>
-                                    )}
+                                  <td className="px-4 py-2.5 text-right whitespace-nowrap">
+                                    <div className="flex items-center justify-end gap-1.5">
+                                      {(userTab === "approved" || userTab === "pending") && (
+                                        <button
+                                          onClick={() => openEditClientSpeakerIdModal(u)}
+                                          className="px-2.5 py-1 bg-neutral-700 hover:bg-neutral-600 text-warning-400 hover:text-warning-300 text-[11px] font-bold rounded-lg transition-colors border border-neutral-600 inline-flex items-center gap-1 shadow-sm"
+                                          title="Edit Client Assigned Speaker ID"
+                                        >
+                                          <Edit3 className="w-3 h-3" /> Edit
+                                        </button>
+                                      )}
+                                      {userTab === "approved" && (
+                                        <button
+                                          onClick={() => handleRemoveContributor(u)}
+                                          className="px-2.5 py-1 bg-red-600/90 hover:bg-red-600 text-white text-[11px] font-bold rounded-lg transition-colors shadow-sm whitespace-nowrap"
+                                        >
+                                          Remove Contributor
+                                        </button>
+                                      )}
+                                      {userTab === "rejected" && (
+                                        <button
+                                          onClick={() => handleResetContributor(u)}
+                                          className="px-2.5 py-1 bg-blue-600/90 hover:bg-blue-600 text-white text-[11px] font-bold rounded-lg transition-colors shadow-sm whitespace-nowrap inline-flex items-center gap-1"
+                                        >
+                                          <RotateCcw className="w-3 h-3" /> Reset Application
+                                        </button>
+                                      )}
+                                    </div>
                                   </td>
                                 </tr>
                               ))}
