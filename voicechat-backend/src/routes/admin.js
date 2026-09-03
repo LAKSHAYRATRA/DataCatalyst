@@ -7056,6 +7056,7 @@ function calculateDemographics(items) {
             age: age !== null && Number.isFinite(age) ? age : "N/A",
             speaker_id: u.speaker_id || `spk_${u._id}`,
             client_spk_id: item.client_spk_id || u.client_spk_id || "",
+            customFields: item.customFields || {},
             locality: u.locality || "N/A",
             state: u.address?.state || "N/A",
             status: item.appStatus || "pending",
@@ -7584,6 +7585,7 @@ router.get("/companies/:id/contributors-summary", async (req, res) => {
                     appStatus: app.status || "pending",
                     appliedAt: app.appliedAt,
                     client_spk_id: app.client_spk_id || u.client_spk_id || "",
+                    customFields: app.customFields || {},
                     noiseGateDb: app.noiseGateDb !== undefined ? app.noiseGateDb : (u.noiseGateDb || 0),
                     notch5kEnabled: app.notch5kEnabled !== undefined ? app.notch5kEnabled : (u.notch5kEnabled || false),
                     deHissMode: app.deHissMode || u.deHissMode || "off",
@@ -7638,6 +7640,7 @@ router.get("/companies/:id/contributors-summary", async (req, res) => {
                     appStatus: currentStatus,
                     appliedAt: existing?.appliedAt || matchingApp?.appliedAt || p.recordedAt || u.createdAt,
                     client_spk_id: clientSpkVal,
+                    customFields: matchingApp?.customFields || existing?.customFields || {},
                     noiseGateDb: noiseVal,
                     notch5kEnabled: notchVal,
                     deHissMode: deHissVal,
@@ -7948,7 +7951,7 @@ router.post("/companies/:id/reset-contributor", async (req, res) => {
 router.post("/companies/:id/update-contributor-client-speaker-id", async (req, res) => {
     try {
         const compParam = req.params.id;
-        const { userId, languageCode, client_spk_id } = req.body;
+        const { userId, languageCode, client_spk_id, customFields } = req.body;
         if (!userId) {
             return res.status(400).json({ error: "userId is required" });
         }
@@ -7981,6 +7984,17 @@ router.post("/companies/:id/update-contributor-client-speaker-id", async (req, r
 
         const cleanClientSpkId = String(client_spk_id !== undefined && client_spk_id !== null ? client_spk_id : "").trim();
 
+        let cleanCustomFields = undefined;
+        if (customFields && typeof customFields === "object" && !Array.isArray(customFields)) {
+            cleanCustomFields = {};
+            for (const [k, v] of Object.entries(customFields)) {
+                const cleanK = String(k || "").replace(/[^a-zA-Z0-9_\-]/g, "_").trim();
+                if (cleanK) {
+                    cleanCustomFields[cleanK] = String(v !== undefined && v !== null ? v : "").trim();
+                }
+            }
+        }
+
         // Update matching language application if found
         let foundApp = false;
         if (user.languageApplications && user.languageApplications.length > 0) {
@@ -7991,6 +8005,9 @@ router.post("/companies/:id/update-contributor-client-speaker-id", async (req, r
                 const matchesLang = !languageCode || String(app.languageCode || "").toLowerCase().trim() === String(languageCode).toLowerCase().trim();
                 if (matchesComp && matchesLang) {
                     app.client_spk_id = cleanClientSpkId;
+                    if (cleanCustomFields !== undefined) {
+                        app.customFields = cleanCustomFields;
+                    }
                     foundApp = true;
                 }
             }
@@ -8004,7 +8021,8 @@ router.post("/companies/:id/update-contributor-client-speaker-id", async (req, r
                 companyId: company.name,
                 languageCode: String(languageCode || "other").toLowerCase().trim(),
                 status: "approved",
-                client_spk_id: cleanClientSpkId
+                client_spk_id: cleanClientSpkId,
+                customFields: cleanCustomFields || {}
             });
         }
 
@@ -8015,7 +8033,8 @@ router.post("/companies/:id/update-contributor-client-speaker-id", async (req, r
         res.json({
             success: true,
             client_spk_id: cleanClientSpkId,
-            message: `Updated client speaker ID to "${cleanClientSpkId}" for ${user.firstname || user.username}`
+            customFields: cleanCustomFields || {},
+            message: `Updated project metadata for ${user.firstname || user.username}`
         });
     } catch (e) {
         res.status(500).json({ error: e.message });
@@ -8641,6 +8660,9 @@ router.get("/phrases/download-company", requireAuth(JWT_SECRET), async (req, res
             let computedName = filenamePattern
                 .replace(/{phraseId}/g, phraseId || "")
                 .replace(/{phrase_id}/g, phraseId || "")
+                .replace(/{id}/gi, phraseId || "")
+                .replace(/{text}/gi, phrase.text ? phrase.text.replace(/[^a-zA-Z0-9_\-\ ]/g, "").substring(0, 50).trim() : "")
+                .replace(/{script_type}/gi, phrase.script_type || "")
                 .replace(/{language}/g, phrase.language || "")
                 .replace(/{speaker_id}/gi, speakerId || `spk_${contributor._id || "unknown"}`)
                 .replace(/{spk_id}/gi, speakerId || `spk_${contributor._id || "unknown"}`)
@@ -8666,16 +8688,30 @@ router.get("/phrases/download-company", requireAuth(JWT_SECRET), async (req, res
                 .replace(/{pitch}/g, phrase.pitch || "")
                 .replace(/{speed}/g, phrase.speed || "")
                 .replace(/{volume}/g, phrase.volume || "")
-                .replace(/{instructions}/g, phrase.instructions || "");
+                .replace(/{instructions}/g, phrase.instructions || "")
+                .replace(/{events}/g, phrase.events || "");
             
-            if (phrase.tags) {
+            // Replace custom metadata tags stored in phrase.tags
+            if (phrase.tags && typeof phrase.tags === "object") {
                 for (const [tagKey, tagVal] of Object.entries(phrase.tags)) {
-                    const regex = new RegExp(`{${tagKey}}`, 'g');
-                    computedName = computedName.replace(regex, tagVal || "");
+                    if (tagVal !== undefined && tagVal !== null) {
+                        const regex = new RegExp(`{${tagKey}}`, 'gi');
+                        computedName = computedName.replace(regex, String(tagVal).trim());
+                    }
                 }
             }
 
-            computedName = computedName.replace(/[^a-zA-Z0-9_\-\ ]/g, "").trim();
+            // Replace project-scoped contributor custom tags for this company
+            if (matchingApp?.customFields && typeof matchingApp.customFields === "object") {
+                for (const [cKey, cVal] of Object.entries(matchingApp.customFields)) {
+                    if (cVal !== undefined && cVal !== null) {
+                        const regex = new RegExp(`{${cKey}}`, 'gi');
+                        computedName = computedName.replace(regex, String(cVal).trim());
+                    }
+                }
+            }
+
+            computedName = computedName.replace(/[^\p{L}\p{N}_\- ]/gu, "").trim();
             if (computedName) {
                 folderName = computedName;
             }
@@ -9419,7 +9455,69 @@ router.get("/phrases/download-filter-options", requireAuth(JWT_SECRET), async (r
 
         const companyDoc = await Company.findOne({ name: { $regex: new RegExp(`^${baseCompanyName}$`, "i") } }).lean();
         const namingPattern = companyDoc?.namingPattern || "{phraseId}";
-        const availableTags = companyDoc?.availableTags || [];
+
+        // Collect distinct tag keys from phrases of this company
+        const phraseMetadataKeys = new Set(["id", "text"]);
+        for (const p of phrases) {
+            if (p.script_type) phraseMetadataKeys.add("script_type");
+            if (p.instructions) phraseMetadataKeys.add("instructions");
+            if (p.events) phraseMetadataKeys.add("events");
+            if (p.emotion) phraseMetadataKeys.add("emotion");
+            if (p.style) phraseMetadataKeys.add("style");
+            if (p.intent) phraseMetadataKeys.add("intent");
+            if (p.pitch) phraseMetadataKeys.add("pitch");
+            if (p.speed) phraseMetadataKeys.add("speed");
+            if (p.volume) phraseMetadataKeys.add("volume");
+            if (p.tags && typeof p.tags === "object") {
+                for (const tk of Object.keys(p.tags)) {
+                    if (tk && tk.trim()) phraseMetadataKeys.add(tk.trim());
+                }
+            }
+        }
+
+        // Collect custom contributor keys strictly scoped to this company
+        const compContributors = await User.find({
+            "languageApplications": {
+                $elemMatch: {
+                    companyId: { $in: targetCompanyIds }
+                }
+            }
+        }).select("languageApplications").lean();
+
+        const contributorCustomKeys = new Set();
+        for (const u of compContributors) {
+            for (const app of (u.languageApplications || [])) {
+                if (app.applicationType && app.applicationType !== "phrase") continue;
+                const aComp = String(app.companyId || "").replace(/_downloaded$/, "").trim().toLowerCase();
+                if (targetCompanyIds.map(t => String(t).toLowerCase()).includes(aComp)) {
+                    if (app.customFields && typeof app.customFields === "object") {
+                        for (const k of Object.keys(app.customFields)) {
+                            if (k && k.trim()) contributorCustomKeys.add(k.trim());
+                        }
+                    }
+                }
+            }
+        }
+
+        const baseBuiltinTags = new Set([
+            'phraseId', 'phrase_id', 'client_spk_id', 'client_speaker_id', 'Client_Speaker_ID', 
+            'spk_id', 'speaker_id', 'speakerid', 'spkid', 
+            'first_name', 'firstname', 'last_name', 'lastname', 
+            'gender', 'recording_date', 'recorded_date', 'date', 
+            'language', 'freq', 'spkfreq', 'baseName'
+        ]);
+
+        const allAvailableTagsSet = new Set(
+            (companyDoc?.availableTags || []).map(t => String(t).trim()).filter(Boolean)
+        );
+        phraseMetadataKeys.forEach(k => {
+            if (!baseBuiltinTags.has(k)) allAvailableTagsSet.add(k);
+        });
+        contributorCustomKeys.forEach(k => {
+            if (!baseBuiltinTags.has(k)) allAvailableTagsSet.add(k);
+        });
+
+        const availableTags = Array.from(allAvailableTagsSet);
 
         // Pick up to 10 random sample phrases to send for interactive live preview in the modal
         const samplePhrases = [];
@@ -9444,6 +9542,9 @@ router.get("/phrases/download-filter-options", requireAuth(JWT_SECRET), async (r
 
                 samplePhrases.push({
                     phraseId: p.phraseId || "phrase_101",
+                    id: p.phraseId || "phrase_101",
+                    text: p.text || "Sample phrase utterance",
+                    script_type: p.script_type || "",
                     speaker_id: speakerId,
                     client_spk_id: clientSpkId || speakerId,
                     first_name: contributor.firstname ? String(contributor.firstname).trim() : (contributor.username || "John"),
@@ -9460,7 +9561,10 @@ router.get("/phrases/download-filter-options", requireAuth(JWT_SECRET), async (r
                     pitch: p.pitch || "",
                     speed: p.speed || "",
                     volume: p.volume || "",
-                    ...(p.tags || {})
+                    instructions: p.instructions || "",
+                    events: p.events || "",
+                    ...(p.tags || {}),
+                    ...(matchingApp?.customFields || {})
                 });
             }
         }

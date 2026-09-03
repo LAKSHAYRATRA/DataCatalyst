@@ -161,8 +161,11 @@ export default function AdminPhraseDownloads() {
     };
 
     let name = customNamingPattern
-      .replace(/{phraseId}/g, sample.phraseId || "")
-      .replace(/{phrase_id}/g, sample.phraseId || "")
+      .replace(/{phraseId}/g, sample.phraseId || sample.id || "")
+      .replace(/{phrase_id}/g, sample.phraseId || sample.id || "")
+      .replace(/{id}/gi, sample.id || sample.phraseId || "")
+      .replace(/{text}/gi, sample.text ? sample.text.replace(/[^a-zA-Z0-9_\-\ ]/g, "").substring(0, 30).trim() : "")
+      .replace(/{script_type}/gi, sample.script_type || "")
       .replace(/{language}/g, sample.language || "")
       .replace(/{speaker_id}/gi, sample.speaker_id || "")
       .replace(/{spk_id}/gi, sample.speaker_id || "")
@@ -181,14 +184,22 @@ export default function AdminPhraseDownloads() {
       .replace(/{gender}/g, sample.gender || "")
       .replace(/{freq}/g, sample.freq !== undefined ? String(sample.freq) : "")
       .replace(/{spkfreq}/g, sample.spkfreq !== undefined ? String(sample.spkfreq) : "1")
-      .replace(/{baseName}/g, sample.baseName || "");
+      .replace(/{baseName}/g, sample.baseName || "")
+      .replace(/{emotion}/g, sample.emotion || "")
+      .replace(/{style}/g, sample.style || "")
+      .replace(/{intent}/g, sample.intent || "")
+      .replace(/{pitch}/g, sample.pitch || "")
+      .replace(/{speed}/g, sample.speed || "")
+      .replace(/{volume}/g, sample.volume || "")
+      .replace(/{instructions}/g, sample.instructions || "")
+      .replace(/{events}/g, sample.events || "");
 
     Object.keys(sample).forEach((k) => {
       const reg = new RegExp(`{${k}}`, "gi");
       name = name.replace(reg, String(sample[k] || ""));
     });
 
-    name = name.replace(/[^a-zA-Z0-9_\-\ ]/g, "").trim();
+    name = name.replace(/[^\p{L}\p{N}_\- ]/gu, "").trim();
     return (name || "output") + ".wav";
   };
 
@@ -759,24 +770,27 @@ export default function AdminPhraseDownloads() {
     if (!dialogOpen) return null;
 
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+      <div 
+        className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-3 sm:p-4 animate-in fade-in duration-200"
+        onClick={() => setDialogOpen(false)}
+      >
         <div 
-          className="bg-neutral-900 border border-neutral-700 rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden text-white"
+          className="bg-neutral-900 border border-neutral-700 rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden text-white relative"
           onClick={(e) => e.stopPropagation()}
         >
           {/* Modal Header */}
-          <div className={`p-5 flex items-center justify-between border-b ${
-            dialogStatus === "approved" ? "border-emerald-700/40 bg-emerald-950/30" : "border-amber-700/40 bg-amber-950/30"
+          <div className={`p-4 sm:p-5 flex items-center justify-between border-b shrink-0 ${
+            dialogStatus === "approved" ? "border-emerald-700/40 bg-emerald-950/40" : "border-amber-700/40 bg-amber-950/40"
           }`}>
-            <div className="flex items-center gap-3">
-              <div className={`p-2 rounded-xl ${
+            <div className="flex items-center gap-3 min-w-0">
+              <div className={`p-2 rounded-xl shrink-0 ${
                 dialogStatus === "approved" ? "bg-emerald-600/30 text-emerald-400 border border-emerald-500/40" : "bg-amber-600/30 text-amber-400 border border-amber-500/40"
               }`}>
                 <FolderArchive className="w-5 h-5" />
               </div>
-              <div>
-                <h3 className="text-lg font-bold text-white flex items-center gap-2 flex-wrap">
-                  <span>{dialogCompany}</span>
+              <div className="min-w-0">
+                <h3 className="text-base sm:text-lg font-bold text-white flex items-center gap-2 flex-wrap">
+                  <span className="truncate">{dialogCompany}</span>
                   {dialogLanguage && dialogLanguage !== "all" && (
                     <span className="text-xs px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wider bg-indigo-950/80 text-indigo-300 border border-indigo-600/50 flex items-center gap-1">
                       <Globe className="w-3 h-3" />
@@ -791,7 +805,7 @@ export default function AdminPhraseDownloads() {
                     {dialogStatus === "approved" ? "Approved Phrases" : "Pending (Recorded) Phrases"}
                   </span>
                 </h3>
-                <p className="text-xs text-neutral-400 mt-0.5">
+                <p className="text-xs text-neutral-400 mt-0.5 line-clamp-1">
                   {dialogStatus === "approved" 
                     ? `Download QA-Approved phrases${dialogLanguage ? ` in ${dialogLanguage}` : ''} packaged as WAVs with info.txt manifest` 
                     : `Download phrases recorded by contributors${dialogLanguage ? ` in ${dialogLanguage}` : ''} awaiting QA review`}
@@ -799,15 +813,17 @@ export default function AdminPhraseDownloads() {
               </div>
             </div>
             <button
+              type="button"
               onClick={() => setDialogOpen(false)}
-              className="text-neutral-400 hover:text-white p-1.5 rounded-lg hover:bg-neutral-800 transition-colors"
+              className="text-neutral-400 hover:text-white bg-neutral-800/80 hover:bg-rose-600/80 p-2 rounded-xl border border-neutral-700 hover:border-rose-500 transition-all cursor-pointer shadow-sm flex items-center justify-center shrink-0 ml-3"
+              title="Close modal (Esc)"
             >
               <X className="w-5 h-5" />
             </button>
           </div>
 
-          {/* Modal Body */}
-          <div className="p-6 space-y-6">
+          {/* Modal Body (Scrollable) */}
+          <div className="p-5 sm:p-6 space-y-5 overflow-y-auto flex-1">
             {loadingOptions ? (
               <div className="py-12 text-center space-y-3">
                 <Loader2 className="w-8 h-8 animate-spin text-primary-500 mx-auto" />
@@ -1053,7 +1069,7 @@ export default function AdminPhraseDownloads() {
                   {/* Available Tag Chips */}
                   <div className="flex flex-wrap items-center gap-1.5 text-xs">
                     <span className="text-neutral-400 text-[11px] font-semibold">Tags:</span>
-                    {['{phraseId}', '{client_spk_id}', '{spk_id}', '{speaker_id}', '{first_name}', '{last_name}', '{gender}', '{recording_date}', '{language}', '{freq}', '{spkfreq}'].map((tag) => (
+                    {['{phraseId}', '{id}', '{text}', '{client_spk_id}', '{spk_id}', '{speaker_id}', '{first_name}', '{last_name}', '{gender}', '{recording_date}', '{language}', '{freq}', '{spkfreq}'].map((tag) => (
                       <button
                         type="button"
                         key={tag}
@@ -1065,14 +1081,16 @@ export default function AdminPhraseDownloads() {
                       </button>
                     ))}
 
-                    {/* Dynamic metadata tags from company configuration */}
-                    {dialogAvailableTags && dialogAvailableTags.length > 0 && dialogAvailableTags.map((tag) => (
+                    {/* Project-specific metadata & custom contributor tags */}
+                    {dialogAvailableTags && dialogAvailableTags.length > 0 && dialogAvailableTags
+                      .filter(tag => !['phraseid', 'id', 'text', 'client_spk_id', 'client_speaker_id', 'client_speaker_id', 'spk_id', 'speaker_id', 'first_name', 'last_name', 'gender', 'recording_date', 'language', 'freq', 'spkfreq'].includes(String(tag).toLowerCase()))
+                      .map((tag) => (
                       <button
                         type="button"
                         key={tag}
                         onClick={() => setCustomNamingPattern((prev) => (prev || '') + `{${tag}}`)}
-                        className="bg-warning-950/60 hover:bg-warning-900/80 text-warning-300 border border-warning-700/60 px-2 py-0.5 rounded-lg font-mono text-[11px] font-semibold transition-colors cursor-pointer active:scale-95"
-                        title={`Click to append custom metadata tag {${tag}}`}
+                        className="bg-cyan-950/60 hover:bg-cyan-900/80 text-cyan-300 border border-cyan-700/60 px-2 py-0.5 rounded-lg font-mono text-[11px] font-semibold transition-colors cursor-pointer active:scale-95"
+                        title={`Click to append project tag {${tag}}`}
                       >
                         {`{${tag}}`}
                       </button>

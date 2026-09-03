@@ -15,7 +15,11 @@ import {
   XCircle,
   RotateCcw,
   Sliders,
-  Edit3
+  Edit3,
+  Plus,
+  Trash2,
+  Tag,
+  X
 } from "lucide-react";
 import Swal from "sweetalert2";
 import { apiGet, apiPostJson } from "../lib/api.js";
@@ -39,6 +43,13 @@ export default function AdminCompanyContributorsSummary() {
   const [selectedLangCode, setSelectedLangCode] = useState(null);
   const [userTab, setUserTab] = useState("approved"); // "approved" | "pending" | "rejected"
   const [userSearch, setUserSearch] = useState("");
+
+  // Project Contributor Metadata Edit Modal States
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [editingContributor, setEditingContributor] = useState(null);
+  const [clientSpkIdInput, setClientSpkIdInput] = useState("");
+  const [customFieldsList, setCustomFieldsList] = useState([]);
+  const [savingEdit, setSavingEdit] = useState(false);
 
   useEffect(() => {
     fetchData();
@@ -280,89 +291,61 @@ export default function AdminCompanyContributorsSummary() {
     }
   }
 
-  async function openEditClientSpeakerIdModal(userObj) {
-    const currentClientSpkId = userObj.client_spk_id || "";
-    const compName = company ? (company.projectName || company.name) : "Company";
-    const langName = selectedLangData ? selectedLangData.name : (selectedLangCode || "");
+  function openEditContributorModal(userObj) {
+    setEditingContributor(userObj);
+    setClientSpkIdInput(userObj.client_spk_id || "");
+    const fields = Object.entries(userObj.customFields || {}).map(([k, v]) => ({ key: k, value: String(v) }));
+    setCustomFieldsList(fields);
+    setEditModalOpen(true);
+  }
 
-    const { value: newClientSpkId } = await Swal.fire({
-      title: "Edit Client Assigned Speaker ID",
-      html: `
-        <div class="text-left text-xs text-neutral-300 mb-4 space-y-1.5 bg-neutral-850 p-3.5 rounded-xl border border-neutral-700 shadow-inner">
-          <div class="flex justify-between items-center">
-            <strong class="text-white text-sm">${userObj.firstname || ""} ${userObj.lastname || ""}</strong> 
-            <span class="font-mono text-warning-400 font-bold">${userObj.speaker_id || ""}</span>
-          </div>
-          <div><strong class="text-neutral-400">Username:</strong> <span class="text-neutral-200">@${userObj.username || ""}</span></div>
-          <div><strong class="text-neutral-400">Scope:</strong> <span class="text-warning-400 font-semibold">${compName} (${langName})</span></div>
-          <div class="text-neutral-400 text-[11px] pt-1.5 border-t border-neutral-700/60 mt-1.5">
-            This ID will be used in phrase download naming patterns via the <code class="text-warning-400 font-mono font-bold">{client_spk_id}</code> tag.
-          </div>
-        </div>
+  async function handleSaveContributorMetadata() {
+    if (!editingContributor) return;
+    setSavingEdit(true);
 
-        <div class="text-left text-xs space-y-2">
-          <label class="block font-bold text-neutral-200 uppercase tracking-wider">
-            Client Assigned Speaker ID (Box)
-          </label>
-          <input 
-            id="swal-client-spk-id" 
-            type="text" 
-            value="${currentClientSpkId}" 
-            placeholder="e.g. SPK001, SPK016..." 
-            class="w-full bg-neutral-800 border border-neutral-600 rounded-lg p-3 text-white font-mono font-bold text-sm focus:outline-none focus:ring-2 focus:ring-warning-500"
-          />
-        </div>
-      `,
-      showCancelButton: true,
-      confirmButtonText: "Save Client Speaker ID",
-      cancelButtonText: "Cancel",
-      confirmButtonColor: "#ea580c",
-      cancelButtonColor: "#475569",
-      background: "#1f2937",
-      color: "#fff",
-      didOpen: () => {
-        const input = document.getElementById("swal-client-spk-id");
-        if (input) {
-          input.focus();
-          input.select();
-        }
-      },
-      preConfirm: () => {
-        const input = document.getElementById("swal-client-spk-id");
-        return input ? input.value.trim() : "";
+    const customFieldsObj = {};
+    for (const f of customFieldsList) {
+      const cleanK = String(f.key || "").replace(/[^a-zA-Z0-9_\-]/g, "_").trim();
+      if (cleanK) {
+        customFieldsObj[cleanK] = String(f.value || "").trim();
       }
-    });
+    }
 
-    if (newClientSpkId !== undefined) {
-      try {
-        await apiPostJson(`/api/admin/companies/${id}/update-contributor-client-speaker-id`, {
-          userId: userObj._id,
-          languageCode: selectedLangCode,
-          client_spk_id: newClientSpkId
-        });
-        const Toast = Swal.mixin({
-          toast: true,
-          position: "top-end",
-          showConfirmButton: false,
-          timer: 2500,
-          timerProgressBar: true,
-          background: "#1f2937",
-          color: "#fff"
-        });
-        Toast.fire({
-          icon: "success",
-          title: `Client Speaker ID updated to "${newClientSpkId || "(none)"}"`
-        });
-        fetchData();
-      } catch (e) {
-        Swal.fire({
-          title: "Error",
-          text: e.message,
-          icon: "error",
-          background: "#1f2937",
-          color: "#fff"
-        });
-      }
+    try {
+      await apiPostJson(`/api/admin/companies/${id}/update-contributor-client-speaker-id`, {
+        userId: editingContributor._id,
+        languageCode: selectedLangCode,
+        client_spk_id: clientSpkIdInput.trim(),
+        customFields: customFieldsObj
+      });
+
+      const Toast = Swal.mixin({
+        toast: true,
+        position: "top-end",
+        showConfirmButton: false,
+        timer: 2500,
+        timerProgressBar: true,
+        background: "#1f2937",
+        color: "#fff"
+      });
+      Toast.fire({
+        icon: "success",
+        title: `Project metadata updated for ${editingContributor.firstname || editingContributor.username}`
+      });
+
+      setEditModalOpen(false);
+      setEditingContributor(null);
+      fetchData();
+    } catch (e) {
+      Swal.fire({
+        title: "Error",
+        text: e.message,
+        icon: "error",
+        background: "#1f2937",
+        color: "#fff"
+      });
+    } finally {
+      setSavingEdit(false);
     }
   }
 
@@ -756,6 +739,16 @@ export default function AdminCompanyContributorsSummary() {
                                     ) : (
                                       <div className="text-[10px] text-neutral-500 italic mt-0.5">No Client ID</div>
                                     )}
+                                    {u.customFields && Object.keys(u.customFields).length > 0 && (
+                                      <div className="flex flex-wrap gap-1 mt-1">
+                                        {Object.entries(u.customFields).map(([k, v]) => (
+                                          <span key={k} className="text-[9px] font-mono bg-cyan-950/80 text-cyan-300 border border-cyan-800/60 px-1 py-0.5 rounded flex items-center gap-0.5" title={`Tag {${k}}: ${v}`}>
+                                            <span className="text-neutral-400">{`{${k}}`}:</span>
+                                            <span className="font-bold text-white">{v}</span>
+                                          </span>
+                                        ))}
+                                      </div>
+                                    )}
                                   </td>
                                   <td className="px-4 py-2.5 font-medium text-white">
                                     {u.firstname} {u.lastname}
@@ -825,9 +818,9 @@ export default function AdminCompanyContributorsSummary() {
                                     <div className="flex items-center justify-end gap-1.5">
                                       {(userTab === "approved" || userTab === "pending") && (
                                         <button
-                                          onClick={() => openEditClientSpeakerIdModal(u)}
+                                          onClick={() => openEditContributorModal(u)}
                                           className="px-2.5 py-1 bg-neutral-700 hover:bg-neutral-600 text-warning-400 hover:text-warning-300 text-[11px] font-bold rounded-lg transition-colors border border-neutral-600 inline-flex items-center gap-1 shadow-sm"
-                                          title="Edit Client Assigned Speaker ID"
+                                          title="Edit Client Assigned Speaker ID & Project Metadata"
                                         >
                                           <Edit3 className="w-3 h-3" /> Edit
                                         </button>
@@ -861,6 +854,177 @@ export default function AdminCompanyContributorsSummary() {
                 </div>
               </div>
             )}
+          </div>
+        )}
+        {/* Edit Contributor Project Metadata Modal */}
+        {editModalOpen && editingContributor && (
+          <div 
+            className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-150"
+            onClick={() => { setEditModalOpen(false); setEditingContributor(null); }}
+          >
+            <div 
+              className="bg-neutral-900 border border-neutral-700/80 rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden text-left text-white max-h-[90vh] flex flex-col"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Header */}
+              <div className="p-4 sm:p-5 border-b border-neutral-800 flex items-center justify-between bg-neutral-950/60 shrink-0">
+                <div className="flex items-center gap-3">
+                  <div className="bg-warning-500/10 text-warning-400 p-2.5 rounded-xl border border-warning-500/20">
+                    <Edit3 className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-base sm:text-lg text-white">Edit Contributor Project Metadata</h3>
+                    <p className="text-xs text-neutral-400">
+                      Scoped strictly to <b className="text-warning-400">{company?.projectName || company?.name}</b> ({selectedLangData?.name || selectedLangCode})
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => { setEditModalOpen(false); setEditingContributor(null); }}
+                  className="text-neutral-400 hover:text-white p-1.5 rounded-lg hover:bg-neutral-800 transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Body */}
+              <div className="p-5 sm:p-6 space-y-5 overflow-y-auto flex-1">
+                {/* Contributor Card */}
+                <div className="bg-neutral-950 p-3.5 rounded-xl border border-neutral-800 flex items-center justify-between">
+                  <div>
+                    <div className="text-sm font-bold text-white">{editingContributor.firstname} {editingContributor.lastname}</div>
+                    <div className="text-xs text-neutral-400">@{editingContributor.username}</div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-xs text-neutral-400 font-semibold">Internal Speaker ID</div>
+                    <div className="font-mono text-warning-400 font-bold text-sm">{editingContributor.speaker_id}</div>
+                  </div>
+                </div>
+
+                {/* Client Speaker ID Input */}
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-bold text-neutral-200 uppercase tracking-wider">
+                    Client Assigned Speaker ID (Box)
+                  </label>
+                  <input
+                    type="text"
+                    value={clientSpkIdInput}
+                    onChange={(e) => setClientSpkIdInput(e.target.value)}
+                    placeholder="e.g. SPK001, SPK016..."
+                    className="w-full bg-neutral-950 border border-neutral-700 rounded-xl px-3.5 py-2.5 text-white font-mono font-bold text-sm focus:outline-none focus:border-warning-500"
+                  />
+                  <p className="text-[11px] text-neutral-400">
+                    Available in phrase download naming patterns via <code className="text-warning-400 font-mono font-bold">{'{client_spk_id}'}</code>.
+                  </p>
+                </div>
+
+                {/* Project-Scoped Custom Key-Value Pairs */}
+                <div className="space-y-3 pt-3 border-t border-neutral-800">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <label className="block text-xs font-bold text-neutral-200 uppercase tracking-wider flex items-center gap-1.5">
+                        <Tag className="w-3.5 h-3.5 text-cyan-400" />
+                        <span>Custom Key-Value Tags (Project-Only)</span>
+                      </label>
+                      <p className="text-[11px] text-neutral-400">
+                        Key-value pairs restricted to this user in <b>{company?.name}</b> only. Appears as tags in Phrase Downloads.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setCustomFieldsList(prev => [...prev, { key: "", value: "" }])}
+                      className="px-2.5 py-1.5 bg-cyan-600/20 hover:bg-cyan-600/30 text-cyan-300 border border-cyan-500/30 text-xs font-bold rounded-lg transition-colors flex items-center gap-1 cursor-pointer active:scale-95 shadow-sm"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Add Key-Value</span>
+                    </button>
+                  </div>
+
+                  {/* List of custom fields */}
+                  {customFieldsList.length === 0 ? (
+                    <div className="p-4 bg-neutral-950/60 rounded-xl border border-neutral-800/80 text-center text-xs text-neutral-500">
+                      No custom keys added yet. Click <b className="text-cyan-400">+ Add Key-Value</b> to add project-specific attributes (e.g. batch, speaker_alias).
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {customFieldsList.map((item, idx) => (
+                        <div key={idx} className="flex items-center gap-2 bg-neutral-950 p-2 rounded-xl border border-neutral-800">
+                          <div className="relative flex-1">
+                            <span className="absolute left-2.5 top-2 text-neutral-500 font-mono text-xs">{'{'}</span>
+                            <input
+                              type="text"
+                              placeholder="key (e.g. batch)"
+                              value={item.key}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setCustomFieldsList(prev => prev.map((f, i) => i === idx ? { ...f, key: val } : f));
+                              }}
+                              className="w-full bg-neutral-900 border border-neutral-700 text-cyan-300 font-mono text-xs rounded-lg pl-5 pr-5 py-1.5 focus:outline-none focus:border-cyan-500 font-semibold"
+                            />
+                            <span className="absolute right-2.5 top-2 text-neutral-500 font-mono text-xs">{'}'}</span>
+                          </div>
+                          <span className="text-neutral-500 font-bold">:</span>
+                          <input
+                            type="text"
+                            placeholder="value (e.g. B1)"
+                            value={item.value}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setCustomFieldsList(prev => prev.map((f, i) => i === idx ? { ...f, value: val } : f));
+                            }}
+                            className="flex-1 bg-neutral-900 border border-neutral-700 text-neutral-200 text-xs rounded-lg px-3 py-1.5 focus:outline-none focus:border-cyan-500"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setCustomFieldsList(prev => prev.filter((_, i) => i !== idx))}
+                            className="p-1.5 text-neutral-500 hover:text-rose-400 hover:bg-neutral-800 rounded-lg transition-colors cursor-pointer"
+                            title="Remove key-value pair"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Tag preview chips */}
+                  <div className="bg-neutral-950/80 p-3 rounded-xl border border-neutral-800/80">
+                    <span className="text-[11px] text-neutral-400 font-semibold block mb-1.5">Available Download Tags for this contributor:</span>
+                    <div className="flex flex-wrap gap-1.5">
+                      <span className="font-mono text-xs text-warning-400 bg-warning-950/60 border border-warning-800/50 px-2 py-0.5 rounded-md font-semibold">
+                        {'{client_spk_id}'}
+                      </span>
+                      {customFieldsList.filter(f => f.key.trim()).map((f, i) => (
+                        <span key={i} className="font-mono text-xs text-cyan-300 bg-cyan-950/60 border border-cyan-800/50 px-2 py-0.5 rounded-md font-semibold flex items-center gap-1">
+                          <span>{`{${f.key.trim()}}`}</span>
+                          {f.value && <span className="text-[10px] text-neutral-400 font-normal">({f.value})</span>}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div className="p-4 border-t border-neutral-800 bg-neutral-950/80 flex items-center justify-end gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => { setEditModalOpen(false); setEditingContributor(null); }}
+                  className="px-4 py-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 text-xs font-bold rounded-xl transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveContributorMetadata}
+                  disabled={savingEdit}
+                  className="px-5 py-2 bg-warning-600 hover:bg-warning-500 text-black text-xs font-bold rounded-xl transition-colors shadow-md shadow-warning-600/20 disabled:opacity-50 cursor-pointer active:scale-95"
+                >
+                  {savingEdit ? "Saving..." : "Save Project Metadata"}
+                </button>
+              </div>
+            </div>
           </div>
         )}
       </main>

@@ -120,6 +120,7 @@ const userSchema = new mongoose.Schema(
         deHissMode: { type: String, enum: ["off", "14k", "12k", "10k", "8k"], default: "off" }, // High-frequency hiss roll-off
         deEsserMode: { type: String, enum: ["off", "light", "medium", "strong"], default: "off" }, // Sibilance control
         client_spk_id: { type: String, trim: true, default: "" }, // Client-assigned speaker ID (e.g. SPK001)
+        customFields: { type: mongoose.Schema.Types.Mixed, default: {} }, // Custom key-value tags scoped to this project
       },
     ],
     noiseGateDb: { type: Number, default: 0 }, // Default noise gate setting for contributor
