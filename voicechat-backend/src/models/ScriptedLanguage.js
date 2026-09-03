@@ -4,6 +4,7 @@ const scriptedLanguageSchema = new mongoose.Schema(
     {
         name: { type: String, required: true, trim: true },   // "Doctor-Patient Conversations (Hindi)" or "Hindi (Scripted)"
         projectName: { type: String, trim: true, default: "" }, // "Doctor-Patient Conversations"
+        companyName: { type: String, trim: true, default: "" }, // Internal Admin Client/Company Reference (e.g. "Gnani", "Shaip")
         language: { type: String, trim: true, default: "" },    // "Hindi"
         code: { type: String, required: true, unique: true, trim: true, lowercase: true }, // "hindi-scripted" or "hindi"
         hourlyPayout: { type: Number, required: true, min: 0 },

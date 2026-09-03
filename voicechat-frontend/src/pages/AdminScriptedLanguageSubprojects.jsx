@@ -74,6 +74,7 @@ export default function AdminScriptedLanguageSubprojects() {
     const [showModal, setShowModal] = useState(false);
     const [editingSubproject, setEditingSubproject] = useState(null);
     const [modalProjectName, setModalProjectName] = useState("");
+    const [modalCompanyName, setModalCompanyName] = useState("");
     const [modalLanguage, setModalLanguage] = useState(capitalize(langCode || ""));
     const [modalHourlyPayout, setModalHourlyPayout] = useState("25.00");
     const [modalSampleRate, setModalSampleRate] = useState("48000");
@@ -160,6 +161,7 @@ export default function AdminScriptedLanguageSubprojects() {
     function openAddModal() {
         setEditingSubproject(null);
         setModalProjectName("");
+        setModalCompanyName("");
         setModalLanguage(currentBaseLanguage);
         setModalHourlyPayout("25.00");
         setModalSampleRate("48000");
@@ -179,6 +181,7 @@ export default function AdminScriptedLanguageSubprojects() {
     function openEditModal(sub) {
         setEditingSubproject(sub);
         setModalProjectName(sub.projectName || (sub.name !== currentBaseLanguage ? sub.name : ""));
+        setModalCompanyName(sub.companyName || "");
         setModalLanguage(sub.language || currentBaseLanguage);
         setModalHourlyPayout(sub.hourlyPayout !== undefined ? String(sub.hourlyPayout) : "25.00");
         setModalSampleRate(sub.sampleRate !== undefined ? String(sub.sampleRate) : "48000");
@@ -238,6 +241,7 @@ export default function AdminScriptedLanguageSubprojects() {
             const payload = {
                 name: computedName,
                 projectName: projName,
+                companyName: modalCompanyName.trim(),
                 language: langStr,
                 hourlyPayout,
                 sampleRate,
@@ -413,6 +417,7 @@ export default function AdminScriptedLanguageSubprojects() {
             (sub.name && sub.name.toLowerCase().includes(q)) ||
             (sub.code && sub.code.toLowerCase().includes(q)) ||
             (sub.projectName && sub.projectName.toLowerCase().includes(q)) ||
+            (sub.companyName && sub.companyName.toLowerCase().includes(q)) ||
             (sub.role1 && sub.role1.toLowerCase().includes(q)) ||
             (sub.role2 && sub.role2.toLowerCase().includes(q))
         );
@@ -586,6 +591,11 @@ export default function AdminScriptedLanguageSubprojects() {
                                                         ⚠️ Noisy
                                                     </span>
                                                 )}
+                                                {sub.companyName && (
+                                                    <span className="text-[10px] font-bold text-amber-300 bg-amber-950/80 px-2 py-0.5 rounded border border-amber-700/60 inline-flex items-center gap-1 shadow-sm" title="Internal Client Reference">
+                                                        🏢 {sub.companyName}
+                                                    </span>
+                                                )}
                                                 {sub.isBoosted && (
                                                     <span className="text-[10px] font-extrabold text-amber-300 bg-gradient-to-r from-amber-500/20 to-orange-500/20 px-2 py-0.5 rounded border border-amber-500/50 inline-flex items-center gap-1 shadow-sm">
                                                         🔥 Boosted
@@ -741,6 +751,27 @@ export default function AdminScriptedLanguageSubprojects() {
                                     </span>
                                 </div>
                             )}
+
+                            {/* Company Name / Internal Client Reference Input */}
+                            <div>
+                                <label className="block text-xs font-bold uppercase text-neutral-400 mb-1.5 flex items-center justify-between">
+                                    <span className="flex items-center gap-1.5">
+                                        <span>🏢 Company / Client Reference</span>
+                                        <span className="text-amber-400 font-normal normal-case text-[10px] bg-amber-950/60 border border-amber-800/40 px-1.5 py-0.5 rounded">Admin Only</span>
+                                    </span>
+                                    <span className="text-[11px] text-neutral-500 font-normal">Optional</span>
+                                </label>
+                                <input
+                                    type="text"
+                                    value={modalCompanyName}
+                                    onChange={(e) => setModalCompanyName(e.target.value)}
+                                    placeholder="e.g. Gnani, Shaip, Tech Mahindra (internal only)"
+                                    className="w-full px-3.5 py-2.5 bg-neutral-800 border border-neutral-700 rounded-xl text-sm text-white focus:outline-none focus:border-primary-500 font-medium placeholder-neutral-500"
+                                />
+                                <p className="text-[11px] text-neutral-500 mt-1">
+                                    🔒 Internal admin reference only. Strictly hidden from contributors and QA reviewers.
+                                </p>
+                            </div>
 
                             {/* Call Roles Switch */}
                             <div className="bg-neutral-950/80 border border-neutral-800 rounded-xl p-3.5 space-y-3">

@@ -111,6 +111,7 @@ export default function AdminScriptedTopicsSubprojects() {
     const filteredSubprojects = subprojects.filter(sub => {
         const matchesSearch = (sub.name || "").toLowerCase().includes(searchQuery.toLowerCase()) || 
                               (sub.projectName || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+                              (sub.companyName || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
                               (sub.code || "").toLowerCase().includes(searchQuery.toLowerCase());
         const matchesActive = !showOnlyActive || sub.enabled;
         return matchesSearch && matchesActive;
@@ -238,7 +239,12 @@ export default function AdminScriptedTopicsSubprojects() {
                                             </div>
                                         </div>
 
-                                        <div className="flex items-center gap-1.5">
+                                        <div className="flex items-center gap-1.5 flex-wrap justify-end">
+                                            {sub.companyName && (
+                                                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-950/60 text-amber-300 border border-amber-700/50 flex items-center gap-1 shadow-sm" title="Internal Client Reference">
+                                                    🏢 {sub.companyName}
+                                                </span>
+                                            )}
                                             {sub.enabled ? (
                                                 <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-950/60 text-emerald-300 border border-emerald-700/50 flex items-center gap-1">
                                                     <CheckCircle2 className="w-2.5 h-2.5" />

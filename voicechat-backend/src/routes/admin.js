@@ -3381,6 +3381,317 @@ qaCallRouter.post("/scripted/call/:callId/submit-review", async (req, res) => {
     }
 });
 
+// Batch Download Scripted Calls as Combined ZIP (audio/, transcripts/, speaker_metadata.json, info.txt)
+qaCallRouter.post("/scripted/download-batch", async (req, res) => {
+    try {
+        const { callIds } = req.body;
+        if (!Array.isArray(callIds) || callIds.length === 0) {
+            return res.status(400).json({ error: "No call IDs provided for download." });
+        }
+
+        const calls = await CallSession.find({ callId: { $in: callIds } })
+            .populate("userA")
+            .populate("userB")
+            .populate("topicId")
+            .populate("subtopicId")
+            .lean();
+
+        if (!calls || calls.length === 0) {
+            return res.status(404).json({ error: "No matching scripted calls found for download." });
+        }
+
+        let archive;
+        try {
+            const archiverModule = await import("archiver");
+            const archiverFn = archiverModule.default || archiverModule;
+            if (typeof archiverFn === "function") {
+                archive = archiverFn("zip", { zlib: { level: 0 } });
+            } else if (archiverModule.ZipArchive) {
+                archive = new archiverModule.ZipArchive({ zlib: { level: 0 } });
+            } else {
+                throw new Error("Could not initialize ZIP archiver engine.");
+            }
+        } catch (err) {
+            console.error("Archiver error:", err);
+            return res.status(500).json({ error: "Server missing or failed 'archiver' dependency: " + err.message });
+        }
+
+        archive.on("error", (err) => {
+            console.error("[Scripted Batch Download] Archiver Error:", err);
+        });
+
+        const zipFilename = `scripted_calls_export_${new Date().toISOString().slice(0, 10)}_${Date.now()}.zip`;
+        res.setHeader("Content-Type", "application/zip");
+        res.setHeader("Content-Disposition", `attachment; filename="${zipFilename}"`);
+        archive.pipe(res);
+
+        const combinedSpeakers = {};
+        let totalDurationSec = 0;
+        const callSummaries = [];
+
+        // Helper to fetch audio buffer (checks local candidates first, then S3)
+        async function fetchAudioBuffer(fileName) {
+            if (!fileName) return null;
+            const cleanName = fileName.replace(/^local:/, "").trim();
+            const baseName = path.basename(cleanName);
+            const candidates = [
+                path.join(process.cwd(), "recordings", baseName),
+                path.join(process.cwd(), "recordings", cleanName),
+                path.join(process.cwd(), "recordings", "temp", baseName),
+                path.join(process.cwd(), cleanName),
+                path.join(process.cwd(), "uploads", cleanName)
+            ];
+
+            for (const cand of candidates) {
+                if (cand && fs.existsSync(cand)) {
+                    try {
+                        const fileStream = fs.createReadStream(cand);
+                        return await getWavBuffer(fileStream);
+                    } catch (e) {
+                        console.warn(`[scripted-download-batch] Error reading local file ${cand}:`, e.message);
+                    }
+                }
+            }
+
+            // S3 fallback
+            try {
+                const s3Doc = await s3Client.send(new GetObjectCommand({
+                    Bucket: BUCKET_NAME,
+                    Key: cleanName
+                }));
+                return await getWavBuffer(s3Doc.Body);
+            } catch (s3Err) {
+                console.warn(`[scripted-download-batch] S3 fetch failed for ${cleanName}:`, s3Err.message);
+                return null;
+            }
+        }
+
+        // Helper to collect speaker metadata
+        function collectSpeaker(user, spkIdOverride) {
+            if (!user) return;
+            const spkId = String(user.speaker_id || spkIdOverride || `spk_${user._id}`).trim();
+            if (combinedSpeakers[spkId]) return;
+
+            let age = "unknown";
+            if (user.dob) {
+                const dobDate = new Date(user.dob);
+                const today = new Date();
+                let calcAge = today.getFullYear() - dobDate.getFullYear();
+                const m = today.getMonth() - dobDate.getMonth();
+                if (m < 0 || (m === 0 && today.getDate() < dobDate.getDate())) {
+                    calcAge--;
+                }
+                age = calcAge;
+            }
+
+            combinedSpeakers[spkId] = {
+                speaker_id: spkId,
+                gender: user.gender || "unknown",
+                age,
+                native_language: user.regionalLanguage || "unknown",
+                accent: user.accent || "unknown",
+                dialect: user.dialect || "unknown",
+                locality: user.locality || "unknown",
+                state: user.address?.state || "unknown",
+                city: user.address?.city || "unknown",
+                pincode: user.address?.pincode || "unknown",
+                microphone_brand: user.microphoneBrand || "unknown",
+                microphone_model: user.microphoneModel || "unknown",
+                recording_environment: "indoor_room",
+                consent_provided: true,
+                consent_platform: "voclara.com"
+            };
+        }
+
+        for (const call of calls) {
+            const callDur = Number(call.actualCallDuration) || 
+                (call.endedAt && call.actualCallStartedAt ? (new Date(call.endedAt) - new Date(call.actualCallStartedAt)) / 1000 : 0);
+            totalDurationSec += callDur;
+
+            // Collect speakers
+            collectSpeaker(call.userA, call.userA?.speaker_id);
+            collectSpeaker(call.userB, call.userB?.speaker_id);
+
+            // Fetch submissions for dialogue turns
+            let [s1Sub, s2Sub] = await Promise.all([
+                ScriptedSubmission.findOne({ callSessionId: call._id, role: "speaker1" }).lean(),
+                ScriptedSubmission.findOne({ callSessionId: call._id, role: "speaker2" }).lean()
+            ]);
+
+            let subtopic = null;
+            if (call.subtopicId) {
+                subtopic = await ScriptedSubtopic.findById(call.subtopicId).lean();
+            }
+
+            // Lookup companyName if configured on ScriptedLanguage
+            let companyReference = "";
+            if (call.language) {
+                const sLang = await ScriptedLanguage.findOne({
+                    $or: [
+                        { code: String(call.language).toLowerCase().trim() },
+                        { name: call.language }
+                    ]
+                }).select("companyName").lean();
+                if (sLang?.companyName) {
+                    companyReference = sLang.companyName;
+                }
+            }
+
+            // Build turns array with precise timestamps
+            const rawTurns = subtopic?.dialogueTurns || [];
+            const maxTurns = Math.max(s1Sub?.verses?.length || 0, s2Sub?.verses?.length || 0, rawTurns.length);
+
+            let cumulativeTime = 0;
+            const PAUSE_SEC = 0.4;
+            const dialogueTurns = [];
+
+            for (let i = 0; i < maxTurns; i++) {
+                const v1 = s1Sub?.verses?.find(v => Number(v.turnIndex) === i);
+                const v2 = s2Sub?.verses?.find(v => Number(v.turnIndex) === i);
+
+                // Speaker 1 turn
+                if (v1 || rawTurns[i]?.speaker1) {
+                    const dur = Number(v1?.durationSec) > 0 ? Number(v1.durationSec) : 2.0;
+                    const startSec = +(cumulativeTime.toFixed(2));
+                    cumulativeTime += dur;
+                    const endSec = +(cumulativeTime.toFixed(2));
+
+                    dialogueTurns.push({
+                        turn_index: i,
+                        speaker_id: call.userA?.speaker_id || `spk_${call.userA?._id || "1"}`,
+                        role: call.userARole || "Speaker 1",
+                        channel: "ch1_left",
+                        start_sec: startSec,
+                        end_sec: endSec,
+                        duration_sec: +(dur.toFixed(2)),
+                        text: v1?.text || rawTurns[i]?.speaker1 || ""
+                    });
+                    cumulativeTime += PAUSE_SEC;
+                }
+
+                // Speaker 2 turn
+                if (v2 || rawTurns[i]?.speaker2) {
+                    const dur = Number(v2?.durationSec) > 0 ? Number(v2.durationSec) : 2.0;
+                    const startSec = +(cumulativeTime.toFixed(2));
+                    cumulativeTime += dur;
+                    const endSec = +(cumulativeTime.toFixed(2));
+
+                    dialogueTurns.push({
+                        turn_index: i,
+                        speaker_id: call.userB?.speaker_id || `spk_${call.userB?._id || "2"}`,
+                        role: call.userBRole || "Speaker 2",
+                        channel: "ch2_right",
+                        start_sec: startSec,
+                        end_sec: endSec,
+                        duration_sec: +(dur.toFixed(2)),
+                        text: v2?.text || rawTurns[i]?.speaker2 || ""
+                    });
+                    cumulativeTime += PAUSE_SEC;
+                }
+            }
+
+            // Append transcripts/<callId>.json
+            const transcriptObj = {
+                call_id: call.callId,
+                language: call.language || "hindi",
+                topic: call.topicId?.title || "",
+                scenario: subtopic?.title || call.subtopicId?.title || "",
+                total_duration_sec: +(callDur.toFixed(2)) || +(cumulativeTime.toFixed(2)),
+                audio_files: {
+                    mixed_stereo: call.mixedRecordingFile || `${call.callId}_stereo.wav`,
+                    track_a: call.recordingAFile || `${call.callId}_A.wav`,
+                    track_b: call.recordingBFile || `${call.callId}_B.wav`
+                },
+                speaker_channels: {
+                    ch1_left: {
+                        speaker_id: call.userA?.speaker_id || `spk_${call.userA?._id || "1"}`,
+                        role: call.userARole || "Speaker 1"
+                    },
+                    ch2_right: {
+                        speaker_id: call.userB?.speaker_id || `spk_${call.userB?._id || "2"}`,
+                        role: call.userBRole || "Speaker 2"
+                    }
+                },
+                dialogue_turns: dialogueTurns
+            };
+
+            if (companyReference) {
+                transcriptObj.company_reference = companyReference;
+            }
+
+            archive.append(JSON.stringify(transcriptObj, null, 2), { name: `transcripts/${call.callId}.json` });
+
+            // Stream Audio Files into audio/
+            const audioFilesToFetch = [
+                call.mixedRecordingFile || `${call.callId}_stereo.wav`,
+                call.recordingAFile || `${call.callId}_A.wav`,
+                call.recordingBFile || `${call.callId}_B.wav`
+            ];
+
+            for (const itemFile of audioFilesToFetch) {
+                if (itemFile) {
+                    const buf = await fetchAudioBuffer(itemFile);
+                    if (buf) {
+                        archive.append(buf, { name: `audio/${path.basename(itemFile)}` });
+                    }
+                }
+            }
+
+            callSummaries.push({
+                call_id: call.callId,
+                scenario: subtopic?.title || "Scripted Scenario",
+                language: call.language,
+                duration: `${callDur.toFixed(1)}s`,
+                turns_count: dialogueTurns.length,
+                speaker1: call.userA?.speaker_id || "spk_A",
+                speaker2: call.userB?.speaker_id || "spk_B"
+            });
+        }
+
+        // Append speaker_metadata.json
+        archive.append(JSON.stringify(Object.values(combinedSpeakers), null, 2), { name: "speaker_metadata.json" });
+
+        // Generate info.txt manifest
+        const infoLines = [
+            "==================================================================",
+            " VOCLARA - SCRIPTED CALLS DATASET EXPORT",
+            "==================================================================",
+            `Generated At      : ${new Date().toISOString()}`,
+            `Total Calls       : ${calls.length}`,
+            `Total Speakers    : ${Object.keys(combinedSpeakers).length}`,
+            `Total Audio Secs  : ${totalDurationSec.toFixed(1)}s (${(totalDurationSec / 3600).toFixed(2)} hrs)`,
+            "",
+            "PACKAGE STRUCTURE:",
+            "  /audio/                - Dual-channel stereo conversation & individual speaker WAV audio files",
+            "  /transcripts/          - Per-call JSON transcripts with millisecond-aligned dialogue turns",
+            "  speaker_metadata.json  - Deduplicated demographic & hardware metadata for all contributors",
+            "  info.txt               - Dataset summary manifest",
+            "",
+            "------------------------------------------------------------------",
+            " PACKAGED CALLS SUMMARY:",
+            "------------------------------------------------------------------",
+            ...callSummaries.map((cs, idx) => 
+                `[${idx + 1}] Call ID: ${cs.call_id} | Scenario: "${cs.scenario}" | Lang: ${cs.language} | Duration: ${cs.duration} | Turns: ${cs.turns_count} | S1: ${cs.speaker1} | S2: ${cs.speaker2}`
+            ),
+            "",
+            "------------------------------------------------------------------",
+            " UNIQUE SPEAKERS DEMOGRAPHICS:",
+            "------------------------------------------------------------------",
+            ...Object.values(combinedSpeakers).map(sp => 
+                `• ${sp.speaker_id} | ${sp.gender.toUpperCase()} | Age: ${sp.age} | ${sp.native_language} | Dialect: ${sp.dialect} | State: ${sp.state} | Mic: ${sp.microphone_brand} ${sp.microphone_model}`
+            ),
+            "=================================================================="
+        ];
+
+        archive.append(infoLines.join("\n"), { name: "info.txt" });
+
+        await archive.finalize();
+    } catch (err) {
+        console.error("Batch scripted download error:", err);
+        if (!res.headersSent) res.status(500).json({ error: err.message });
+    }
+});
+
 // Mount QA router BEFORE isAdmin — this must stay here
 router.use("/qa", qaCallRouter);
 
@@ -6193,10 +6504,12 @@ router.post("/scripted-languages", async (req, res) => {
         const role1 = req.body?.role1 ? String(req.body.role1).trim() : "Role 1";
         const role2 = req.body?.role2 ? String(req.body.role2).trim() : "Role 2";
         const projectName = req.body?.projectName ? String(req.body.projectName).trim() : "";
+        const companyName = req.body?.companyName ? String(req.body.companyName).trim() : "";
         const language = req.body?.language ? String(req.body.language).trim() : "";
         const lang = await ScriptedLanguage.create({
             name: name.trim(),
             projectName,
+            companyName,
             language,
             code: code.trim().toLowerCase(),
             hourlyPayout,
@@ -6218,11 +6531,12 @@ router.post("/scripted-languages", async (req, res) => {
     }
 });
 
-// Update scripted language (rename / enable / payout / limits / testPhrase)
+// Update scripted language (rename / enable / payout / limits / testPhrase / companyName)
 router.patch("/scripted-languages/:id", async (req, res) => {
     const updates = {};
     if (req.body.name !== undefined) updates.name = req.body.name.trim();
     if (req.body.projectName !== undefined) updates.projectName = String(req.body.projectName).trim();
+    if (req.body.companyName !== undefined) updates.companyName = String(req.body.companyName).trim();
     if (req.body.language !== undefined) updates.language = String(req.body.language).trim();
     if (req.body.enabled !== undefined) {
         updates.enabled = !!req.body.enabled;

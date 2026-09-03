@@ -66,6 +66,7 @@ export default function AdminScriptedLanguages() {
     const [editingLanguage, setEditingLanguage] = useState(null);
     const [modalName, setModalName] = useState("");
     const [modalProjectName, setModalProjectName] = useState("");
+    const [modalCompanyName, setModalCompanyName] = useState("");
     const [modalLanguage, setModalLanguage] = useState("");
     const [modalHourlyPayout, setModalHourlyPayout] = useState("");
     const [modalSampleRate, setModalSampleRate] = useState("48000");
@@ -171,6 +172,7 @@ export default function AdminScriptedLanguages() {
     function openModal() {
         setEditingLanguage(null);
         setModalProjectName("");
+        setModalCompanyName("");
         setModalLanguage("");
         setModalName("");
         setModalHourlyPayout("");
@@ -190,6 +192,7 @@ export default function AdminScriptedLanguages() {
     function openEditModal(language) {
         setEditingLanguage(language);
         setModalProjectName(language.projectName || "");
+        setModalCompanyName(language.companyName || "");
         setModalLanguage(language.language || language.name || "");
         setModalName(language.name || "");
         setModalHourlyPayout(language.hourlyPayout !== undefined ? String(language.hourlyPayout) : "");
@@ -210,6 +213,7 @@ export default function AdminScriptedLanguages() {
         setShowModal(false);
         setEditingLanguage(null);
         setModalProjectName("");
+        setModalCompanyName("");
         setModalLanguage("");
         setModalName("");
         setModalHourlyPayout("");
@@ -280,6 +284,7 @@ export default function AdminScriptedLanguages() {
             const payload = {
                 name,
                 projectName: proj,
+                companyName: modalCompanyName.trim(),
                 language: langStr,
                 hourlyPayout,
                 sampleRate,
@@ -710,6 +715,27 @@ export default function AdminScriptedLanguages() {
                                         </span>
                                     </div>
                                 )}
+
+                                {/* Company Name / Internal Client Reference Input */}
+                                <div>
+                                    <label className="block text-xs font-bold uppercase text-neutral-400 mb-1.5 flex items-center justify-between">
+                                        <span className="flex items-center gap-1.5">
+                                            <span>🏢 Company / Client Reference</span>
+                                            <span className="text-amber-400 font-normal normal-case text-[10px] bg-amber-950/60 border border-amber-800/40 px-1.5 py-0.5 rounded">Admin Only</span>
+                                        </span>
+                                        <span className="text-[11px] text-neutral-500 font-normal">Optional</span>
+                                    </label>
+                                    <input
+                                        type="text"
+                                        value={modalCompanyName}
+                                        onChange={(e) => setModalCompanyName(e.target.value)}
+                                        placeholder="e.g. Gnani, Shaip, Tech Mahindra (internal only)"
+                                        className="w-full px-3.5 py-2.5 bg-neutral-800 border border-neutral-700 rounded-xl text-sm text-white focus:outline-none focus:border-primary-500 font-medium placeholder-neutral-500"
+                                    />
+                                    <p className="text-[11px] text-neutral-500 mt-1">
+                                        🔒 Internal admin reference only. Strictly hidden from contributors and QA reviewers.
+                                    </p>
+                                </div>
 
                                 {/* Call Roles Switch */}
                                 <div className="bg-neutral-950/80 border border-neutral-800 rounded-xl p-3.5 space-y-3">

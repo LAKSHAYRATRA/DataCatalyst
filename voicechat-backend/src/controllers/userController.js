@@ -177,7 +177,10 @@ export async function getLanguages(req, res) {
 // ─── GET /api/scripted-languages ───────────────────────────────────────────────
 export async function getScriptedLanguages(req, res) {
   try {
-    const langs = await ScriptedLanguage.find({ enabled: true }).sort({ name: 1 }).lean();
+    const langs = await ScriptedLanguage.find({ enabled: true })
+      .select("-companyName") // Strictly hidden from public/users
+      .sort({ name: 1 })
+      .lean();
     res.json({ languages: langs });
   } catch (e) {
     res.status(500).json({ error: e.message });

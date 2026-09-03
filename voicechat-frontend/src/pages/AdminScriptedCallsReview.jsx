@@ -91,6 +91,7 @@ export default function AdminScriptedCallsReview() {
     const [error, setError] = useState("");
 
     const [calls, setCalls] = useState([]);
+    const [selectedCallIds, setSelectedCallIds] = useState([]);
     const [loadingCalls, setLoadingCalls] = useState(true);
     const [callPages, setCallPages] = useState(1);
     const [callTotal, setCallTotal] = useState(0);
@@ -173,6 +174,80 @@ export default function AdminScriptedCallsReview() {
             if (e.message.includes("Unauthorized") || e.message.includes("Forbidden")) navigate("/login");
         } finally {
             setLoadingCalls(false);
+        }
+    }
+
+    function toggleSelectCall(callId) {
+        setSelectedCallIds(prev => 
+            prev.includes(callId) ? prev.filter(id => id !== callId) : [...prev, callId]
+        );
+    }
+
+    function toggleSelectAll() {
+        const pageCallIds = calls.map(c => c.callId);
+        const allSelected = pageCallIds.length > 0 && pageCallIds.every(id => selectedCallIds.includes(id));
+        if (allSelected) {
+            setSelectedCallIds(prev => prev.filter(id => !pageCallIds.includes(id)));
+        } else {
+            setSelectedCallIds(prev => Array.from(new Set([...prev, ...pageCallIds])));
+        }
+    }
+
+    async function handleDownloadSelected() {
+        if (selectedCallIds.length === 0) return;
+
+        Swal.fire({
+            title: "Packaging Scripted Calls...",
+            html: `Generating combined ZIP with audio, transcripts, and speaker metadata for <b>${selectedCallIds.length}</b> call(s)...`,
+            allowOutsideClick: false,
+            didOpen: () => {
+                Swal.showLoading();
+            }
+        });
+
+        try {
+            const res = await fetch(`${BACKEND_URL}/api/admin/qa/scripted/download-batch`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                credentials: "include",
+                body: JSON.stringify({ callIds: selectedCallIds })
+            });
+
+            if (!res.ok) {
+                let errMsg = "Failed to download scripted calls ZIP.";
+                try {
+                    const json = await res.json();
+                    errMsg = json.error || errMsg;
+                } catch {}
+                throw new Error(errMsg);
+            }
+
+            const disposition = res.headers.get("content-disposition") || "";
+            let filename = `scripted_calls_export_${Date.now()}.zip`;
+            const match = disposition.match(/filename="?([^"]+)"?/);
+            if (match && match[1]) {
+                filename = match[1];
+            }
+
+            const blob = await res.blob();
+            const downloadUrl = window.URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = downloadUrl;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(downloadUrl);
+            document.body.removeChild(a);
+
+            Swal.fire({
+                icon: "success",
+                title: "Download Complete",
+                text: `Successfully downloaded ${selectedCallIds.length} scripted call(s) with audio, transcripts, and speaker metadata.`,
+                timer: 2000,
+                showConfirmButton: false
+            });
+        } catch (e) {
+            Swal.fire("Download Failed", e.message, "error");
         }
     }
 
@@ -684,12 +759,46 @@ export default function AdminScriptedCallsReview() {
                     </div>
                 )}
 
+                {/* Batch Selection Action Bar */}
+                {selectedCallIds.length > 0 && (
+                    <div className="mt-4 p-3.5 bg-indigo-950/80 border border-indigo-700/60 rounded-xl flex flex-wrap items-center justify-between gap-3 animate-fade-in shadow-lg">
+                        <div className="flex items-center gap-2 text-xs font-bold text-indigo-300">
+                            <CheckCircle2 className="w-4 h-4 text-indigo-400" />
+                            <span>{selectedCallIds.length} scripted call{selectedCallIds.length > 1 ? "s" : ""} selected</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <button
+                                onClick={handleDownloadSelected}
+                                className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-primary-600 hover:bg-primary-500 text-white font-bold text-xs shadow-md transition-all cursor-pointer"
+                            >
+                                <Download className="w-4 h-4" />
+                                <span>Download Selected ZIP ({selectedCallIds.length})</span>
+                            </button>
+                            <button
+                                onClick={() => setSelectedCallIds([])}
+                                className="px-3 py-2 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white text-xs font-semibold transition-colors cursor-pointer"
+                            >
+                                Clear Selection
+                            </button>
+                        </div>
+                    </div>
+                )}
+
                 {/* Call Table */}
                 <div className="mt-6 bg-neutral-800/60 border border-neutral-700/60 rounded-2xl overflow-hidden shadow-xl">
                     <div className="overflow-x-auto">
                         <table className="w-full text-left text-xs">
                             <thead className="bg-neutral-800/90 text-neutral-400 uppercase font-semibold border-b border-neutral-700/80">
                                 <tr>
+                                    <th className="py-3.5 px-4 w-10">
+                                        <input
+                                            type="checkbox"
+                                            checked={calls.length > 0 && calls.every(c => selectedCallIds.includes(c.callId))}
+                                            onChange={toggleSelectAll}
+                                            className="w-4 h-4 rounded bg-neutral-900 border-neutral-700 text-primary-600 focus:ring-primary-500 cursor-pointer"
+                                            title="Select / Deselect all on this page"
+                                        />
+                                    </th>
                                     <th className="py-3.5 px-4">Call ID & Scenario</th>
                                     <th className="py-3.5 px-4">Speaker A (Host)</th>
                                     <th className="py-3.5 px-4">Speaker B (Guest)</th>
@@ -702,21 +811,33 @@ export default function AdminScriptedCallsReview() {
                             <tbody className="divide-y divide-neutral-750">
                                 {loadingCalls ? (
                                     <tr>
-                                        <td colSpan="7" className="py-12 text-center text-neutral-400">
+                                        <td colSpan="8" className="py-12 text-center text-neutral-400">
                                             <div className="w-6 h-6 border-2 border-primary-500 border-t-transparent rounded-full animate-spin mx-auto mb-2" />
                                             <span>Loading scripted calls...</span>
                                         </td>
                                     </tr>
                                 ) : calls.length === 0 ? (
                                     <tr>
-                                        <td colSpan="7" className="py-12 text-center text-neutral-400">
+                                        <td colSpan="8" className="py-12 text-center text-neutral-400">
                                             <Radio className="w-8 h-8 text-neutral-600 mx-auto mb-2" />
                                             <span>No scripted calls found in this category.</span>
                                         </td>
                                     </tr>
                                 ) : (
                                     calls.map((call) => (
-                                        <tr key={call.callId} className="hover:bg-neutral-750/40 transition-colors">
+                                        <tr 
+                                            key={call.callId} 
+                                            className={`hover:bg-neutral-750/40 transition-colors ${selectedCallIds.includes(call.callId) ? "bg-primary-950/20" : ""}`}
+                                        >
+                                            <td className="py-4 px-4 w-10">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={selectedCallIds.includes(call.callId)}
+                                                    onChange={() => toggleSelectCall(call.callId)}
+                                                    onClick={(e) => e.stopPropagation()}
+                                                    className="w-4 h-4 rounded bg-neutral-900 border-neutral-700 text-primary-600 focus:ring-primary-500 cursor-pointer"
+                                                />
+                                            </td>
                                             <td className="py-4 px-4">
                                                 <div className="font-mono text-[11px] text-primary-400 font-semibold mb-0.5">
                                                     {call.callId}

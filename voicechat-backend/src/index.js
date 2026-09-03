@@ -252,6 +252,11 @@ const langUpload = multer({
 });
 
 // Routes
+app.get("/", (req, res) => res.json({
+  status: "ok",
+  service: "VoiceChat Backend API",
+  message: "Backend is running. Access the frontend app at http://localhost:5173"
+}));
 app.get("/health", (req, res) => res.json({ ok: true }));
 
 // Auth
