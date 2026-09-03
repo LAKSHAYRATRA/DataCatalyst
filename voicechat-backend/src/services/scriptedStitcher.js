@@ -3,6 +3,7 @@ import path from "path";
 import { exec } from "child_process";
 import { promisify } from "util";
 import crypto from "crypto";
+import mongoose from "mongoose";
 import { CallSession } from "../models/CallSession.js";
 import { ScriptedSubmission } from "../models/ScriptedSubmission.js";
 import { ScriptedSubtopic } from "../models/ScriptedSubtopic.js";
@@ -10,6 +11,21 @@ import { ScriptedLanguage } from "../models/ScriptedLanguage.js";
 import { Language } from "../models/Language.js";
 
 const execAsync = promisify(exec);
+
+// Helper to robustly locate audio on disk
+function resolveVerseAudioPath(rawPath) {
+    if (!rawPath) return null;
+    const candidates = [
+        rawPath,
+        path.resolve(rawPath),
+        path.join(process.cwd(), rawPath),
+        path.join(process.cwd(), "uploads", rawPath),
+        path.join(process.cwd(), "recordings", rawPath),
+        path.join(process.cwd(), "uploads", path.basename(rawPath)),
+        path.join(process.cwd(), "recordings", path.basename(rawPath))
+    ];
+    return candidates.find(c => fs.existsSync(c) && fs.statSync(c).isFile()) || null;
+}
 
 // Helper to get audio duration in seconds via ffprobe
 async function getAudioDuration(filePath) {
@@ -70,8 +86,8 @@ export async function stitchScriptedPair(sub1, sub2) {
             const v1 = (sub1.verses || []).find(v => v.turnIndex === i);
             const v2 = (sub2.verses || []).find(v => v.turnIndex === i);
 
-            const v1File = v1 ? path.resolve(v1.audioPath) : null;
-            const v2File = v2 ? path.resolve(v2.audioPath) : null;
+            const v1File = v1 ? resolveVerseAudioPath(v1.audioPath) : null;
+            const v2File = v2 ? resolveVerseAudioPath(v2.audioPath) : null;
 
             // 1. Process Speaker 1 Turn
             if (v1File && fs.existsSync(v1File)) {
@@ -237,9 +253,9 @@ export async function stitchScriptedPair(sub1, sub2) {
             callSession.recordingBDurationMinutes = durationMinutesB;
             callSession.recordingAPayoutUsd = payoutUsdA;
             callSession.recordingBPayoutUsd = payoutUsdB;
-            callSession.callStatus = "pending";
-            callSession.recordingAStatus = "pending";
-            callSession.recordingBStatus = "pending";
+            if (!callSession.callStatus) callSession.callStatus = "pending";
+            if (!callSession.recordingAStatus) callSession.recordingAStatus = "pending";
+            if (!callSession.recordingBStatus) callSession.recordingBStatus = "pending";
             callSession.endedAt = now;
         }
 
@@ -270,4 +286,66 @@ export async function stitchScriptedPair(sub1, sub2) {
         } catch (_) {}
         throw err;
     }
+}
+
+/**
+ * Re-stitch an existing scripted CallSession from its submissions.
+ * Updates Track A, Track B, and the stereo mixed file on disk with the current verse audios (including any trimmed verses).
+ * 
+ * @param {string} callId - The callId or _id of the CallSession
+ */
+export async function restitchScriptedCall(callId) {
+    if (!callId) throw new Error("callId is required to restitch scripted call");
+    
+    let call = null;
+    if (mongoose.Types.ObjectId.isValid(callId)) {
+        call = await CallSession.findById(callId);
+    }
+    if (!call) {
+        call = await CallSession.findOne({ callId });
+    }
+    if (!call) {
+        throw new Error(`CallSession not found for callId: ${callId}`);
+    }
+
+    // Find submissions for speaker 1 and speaker 2
+    let [sub1, sub2] = await Promise.all([
+        ScriptedSubmission.findOne({ callSessionId: call._id, role: "speaker1" }),
+        ScriptedSubmission.findOne({ callSessionId: call._id, role: "speaker2" })
+    ]);
+
+    if (!sub1 || !sub2) {
+        const subtopicId = call.subtopicId;
+        if (subtopicId) {
+            if (!sub1 && call.userA) {
+                sub1 = await ScriptedSubmission.findOne({
+                    subtopicId,
+                    userId: call.userA._id || call.userA,
+                    status: { $ne: "cancelled" }
+                });
+            }
+            if (!sub2 && call.userB) {
+                sub2 = await ScriptedSubmission.findOne({
+                    subtopicId,
+                    userId: call.userB._id || call.userB,
+                    status: { $ne: "cancelled" }
+                });
+            }
+        }
+    }
+
+    if (!sub1 || !sub2) {
+        throw new Error(`Cannot restitch: missing speaker submission(s) for call ${call.callId}`);
+    }
+
+    sub1.callSessionId = call._id;
+    sub2.callSessionId = call._id;
+
+    const updatedCall = await stitchScriptedPair(sub1, sub2);
+    return {
+        success: true,
+        callId: updatedCall.callId,
+        mixedRecordingFile: updatedCall.mixedRecordingFile,
+        duration: updatedCall.actualCallDuration
+    };
 }

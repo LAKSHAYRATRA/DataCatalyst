@@ -515,6 +515,24 @@ export default function AdminScriptedCallsReview() {
                     setDialogueData(prev => ({ ...prev, turns: updatedTurns }));
                 }
 
+                // Bust cached stereo / mixed audio so the player immediately compiles and plays the trimmed audio
+                if (reviewing?.callId) {
+                    const cId = reviewing.callId;
+                    setAudioUrls(prev => {
+                        const copy = { ...prev };
+                        delete copy[`${cId}_stereo`];
+                        delete copy[`${cId}_mixed`];
+                        delete copy[`${cId}_userA`];
+                        delete copy[`${cId}_userB`];
+                        return copy;
+                    });
+                    if (audioRefs.current[`${cId}_stereo`]) {
+                        audioRefs.current[`${cId}_stereo`].pause();
+                        audioRefs.current[`${cId}_stereo`].removeAttribute("src");
+                        audioRefs.current[`${cId}_stereo`].load();
+                    }
+                }
+
                 setShowTrimModal(false);
                 setTrimmingTurn(null);
 
@@ -578,6 +596,24 @@ export default function AdminScriptedCallsReview() {
                         return t;
                     });
                     setDialogueData(prev => ({ ...prev, turns: updatedTurns }));
+                }
+
+                // Bust cached stereo / mixed audio so the player reflects the reverted audio
+                if (reviewing?.callId) {
+                    const cId = reviewing.callId;
+                    setAudioUrls(prev => {
+                        const copy = { ...prev };
+                        delete copy[`${cId}_stereo`];
+                        delete copy[`${cId}_mixed`];
+                        delete copy[`${cId}_userA`];
+                        delete copy[`${cId}_userB`];
+                        return copy;
+                    });
+                    if (audioRefs.current[`${cId}_stereo`]) {
+                        audioRefs.current[`${cId}_stereo`].pause();
+                        audioRefs.current[`${cId}_stereo`].removeAttribute("src");
+                        audioRefs.current[`${cId}_stereo`].load();
+                    }
                 }
 
                 Swal.fire({
@@ -737,9 +773,9 @@ export default function AdminScriptedCallsReview() {
         }
     }
 
-    async function playAudio(callId, targetSpeaker) {
+    async function playAudio(callId, targetSpeaker, forceRefresh = false) {
         const key = `${callId}_${targetSpeaker}`;
-        if (audioUrls[key]) {
+        if (!forceRefresh && audioUrls[key]) {
             const el = audioRefs.current[key];
             if (el) {
                 if (el.paused) el.play().catch(() => {});
@@ -750,7 +786,7 @@ export default function AdminScriptedCallsReview() {
 
         setLoadingAudio(key);
         try {
-            const url = `${BACKEND_URL}/api/admin/qa/calls/${callId}/recording/${targetSpeaker}`;
+            const url = `${BACKEND_URL}/api/admin/qa/calls/${callId}/recording/${targetSpeaker}?t=${Date.now()}`;
             const audioBlob = await fetchDirectAudioBlob(url);
             const blobUrl = URL.createObjectURL(audioBlob);
             setAudioUrls(prev => ({ ...prev, [key]: blobUrl }));
@@ -760,6 +796,38 @@ export default function AdminScriptedCallsReview() {
             }, 100);
         } catch (err) {
             Swal.fire('Playback Error', err.message || 'Failed to load audio', 'error');
+        } finally {
+            setLoadingAudio(null);
+        }
+    }
+
+    async function recompileAndPlay(callId) {
+        const key = `${callId}_stereo`;
+        setLoadingAudio(key);
+        try {
+            await apiPostJson(`/api/admin/qa/scripted/call/${callId}/recompile-merged`);
+            
+            setAudioUrls(prev => {
+                const copy = { ...prev };
+                delete copy[key];
+                return copy;
+            });
+            if (audioRefs.current[key]) {
+                audioRefs.current[key].pause();
+                audioRefs.current[key].removeAttribute("src");
+                audioRefs.current[key].load();
+            }
+
+            const url = `${BACKEND_URL}/api/admin/qa/calls/${callId}/recording/stereo?t=${Date.now()}`;
+            const audioBlob = await fetchDirectAudioBlob(url);
+            const blobUrl = URL.createObjectURL(audioBlob);
+            setAudioUrls(prev => ({ ...prev, [key]: blobUrl }));
+            setTimeout(() => {
+                const el = audioRefs.current[key];
+                if (el) el.play().catch(() => {});
+            }, 100);
+        } catch (err) {
+            Swal.fire('Recompile Error', err.message || 'Failed to compile merged audio', 'error');
         } finally {
             setLoadingAudio(null);
         }
@@ -1154,30 +1222,53 @@ export default function AdminScriptedCallsReview() {
                                     </div>
 
                                     {/* Stereo Player */}
-                                    <div className="flex items-center gap-2 pt-1">
-                                        <button
-                                            onClick={() => playAudio(reviewing.callId, "stereo")}
-                                            disabled={loadingAudio === `${reviewing.callId}_stereo`}
-                                            className="flex-1 flex items-center justify-center gap-2 py-2 rounded-xl bg-neutral-750 hover:bg-neutral-700 font-semibold text-xs text-neutral-200 border border-neutral-600 transition-all disabled:opacity-50"
-                                        >
-                                            {loadingAudio === `${reviewing.callId}_stereo` ? (
-                                                <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                                            ) : (
-                                                <>
-                                                    <Play className="w-3.5 h-3.5 fill-current text-emerald-400" />
-                                                    <span>Play Full Merged Conversation</span>
-                                                </>
-                                            )}
-                                        </button>
+                                    <div className="space-y-2 pt-1">
+                                        <div className="flex items-center gap-2">
+                                            <button
+                                                onClick={() => playAudio(reviewing.callId, "stereo")}
+                                                disabled={loadingAudio === `${reviewing.callId}_stereo`}
+                                                className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-neutral-750 hover:bg-neutral-700 font-semibold text-xs text-neutral-200 border border-neutral-600 transition-all disabled:opacity-50 cursor-pointer shadow-sm"
+                                            >
+                                                {loadingAudio === `${reviewing.callId}_stereo` ? (
+                                                    <div className="flex items-center gap-2">
+                                                        <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                                        <span>Compiling & Loading Merged Audio...</span>
+                                                    </div>
+                                                ) : (
+                                                    <>
+                                                        <Play className="w-3.5 h-3.5 fill-current text-emerald-400" />
+                                                        <span>Play Full Merged Conversation</span>
+                                                        {dialogueData?.turns?.some(t => t.wasAudioTrimmed) && (
+                                                            <span className="text-[10px] px-2 py-0.5 rounded bg-indigo-900/80 text-indigo-300 border border-indigo-700/60 font-bold ml-1 flex items-center gap-1">
+                                                                <Scissors className="w-3 h-3 text-indigo-400" />
+                                                                Trimmed Parts Compiled
+                                                            </span>
+                                                        )}
+                                                    </>
+                                                )}
+                                            </button>
+
+                                            <button
+                                                type="button"
+                                                onClick={() => recompileAndPlay(reviewing.callId)}
+                                                disabled={loadingAudio === `${reviewing.callId}_stereo`}
+                                                className="px-3 py-2.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white border border-neutral-600 font-semibold text-xs flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50 shadow-sm"
+                                                title="Re-compile dual-track conversation from scratch with latest trimmed turn audio"
+                                            >
+                                                <RefreshCw className={`w-3.5 h-3.5 ${loadingAudio === `${reviewing.callId}_stereo` ? 'animate-spin' : ''}`} />
+                                                <span className="hidden sm:inline">Recompile Audio</span>
+                                            </button>
+                                        </div>
+
+                                        {audioUrls[`${reviewing.callId}_stereo`] && (
+                                            <audio
+                                                ref={el => audioRefs.current[`${reviewing.callId}_stereo`] = el}
+                                                src={audioUrls[`${reviewing.callId}_stereo`]}
+                                                controls
+                                                className="w-full h-8 mt-1"
+                                            />
+                                        )}
                                     </div>
-                                    {audioUrls[`${reviewing.callId}_stereo`] && (
-                                        <audio
-                                            ref={el => audioRefs.current[`${reviewing.callId}_stereo`] = el}
-                                            src={audioUrls[`${reviewing.callId}_stereo`]}
-                                            controls
-                                            className="w-full h-8 mt-1"
-                                        />
-                                    )}
                                 </div>
 
                                 {/* Phrase-by-Phrase / Verse-by-Verse Review Stream */}

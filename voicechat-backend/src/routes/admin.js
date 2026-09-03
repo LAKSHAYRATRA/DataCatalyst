@@ -36,6 +36,7 @@ import os from "os";
 import ffmpeg from "fluent-ffmpeg";
 import ffmpegInstaller from "@ffmpeg-installer/ffmpeg";
 import { invokeAudioQC } from "../config/lambda.js";
+import { restitchScriptedCall } from "../services/scriptedStitcher.js";
 
 ffmpeg.setFfmpegPath(ffmpegInstaller.path);
 
@@ -190,14 +191,16 @@ router.get("/qa/calls/:callId/recording/:speaker", async (req, res) => {
             "Content-Range": `bytes ${start}-${end}/${total}`,
             "Accept-Ranges": "bytes",
             "Content-Length": chunksize,
-            "Content-Type": mimeType
+            "Content-Type": mimeType,
+            "Cache-Control": "no-cache, no-store, must-revalidate"
           });
           return fileStream.pipe(res);
         } else {
           res.writeHead(200, {
             "Content-Length": total,
             "Content-Type": mimeType,
-            "Accept-Ranges": "bytes"
+            "Accept-Ranges": "bytes",
+            "Cache-Control": "no-cache, no-store, must-revalidate"
           });
           return fs.createReadStream(p).pipe(res);
         }
@@ -3263,10 +3266,25 @@ qaCallRouter.post("/scripted/submission/:submissionId/turn/:turnIndex/trim", asy
         verse.wasAudioTrimmed = true;
         await sub.save();
 
+        // Auto-recompile merged dual-speaker audio so "Play Full Merged Conversation" plays the trimmed conversation immediately!
+        let recompileInfo = null;
+        try {
+            const call = await CallSession.findById(sub.callSessionId) || await CallSession.findOne({
+                subtopicId: sub.subtopicId,
+                $or: [{ userA: sub.userId }, { userB: sub.userId }]
+            });
+            if (call?.callId) {
+                recompileInfo = await restitchScriptedCall(call.callId);
+            }
+        } catch (recompileErr) {
+            console.warn("[ScriptedTrim] Auto-restitch warning:", recompileErr.message);
+        }
+
         res.json({
             success: true,
             message: `Verse turn ${Number(turnIndex) + 1} trimmed to ${trimDuration}s!`,
             duration: trimDuration,
+            recompileInfo,
             verse
         });
     } catch (err) {
@@ -3310,15 +3328,46 @@ qaCallRouter.post("/scripted/submission/:submissionId/turn/:turnIndex/revert-tri
         verse.wasAudioTrimmed = false;
         await sub.save();
 
+        // Auto-recompile merged dual-speaker audio so "Play Full Merged Conversation" reflects the reverted audio!
+        let recompileInfo = null;
+        try {
+            const call = await CallSession.findById(sub.callSessionId) || await CallSession.findOne({
+                subtopicId: sub.subtopicId,
+                $or: [{ userA: sub.userId }, { userB: sub.userId }]
+            });
+            if (call?.callId) {
+                recompileInfo = await restitchScriptedCall(call.callId);
+            }
+        } catch (recompileErr) {
+            console.warn("[ScriptedTrim] Auto-restitch revert warning:", recompileErr.message);
+        }
+
         res.json({
             success: true,
             message: `Verse turn ${Number(turnIndex) + 1} restored to original audio (${restoredDuration}s).`,
             duration: restoredDuration,
+            recompileInfo,
             verse
         });
     } catch (err) {
         console.error("[ScriptedTrim] Revert error:", err);
         res.status(500).json({ error: err.message || "Failed to revert verse audio trim" });
+    }
+});
+
+// Explicit endpoint to recompile merged dialogue audio on demand
+qaCallRouter.post("/scripted/call/:callId/recompile-merged", async (req, res) => {
+    try {
+        const { callId } = req.params;
+        const result = await restitchScriptedCall(callId);
+        res.json({
+            success: true,
+            message: "Merged conversation recompiled successfully!",
+            ...result
+        });
+    } catch (err) {
+        console.error("[ScriptedCall] Recompile merged audio error:", err);
+        res.status(500).json({ error: err.message || "Failed to recompile merged call audio" });
     }
 });
 
