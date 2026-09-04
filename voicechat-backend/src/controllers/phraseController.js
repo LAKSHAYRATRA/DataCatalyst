@@ -1149,7 +1149,7 @@ export async function getQaQueue(req, res) {
         qaLockedBy: req.user._id,
         qaLockedAt: { $gte: fifteenMinsAgo }
       })
-      .populate("contributorId", "firstname lastname username email speaker_id")
+      .populate("contributorId", "firstname lastname username email speaker_id gender")
       .sort({ recordedAt: 1, createdAt: 1 });
 
       // 3. Replenish up to 5 phrases by locking additional available recorded phrases
@@ -1189,7 +1189,7 @@ export async function getQaQueue(req, res) {
             qaLockedBy: req.user._id,
             qaLockedAt: { $gte: fifteenMinsAgo }
           })
-          .populate("contributorId", "firstname lastname username email speaker_id")
+          .populate("contributorId", "firstname lastname username email speaker_id gender")
           .sort({ recordedAt: 1, createdAt: 1 });
         }
       }
@@ -1236,8 +1236,44 @@ export async function getQaQueue(req, res) {
       }
     }
 
+    // Optional query parameter filtering for admins
+    if (req.user && req.user.isAdmin) {
+      const { project, companyId, language, dateFrom, dateTo, speakerId } = req.query;
+      if (project && project !== "All") {
+        query.$or = [
+          { projectName: project },
+          { companyId: project }
+        ];
+      } else if (companyId && companyId !== "All") {
+        query.companyId = companyId;
+      }
+      if (language && language !== "All") {
+        query.language = new RegExp(`^${String(language).trim()}$`, "i");
+      }
+      if (speakerId && speakerId !== "All") {
+        query.$or = [
+          { speaker_id: speakerId },
+          { assigned_speaker_id: speakerId }
+        ];
+      }
+      if (dateFrom || dateTo) {
+        query.recordedAt = {};
+        if (dateFrom) {
+          const fromD = new Date(dateFrom);
+          if (!isNaN(fromD.getTime())) query.recordedAt.$gte = fromD;
+        }
+        if (dateTo) {
+          const toD = new Date(dateTo);
+          if (!isNaN(toD.getTime())) {
+            toD.setHours(23, 59, 59, 999);
+            query.recordedAt.$lte = toD;
+          }
+        }
+      }
+    }
+
     const phrases = await Phrase.find(query)
-      .populate("contributorId", "firstname lastname username email speaker_id")
+      .populate("contributorId", "firstname lastname username email speaker_id gender")
       .populate("editedBy", "firstname lastname username email")
       .sort({ editedAt: -1, recordedAt: -1, createdAt: -1 })
       .lean();

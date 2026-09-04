@@ -1,6 +1,27 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Check, X, AlertCircle, Download, Trash2, Clock, CheckCircle2, Volume2 } from 'lucide-react';
+import { 
+  Check, 
+  X, 
+  AlertCircle, 
+  Download, 
+  Trash2, 
+  Clock, 
+  CheckCircle2, 
+  Volume2,
+  Filter,
+  Calendar,
+  Search,
+  RotateCcw,
+  ChevronDown,
+  ChevronUp,
+  Layers,
+  Tag,
+  SlidersHorizontal,
+  Sparkles,
+  ChevronLeft,
+  ChevronRight
+} from 'lucide-react';
 import Swal from 'sweetalert2';
 import { apiGet, apiPostJson, apiPatchJson } from '../lib/api';
 import { getUserInfo } from '../lib/auth';
@@ -8,6 +29,16 @@ import SecureAudioPlayer from '../components/SecureAudioPlayer';
 import AdminNav from '../components/AdminNav.jsx';
 import InteractiveWaveformTrimmer from '../components/InteractiveWaveformTrimmer.jsx';
 import SpectrogramViewer from '../components/SpectrogramViewer.jsx';
+
+function formatPhraseDate(dateVal, format = 'DD-MM-YYYY') {
+  if (!dateVal) return null;
+  const d = new Date(dateVal);
+  if (isNaN(d.getTime())) return null;
+  const day = String(d.getDate()).padStart(2, '0');
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const year = d.getFullYear();
+  return format === 'YYYY-MM-DD' ? `${year}-${month}-${day}` : `${day}-${month}-${year}`;
+}
 
 export default function QaPhrases() {
   const userInfo = getUserInfo();
@@ -22,6 +53,21 @@ export default function QaPhrases() {
   const [filterSpeaker, setFilterSpeaker] = useState('All');
   const [selectedPhrases, setSelectedPhrases] = useState(new Set());
   const [listenedOnce, setListenedOnce] = useState({});
+
+  // Admin-only Advanced Filters (modeled after Phrase Downloads)
+  const [filterDateFormat, setFilterDateFormat] = useState("DD-MM-YYYY"); // 'DD-MM-YYYY' | 'YYYY-MM-DD'
+  const [filterDate, setFilterDate] = useState("All");
+  const [filterDateFrom, setFilterDateFrom] = useState("");
+  const [filterDateTo, setFilterDateTo] = useState("");
+  const [filterMetaKey, setFilterMetaKey] = useState("All");
+  const [filterMetaValue, setFilterMetaValue] = useState("All");
+  const [filterSearch, setFilterSearch] = useState("");
+  const [filterDuration, setFilterDuration] = useState("All");
+  const [filterLufs, setFilterLufs] = useState("All");
+  const [filterTrimmed, setFilterTrimmed] = useState("All");
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
+  const [pageSize, setPageSize] = useState(50);
+  const [currentPage, setCurrentPage] = useState(1);
 
   // Text Editing States
   const [editingTextId, setEditingTextId] = useState(null);
@@ -578,15 +624,320 @@ export default function QaPhrases() {
       .sort((a, b) => a.id.localeCompare(b.id));
   }, [queue, filterProject, filterLanguage]);
 
+  // Dynamic Metadata Filter Options (Modeled directly after Phrase Downloads)
+  const metadataFilterOptions = React.useMemo(() => {
+    if (!isAdmin) return [];
+
+    let phrasesToScan = queue;
+    if (filterProject !== 'All') {
+      phrasesToScan = phrasesToScan.filter(q => (q.projectName || q.companyId) === filterProject);
+    }
+    if (filterLanguage !== 'All') {
+      phrasesToScan = phrasesToScan.filter(q => q.language && q.language.toLowerCase() === filterLanguage.toLowerCase());
+    }
+
+    const dateLabel = filterDateFormat === 'YYYY-MM-DD' ? 'Recording Date (YYYY-MM-DD)' : 'Recording Date (DD-MM-YYYY)';
+
+    const keysMap = {
+      recording_date: { label: dateLabel, values: new Map() },
+      gender: { label: 'Gender', values: new Map() },
+      speaker_id: { label: 'Speaker ID', values: new Map() },
+      script_type: { label: 'Script Type', values: new Map() },
+      emotion: { label: 'Emotion', values: new Map() },
+      style: { label: 'Style', values: new Map() },
+      intent: { label: 'Intent', values: new Map() },
+      pitch: { label: 'Pitch', values: new Map() },
+      speed: { label: 'Speed', values: new Map() },
+      volume: { label: 'Volume', values: new Map() },
+      first_name: { label: 'First Name', values: new Map() },
+      last_name: { label: 'Last Name', values: new Map() },
+      wasAudioTrimmed: { label: 'Audio Trim Status', values: new Map() },
+    };
+
+    const addVal = (k, v) => {
+      if (v === undefined || v === null || String(v).trim() === '') return;
+      const strVal = String(v).trim();
+      if (!keysMap[k]) {
+        const formattedLabel = k.charAt(0).toUpperCase() + k.slice(1).replace(/_/g, ' ');
+        keysMap[k] = { label: formattedLabel, values: new Map() };
+      }
+      keysMap[k].values.set(strVal, (keysMap[k].values.get(strVal) || 0) + 1);
+    };
+
+    for (const p of phrasesToScan) {
+      const contributor = p.contributorId || {};
+      const spkId = getSpeakerId(p);
+      const fName = contributor.firstname ? String(contributor.firstname).trim() : (contributor.username || '');
+      const lName = contributor.lastname ? String(contributor.lastname).trim() : '';
+      const gdr = contributor.gender ? String(contributor.gender).trim().toLowerCase() : (p.gender ? String(p.gender).trim().toLowerCase() : '');
+
+      const dStr = formatPhraseDate(p.recordedAt || p.createdAt, filterDateFormat);
+      if (dStr) addVal('recording_date', dStr);
+
+      if (fName) addVal('first_name', fName);
+      if (lName) addVal('last_name', lName);
+      if (spkId) addVal('speaker_id', spkId);
+      if (gdr) addVal('gender', gdr);
+      if (p.script_type) addVal('script_type', p.script_type);
+      if (p.emotion) addVal('emotion', p.emotion);
+      if (p.style) addVal('style', p.style);
+      if (p.intent) addVal('intent', p.intent);
+      if (p.pitch) addVal('pitch', p.pitch);
+      if (p.speed) addVal('speed', p.speed);
+      if (p.volume) addVal('volume', p.volume);
+      if (p.wasAudioTrimmed !== undefined) addVal('wasAudioTrimmed', p.wasAudioTrimmed ? 'Trimmed' : 'Original');
+
+      if (p.tags && typeof p.tags === 'object') {
+        for (const [tk, tv] of Object.entries(p.tags)) {
+          if (tv !== undefined && tv !== null && typeof tv !== 'object') {
+            addVal(tk, String(tv));
+          }
+        }
+      }
+    }
+
+    const result = [];
+    for (const [k, meta] of Object.entries(keysMap)) {
+      if (meta.values.size > 0) {
+        const valuesArr = Array.from(meta.values.entries())
+          .map(([val, cnt]) => ({ value: val, count: cnt }))
+          .sort((a, b) => b.count - a.count || a.value.localeCompare(b.value));
+        result.push({
+          key: k,
+          label: meta.label,
+          values: valuesArr
+        });
+      }
+    }
+    return result;
+  }, [queue, filterProject, filterLanguage, filterDateFormat, isAdmin]);
+
+  const availableDates = React.useMemo(() => {
+    const found = metadataFilterOptions.find(opt => opt.key === 'recording_date');
+    return found ? found.values : [];
+  }, [metadataFilterOptions]);
+
+  const availableMetaValues = React.useMemo(() => {
+    if (!filterMetaKey || filterMetaKey === 'All') return [];
+    const found = metadataFilterOptions.find(opt => opt.key === filterMetaKey);
+    return found ? found.values : [];
+  }, [metadataFilterOptions, filterMetaKey]);
+
+  const handleMetaKeyChange = (newKey) => {
+    setFilterMetaKey(newKey);
+    setFilterMetaValue('All');
+    setCurrentPage(1);
+  };
+
+  const handleResetFilters = () => {
+    setFilterProject('All');
+    setFilterLanguage('All');
+    setFilterSpeaker('All');
+    setFilterDate('All');
+    setFilterDateFrom('');
+    setFilterDateTo('');
+    setFilterMetaKey('All');
+    setFilterMetaValue('All');
+    setFilterSearch('');
+    setFilterDuration('All');
+    setFilterLufs('All');
+    setFilterTrimmed('All');
+    setSelectedPhrases(new Set());
+    setCurrentPage(1);
+  };
+
+  const activeFiltersCount = React.useMemo(() => {
+    if (!isAdmin) return 0;
+    let cnt = 0;
+    if (filterProject !== 'All') cnt++;
+    if (filterLanguage !== 'All') cnt++;
+    if (filterSpeaker !== 'All') cnt++;
+    if (filterDate !== 'All') cnt++;
+    if (filterDateFrom || filterDateTo) cnt++;
+    if (filterMetaKey !== 'All' && filterMetaValue !== 'All') cnt++;
+    if (filterSearch.trim()) cnt++;
+    if (filterDuration !== 'All') cnt++;
+    if (filterLufs !== 'All') cnt++;
+    if (filterTrimmed !== 'All') cnt++;
+    return cnt;
+  }, [
+    isAdmin, filterProject, filterLanguage, filterSpeaker,
+    filterDate, filterDateFrom, filterDateTo, filterMetaKey,
+    filterMetaValue, filterSearch, filterDuration, filterLufs, filterTrimmed
+  ]);
+
+  const activeFiltersList = React.useMemo(() => {
+    if (!isAdmin) return [];
+    const list = [];
+    if (filterProject !== 'All') {
+      list.push({ id: 'project', label: `Project: ${filterProject}`, remove: () => setFilterProject('All') });
+    }
+    if (filterLanguage !== 'All') {
+      list.push({ id: 'language', label: `Lang: ${filterLanguage}`, remove: () => setFilterLanguage('All') });
+    }
+    if (filterSpeaker !== 'All') {
+      list.push({ id: 'speaker', label: `Speaker: ${filterSpeaker}`, remove: () => setFilterSpeaker('All') });
+    }
+    if (filterDate !== 'All') {
+      list.push({ id: 'date', label: `Date: ${filterDate}`, remove: () => setFilterDate('All') });
+    }
+    if (filterDateFrom || filterDateTo) {
+      list.push({
+        id: 'dateRange',
+        label: `Range: ${filterDateFrom || 'Start'} → ${filterDateTo || 'End'}`,
+        remove: () => { setFilterDateFrom(''); setFilterDateTo(''); }
+      });
+    }
+    if (filterMetaKey !== 'All' && filterMetaValue !== 'All') {
+      const opt = metadataFilterOptions.find(o => o.key === filterMetaKey);
+      const keyLabel = opt ? opt.label : filterMetaKey;
+      list.push({
+        id: 'meta',
+        label: `${keyLabel}: ${filterMetaValue}`,
+        remove: () => { setFilterMetaKey('All'); setFilterMetaValue('All'); }
+      });
+    }
+    if (filterSearch.trim()) {
+      list.push({ id: 'search', label: `Search: "${filterSearch.trim()}"`, remove: () => setFilterSearch('') });
+    }
+    if (filterDuration !== 'All') {
+      const durLabel = filterDuration === '<3' ? '< 3s' : filterDuration === '3-5' ? '3-5s' : filterDuration === '5-10' ? '5-10s' : '> 10s';
+      list.push({ id: 'duration', label: `Duration: ${durLabel}`, remove: () => setFilterDuration('All') });
+    }
+    if (filterLufs !== 'All') {
+      const lufsLabel = filterLufs === 'target' ? 'Target LUFS' : filterLufs === 'loud' ? 'Too Loud' : filterLufs === 'quiet' ? 'Too Quiet' : 'Untested';
+      list.push({ id: 'lufs', label: `LUFS: ${lufsLabel}`, remove: () => setFilterLufs('All') });
+    }
+    if (filterTrimmed !== 'All') {
+      list.push({ id: 'trimmed', label: `Audio: ${filterTrimmed === 'trimmed' ? 'Trimmed Only' : 'Original Only'}`, remove: () => setFilterTrimmed('All') });
+    }
+    return list;
+  }, [
+    isAdmin, filterProject, filterLanguage, filterSpeaker,
+    filterDate, filterDateFrom, filterDateTo, filterMetaKey,
+    filterMetaValue, filterSearch, filterDuration, filterLufs, filterTrimmed, metadataFilterOptions
+  ]);
+
   const displayedPhrases = React.useMemo(() => {
     return queue.filter(q => {
+      // 1. Project
       const matchProject = filterProject === 'All' || (q.projectName || q.companyId) === filterProject;
+      if (!matchProject) return false;
+
+      // 2. Language
       const matchLanguage = filterLanguage === 'All' || (q.language && q.language.toLowerCase() === filterLanguage.toLowerCase());
+      if (!matchLanguage) return false;
+
+      // If not admin, standard filters only
+      if (!isAdmin) return true;
+
+      // 3. Speaker ID
       const spk = getSpeakerId(q) || 'Unassigned';
       const matchSpeaker = filterSpeaker === 'All' || spk === filterSpeaker;
-      return matchProject && matchLanguage && matchSpeaker;
+      if (!matchSpeaker) return false;
+
+      // 4. Quick Date Filter
+      const pDate = q.recordedAt || q.createdAt;
+      if (filterDate !== 'All') {
+        const dStr = formatPhraseDate(pDate, filterDateFormat);
+        if (dStr !== filterDate) return false;
+      }
+
+      // 5. Date Range (From / To)
+      if (filterDateFrom || filterDateTo) {
+        if (!pDate) return false;
+        const pDateTime = new Date(pDate).getTime();
+        if (filterDateFrom) {
+          const fromTime = new Date(filterDateFrom).setHours(0, 0, 0, 0);
+          if (pDateTime < fromTime) return false;
+        }
+        if (filterDateTo) {
+          const toTime = new Date(filterDateTo).setHours(23, 59, 59, 999);
+          if (pDateTime > toTime) return false;
+        }
+      }
+
+      // 6. Dynamic Metadata Key & Value Filter (like in Phrase Downloads)
+      if (filterMetaKey && filterMetaKey !== 'All' && filterMetaValue && filterMetaValue !== 'All') {
+        const contributor = q.contributorId || {};
+        let valToMatch = null;
+        if (filterMetaKey === 'recording_date') {
+          valToMatch = formatPhraseDate(pDate, filterDateFormat);
+        } else if (filterMetaKey === 'gender') {
+          valToMatch = contributor.gender || q.gender || '';
+        } else if (filterMetaKey === 'speaker_id') {
+          valToMatch = spk;
+        } else if (filterMetaKey === 'first_name') {
+          valToMatch = contributor.firstname || contributor.username || '';
+        } else if (filterMetaKey === 'last_name') {
+          valToMatch = contributor.lastname || '';
+        } else if (filterMetaKey === 'wasAudioTrimmed') {
+          valToMatch = q.wasAudioTrimmed ? 'Trimmed' : 'Original';
+        } else if (q[filterMetaKey] !== undefined && q[filterMetaKey] !== null) {
+          valToMatch = q[filterMetaKey];
+        } else if (q.tags && q.tags[filterMetaKey] !== undefined && q.tags[filterMetaKey] !== null) {
+          valToMatch = q.tags[filterMetaKey];
+        }
+
+        if (String(valToMatch ?? '').trim().toLowerCase() !== String(filterMetaValue).trim().toLowerCase()) {
+          return false;
+        }
+      }
+
+      // 7. Text Search
+      if (filterSearch && filterSearch.trim()) {
+        const query = filterSearch.trim().toLowerCase();
+        const text = (q.text || '').toLowerCase();
+        const pId = (q.phraseId || '').toLowerCase();
+        const spkStr = (spk || '').toLowerCase();
+        const username = (q.contributorId?.username || '').toLowerCase();
+        const fname = (q.contributorId?.firstname || '').toLowerCase();
+        const lname = (q.contributorId?.lastname || '').toLowerCase();
+        const matches = text.includes(query) || pId.includes(query) || spkStr.includes(query) || username.includes(query) || fname.includes(query) || lname.includes(query);
+        if (!matches) return false;
+      }
+
+      // 8. Audio Duration
+      if (filterDuration !== 'All') {
+        const dur = Number(q.duration || 0);
+        if (filterDuration === '<3' && dur >= 3) return false;
+        if (filterDuration === '3-5' && (dur < 3 || dur > 5)) return false;
+        if (filterDuration === '5-10' && (dur < 5 || dur > 10)) return false;
+        if (filterDuration === '>10' && dur <= 10) return false;
+      }
+
+      // 9. LUFS Category
+      if (filterLufs !== 'All') {
+        const lufsVal = qcData[q._id]?.freq?.lufs !== undefined ? qcData[q._id]?.freq?.lufs : q.lufs;
+        if (filterLufs === 'untested' && (lufsVal !== undefined && lufsVal !== null)) return false;
+        if (filterLufs !== 'untested' && (lufsVal === undefined || lufsVal === null)) return false;
+        if (filterLufs === 'target' && (lufsVal < -24.0 || lufsVal > -18.0)) return false;
+        if (filterLufs === 'loud' && lufsVal <= -18.0) return false;
+        if (filterLufs === 'quiet' && lufsVal >= -24.0) return false;
+      }
+
+      // 10. Audio Trimmed Status
+      if (filterTrimmed !== 'All') {
+        const isTrimmed = Boolean(q.wasAudioTrimmed);
+        if (filterTrimmed === 'trimmed' && !isTrimmed) return false;
+        if (filterTrimmed === 'untrimmed' && isTrimmed) return false;
+      }
+
+      return true;
     });
-  }, [queue, filterProject, filterLanguage, filterSpeaker]);
+  }, [
+    queue, filterProject, filterLanguage, filterSpeaker, isAdmin,
+    filterDate, filterDateFormat, filterDateFrom, filterDateTo,
+    filterMetaKey, filterMetaValue, filterSearch, filterDuration, filterLufs, filterTrimmed, qcData
+  ]);
+
+  const paginatedPhrases = React.useMemo(() => {
+    if (pageSize <= 0) return displayedPhrases;
+    const start = (currentPage - 1) * pageSize;
+    return displayedPhrases.slice(start, start + pageSize);
+  }, [displayedPhrases, currentPage, pageSize]);
+
+  const totalPages = pageSize <= 0 ? 1 : Math.ceil(displayedPhrases.length / pageSize) || 1;
 
   const selectAllDisplayed = () => {
     const allIds = displayedPhrases.map(p => p._id);
@@ -656,70 +1007,387 @@ export default function QaPhrases() {
         ) : (
           <div className="space-y-6">
             {queue.length > 0 && (
-              <div className="flex flex-wrap items-center gap-3 mb-6 justify-start">
-                {/* Project Dropdown */}
-                <select 
-                  className="input w-full md:w-56 text-sm"
-                  value={filterProject}
-                  onChange={(e) => {
-                    setFilterProject(e.target.value);
-                    setFilterLanguage('All');
-                    setFilterSpeaker('All');
-                    setSelectedPhrases(new Set());
-                  }}
-                >
-                  <option value="All">All Projects</option>
-                  {[...new Set(queue.map(q => q.projectName || q.companyId).filter(Boolean))].sort().map(project => (
-                    <option key={project} value={project}>{project}</option>
-                  ))}
-                </select>
-
-                {/* Languages Dropdown */}
-                <select 
-                  className="input w-full md:w-48 capitalize text-sm"
-                  value={filterLanguage}
-                  onChange={(e) => {
-                    setFilterLanguage(e.target.value);
-                    setFilterSpeaker('All');
-                    setSelectedPhrases(new Set());
-                  }}
-                >
-                  <option value="All">{!isAdmin ? "All Approved Languages" : "All Languages"}</option>
-                  {availableLanguages.map(lang => (
-                    <option key={lang} value={lang} className="capitalize">
-                      {lang.charAt(0).toUpperCase() + lang.slice(1)}
-                    </option>
-                  ))}
-                </select>
-
-                {/* Speaker Dropdown (Admins Only) */}
-                {isAdmin && (
+              <div className="space-y-4 mb-6">
+                {/* Top Filter Controls Bar */}
+                <div className="flex flex-wrap items-center gap-3 justify-start">
+                  {/* Project Dropdown */}
                   <select 
-                    className="input w-full md:w-52 font-mono text-sm border-amber-500/40"
-                    value={filterSpeaker}
+                    className="input w-full md:w-56 text-sm"
+                    value={filterProject}
                     onChange={(e) => {
-                      setFilterSpeaker(e.target.value);
+                      setFilterProject(e.target.value);
+                      setFilterLanguage('All');
+                      setFilterSpeaker('All');
                       setSelectedPhrases(new Set());
                     }}
                   >
-                    <option value="All">All Speakers ({availableSpeakers.length})</option>
-                    {availableSpeakers.map(spk => (
-                      <option key={spk.id} value={spk.id}>
-                        {spk.id} ({spk.count} phrases)
+                    <option value="All">All Projects</option>
+                    {[...new Set(queue.map(q => q.projectName || q.companyId).filter(Boolean))].sort().map(project => (
+                      <option key={project} value={project}>{project}</option>
+                    ))}
+                  </select>
+
+                  {/* Languages Dropdown */}
+                  <select 
+                    className="input w-full md:w-48 capitalize text-sm"
+                    value={filterLanguage}
+                    onChange={(e) => {
+                      setFilterLanguage(e.target.value);
+                      setFilterSpeaker('All');
+                      setSelectedPhrases(new Set());
+                    }}
+                  >
+                    <option value="All">{!isAdmin ? "All Approved Languages" : "All Languages"}</option>
+                    {availableLanguages.map(lang => (
+                      <option key={lang} value={lang} className="capitalize">
+                        {lang.charAt(0).toUpperCase() + lang.slice(1)}
                       </option>
                     ))}
                   </select>
+
+                  {/* Speaker Dropdown (Admins Only) */}
+                  {isAdmin && (
+                    <select 
+                      className="input w-full md:w-52 font-mono text-sm border-amber-500/40"
+                      value={filterSpeaker}
+                      onChange={(e) => {
+                        setFilterSpeaker(e.target.value);
+                        setSelectedPhrases(new Set());
+                      }}
+                    >
+                      <option value="All">All Speakers ({availableSpeakers.length})</option>
+                      {availableSpeakers.map(spk => (
+                        <option key={spk.id} value={spk.id}>
+                          {spk.id} ({spk.count} phrases)
+                        </option>
+                      ))}
+                    </select>
+                  )}
+
+                  {/* Text Search (Admins Only) */}
+                  {isAdmin && (
+                    <div className="relative flex-1 min-w-[200px] max-w-md">
+                      <Search className="w-4 h-4 absolute left-3 top-3 text-neutral-400 pointer-events-none" />
+                      <input
+                        type="text"
+                        placeholder="Search script, ID, speaker..."
+                        value={filterSearch}
+                        onChange={(e) => setFilterSearch(e.target.value)}
+                        className="input pl-9 pr-8 w-full text-xs bg-neutral-900 border-neutral-700 text-white placeholder-neutral-500 rounded-lg focus:border-amber-500"
+                      />
+                      {filterSearch && (
+                        <button
+                          type="button"
+                          onClick={() => setFilterSearch('')}
+                          className="absolute right-2.5 top-2.5 text-neutral-400 hover:text-white"
+                          title="Clear search"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Admin Advanced Filters Button Toggle */}
+                  {isAdmin && (
+                    <button
+                      type="button"
+                      onClick={() => setShowAdvancedFilters(prev => !prev)}
+                      className={`px-3.5 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 border shadow-sm ${
+                        showAdvancedFilters || activeFiltersCount > 0
+                          ? 'bg-amber-500/20 text-amber-300 border-amber-500/50 shadow-amber-500/10'
+                          : 'bg-neutral-800 text-neutral-300 border-neutral-700 hover:bg-neutral-750 hover:text-white'
+                      }`}
+                    >
+                      <SlidersHorizontal className="w-3.5 h-3.5" />
+                      <span>Filters</span>
+                      {activeFiltersCount > 0 && (
+                        <span className="w-4 h-4 rounded-full bg-amber-500 text-black font-black text-[10px] flex items-center justify-center">
+                          {activeFiltersCount}
+                        </span>
+                      )}
+                      {showAdvancedFilters ? <ChevronUp className="w-3 h-3 ml-0.5" /> : <ChevronDown className="w-3 h-3 ml-0.5" />}
+                    </button>
+                  )}
+
+                  {/* Live Match Counter for Admins */}
+                  {isAdmin && (
+                    <div className="hidden lg:flex items-center text-xs font-mono font-bold px-3 py-2 rounded-lg bg-neutral-900 border border-neutral-800 text-neutral-300">
+                      <span>Showing <strong className="text-amber-400">{displayedPhrases.length}</strong> / {queue.length}</span>
+                    </div>
+                  )}
+
+                  {/* Edited Tab Batch Approve */}
+                  {activeTab === 'edited' && isAdmin && (
+                    <button
+                      type="button"
+                      onClick={handleApproveAllEditedPhrases}
+                      disabled={processing === 'all'}
+                      className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold text-xs rounded-lg transition-all shadow-sm flex items-center gap-1.5 ml-auto"
+                    >
+                      <Check className="w-4 h-4" /> Approve All Above
+                    </button>
+                  )}
+                </div>
+
+                {/* Expandable Advanced Filter Drawer (Admin Only, Modeled after Phrase Downloads) */}
+                {isAdmin && showAdvancedFilters && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="bg-neutral-900/95 border border-neutral-700/80 rounded-2xl p-5 shadow-2xl relative overflow-hidden backdrop-blur-md space-y-4"
+                  >
+                    {/* Ambient Glow */}
+                    <div className="absolute -top-20 -right-20 w-48 h-48 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
+                    <div className="absolute -bottom-20 -left-20 w-48 h-48 bg-primary-600/10 rounded-full blur-3xl pointer-events-none" />
+
+                    <div className="flex items-center justify-between border-b border-neutral-800 pb-3 relative z-10">
+                      <div className="flex items-center gap-2">
+                        <div className="p-1.5 rounded-lg bg-amber-500/20 text-amber-400">
+                          <Filter className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                            Advanced Phrase Filters
+                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-neutral-800 text-neutral-400 border border-neutral-700 font-mono">
+                              Phrase Downloads Parity
+                            </span>
+                          </h4>
+                          <p className="text-[11px] text-neutral-400">Filter recorded queue by date, format order, dynamic metadata keys, and audio parameters.</p>
+                        </div>
+                      </div>
+
+                      {activeFiltersCount > 0 && (
+                        <button
+                          type="button"
+                          onClick={handleResetFilters}
+                          className="text-xs text-rose-400 hover:text-rose-300 font-semibold transition-colors flex items-center gap-1"
+                        >
+                          <RotateCcw className="w-3 h-3" /> Reset All Filters
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 relative z-10">
+                      {/* Column 1: Date & Recording Format (Direct Phrase Downloads Parity) */}
+                      <div className="bg-neutral-850/80 border border-neutral-800 rounded-xl p-3.5 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <label className="text-xs font-bold text-neutral-300 uppercase tracking-wider flex items-center gap-1.5">
+                            <Calendar className="w-3.5 h-3.5 text-amber-400" />
+                            <span>1. Recording Date</span>
+                          </label>
+                          {/* Date Format Toggle (DD-MM-YYYY vs YYYY-MM-DD) */}
+                          <div className="flex items-center gap-1 bg-neutral-900 p-0.5 rounded-md border border-neutral-800">
+                            <button
+                              type="button"
+                              onClick={() => setFilterDateFormat("DD-MM-YYYY")}
+                              className={`px-2 py-0.5 text-[10px] font-mono font-bold rounded transition-all ${
+                                filterDateFormat === "DD-MM-YYYY"
+                                  ? "bg-amber-500 text-black font-bold"
+                                  : "text-neutral-400 hover:text-white"
+                              }`}
+                            >
+                              DD-MM-YYYY
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setFilterDateFormat("YYYY-MM-DD")}
+                              className={`px-2 py-0.5 text-[10px] font-mono font-bold rounded transition-all ${
+                                filterDateFormat === "YYYY-MM-DD"
+                                  ? "bg-amber-500 text-black font-bold"
+                                  : "text-neutral-400 hover:text-white"
+                              }`}
+                            >
+                              YYYY-MM-DD
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Available Recording Date Dropdown */}
+                        <div>
+                          <label className="block text-[11px] text-neutral-400 mb-1">Pick Recorded Date ({availableDates.length} available)</label>
+                          <select
+                            value={filterDate}
+                            onChange={(e) => setFilterDate(e.target.value)}
+                            className="input w-full text-xs font-mono bg-neutral-900 border-neutral-700 text-white rounded-lg p-2"
+                          >
+                            <option value="All">All Dates</option>
+                            {availableDates.map(d => (
+                              <option key={d.value} value={d.value}>
+                                {d.value} ({d.count} {d.count === 1 ? 'phrase' : 'phrases'})
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {/* Custom Date Range Picker */}
+                        <div className="pt-1 border-t border-neutral-800/80">
+                          <label className="block text-[11px] text-neutral-400 mb-1.5">Or Custom Range (From / To)</label>
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <input
+                                type="date"
+                                value={filterDateFrom}
+                                onChange={(e) => setFilterDateFrom(e.target.value)}
+                                className="w-full text-[11px] font-mono bg-neutral-900 border border-neutral-700 text-white rounded p-1.5 focus:border-amber-500"
+                                title="From Date"
+                              />
+                            </div>
+                            <div>
+                              <input
+                                type="date"
+                                value={filterDateTo}
+                                onChange={(e) => setFilterDateTo(e.target.value)}
+                                className="w-full text-[11px] font-mono bg-neutral-900 border border-neutral-700 text-white rounded p-1.5 focus:border-amber-500"
+                                title="To Date"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Column 2: Dynamic Metadata Field & Value (Exact Phrase Downloads Parity) */}
+                      <div className="bg-neutral-850/80 border border-neutral-800 rounded-xl p-3.5 space-y-3">
+                        <label className="text-xs font-bold text-neutral-300 uppercase tracking-wider flex items-center gap-1.5">
+                          <Tag className="w-3.5 h-3.5 text-cyan-400" />
+                          <span>2. Metadata Field & Value</span>
+                        </label>
+
+                        <div>
+                          <label className="block text-[11px] text-neutral-400 mb-1">Step 1: Select Metadata Key</label>
+                          <select
+                            value={filterMetaKey}
+                            onChange={(e) => handleMetaKeyChange(e.target.value)}
+                            className="input w-full text-xs font-mono bg-neutral-900 border-neutral-700 text-white rounded-lg p-2"
+                          >
+                            <option value="All">All Metadata Keys ({metadataFilterOptions.length} available)</option>
+                            {metadataFilterOptions.map(opt => (
+                              <option key={opt.key} value={opt.key}>
+                                {opt.label} ({opt.values?.length || 0} unique {opt.values?.length === 1 ? 'val' : 'vals'})
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="block text-[11px] text-neutral-400 mb-1">Step 2: Select Available Value</label>
+                          <select
+                            value={filterMetaValue}
+                            onChange={(e) => setFilterMetaValue(e.target.value)}
+                            disabled={filterMetaKey === 'All'}
+                            className="input w-full text-xs font-mono bg-neutral-900 border-neutral-700 text-white rounded-lg p-2 disabled:opacity-40"
+                          >
+                            <option value="All">All Values</option>
+                            {availableMetaValues.map(v => (
+                              <option key={v.value} value={v.value}>
+                                {v.value} ({v.count} {v.count === 1 ? 'phrase' : 'phrases'})
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {filterMetaKey !== 'All' && (
+                          <div className="flex items-center justify-between text-[11px] pt-1 text-neutral-400">
+                            <span>Key chosen: <strong className="text-cyan-400">{filterMetaKey}</strong></span>
+                            {filterMetaValue !== 'All' && (
+                              <button
+                                type="button"
+                                onClick={() => { setFilterMetaKey('All'); setFilterMetaValue('All'); }}
+                                className="text-rose-400 hover:text-white"
+                              >
+                                Clear Key
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Column 3: Audio & Quality Criteria */}
+                      <div className="bg-neutral-850/80 border border-neutral-800 rounded-xl p-3.5 space-y-3">
+                        <label className="text-xs font-bold text-neutral-300 uppercase tracking-wider flex items-center gap-1.5">
+                          <Volume2 className="w-3.5 h-3.5 text-emerald-400" />
+                          <span>3. Audio & Quality Criteria</span>
+                        </label>
+
+                        <div>
+                          <label className="block text-[11px] text-neutral-400 mb-1">Duration Range</label>
+                          <select
+                            value={filterDuration}
+                            onChange={(e) => setFilterDuration(e.target.value)}
+                            className="input w-full text-xs font-mono bg-neutral-900 border-neutral-700 text-white rounded-lg p-2"
+                          >
+                            <option value="All">All Durations</option>
+                            <option value="<3">&lt; 3 Seconds</option>
+                            <option value="3-5">3 - 5 Seconds</option>
+                            <option value="5-10">5 - 10 Seconds</option>
+                            <option value=">10">&gt; 10 Seconds</option>
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="block text-[11px] text-neutral-400 mb-1">BS.1770-4 LUFS Classification</label>
+                          <select
+                            value={filterLufs}
+                            onChange={(e) => setFilterLufs(e.target.value)}
+                            className="input w-full text-xs font-mono bg-neutral-900 border-neutral-700 text-white rounded-lg p-2"
+                          >
+                            <option value="All">All LUFS Ratings</option>
+                            <option value="target">Target (-24.0 to -18.0 LUFS)</option>
+                            <option value="loud">Too Loud (&gt; -18.0 LUFS)</option>
+                            <option value="quiet">Too Quiet (&lt; -24.0 LUFS)</option>
+                            <option value="untested">Untested / No Speech</option>
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="block text-[11px] text-neutral-400 mb-1">Audio Trim Status</label>
+                          <select
+                            value={filterTrimmed}
+                            onChange={(e) => setFilterTrimmed(e.target.value)}
+                            className="input w-full text-xs font-mono bg-neutral-900 border-neutral-700 text-white rounded-lg p-2"
+                          >
+                            <option value="All">All Recordings</option>
+                            <option value="trimmed">Trimmed Recordings Only</option>
+                            <option value="untrimmed">Original Recordings Only</option>
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+                  </motion.div>
                 )}
 
-                {activeTab === 'edited' && isAdmin && (
-                  <button
-                    type="button"
-                    onClick={handleApproveAllEditedPhrases}
-                    disabled={processing === 'all'}
-                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold text-xs rounded-lg transition-all shadow-sm flex items-center gap-1.5 ml-auto"
-                  >
-                    <Check className="w-4 h-4" /> Approve All Above
-                  </button>
+                {/* Active Filter Chips Pill Row */}
+                {isAdmin && activeFiltersList.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-2 p-2.5 bg-neutral-900/60 border border-neutral-800 rounded-xl">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-neutral-400 mr-1 flex items-center gap-1">
+                      <Sparkles className="w-3 h-3 text-amber-400" /> Active:
+                    </span>
+                    {activeFiltersList.map(item => (
+                      <span
+                        key={item.id}
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-500/15 text-amber-300 border border-amber-500/30 transition-all hover:border-amber-500/60"
+                      >
+                        <span>{item.label}</span>
+                        <button
+                          type="button"
+                          onClick={item.remove}
+                          className="hover:text-white hover:bg-amber-500/30 rounded-full p-0.5 transition-colors"
+                          title={`Remove ${item.label}`}
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </span>
+                    ))}
+
+                    <button
+                      type="button"
+                      onClick={handleResetFilters}
+                      className="ml-auto text-xs text-neutral-400 hover:text-rose-400 font-semibold underline transition-colors cursor-pointer"
+                    >
+                      Clear All Filters
+                    </button>
+                  </div>
                 )}
               </div>
             )}
@@ -735,7 +1403,7 @@ export default function QaPhrases() {
                       onChange={selectAllDisplayed}
                       className="w-4 h-4 rounded border-neutral-600 bg-neutral-800 text-amber-500 focus:ring-amber-500 cursor-pointer"
                     />
-                    <span>Select All Displayed ({displayedPhrases.length})</span>
+                    <span>Select All Matching Filtered Phrases ({displayedPhrases.length})</span>
                   </label>
                   {selectedPhrases.size > 0 && (
                     <span className="px-2 py-0.5 bg-amber-500/20 text-amber-300 rounded text-xs font-mono font-bold border border-amber-500/30">
@@ -775,7 +1443,7 @@ export default function QaPhrases() {
             )}
 
             <AnimatePresence>
-              {displayedPhrases.map((p) => (
+              {paginatedPhrases.map((p) => (
                 <motion.div 
                   key={p._id}
                   layout
@@ -1306,7 +1974,8 @@ export default function QaPhrases() {
               ))}
             </AnimatePresence>
 
-            {(filterProject === 'All' ? queue : queue.filter(q => (q.projectName || q.companyId) === filterProject)).length === 0 && (
+            {/* Empty States: When whole queue is empty vs when active filters match nothing */}
+            {queue.length === 0 ? (
               <motion.div 
                 initial={{ opacity: 0 }} 
                 animate={{ opacity: 1 }} 
@@ -1314,8 +1983,82 @@ export default function QaPhrases() {
               >
                 <AlertCircle className="w-12 h-12 mx-auto mb-4 opacity-50" />
                 <p className="text-xl">The queue is empty!</p>
-                <p>No phrases currently in the {activeTab === 'approved' ? 'Approved Phrases' : 'Pending Review'} view.</p>
+                <p>No phrases currently in the {activeTab === 'approved' ? 'Approved Phrases' : activeTab === 'edited' ? 'Edited Phrases' : 'Pending Review'} view.</p>
               </motion.div>
+            ) : displayedPhrases.length === 0 ? (
+              <motion.div 
+                initial={{ opacity: 0 }} 
+                animate={{ opacity: 1 }} 
+                className="card text-center py-16 px-4 border border-dashed border-neutral-700 bg-neutral-900/40 rounded-2xl my-6"
+              >
+                <div className="w-12 h-12 rounded-full bg-neutral-800 text-amber-400 mx-auto mb-3 flex items-center justify-center border border-neutral-700">
+                  <Filter className="w-6 h-6" />
+                </div>
+                <h3 className="text-base font-bold text-neutral-200">No Matching Phrases Found</h3>
+                <p className="text-xs text-neutral-400 mt-1 max-w-sm mx-auto">
+                  There are {queue.length} phrases loaded in this view, but none match your active filter settings.
+                </p>
+                {activeFiltersCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleResetFilters}
+                    className="mt-4 px-4 py-2 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-xs font-bold rounded-lg transition-colors inline-flex items-center gap-1.5"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" /> Clear All Filters
+                  </button>
+                )}
+              </motion.div>
+            ) : null}
+
+            {/* Pagination Controls */}
+            {displayedPhrases.length > 0 && (
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-4 p-4 bg-neutral-900/80 border border-neutral-800 rounded-xl mt-6 text-xs text-neutral-400 shadow-sm">
+                <div className="flex items-center gap-2">
+                  <span>Rows per page:</span>
+                  <select
+                    value={pageSize}
+                    onChange={(e) => {
+                      setPageSize(Number(e.target.value));
+                      setCurrentPage(1);
+                    }}
+                    className="bg-neutral-950 border border-neutral-800 text-white rounded px-2 py-1 focus:outline-none focus:border-amber-500"
+                  >
+                    <option value="25">25</option>
+                    <option value="50">50</option>
+                    <option value="100">100</option>
+                    <option value="0">All</option>
+                  </select>
+                  <span className="ml-2 font-mono">
+                    Showing {pageSize <= 0 ? displayedPhrases.length : Math.min((currentPage - 1) * pageSize + 1, displayedPhrases.length)} - {pageSize <= 0 ? displayedPhrases.length : Math.min(currentPage * pageSize, displayedPhrases.length)} of {displayedPhrases.length} phrases
+                  </span>
+                </div>
+
+                {pageSize > 0 && totalPages > 1 && (
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                      disabled={currentPage <= 1}
+                      className="p-1.5 rounded-lg bg-neutral-850 hover:bg-neutral-800 disabled:opacity-30 disabled:cursor-not-allowed text-white transition-colors"
+                      title="Previous Page"
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                    </button>
+                    <span className="px-3 font-mono font-bold text-neutral-200">
+                      Page {currentPage} of {totalPages}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                      disabled={currentPage >= totalPages}
+                      className="p-1.5 rounded-lg bg-neutral-850 hover:bg-neutral-800 disabled:opacity-30 disabled:cursor-not-allowed text-white transition-colors"
+                      title="Next Page"
+                    >
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                  </div>
+                )}
+              </div>
             )}
           </div>
         )}
