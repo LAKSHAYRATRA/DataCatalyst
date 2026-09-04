@@ -1223,6 +1223,11 @@ export async function getQaQueue(req, res) {
       }
       query.isEdited = true;
       query.editedPhraseStatus = { $nin: ["approved", "rejected"] };
+    } else if (requestedStatus === "all") {
+      if (!req.user || !req.user.isAdmin) {
+        return res.status(403).json({ error: "Only admins can access all phrases" });
+      }
+      // Omit query.status so it gets recorded, approved, and rejected
     } else {
       query.status = requestedStatus;
     }
@@ -1280,11 +1285,67 @@ export async function getQaQueue(req, res) {
       }
     }
 
-    const phrases = await Phrase.find(query)
+    let phrases = await Phrase.find(query)
       .populate("contributorId", "firstname lastname username email speaker_id gender")
       .populate("editedBy", "firstname lastname username email")
       .sort({ editedAt: -1, recordedAt: -1, createdAt: -1 })
       .lean();
+
+    // Support filterKey & filterValue query params identical to Phrase Downloads
+    const filterKey = req.query.filterKey ? String(req.query.filterKey).trim() : "";
+    const filterValue = req.query.filterValue ? String(req.query.filterValue).trim() : "";
+
+    if (filterKey && filterValue && filterValue !== "All") {
+      const cleanTargetVal = filterValue.toLowerCase();
+      phrases = phrases.filter(p => {
+        const contributor = p.contributorId || {};
+        if (filterKey === "recording_date") {
+          const dateVal = p.recordedAt || p.createdAt;
+          if (!dateVal) return false;
+          const d = new Date(dateVal);
+          if (isNaN(d.getTime())) return false;
+          const day = String(d.getDate()).padStart(2, "0");
+          const month = String(d.getMonth() + 1).padStart(2, "0");
+          const year = d.getFullYear();
+          const ddmmyyyy = `${day}-${month}-${year}`.toLowerCase();
+          const yyyymmdd = `${year}-${month}-${day}`.toLowerCase();
+
+          const utcDay = String(d.getUTCDate()).padStart(2, "0");
+          const utcMonth = String(d.getUTCMonth() + 1).padStart(2, "0");
+          const utcYear = d.getUTCFullYear();
+          const utcDdmmyyyy = `${utcDay}-${utcMonth}-${utcYear}`.toLowerCase();
+          const utcYyyymmdd = `${utcYear}-${utcMonth}-${utcDay}`.toLowerCase();
+
+          return ddmmyyyy === cleanTargetVal || yyyymmdd === cleanTargetVal || utcDdmmyyyy === cleanTargetVal || utcYyyymmdd === cleanTargetVal;
+        }
+        if (filterKey === "first_name") {
+          const fName = contributor.firstname ? String(contributor.firstname).trim() : (contributor.username || "");
+          return fName.toLowerCase() === cleanTargetVal;
+        }
+        if (filterKey === "last_name") {
+          const lName = contributor.lastname ? String(contributor.lastname).trim() : "";
+          return lName.toLowerCase() === cleanTargetVal;
+        }
+        if (filterKey === "speaker_id") {
+          const spk = contributor.speaker_id || p.speaker_id || p.assigned_speaker_id || "";
+          return spk.toLowerCase() === cleanTargetVal;
+        }
+        if (filterKey === "language") {
+          return String(p.language || "").trim().toLowerCase() === cleanTargetVal;
+        }
+        if (filterKey === "gender") {
+          const gdr = contributor.gender || p.gender || "";
+          return String(gdr).trim().toLowerCase() === cleanTargetVal;
+        }
+        if (p.tags && p.tags[filterKey] !== undefined) {
+          return String(p.tags[filterKey]).trim().toLowerCase() === cleanTargetVal;
+        }
+        if (p[filterKey] !== undefined) {
+          return String(p[filterKey]).trim().toLowerCase() === cleanTargetVal;
+        }
+        return false;
+      });
+    }
 
     // Map companyId to friendly projectName dynamically
     const companies = await Company.find({}).lean();

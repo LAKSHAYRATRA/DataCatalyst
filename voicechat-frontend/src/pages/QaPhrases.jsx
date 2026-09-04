@@ -699,11 +699,12 @@ export default function QaPhrases() {
       if (dateVal) {
         const d = new Date(dateVal);
         if (!isNaN(d.getTime())) {
-          const day = String(d.getDate()).padStart(2, '0');
-          const month = String(d.getMonth() + 1).padStart(2, '0');
-          const year = d.getFullYear();
-          const formattedDate = filterDateFormat === 'YYYY-MM-DD' ? `${year}-${month}-${day}` : `${day}-${month}-${year}`;
-          addVal('recording_date', formattedDate);
+          // Format with UTC date (matching Phrase Downloads server evaluation)
+          const uDay = String(d.getUTCDate()).padStart(2, '0');
+          const uMonth = String(d.getUTCMonth() + 1).padStart(2, '0');
+          const uYear = d.getUTCFullYear();
+          const utcFormatted = filterDateFormat === 'YYYY-MM-DD' ? `${uYear}-${uMonth}-${uDay}` : `${uDay}-${uMonth}-${uYear}`;
+          addVal('recording_date', utcFormatted);
         }
       }
 
@@ -757,9 +758,34 @@ export default function QaPhrases() {
     return found ? found.values : [];
   }, [metadataFilterOptions, filterMetaKey]);
 
+  const handleDateChange = (newDate) => {
+    setFilterDate(newDate);
+    setFilterMetaKey('recording_date');
+    setFilterMetaValue(newDate);
+    setSelectedPhrases(new Set());
+    setCurrentPage(1);
+  };
+
   const handleMetaKeyChange = (newKey) => {
     setFilterMetaKey(newKey);
-    setFilterMetaValue('All');
+    const opt = metadataFilterOptions.find(o => o.key === newKey);
+    if (newKey === 'recording_date') {
+      const val = opt && opt.values && opt.values.length > 0 ? opt.values[0].value : 'All';
+      setFilterMetaValue(val);
+      setFilterDate(val);
+    } else {
+      setFilterMetaValue('All');
+    }
+    setSelectedPhrases(new Set());
+    setCurrentPage(1);
+  };
+
+  const handleMetaValueChange = (newVal) => {
+    setFilterMetaValue(newVal);
+    if (filterMetaKey === 'recording_date') {
+      setFilterDate(newVal);
+    }
+    setSelectedPhrases(new Set());
     setCurrentPage(1);
   };
 
@@ -786,9 +812,9 @@ export default function QaPhrases() {
     if (filterProject !== 'All') cnt++;
     if (filterLanguage !== 'All') cnt++;
     if (filterSpeaker !== 'All') cnt++;
-    if (filterDate !== 'All') cnt++;
+    if (filterDate !== 'All' || (filterMetaKey === 'recording_date' && filterMetaValue !== 'All')) cnt++;
     if (filterDateFrom || filterDateTo) cnt++;
-    if (filterMetaKey !== 'All' && filterMetaValue !== 'All') cnt++;
+    if (filterMetaKey !== 'All' && filterMetaKey !== 'recording_date' && filterMetaValue !== 'All') cnt++;
     if (filterSearch.trim()) cnt++;
     if (filterDuration !== 'All') cnt++;
     if (filterLufs !== 'All') cnt++;
@@ -812,8 +838,9 @@ export default function QaPhrases() {
     if (filterSpeaker !== 'All') {
       list.push({ id: 'speaker', label: `Speaker: ${filterSpeaker}`, remove: () => setFilterSpeaker('All') });
     }
-    if (filterDate !== 'All') {
-      list.push({ id: 'date', label: `Date: ${filterDate}`, remove: () => setFilterDate('All') });
+    const effectiveDate = (filterMetaKey === 'recording_date' && filterMetaValue !== 'All') ? filterMetaValue : (filterDate !== 'All' ? filterDate : null);
+    if (effectiveDate) {
+      list.push({ id: 'date', label: `Date: ${effectiveDate}`, remove: () => { setFilterDate('All'); setFilterMetaValue('All'); } });
     }
     if (filterDateFrom || filterDateTo) {
       list.push({
@@ -822,7 +849,7 @@ export default function QaPhrases() {
         remove: () => { setFilterDateFrom(''); setFilterDateTo(''); }
       });
     }
-    if (filterMetaKey !== 'All' && filterMetaValue !== 'All') {
+    if (filterMetaKey !== 'All' && filterMetaKey !== 'recording_date' && filterMetaValue !== 'All') {
       const opt = metadataFilterOptions.find(o => o.key === filterMetaKey);
       const keyLabel = opt ? opt.label : filterMetaKey;
       list.push({
@@ -869,23 +896,38 @@ export default function QaPhrases() {
       const matchSpeaker = filterSpeaker === 'All' || spk === filterSpeaker;
       if (!matchSpeaker) return false;
 
-      // 4. Quick Date Filter (matches both DD-MM-YYYY and YYYY-MM-DD identically to Phrase Downloads)
-      const pDate = q.recordedAt || q.createdAt;
-      if (filterDate !== 'All') {
+      // 4. Date Filter (Exact Phrase Downloads Parity: Matches UTC and Local, DD-MM-YYYY and YYYY-MM-DD)
+      const activeDateFilter = (filterMetaKey === 'recording_date' && filterMetaValue && filterMetaValue !== 'All')
+        ? filterMetaValue
+        : (filterDate && filterDate !== 'All' ? filterDate : null);
+
+      if (activeDateFilter) {
+        const pDate = q.recordedAt || q.createdAt;
         if (!pDate) return false;
         const d = new Date(pDate);
         if (isNaN(d.getTime())) return false;
-        const day = String(d.getDate()).padStart(2, '0');
-        const month = String(d.getMonth() + 1).padStart(2, '0');
-        const year = d.getFullYear();
-        const ddmmyyyy = `${day}-${month}-${year}`.toLowerCase();
-        const yyyymmdd = `${year}-${month}-${day}`.toLowerCase();
-        const targetDate = String(filterDate).trim().toLowerCase();
-        if (ddmmyyyy !== targetDate && yyyymmdd !== targetDate) return false;
+
+        const uDay = String(d.getUTCDate()).padStart(2, '0');
+        const uMonth = String(d.getUTCMonth() + 1).padStart(2, '0');
+        const uYear = d.getUTCFullYear();
+        const uDdmmyyyy = `${uDay}-${uMonth}-${uYear}`.toLowerCase();
+        const uYyyymmdd = `${uYear}-${uMonth}-${uDay}`.toLowerCase();
+
+        const lDay = String(d.getDate()).padStart(2, '0');
+        const lMonth = String(d.getMonth() + 1).padStart(2, '0');
+        const lYear = d.getFullYear();
+        const lDdmmyyyy = `${lDay}-${lMonth}-${lYear}`.toLowerCase();
+        const lYyyymmdd = `${lYear}-${lMonth}-${lDay}`.toLowerCase();
+
+        const target = String(activeDateFilter).trim().toLowerCase();
+        if (uDdmmyyyy !== target && uYyyymmdd !== target && lDdmmyyyy !== target && lYyyymmdd !== target) {
+          return false;
+        }
       }
 
       // 5. Date Range (From / To)
       if (filterDateFrom || filterDateTo) {
+        const pDate = q.recordedAt || q.createdAt;
         if (!pDate) return false;
         const pDateTime = new Date(pDate).getTime();
         if (filterDateFrom) {
@@ -899,23 +941,11 @@ export default function QaPhrases() {
       }
 
       // 6. Dynamic Metadata Key & Value Filter (Exact Phrase Downloads Parity)
-      if (filterMetaKey && filterMetaKey !== 'All' && filterMetaValue && filterMetaValue !== 'All') {
+      if (filterMetaKey && filterMetaKey !== 'All' && filterMetaKey !== 'recording_date' && filterMetaValue && filterMetaValue !== 'All') {
         const contributor = q.contributorId || {};
         const cleanTargetVal = String(filterMetaValue).trim().toLowerCase();
 
-        if (filterMetaKey === 'recording_date') {
-          if (!pDate) return false;
-          const d = new Date(pDate);
-          if (isNaN(d.getTime())) return false;
-          const day = String(d.getDate()).padStart(2, '0');
-          const month = String(d.getMonth() + 1).padStart(2, '0');
-          const year = d.getFullYear();
-          const ddmmyyyy = `${day}-${month}-${year}`.toLowerCase();
-          const yyyymmdd = `${year}-${month}-${day}`.toLowerCase();
-          if (ddmmyyyy !== cleanTargetVal && yyyymmdd !== cleanTargetVal) {
-            return false;
-          }
-        } else if (filterMetaKey === 'first_name') {
+        if (filterMetaKey === 'first_name') {
           const fName = contributor.firstname ? String(contributor.firstname).trim() : (contributor.username || '');
           if (fName.toLowerCase() !== cleanTargetVal) return false;
         } else if (filterMetaKey === 'last_name') {
@@ -1044,6 +1074,18 @@ export default function QaPhrases() {
             </button>
             {isAdmin && (
               <button
+                onClick={() => { setActiveTab('all'); setSelectedPhrases(new Set()); }}
+                className={`px-4 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-2 ${
+                  activeTab === 'all'
+                    ? 'bg-primary-600 text-white shadow-md'
+                    : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white'
+                }`}
+              >
+                <Layers className="w-3.5 h-3.5" /> All Statuses
+              </button>
+            )}
+            {isAdmin && (
+              <button
                 onClick={() => { setActiveTab('edited'); setSelectedPhrases(new Set()); }}
                 className={`px-4 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-2 ${
                   activeTab === 'edited'
@@ -1119,6 +1161,26 @@ export default function QaPhrases() {
                         </option>
                       ))}
                     </select>
+                  )}
+
+                  {/* Quick Date Selector with Parity to Phrase Downloads (Admins Only) */}
+                  {isAdmin && availableDates.length > 0 && (
+                    <div className="flex items-center gap-1.5 bg-neutral-900 border border-neutral-700 rounded-lg px-2.5 py-1.5 shadow-sm">
+                      <Calendar className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                      <select
+                        className="bg-transparent text-xs font-mono text-white focus:outline-none cursor-pointer"
+                        value={filterMetaKey === 'recording_date' && filterMetaValue !== 'All' ? filterMetaValue : filterDate}
+                        onChange={(e) => handleDateChange(e.target.value)}
+                        title="Filter queue by recording date"
+                      >
+                        <option value="All" className="bg-neutral-900 text-white">All Dates ({availableDates.length})</option>
+                        {availableDates.map(d => (
+                          <option key={d.value} value={d.value} className="bg-neutral-900 text-white">
+                            {d.value} ({d.count} {d.count === 1 ? 'phrase' : 'phrases'})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
                   )}
 
                   {/* Text Search (Admins Only) */}
@@ -1265,8 +1327,8 @@ export default function QaPhrases() {
                         <div>
                           <label className="block text-[11px] text-neutral-400 mb-1">Pick Recorded Date ({availableDates.length} available)</label>
                           <select
-                            value={filterDate}
-                            onChange={(e) => setFilterDate(e.target.value)}
+                            value={filterMetaKey === 'recording_date' && filterMetaValue !== 'All' ? filterMetaValue : filterDate}
+                            onChange={(e) => handleDateChange(e.target.value)}
                             className="input w-full text-xs font-mono bg-neutral-900 border-neutral-700 text-white rounded-lg p-2"
                           >
                             <option value="All">All Dates</option>
@@ -1331,7 +1393,7 @@ export default function QaPhrases() {
                           <label className="block text-[11px] text-neutral-400 mb-1">Step 2: Select Available Value</label>
                           <select
                             value={filterMetaValue}
-                            onChange={(e) => setFilterMetaValue(e.target.value)}
+                            onChange={(e) => handleMetaValueChange(e.target.value)}
                             disabled={filterMetaKey === 'All'}
                             className="input w-full text-xs font-mono bg-neutral-900 border-neutral-700 text-white rounded-lg p-2 disabled:opacity-40"
                           >
