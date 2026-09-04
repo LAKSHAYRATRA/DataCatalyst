@@ -1304,11 +1304,6 @@ export async function getQaQueue(req, res) {
           if (!dateVal) return false;
           const d = new Date(dateVal);
           if (isNaN(d.getTime())) return false;
-          const day = String(d.getDate()).padStart(2, "0");
-          const month = String(d.getMonth() + 1).padStart(2, "0");
-          const year = d.getFullYear();
-          const ddmmyyyy = `${day}-${month}-${year}`.toLowerCase();
-          const yyyymmdd = `${year}-${month}-${day}`.toLowerCase();
 
           const utcDay = String(d.getUTCDate()).padStart(2, "0");
           const utcMonth = String(d.getUTCMonth() + 1).padStart(2, "0");
@@ -1316,7 +1311,7 @@ export async function getQaQueue(req, res) {
           const utcDdmmyyyy = `${utcDay}-${utcMonth}-${utcYear}`.toLowerCase();
           const utcYyyymmdd = `${utcYear}-${utcMonth}-${utcDay}`.toLowerCase();
 
-          return ddmmyyyy === cleanTargetVal || yyyymmdd === cleanTargetVal || utcDdmmyyyy === cleanTargetVal || utcYyyymmdd === cleanTargetVal;
+          return utcDdmmyyyy === cleanTargetVal || utcYyyymmdd === cleanTargetVal;
         }
         if (filterKey === "first_name") {
           const fName = contributor.firstname ? String(contributor.firstname).trim() : (contributor.username || "");

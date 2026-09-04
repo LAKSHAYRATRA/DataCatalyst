@@ -34,10 +34,15 @@ function formatPhraseDate(dateVal, format = 'DD-MM-YYYY') {
   if (!dateVal) return null;
   const d = new Date(dateVal);
   if (isNaN(d.getTime())) return null;
-  const day = String(d.getDate()).padStart(2, '0');
-  const month = String(d.getMonth() + 1).padStart(2, '0');
-  const year = d.getFullYear();
+  const day = String(d.getUTCDate()).padStart(2, '0');
+  const month = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const year = d.getUTCFullYear();
   return format === 'YYYY-MM-DD' ? `${year}-${month}-${day}` : `${day}-${month}-${year}`;
+}
+
+function getPhraseDateFormatted(p, format = 'DD-MM-YYYY') {
+  const dateVal = p?.recordedAt || p?.createdAt;
+  return formatPhraseDate(dateVal, format);
 }
 
 function normalizeProjectName(name) {
@@ -695,17 +700,9 @@ export default function QaPhrases() {
       const lang = String(p.language || '').trim();
       const gdr = contributor.gender ? String(contributor.gender).trim().toLowerCase() : (p.gender ? String(p.gender).trim().toLowerCase() : '');
 
-      const dateVal = p.recordedAt || p.createdAt;
-      if (dateVal) {
-        const d = new Date(dateVal);
-        if (!isNaN(d.getTime())) {
-          // Format with UTC date (matching Phrase Downloads server evaluation)
-          const uDay = String(d.getUTCDate()).padStart(2, '0');
-          const uMonth = String(d.getUTCMonth() + 1).padStart(2, '0');
-          const uYear = d.getUTCFullYear();
-          const utcFormatted = filterDateFormat === 'YYYY-MM-DD' ? `${uYear}-${uMonth}-${uDay}` : `${uDay}-${uMonth}-${uYear}`;
-          addVal('recording_date', utcFormatted);
-        }
+      const formattedDate = getPhraseDateFormatted(p, filterDateFormat);
+      if (formattedDate) {
+        addVal('recording_date', formattedDate);
       }
 
       if (fName) addVal('first_name', fName);
@@ -896,31 +893,17 @@ export default function QaPhrases() {
       const matchSpeaker = filterSpeaker === 'All' || spk === filterSpeaker;
       if (!matchSpeaker) return false;
 
-      // 4. Date Filter (Exact Phrase Downloads Parity: Matches UTC and Local, DD-MM-YYYY and YYYY-MM-DD)
+      // 4. Date Filter (Exact 1:1 match with metadataFilterOptions and Phrase Downloads)
       const activeDateFilter = (filterMetaKey === 'recording_date' && filterMetaValue && filterMetaValue !== 'All')
         ? filterMetaValue
         : (filterDate && filterDate !== 'All' ? filterDate : null);
 
       if (activeDateFilter) {
-        const pDate = q.recordedAt || q.createdAt;
-        if (!pDate) return false;
-        const d = new Date(pDate);
-        if (isNaN(d.getTime())) return false;
-
-        const uDay = String(d.getUTCDate()).padStart(2, '0');
-        const uMonth = String(d.getUTCMonth() + 1).padStart(2, '0');
-        const uYear = d.getUTCFullYear();
-        const uDdmmyyyy = `${uDay}-${uMonth}-${uYear}`.toLowerCase();
-        const uYyyymmdd = `${uYear}-${uMonth}-${uDay}`.toLowerCase();
-
-        const lDay = String(d.getDate()).padStart(2, '0');
-        const lMonth = String(d.getMonth() + 1).padStart(2, '0');
-        const lYear = d.getFullYear();
-        const lDdmmyyyy = `${lDay}-${lMonth}-${lYear}`.toLowerCase();
-        const lYyyymmdd = `${lYear}-${lMonth}-${lDay}`.toLowerCase();
-
+        const ddmmyyyy = getPhraseDateFormatted(q, 'DD-MM-YYYY');
+        const yyyymmdd = getPhraseDateFormatted(q, 'YYYY-MM-DD');
         const target = String(activeDateFilter).trim().toLowerCase();
-        if (uDdmmyyyy !== target && uYyyymmdd !== target && lDdmmyyyy !== target && lYyyymmdd !== target) {
+
+        if (ddmmyyyy?.toLowerCase() !== target && yyyymmdd?.toLowerCase() !== target) {
           return false;
         }
       }
