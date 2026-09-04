@@ -2191,31 +2191,54 @@ export default function QaPhrases() {
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.95 }}
-                className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 w-full max-w-lg shadow-2xl relative text-left text-white"
+                className="bg-neutral-900/95 border border-neutral-800 rounded-2xl p-6 w-full max-w-2xl shadow-2xl relative text-left text-white backdrop-blur-xl"
               >
-                <div className="flex items-center justify-between border-b border-neutral-800 pb-4 mb-5">
+                <div className="flex items-center justify-between border-b border-neutral-800 pb-4 mb-4">
                   <div className="flex items-center gap-3">
-                    <div className="bg-purple-500/10 text-purple-400 p-2.5 rounded-xl border border-purple-500/20 text-lg">
+                    <div className="bg-purple-500/10 text-purple-400 p-2.5 rounded-xl border border-purple-500/20 text-lg flex items-center justify-center">
                       ✂️
                     </div>
                     <div>
-                      <h3 className="font-bold text-lg text-white">Trim Phrase Silence</h3>
-                      <p className="text-xs text-neutral-400 font-mono">ID: {trimmingPhrase.phraseId}</p>
+                      <h3 className="font-bold text-lg text-white tracking-tight">Trim Phrase Silence</h3>
+                      <p className="text-xs text-neutral-400 font-mono flex items-center gap-2">
+                        <span>ID: <b className="text-neutral-300">{trimmingPhrase.phraseId}</b></span>
+                        {trimmingPhrase.speakerId && (
+                          <span>• Speaker: <b className="text-neutral-300">{trimmingPhrase.speakerId}</b></span>
+                        )}
+                      </p>
                     </div>
                   </div>
                   <button
                     onClick={() => { setShowTrimModal(false); setTrimmingPhrase(null); }}
-                    className="p-2 text-neutral-400 hover:text-white rounded-lg transition-colors"
+                    className="p-2 text-neutral-400 hover:text-white rounded-lg hover:bg-neutral-800/80 transition-colors"
+                    title="Close Modal"
                   >
                     ✕
                   </button>
                 </div>
 
-                <div className="bg-neutral-950 p-4 rounded-xl border border-neutral-800 mb-6">
-                  <p className="text-sm font-medium text-neutral-300 italic mb-2">"{trimmingPhrase.text}"</p>
-                  <div className="flex items-center justify-between text-xs text-neutral-400 font-mono">
-                    <span>Original Duration: <b>{trimmingPhrase.duration ? `${trimmingPhrase.duration}s` : "Unknown"}</b></span>
-                    <span>Trimmed Duration: <b className="text-emerald-400">{(Math.max(0, endTrimSec - startTrimSec)).toFixed(2)}s</b></span>
+                <div className="bg-neutral-950/80 p-4 rounded-xl border border-neutral-800/90 mb-4 shadow-sm">
+                  <p className="text-sm font-medium text-neutral-200 italic mb-3 leading-relaxed">
+                    "{trimmingPhrase.text}"
+                  </p>
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-xs font-mono pt-2 border-t border-neutral-900 text-neutral-400">
+                    <div className="flex items-center gap-2">
+                      <span>Audio Length:</span>
+                      <span className="font-bold text-neutral-200 bg-neutral-900 px-2.5 py-0.5 rounded border border-neutral-800">
+                        {trimmingPhrase.duration ? `${Number(trimmingPhrase.duration).toFixed(2)}s` : "Unknown"}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span>Trimmed Result:</span>
+                      <span className="font-bold text-emerald-400 bg-emerald-950/70 px-2.5 py-0.5 rounded border border-emerald-800/80">
+                        {(Math.max(0, endTrimSec - startTrimSec)).toFixed(2)}s
+                      </span>
+                      {trimmingPhrase.duration && (Number(trimmingPhrase.duration) - (endTrimSec - startTrimSec) > 0.05) && (
+                        <span className="text-[11px] text-purple-400 font-bold">
+                          (-{(Number(trimmingPhrase.duration) - (endTrimSec - startTrimSec)).toFixed(2)}s cut)
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
 
@@ -2234,11 +2257,15 @@ export default function QaPhrases() {
                 </div>
 
                 {/* Precise Numeric Time Inputs */}
-                <div className="grid grid-cols-2 gap-4 mb-6">
-                  <div>
-                    <label className="block text-[11px] font-bold text-emerald-400 uppercase tracking-wider mb-1">
-                      Start Cut (Seconds):
-                    </label>
+                <div className="grid grid-cols-2 gap-3 mb-5">
+                  <div className="bg-neutral-950/70 border border-neutral-800 rounded-xl p-3">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label className="text-[11px] font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block shadow-sm shadow-emerald-500/50" />
+                        Start Cut (L)
+                      </label>
+                      <span className="text-[10px] text-neutral-500 font-mono">Seconds</span>
+                    </div>
                     <input
                       type="number"
                       step="0.05"
@@ -2249,13 +2276,18 @@ export default function QaPhrases() {
                         const val = parseFloat(e.target.value) || 0;
                         setStartTrimSec(Math.max(0, Math.min(val, endTrimSec - 0.1)));
                       }}
-                      className="w-full bg-neutral-950 border border-neutral-800 text-emerald-400 font-mono font-bold text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-emerald-500"
+                      className="w-full bg-neutral-900/90 border border-neutral-750 text-emerald-300 font-mono font-bold text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-emerald-500 transition-colors"
                     />
                   </div>
-                  <div>
-                    <label className="block text-[11px] font-bold text-rose-400 uppercase tracking-wider mb-1">
-                      End Cut (Seconds):
-                    </label>
+
+                  <div className="bg-neutral-950/70 border border-neutral-800 rounded-xl p-3">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label className="text-[11px] font-bold text-rose-400 uppercase tracking-wider flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-rose-500 inline-block shadow-sm shadow-rose-500/50" />
+                        End Cut (R)
+                      </label>
+                      <span className="text-[10px] text-neutral-500 font-mono">Seconds</span>
+                    </div>
                     <input
                       type="number"
                       step="0.05"
@@ -2266,13 +2298,13 @@ export default function QaPhrases() {
                         const val = parseFloat(e.target.value) || (startTrimSec + 0.1);
                         setEndTrimSec(Math.min(trimmingPhrase.duration || 100, Math.max(val, startTrimSec + 0.1)));
                       }}
-                      className="w-full bg-neutral-950 border border-neutral-800 text-rose-400 font-mono font-bold text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-rose-500"
+                      className="w-full bg-neutral-900/90 border border-neutral-750 text-rose-300 font-mono font-bold text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-rose-500 transition-colors"
                     />
                   </div>
                 </div>
 
                 {/* Save Action Buttons for QA vs Admin */}
-                <div className="flex flex-wrap gap-2 pt-2">
+                <div className="flex items-center justify-between gap-3 pt-2 border-t border-neutral-800/80">
                   <button
                     type="button"
                     onClick={() => { setShowTrimModal(false); setTrimmingPhrase(null); }}
@@ -2281,44 +2313,46 @@ export default function QaPhrases() {
                     Cancel
                   </button>
 
-                  {!isAdmin ? (
-                    <button
-                      type="button"
-                      onClick={() => handleSaveTrim()}
-                      disabled={trimSaving}
-                      className="flex-1 py-2.5 px-4 bg-purple-600 hover:bg-purple-500 text-white rounded-xl text-xs font-bold transition-colors flex items-center justify-center gap-2 disabled:opacity-50 shadow-md shadow-purple-600/20 active:scale-95"
-                    >
-                      {trimSaving ? "Trimming..." : "✂️ Save Trim & Move to Edited"}
-                    </button>
-                  ) : (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => handleSaveTrim('approved')}
-                        disabled={trimSaving}
-                        className="flex-1 py-2.5 px-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition-colors flex items-center justify-center gap-1 disabled:opacity-50 shadow-md shadow-emerald-600/20 active:scale-95"
-                      >
-                        <Check className="w-3.5 h-3.5" /> {trimSaving ? "Saving..." : "Trim & Approve"}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleSaveTrim('rejected')}
-                        disabled={trimSaving}
-                        className="flex-1 py-2.5 px-3 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold transition-colors flex items-center justify-center gap-1 disabled:opacity-50 shadow-md shadow-rose-600/20 active:scale-95"
-                      >
-                        <X className="w-3.5 h-3.5" /> {trimSaving ? "Saving..." : "Trim & Reject"}
-                      </button>
+                  <div className="flex items-center gap-2">
+                    {!isAdmin ? (
                       <button
                         type="button"
                         onClick={() => handleSaveTrim()}
                         disabled={trimSaving}
-                        className="py-2.5 px-3 bg-purple-600 hover:bg-purple-500 text-white rounded-xl text-xs font-bold transition-colors flex items-center justify-center gap-1 disabled:opacity-50 shadow-md shadow-purple-600/20 active:scale-95"
-                        title="Save trimmed audio while preserving current status"
+                        className="py-2.5 px-5 bg-purple-600 hover:bg-purple-500 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 disabled:opacity-50 shadow-md shadow-purple-600/20 active:scale-95"
                       >
-                        {trimSaving ? "Saving..." : "Trim Only"}
+                        {trimSaving ? "Trimming..." : "✂️ Save Trim & Move to Edited"}
                       </button>
-                    </>
-                  )}
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => handleSaveTrim()}
+                          disabled={trimSaving}
+                          className="py-2.5 px-4 bg-neutral-800 hover:bg-neutral-750 text-purple-300 border border-purple-500/30 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 disabled:opacity-50 active:scale-95 whitespace-nowrap shadow-sm"
+                          title="Save trimmed audio while preserving current status"
+                        >
+                          {trimSaving ? "Saving..." : "Trim Only"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleSaveTrim('rejected')}
+                          disabled={trimSaving}
+                          className="py-2.5 px-5 bg-rose-600/90 hover:bg-rose-600 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 disabled:opacity-50 shadow-md shadow-rose-600/20 active:scale-95 whitespace-nowrap min-w-[130px]"
+                        >
+                          <X className="w-4 h-4" /> <span>{trimSaving ? "Saving..." : "Trim & Reject"}</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleSaveTrim('approved')}
+                          disabled={trimSaving}
+                          className="py-2.5 px-5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 disabled:opacity-50 shadow-md shadow-emerald-600/20 active:scale-95 whitespace-nowrap min-w-[130px]"
+                        >
+                          <Check className="w-4 h-4" /> <span>{trimSaving ? "Saving..." : "Trim & Approve"}</span>
+                        </button>
+                      </>
+                    )}
+                  </div>
                 </div>
               </motion.div>
             </div>
