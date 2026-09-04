@@ -1,21 +1,22 @@
 @echo off
 title DataCatalyst ^& Voclara Platform Launcher
+cd /d "%~dp0"
 echo ===================================================
 echo   Starting DataCatalyst ^& Voclara Full Platform
 echo ===================================================
 echo.
 
 echo Launching 1/4: Voclara Voice Backend (Port 3001)...
-start "Voclara Backend (Port 3001)" cmd /k "cd /d "%~dp0voicechat-backend" && npm run dev"
+start "Voclara Backend (Port 3001)" cmd /k "cd voicechat-backend && npm run dev"
 
 echo Launching 2/4: Voclara App ^& Admin Portal (Port 5173)...
-start "Voclara Frontend & Admin (Port 5173)" cmd /k "cd /d "%~dp0voicechat-frontend" && npm run dev"
+start "Voclara Frontend & Admin (Port 5173)" cmd /k "cd voicechat-frontend && npm run dev"
 
 echo Launching 3/4: DataCatalyst Labels Backend (Port 5000)...
-start "Labels Backend (Port 5000)" cmd /k "cd /d "%~dp0DataCatalyst_Labels-main\backend" && npm run dev"
+start "Labels Backend (Port 5000)" cmd /k "cd DataCatalyst_Labels-main\backend && npm run dev"
 
 echo Launching 4/4: DataCatalyst Labels Canvas (Port 5174)...
-start "Labels Canvas Frontend (Port 5174)" cmd /k "cd /d "%~dp0DataCatalyst_Labels-main\frontend" && npm run dev"
+start "Labels Canvas Frontend (Port 5174)" cmd /k "cd DataCatalyst_Labels-main\frontend && npm run dev"
 
 echo.
 echo ===================================================

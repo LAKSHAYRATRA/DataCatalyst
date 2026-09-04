@@ -40,6 +40,19 @@ function formatPhraseDate(dateVal, format = 'DD-MM-YYYY') {
   return format === 'YYYY-MM-DD' ? `${year}-${month}-${day}` : `${day}-${month}-${year}`;
 }
 
+function normalizeProjectName(name) {
+  if (!name) return '';
+  return String(name).replace(/_downloaded$/i, '').trim();
+}
+
+function matchesProject(phrase, targetProject) {
+  if (!targetProject || targetProject === 'All') return true;
+  const target = normalizeProjectName(targetProject).toLowerCase();
+  const phraseProj = normalizeProjectName(phrase?.projectName).toLowerCase();
+  const phraseComp = normalizeProjectName(phrase?.companyId).toLowerCase();
+  return phraseProj === target || phraseComp === target;
+}
+
 export default function QaPhrases() {
   const userInfo = getUserInfo();
   const isAdmin = Boolean(userInfo?.isAdmin);
@@ -363,8 +376,8 @@ export default function QaPhrases() {
       
       // Auto-reset filters if selected options are no longer in the queue
       if (filterProject !== 'All') {
-        const activeProjects = new Set(phrases.map(q => q.projectName || q.companyId).filter(Boolean));
-        if (!activeProjects.has(filterProject)) {
+        const activeProjects = new Set(phrases.map(q => normalizeProjectName(q.projectName || q.companyId)).filter(Boolean));
+        if (!activeProjects.has(normalizeProjectName(filterProject))) {
           setFilterProject('All');
           setFilterLanguage('All');
         }
@@ -438,7 +451,7 @@ export default function QaPhrases() {
 
   const handleApproveAllEditedPhrases = async () => {
     const displayedPhrases = queue.filter(q => {
-      const matchProject = filterProject === 'All' || (q.projectName || q.companyId) === filterProject;
+      const matchProject = matchesProject(q, filterProject);
       const matchLanguage = filterLanguage === 'All' || (q.language && q.language.toLowerCase() === filterLanguage.toLowerCase());
       return matchProject && matchLanguage;
     });
@@ -598,10 +611,19 @@ export default function QaPhrases() {
     }
   };
 
+  const availableProjects = React.useMemo(() => {
+    const set = new Set();
+    for (const q of queue) {
+      const p = normalizeProjectName(q.projectName || q.companyId);
+      if (p) set.add(p);
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [queue]);
+
   const availableLanguages = React.useMemo(() => {
     let phrasesToScan = queue;
     if (filterProject !== 'All') {
-      phrasesToScan = queue.filter(q => (q.projectName || q.companyId) === filterProject);
+      phrasesToScan = queue.filter(q => matchesProject(q, filterProject));
     }
     return [...new Set(phrasesToScan.map(q => q.language).filter(Boolean))].sort();
   }, [queue, filterProject]);
@@ -609,7 +631,7 @@ export default function QaPhrases() {
   const availableSpeakers = React.useMemo(() => {
     let phrasesToScan = queue;
     if (filterProject !== 'All') {
-      phrasesToScan = phrasesToScan.filter(q => (q.projectName || q.companyId) === filterProject);
+      phrasesToScan = phrasesToScan.filter(q => matchesProject(q, filterProject));
     }
     if (filterLanguage !== 'All') {
       phrasesToScan = phrasesToScan.filter(q => q.language && q.language.toLowerCase() === filterLanguage.toLowerCase());
@@ -630,7 +652,7 @@ export default function QaPhrases() {
 
     let phrasesToScan = queue;
     if (filterProject !== 'All') {
-      phrasesToScan = phrasesToScan.filter(q => (q.projectName || q.companyId) === filterProject);
+      phrasesToScan = phrasesToScan.filter(q => matchesProject(q, filterProject));
     }
     if (filterLanguage !== 'All') {
       phrasesToScan = phrasesToScan.filter(q => q.language && q.language.toLowerCase() === filterLanguage.toLowerCase());
@@ -640,17 +662,18 @@ export default function QaPhrases() {
 
     const keysMap = {
       recording_date: { label: dateLabel, values: new Map() },
-      gender: { label: 'Gender', values: new Map() },
       speaker_id: { label: 'Speaker ID', values: new Map() },
-      script_type: { label: 'Script Type', values: new Map() },
+      first_name: { label: 'First Name', values: new Map() },
+      last_name: { label: 'Last Name', values: new Map() },
+      language: { label: 'Language', values: new Map() },
+      gender: { label: 'Gender', values: new Map() },
       emotion: { label: 'Emotion', values: new Map() },
       style: { label: 'Style', values: new Map() },
       intent: { label: 'Intent', values: new Map() },
       pitch: { label: 'Pitch', values: new Map() },
       speed: { label: 'Speed', values: new Map() },
       volume: { label: 'Volume', values: new Map() },
-      first_name: { label: 'First Name', values: new Map() },
-      last_name: { label: 'Last Name', values: new Map() },
+      script_type: { label: 'Script Type', values: new Map() },
       wasAudioTrimmed: { label: 'Audio Trim Status', values: new Map() },
     };
 
@@ -666,17 +689,28 @@ export default function QaPhrases() {
 
     for (const p of phrasesToScan) {
       const contributor = p.contributorId || {};
-      const spkId = getSpeakerId(p);
+      const spkId = contributor.speaker_id || p.speaker_id || p.assigned_speaker_id || '';
       const fName = contributor.firstname ? String(contributor.firstname).trim() : (contributor.username || '');
       const lName = contributor.lastname ? String(contributor.lastname).trim() : '';
+      const lang = String(p.language || '').trim();
       const gdr = contributor.gender ? String(contributor.gender).trim().toLowerCase() : (p.gender ? String(p.gender).trim().toLowerCase() : '');
 
-      const dStr = formatPhraseDate(p.recordedAt || p.createdAt, filterDateFormat);
-      if (dStr) addVal('recording_date', dStr);
+      const dateVal = p.recordedAt || p.createdAt;
+      if (dateVal) {
+        const d = new Date(dateVal);
+        if (!isNaN(d.getTime())) {
+          const day = String(d.getDate()).padStart(2, '0');
+          const month = String(d.getMonth() + 1).padStart(2, '0');
+          const year = d.getFullYear();
+          const formattedDate = filterDateFormat === 'YYYY-MM-DD' ? `${year}-${month}-${day}` : `${day}-${month}-${year}`;
+          addVal('recording_date', formattedDate);
+        }
+      }
 
       if (fName) addVal('first_name', fName);
       if (lName) addVal('last_name', lName);
       if (spkId) addVal('speaker_id', spkId);
+      if (lang) addVal('language', lang);
       if (gdr) addVal('gender', gdr);
       if (p.script_type) addVal('script_type', p.script_type);
       if (p.emotion) addVal('emotion', p.emotion);
@@ -821,8 +855,7 @@ export default function QaPhrases() {
   const displayedPhrases = React.useMemo(() => {
     return queue.filter(q => {
       // 1. Project
-      const matchProject = filterProject === 'All' || (q.projectName || q.companyId) === filterProject;
-      if (!matchProject) return false;
+      if (!matchesProject(q, filterProject)) return false;
 
       // 2. Language
       const matchLanguage = filterLanguage === 'All' || (q.language && q.language.toLowerCase() === filterLanguage.toLowerCase());
@@ -836,11 +869,19 @@ export default function QaPhrases() {
       const matchSpeaker = filterSpeaker === 'All' || spk === filterSpeaker;
       if (!matchSpeaker) return false;
 
-      // 4. Quick Date Filter
+      // 4. Quick Date Filter (matches both DD-MM-YYYY and YYYY-MM-DD identically to Phrase Downloads)
       const pDate = q.recordedAt || q.createdAt;
       if (filterDate !== 'All') {
-        const dStr = formatPhraseDate(pDate, filterDateFormat);
-        if (dStr !== filterDate) return false;
+        if (!pDate) return false;
+        const d = new Date(pDate);
+        if (isNaN(d.getTime())) return false;
+        const day = String(d.getDate()).padStart(2, '0');
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const year = d.getFullYear();
+        const ddmmyyyy = `${day}-${month}-${year}`.toLowerCase();
+        const yyyymmdd = `${year}-${month}-${day}`.toLowerCase();
+        const targetDate = String(filterDate).trim().toLowerCase();
+        if (ddmmyyyy !== targetDate && yyyymmdd !== targetDate) return false;
       }
 
       // 5. Date Range (From / To)
@@ -857,29 +898,45 @@ export default function QaPhrases() {
         }
       }
 
-      // 6. Dynamic Metadata Key & Value Filter (like in Phrase Downloads)
+      // 6. Dynamic Metadata Key & Value Filter (Exact Phrase Downloads Parity)
       if (filterMetaKey && filterMetaKey !== 'All' && filterMetaValue && filterMetaValue !== 'All') {
         const contributor = q.contributorId || {};
-        let valToMatch = null;
-        if (filterMetaKey === 'recording_date') {
-          valToMatch = formatPhraseDate(pDate, filterDateFormat);
-        } else if (filterMetaKey === 'gender') {
-          valToMatch = contributor.gender || q.gender || '';
-        } else if (filterMetaKey === 'speaker_id') {
-          valToMatch = spk;
-        } else if (filterMetaKey === 'first_name') {
-          valToMatch = contributor.firstname || contributor.username || '';
-        } else if (filterMetaKey === 'last_name') {
-          valToMatch = contributor.lastname || '';
-        } else if (filterMetaKey === 'wasAudioTrimmed') {
-          valToMatch = q.wasAudioTrimmed ? 'Trimmed' : 'Original';
-        } else if (q[filterMetaKey] !== undefined && q[filterMetaKey] !== null) {
-          valToMatch = q[filterMetaKey];
-        } else if (q.tags && q.tags[filterMetaKey] !== undefined && q.tags[filterMetaKey] !== null) {
-          valToMatch = q.tags[filterMetaKey];
-        }
+        const cleanTargetVal = String(filterMetaValue).trim().toLowerCase();
 
-        if (String(valToMatch ?? '').trim().toLowerCase() !== String(filterMetaValue).trim().toLowerCase()) {
+        if (filterMetaKey === 'recording_date') {
+          if (!pDate) return false;
+          const d = new Date(pDate);
+          if (isNaN(d.getTime())) return false;
+          const day = String(d.getDate()).padStart(2, '0');
+          const month = String(d.getMonth() + 1).padStart(2, '0');
+          const year = d.getFullYear();
+          const ddmmyyyy = `${day}-${month}-${year}`.toLowerCase();
+          const yyyymmdd = `${year}-${month}-${day}`.toLowerCase();
+          if (ddmmyyyy !== cleanTargetVal && yyyymmdd !== cleanTargetVal) {
+            return false;
+          }
+        } else if (filterMetaKey === 'first_name') {
+          const fName = contributor.firstname ? String(contributor.firstname).trim() : (contributor.username || '');
+          if (fName.toLowerCase() !== cleanTargetVal) return false;
+        } else if (filterMetaKey === 'last_name') {
+          const lName = contributor.lastname ? String(contributor.lastname).trim() : '';
+          if (lName.toLowerCase() !== cleanTargetVal) return false;
+        } else if (filterMetaKey === 'speaker_id') {
+          const spkVal = contributor.speaker_id || q.speaker_id || q.assigned_speaker_id || '';
+          if (spkVal.toLowerCase() !== cleanTargetVal) return false;
+        } else if (filterMetaKey === 'language') {
+          if (String(q.language || '').trim().toLowerCase() !== cleanTargetVal) return false;
+        } else if (filterMetaKey === 'gender') {
+          const gdr = contributor.gender || q.gender || '';
+          if (String(gdr).trim().toLowerCase() !== cleanTargetVal) return false;
+        } else if (filterMetaKey === 'wasAudioTrimmed') {
+          const trm = q.wasAudioTrimmed ? 'trimmed' : 'original';
+          if (trm !== cleanTargetVal) return false;
+        } else if (q.tags && q.tags[filterMetaKey] !== undefined) {
+          if (String(q.tags[filterMetaKey]).trim().toLowerCase() !== cleanTargetVal) return false;
+        } else if (q[filterMetaKey] !== undefined && q[filterMetaKey] !== null) {
+          if (String(q[filterMetaKey]).trim().toLowerCase() !== cleanTargetVal) return false;
+        } else {
           return false;
         }
       }
@@ -1022,7 +1079,7 @@ export default function QaPhrases() {
                     }}
                   >
                     <option value="All">All Projects</option>
-                    {[...new Set(queue.map(q => q.projectName || q.companyId).filter(Boolean))].sort().map(project => (
+                    {availableProjects.map(project => (
                       <option key={project} value={project}>{project}</option>
                     ))}
                   </select>

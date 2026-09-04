@@ -1213,7 +1213,10 @@ export async function getQaQueue(req, res) {
       return res.json({ phrases: phrasesLean });
     }
 
-    let query = { isArchivedFromCompanyWorkload: { $ne: true } };
+    let query = {};
+    if (!req.user || !req.user.isAdmin) {
+      query.isArchivedFromCompanyWorkload = { $ne: true };
+    }
     if (requestedStatus === "edited") {
       if (!req.user || !req.user.isAdmin) {
         return res.status(403).json({ error: "Only admins can access edited phrases queue" });
@@ -1240,12 +1243,17 @@ export async function getQaQueue(req, res) {
     if (req.user && req.user.isAdmin) {
       const { project, companyId, language, dateFrom, dateTo, speakerId } = req.query;
       if (project && project !== "All") {
+        const cleanProj = String(project).replace(/_downloaded$/i, "").trim();
+        const escProj = cleanProj.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+        const projRegex = new RegExp(`^${escProj}(_downloaded)?$`, "i");
         query.$or = [
-          { projectName: project },
-          { companyId: project }
+          { projectName: projRegex },
+          { companyId: projRegex }
         ];
       } else if (companyId && companyId !== "All") {
-        query.companyId = companyId;
+        const cleanComp = String(companyId).replace(/_downloaded$/i, "").trim();
+        const escComp = cleanComp.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+        query.companyId = new RegExp(`^${escComp}(_downloaded)?$`, "i");
       }
       if (language && language !== "All") {
         query.language = new RegExp(`^${String(language).trim()}$`, "i");
@@ -1288,10 +1296,11 @@ export async function getQaQueue(req, res) {
     );
 
     for (const p of phrases) {
+      const cleanComp = String(p.companyId || "").replace(/_downloaded$/i, "").trim();
       if (!p.projectName && p.companyId) {
-        p.projectName = companyProjectMap[p.companyId] || p.companyId;
+        p.projectName = companyProjectMap[cleanComp] || companyProjectMap[p.companyId] || cleanComp;
       }
-      p.allowPhraseTextEdit = companyAllowEditMap[p.companyId] ?? false;
+      p.allowPhraseTextEdit = companyAllowEditMap[cleanComp] ?? companyAllowEditMap[p.companyId] ?? false;
     }
 
     res.json({ phrases });
