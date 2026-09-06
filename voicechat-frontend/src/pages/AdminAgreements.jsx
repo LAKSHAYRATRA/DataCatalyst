@@ -160,7 +160,8 @@ export default function AdminAgreements() {
       (r.firstname || "").toLowerCase().includes(q) ||
       (r.lastname || "").toLowerCase().includes(q) ||
       (r.email || "").toLowerCase().includes(q) ||
-      (r.username || "").toLowerCase().includes(q)
+      (r.username || "").toLowerCase().includes(q) ||
+      (r.vendorCode || r.vendorId?.vendorCode || "").toLowerCase().includes(q)
     );
   });
 
@@ -246,7 +247,17 @@ export default function AdminAgreements() {
                   {filtered.map(row => (
                     <tr key={row.userId} className="border-t border-neutral-800 hover:bg-neutral-800/40">
                       <td className="px-4 py-3">
-                        <div className="font-medium text-neutral-100">{`${row.firstname || ""} ${row.lastname || ""}`.trim() || "—"}</div>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="font-medium text-neutral-100">{`${row.firstname || ""} ${row.lastname || ""}`.trim() || "—"}</span>
+                          {(row.vendorCode || row.vendorId?.vendorCode) && (
+                            <span
+                              className="inline-flex items-center justify-center font-mono font-bold text-[10px] uppercase px-2 py-0.5 rounded-lg bg-neutral-900 border border-purple-500/50 text-purple-300 shadow-sm"
+                              title={`Vendor Code: ${row.vendorCode || row.vendorId?.vendorCode}`}
+                            >
+                              🏢 {row.vendorCode || row.vendorId?.vendorCode}
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="px-4 py-3 text-neutral-300">{row.username || "—"}</td>
                       <td className="px-4 py-3 text-neutral-300">{row.email || "—"}</td>
@@ -316,7 +327,17 @@ export default function AdminAgreements() {
                   {filtered.map(row => (
                     <tr key={row.userId} className="border-t border-neutral-800 hover:bg-neutral-800/40">
                       <td className="px-4 py-3">
-                        <div className="font-medium text-neutral-100">{`${row.firstname || ""} ${row.lastname || ""}`.trim() || "—"}</div>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="font-medium text-neutral-100">{`${row.firstname || ""} ${row.lastname || ""}`.trim() || "—"}</span>
+                          {(row.vendorCode || row.vendorId?.vendorCode) && (
+                            <span
+                              className="inline-flex items-center justify-center font-mono font-bold text-[10px] uppercase px-2 py-0.5 rounded-lg bg-neutral-900 border border-purple-500/50 text-purple-300 shadow-sm"
+                              title={`Vendor Code: ${row.vendorCode || row.vendorId?.vendorCode}`}
+                            >
+                              🏢 {row.vendorCode || row.vendorId?.vendorCode}
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="px-4 py-3 text-neutral-300">{row.username || "—"}</td>
                       <td className="px-4 py-3 text-neutral-300">{row.email || "—"}</td>

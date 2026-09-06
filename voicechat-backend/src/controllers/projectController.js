@@ -7,6 +7,14 @@ import { Phrase } from "../models/Phrase.js";
 // GET /api/projects
 export async function getProjects(req, res) {
   try {
+    if (req.user?.vendorId) {
+      const { Vendor } = await import("../models/Vendor.js");
+      const vendor = await Vendor.findById(req.user.vendorId).lean();
+      const activeProjects = (vendor?.assignedProjects || []).filter((p) => p.isActive !== false);
+      if (!vendor || activeProjects.length === 0) {
+        return res.json({ success: true, projects: [] });
+      }
+    }
     const projects = await Project.find().sort({ name: 1 });
     res.json({ success: true, projects });
   } catch (error) {
@@ -96,6 +104,58 @@ export async function getRecommendedProjects(req, res) {
         noisy: false,
         applyUrl: `/language-apply?type=phrase&company=${encodeURIComponent(c.name)}`,
         workUrl: `/phrases`
+      });
+    }
+
+    // If authenticated user belongs to a vendor, strictly filter projects by vendor's active assigned projects
+    if (req.user?.vendorId) {
+      const { Vendor } = await import("../models/Vendor.js");
+      const vendor = await Vendor.findById(req.user.vendorId).lean();
+      const activeProjects = (vendor?.assignedProjects || []).filter((p) => p.isActive !== false);
+      if (!vendor || activeProjects.length === 0) {
+        return res.json({ success: true, projects: [] });
+      }
+
+      recommended = recommended.filter((proj) => {
+        if (proj.type === "call") {
+          return activeProjects.some(
+            (p) => p.category === "call" && (p.languageCode || "").toLowerCase().trim() === (proj.code || "").toLowerCase().trim()
+          );
+        }
+        if (proj.type === "scripted_call") {
+          return activeProjects.some(
+            (p) => p.category === "scripted_call" && (p.languageCode || "").toLowerCase().trim() === (proj.code || "").toLowerCase().trim()
+          );
+        }
+        if (proj.type === "phrase") {
+          const compIdentifiers = [
+            String(proj.id || "").toLowerCase().trim(),
+            String(proj.code || "").toLowerCase().trim(),
+            String(proj.companyId || "").toLowerCase().trim(),
+            String(proj.projectName || "").toLowerCase().trim()
+          ].filter(Boolean);
+
+          const matchedProj = activeProjects.find((p) => {
+            if (p.category !== "phrase") return false;
+            const vIds = [
+              String(p.subprojectId || "").toLowerCase().trim(),
+              String(p.subprojectName || "").toLowerCase().trim()
+            ].filter(Boolean);
+            return compIdentifiers.some((id) => vIds.includes(id) || vIds.some((vid) => vid.includes(id) || id.includes(vid)));
+          });
+
+          if (!matchedProj) return false;
+
+          if (matchedProj.assignedLanguages && matchedProj.assignedLanguages.length > 0) {
+            const allowedSet = new Set(matchedProj.assignedLanguages.map((l) => String(l).toLowerCase().trim()));
+            const filteredLangs = (proj.languages || []).filter((l) => allowedSet.has(String(l).toLowerCase().trim()));
+            if (filteredLangs.length === 0) return false;
+            proj.languages = filteredLangs;
+            proj.language = filteredLangs.map((l) => l.charAt(0).toUpperCase() + l.slice(1)).join(", ");
+          }
+          return true;
+        }
+        return false;
       });
     }
 

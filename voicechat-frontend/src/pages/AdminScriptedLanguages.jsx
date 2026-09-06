@@ -1015,13 +1015,23 @@ export default function AdminScriptedLanguages() {
                                             {/* Users List */}
                                             <div className="space-y-2 max-h-[350px] overflow-y-auto">
                                                 {(usersTab === "approved" ? summaryData.approvedUsers : summaryData.pendingUsers)?.map(u => (
-                                                    <div key={u.userId} className="p-3 bg-neutral-800/60 rounded-xl border border-neutral-700 flex items-center justify-between text-xs">
+                                                    <div key={u._id || u.userId} className="p-3 bg-neutral-800/60 rounded-xl border border-neutral-700 flex items-center justify-between text-xs">
                                                         <div>
-                                                            <div className="font-bold text-white">{u.firstname} {u.lastname}</div>
+                                                            <div className="font-bold text-white flex items-center gap-1.5 flex-wrap">
+                                                                <span>{u.firstname} {u.lastname}</span>
+                                                                {(u.vendorCode || u.vendorId?.vendorCode) && (
+                                                                    <span
+                                                                        className="inline-flex items-center justify-center font-mono font-bold text-[10px] uppercase px-2 py-0.5 rounded-lg bg-neutral-900 border border-purple-500/50 text-purple-300 shadow-sm"
+                                                                        title={`Vendor Code: ${u.vendorCode || u.vendorId?.vendorCode}`}
+                                                                    >
+                                                                        🏢 {u.vendorCode || u.vendorId?.vendorCode}
+                                                                    </span>
+                                                                )}
+                                                            </div>
                                                             <div className="text-neutral-400 font-mono text-[11px]">{u.email}</div>
                                                         </div>
                                                         <span className="font-mono text-neutral-400 px-2 py-1 bg-neutral-900 rounded">
-                                                            {u.speaker_id || `spk_${u.userId}`}
+                                                            {u.speaker_id || `spk_${u._id || u.userId}`}
                                                         </span>
                                                     </div>
                                                 ))}

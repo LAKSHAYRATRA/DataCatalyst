@@ -20,12 +20,16 @@ export default function InteractiveWaveformTrimmer({
   const [playheadSec, setPlayheadSec] = useState(startTrimSec || 0);
   const [isVadRunning, setIsVadRunning] = useState(false);
   const [vadFeedback, setVadFeedback] = useState(null);
+  const [audioLufs, setAudioLufs] = useState(null);
+  const [waveAmpFactor, setWaveAmpFactor] = useState(1.0);
 
   const audioRef = useRef(null);
   const animFrameRef = useRef(null);
 
   const pcmDataRef = useRef(null);
   const sampleRateRef = useRef(44100);
+  const estimatedLufsRef = useRef(null);
+  const maxPeakRef = useRef(null);
 
   const startRef = useRef(startTrimSec);
   const endRef = useRef(endTrimSec);
@@ -103,6 +107,28 @@ export default function InteractiveWaveformTrimmer({
               pcmDataRef.current = channelData;
               sampleRateRef.current = decodedBuffer.sampleRate;
 
+              // Compute overall max peak and RMS for LUFS estimation
+              let maxVal = 0;
+              let sumSquares = 0;
+              for (let i = 0; i < channelData.length; i++) {
+                const abs = Math.abs(channelData[i]);
+                if (abs > maxVal) maxVal = abs;
+                sumSquares += abs * abs;
+              }
+              const overallRms = Math.sqrt(sumSquares / Math.max(1, channelData.length));
+              const estLufs = parseFloat((-0.691 + 10 * Math.log10(Math.max(1e-9, overallRms * overallRms))).toFixed(1));
+              estimatedLufsRef.current = estLufs;
+              maxPeakRef.current = maxVal;
+              setAudioLufs(estLufs);
+
+              // Waveform Amplification:
+              // For quiet audio (estLufs <= -35 or maxVal < 0.25), scale up peaks visually
+              let ampFactor = 1.0;
+              if (estLufs <= -35.0 || maxVal < 0.25) {
+                ampFactor = Math.min(8.0, Math.max(1.0, 0.82 / Math.max(0.015, maxVal)));
+              }
+              setWaveAmpFactor(ampFactor);
+
               const numBars = 160;
               const blockSize = Math.floor(channelData.length / numBars);
               const peaks = new Float32Array(numBars);
@@ -113,7 +139,7 @@ export default function InteractiveWaveformTrimmer({
                   const val = Math.abs(channelData[start + j]);
                   if (val > max) max = val;
                 }
-                peaks[i] = max;
+                peaks[i] = Math.min(1.0, max * ampFactor);
               }
               setPcmPeaks(peaks);
             }
@@ -394,23 +420,34 @@ export default function InteractiveWaveformTrimmer({
       const noiseFloor = sortedRms[Math.floor(sortedRms.length * 0.15)] || 0.001;
       const peakSpeech = sortedRms[Math.floor(sortedRms.length * 0.95)] || 0.05;
 
-      if (peakSpeech < 0.004) {
+      const currentEstLufs = estimatedLufsRef.current !== null ? estimatedLufsRef.current : -30;
+      const isQuietAudio = currentEstLufs <= -35.5 || peakSpeech < 0.04;
+
+      if (peakSpeech < 0.002) {
         setVadFeedback("No voice activity detected (audio appears silent).");
         setIsVadRunning(false);
         setTimeout(() => setVadFeedback(null), 3500);
         return;
       }
 
-      // Dynamic adaptive threshold
-      const energyThreshold = Math.max(0.007, noiseFloor * 2.2, peakSpeech * 0.08);
+      // Dynamic adaptive threshold:
+      // When audio LUFS <= -36 (or peakSpeech < 0.04), lower the minimum threshold floor from 0.007 down to 0.0012,
+      // and use a lower fraction of peak speech (3.5% instead of 8%) so soft words/consonants are never missed.
+      const energyThreshold = isQuietAudio
+        ? Math.max(0.0012, noiseFloor * 1.35, peakSpeech * 0.035)
+        : Math.max(0.007, noiseFloor * 2.2, peakSpeech * 0.08);
 
-      // Forward scan for speech start (2 of 3 consecutive frames to ignore single-sample pops)
+      const softThreshold = energyThreshold * 0.72;
+
+      // Forward scan for speech start
+      // For quiet audio, also check soft onset to capture subtle word starts without clipping
       let startFrame = -1;
       for (let f = 0; f < numFrames - 2; f++) {
         const c1 = frameRms[f] >= energyThreshold;
         const c2 = frameRms[f + 1] >= energyThreshold;
         const c3 = frameRms[f + 2] >= energyThreshold;
-        if ((c1 && c2) || (c1 && c3) || (c2 && c3)) {
+        const s1 = frameRms[f] >= softThreshold && frameRms[f + 1] >= softThreshold;
+        if ((c1 && c2) || (c1 && c3) || (c2 && c3) || (isQuietAudio && s1)) {
           startFrame = f;
           break;
         }
@@ -422,7 +459,8 @@ export default function InteractiveWaveformTrimmer({
         const c1 = frameRms[f] >= energyThreshold;
         const c2 = frameRms[f - 1] >= energyThreshold;
         const c3 = frameRms[f - 2] >= energyThreshold;
-        if ((c1 && c2) || (c1 && c3) || (c2 && c3)) {
+        const s1 = frameRms[f] >= softThreshold && frameRms[f - 1] >= softThreshold;
+        if ((c1 && c2) || (c1 && c3) || (c2 && c3) || (isQuietAudio && s1)) {
           endFrame = f;
           break;
         }
@@ -435,9 +473,11 @@ export default function InteractiveWaveformTrimmer({
         return;
       }
 
-      // Apply lead-in (150ms) and trail-out (180ms) padding
-      const leadInPadSec = 0.15;
-      const trailOutPadSec = 0.18;
+      // Adaptive padding for lead-in and trail-out:
+      // For quiet audio (<= -36 LUFS), expand to 320ms lead-in and 360ms trail-out
+      // to ensure quiet starting and ending consonants/words are preserved!
+      const leadInPadSec = isQuietAudio ? 0.32 : 0.16;
+      const trailOutPadSec = isQuietAudio ? 0.36 : 0.20;
 
       let detectedStart = Math.max(0, (startFrame * frameDurationSec) - leadInPadSec);
       let detectedEnd = Math.min(totalDur, ((endFrame + 1) * frameDurationSec) + trailOutPadSec);
@@ -453,7 +493,11 @@ export default function InteractiveWaveformTrimmer({
       onTrimChange(detectedStart, detectedEnd);
 
       const trimmedSec = (totalDur - (detectedEnd - detectedStart)).toFixed(2);
-      setVadFeedback(`VAD Snapped: ${detectedStart}s – ${detectedEnd}s (Trimmed ${trimmedSec}s silence)`);
+      setVadFeedback(
+        isQuietAudio
+          ? `⚡ Sensitive VAD (${currentEstLufs} LUFS): Snapped ${detectedStart}s – ${detectedEnd}s (+${Math.round((leadInPadSec + trailOutPadSec) * 1000)}ms safety padding)`
+          : `✨ VAD Snapped: ${detectedStart}s – ${detectedEnd}s (Trimmed ${trimmedSec}s silence)`
+      );
       setTimeout(() => setVadFeedback(null), 4500);
     } catch (err) {
       console.error("VAD error:", err);
@@ -472,6 +516,19 @@ export default function InteractiveWaveformTrimmer({
     <div className="w-full space-y-3.5">
       {blobUrl && (
         <audio ref={audioRef} src={blobUrl} onEnded={stopPlayback} className="hidden" />
+      )}
+
+      {/* Waveform Amplification Badge for Quiet Audio */}
+      {!loadingAudio && waveAmpFactor > 1.05 && (
+        <div className="flex items-center justify-between text-[11px] font-mono px-3 py-1.5 bg-amber-500/10 border border-amber-500/25 rounded-xl text-amber-300 shadow-sm">
+          <span className="flex items-center gap-1.5 font-bold">
+            <Sparkles className="w-3.5 h-3.5 text-amber-400 fill-amber-400/40" />
+            Waveform Amplified ({waveAmpFactor.toFixed(1)}x)
+          </span>
+          <span className="text-neutral-400 text-[10px]">
+            {audioLufs !== null ? `${audioLufs} LUFS` : 'Quiet Audio'} • Sensitive VAD Auto-Tuned
+          </span>
+        </div>
       )}
 
       {/* Visual Canvas Waveform Container with Overlay Knob Handles */}

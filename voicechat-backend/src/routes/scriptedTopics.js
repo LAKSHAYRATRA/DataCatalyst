@@ -115,8 +115,22 @@ router.get("/enabled", async (req, res) => {
                     userId: currentUserId,
                     status: "active"
                 }).lean(),
-                User.findById(currentUserId).select("gender isAdmin isQA languageApplications").lean()
+                User.findById(currentUserId).select("gender isAdmin isQA languageApplications vendorId").lean()
             ]);
+
+            // If user belongs to a vendor, verify active Scripted Call project assignments
+            if (user?.vendorId) {
+                const { Vendor } = await import("../models/Vendor.js");
+                const vendor = await Vendor.findById(user.vendorId).lean();
+                const scriptedProjects = (vendor?.assignedProjects || []).filter(p => p.category === "scripted_call" && p.isActive !== false);
+                if (!vendor || scriptedProjects.length === 0) {
+                    return res.json({ topics: [] });
+                }
+                const allowedCodes = scriptedProjects.map(p => (p.languageCode || "").toLowerCase().trim()).filter(Boolean);
+                if (queryLang && !allowedCodes.includes(String(queryLang).toLowerCase().trim())) {
+                    return res.json({ topics: [] });
+                }
+            }
 
             // Track completed vs re-recording submissions
             userSubmissions.forEach(s => {
@@ -359,6 +373,17 @@ router.get("/enabled", async (req, res) => {
 router.get("/my-rerecords", requireAuth(JWT_SECRET), async (req, res) => {
     try {
         const userId = req.user?._id || req.userId;
+
+        // If user belongs to a vendor, check active Scripted Call project assignments
+        if (req.user?.vendorId) {
+            const { Vendor } = await import("../models/Vendor.js");
+            const vendor = await Vendor.findById(req.user.vendorId).lean();
+            const scriptedProjects = (vendor?.assignedProjects || []).filter(p => p.category === "scripted_call" && p.isActive !== false);
+            if (!vendor || scriptedProjects.length === 0) {
+                return res.json({ rerecords: [] });
+            }
+        }
+
         const reRecordSubmissions = await ScriptedSubmission.find({
             userId,
             status: "needs_rerecord"

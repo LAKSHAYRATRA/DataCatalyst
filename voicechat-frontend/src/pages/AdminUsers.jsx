@@ -702,6 +702,19 @@ export default function AdminUsers() {
                                             <div className="flex items-center gap-2 flex-wrap">
                                                 <span className="text-white font-semibold">{user.firstname} {user.lastname}</span>
                                                 <span className="text-neutral-400 text-sm">@{user.username}</span>
+                                                {user.speaker_id && (
+                                                    <span className="text-xs font-mono text-neutral-400 bg-neutral-900 border border-neutral-700 px-1.5 py-0.5 rounded">
+                                                        {user.speaker_id}
+                                                    </span>
+                                                )}
+                                                {(user.vendorCode || user.vendorId?.vendorCode) && (
+                                                    <span 
+                                                        className="inline-flex items-center justify-center font-mono font-extrabold text-xs uppercase px-2.5 py-1 min-h-[26px] rounded-lg bg-neutral-900 border-2 border-purple-500 text-purple-300 shadow-md shadow-purple-950/40 tracking-wider"
+                                                        title={`Affiliated Vendor Agency: ${user.vendorCode || user.vendorId?.vendorCode}`}
+                                                    >
+                                                        🏢 {user.vendorCode || user.vendorId?.vendorCode}
+                                                    </span>
+                                                )}
                                             </div>
                                             <div className="flex items-center gap-3 text-sm text-neutral-400">
                                                 <span>{user.email}</span>
@@ -739,7 +752,17 @@ export default function AdminUsers() {
                                         <div className="md:w-64 flex-shrink-0">
                                             {user.introRecordingFile ? (
                                                 <div className="space-y-2">
-                                                    <p className="text-xs text-neutral-400 font-medium uppercase tracking-wide">Voice Introduction</p>
+                                                    <div className="flex items-center justify-between gap-1">
+                                                        <p className="text-xs text-neutral-400 font-medium uppercase tracking-wide">Voice Introduction</p>
+                                                        {(user.vendorCode || user.vendorId?.vendorCode) && (
+                                                            <span 
+                                                                className="inline-flex items-center justify-center font-mono font-bold text-[11px] uppercase px-2 py-0.5 rounded-lg bg-neutral-950 border border-purple-500/60 text-purple-300"
+                                                                title={`Vendor Code: ${user.vendorCode || user.vendorId?.vendorCode}`}
+                                                            >
+                                                                {user.vendorCode || user.vendorId?.vendorCode}
+                                                            </span>
+                                                        )}
+                                                    </div>
                                                     <audio
                                                         controls
                                                         controlsList="nodownload noplaybackrate"
@@ -750,7 +773,19 @@ export default function AdminUsers() {
                                                     />
                                                 </div>
                                             ) : (
-                                                <p className="text-xs text-neutral-500 italic">No recording file</p>
+                                                <div className="space-y-2">
+                                                    <div className="flex items-center justify-between gap-1">
+                                                        <p className="text-xs text-neutral-500 italic">No recording file</p>
+                                                        {(user.vendorCode || user.vendorId?.vendorCode) && (
+                                                            <span 
+                                                                className="inline-flex items-center justify-center font-mono font-bold text-[11px] uppercase px-2 py-0.5 rounded-lg bg-neutral-950 border border-purple-500/60 text-purple-300"
+                                                                title={`Vendor Code: ${user.vendorCode || user.vendorId?.vendorCode}`}
+                                                            >
+                                                                {user.vendorCode || user.vendorId?.vendorCode}
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                </div>
                                             )}
 
                                             {/* Actions */}
@@ -831,7 +866,17 @@ export default function AdminUsers() {
                                         {users.map((user) => (
                                             <tr key={user._id} className="hover:bg-neutral-700/50 transition-colors">
                                                 <td className="px-4 py-4">
-                                                    <div className="text-sm text-white font-medium">{user.username}</div>
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="text-sm text-white font-medium">{user.username}</span>
+                                                        {(user.vendorCode || user.vendorId?.vendorCode) && (
+                                                            <span
+                                                                className="inline-flex items-center justify-center font-mono font-bold text-[10px] uppercase px-2 py-0.5 rounded-lg bg-neutral-900 border border-purple-500/50 text-purple-300 shadow-sm"
+                                                                title={`Vendor Code: ${user.vendorCode || user.vendorId?.vendorCode}`}
+                                                            >
+                                                                🏢 {user.vendorCode || user.vendorId?.vendorCode}
+                                                            </span>
+                                                        )}
+                                                    </div>
                                                     <div className="text-xs text-neutral-400">{user.firstname} {user.lastname}</div>
                                                 </td>
                                                 <td className="px-4 py-4 text-sm text-neutral-300">
@@ -1010,7 +1055,8 @@ export default function AdminUsers() {
                                                     (u.firstname || "").toLowerCase().includes(q) ||
                                                     (u.lastname || "").toLowerCase().includes(q) ||
                                                     (u.email || "").toLowerCase().includes(q) ||
-                                                    (u.username || "").toLowerCase().includes(q)
+                                                    (u.username || "").toLowerCase().includes(q) ||
+                                                    (u.vendorCode || u.vendorId?.vendorCode || "").toLowerCase().includes(q)
                                                 );
                                             })
                                             .map(u => (
@@ -1018,6 +1064,14 @@ export default function AdminUsers() {
                                                     <td className="px-4 py-3">
                                                         <div className="flex items-center gap-1.5 flex-wrap">
                                                             <span className="text-white font-medium">{`${u.firstname || ""} ${u.lastname || ""}`.trim() || "—"}</span>
+                                                            {(u.vendorCode || u.vendorId?.vendorCode) && (
+                                                                <span
+                                                                    className="inline-flex items-center justify-center font-mono font-bold text-[10px] uppercase px-2 py-0.5 rounded-lg bg-neutral-900 border border-purple-500/50 text-purple-300 shadow-sm"
+                                                                    title={`Vendor Code: ${u.vendorCode || u.vendorId?.vendorCode}`}
+                                                                >
+                                                                    🏢 {u.vendorCode || u.vendorId?.vendorCode}
+                                                                </span>
+                                                            )}
                                                             {u.isAdmin && (
                                                                 <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-900/80 text-purple-200 border border-purple-600 shadow-sm">
                                                                     👑 Admin

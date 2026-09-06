@@ -2,13 +2,30 @@ import express from "express";
 import { Topic } from "../models/Topic.js";
 import { Subtopic } from "../models/Subtopic.js";
 import { CallSession } from "../models/CallSession.js";
+import { optionalAuth } from "../auth.js";
 
+const JWT_SECRET = process.env.JWT_SECRET;
 const router = express.Router();
 
 // Get only enabled topics with enabled subtopics (for regular users)
-router.get("/enabled", async (req, res) => {
+router.get("/enabled", optionalAuth(JWT_SECRET), async (req, res) => {
     try {
         const queryLang = req.query.language;
+
+        // If user belongs to a vendor, verify active Call project assignments
+        if (req.user?.vendorId) {
+            const { Vendor } = await import("../models/Vendor.js");
+            const vendor = await Vendor.findById(req.user.vendorId).lean();
+            const callProjects = (vendor?.assignedProjects || []).filter(p => p.category === "call" && p.isActive !== false);
+            if (!vendor || callProjects.length === 0) {
+                return res.json({ topics: [] });
+            }
+            const allowedCodes = callProjects.map(p => (p.languageCode || "").toLowerCase().trim()).filter(Boolean);
+            if (queryLang && !allowedCodes.includes(String(queryLang).toLowerCase().trim())) {
+                return res.json({ topics: [] });
+            }
+        }
+
         let matchQuery = { isEnabled: true };
         
         if (queryLang) {

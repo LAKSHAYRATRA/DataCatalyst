@@ -428,8 +428,61 @@ export async function getAvailablePhrase(req, res) {
       baseQuery.companyId = { $in: [resolvedProjectName, coreComp, `${coreComp}_downloaded`] };
     }
 
-    // Check Limits
+    // Check Limits & Vendor Assignments
     const user = req.user;
+    if (user?.vendorId) {
+      const { Vendor } = await import("../models/Vendor.js");
+      const vendor = await Vendor.findById(user.vendorId).lean();
+      const phraseProjects = (vendor?.assignedProjects || []).filter(p => p.category === "phrase" && p.isActive !== false);
+      if (!vendor || phraseProjects.length === 0) {
+        return res.json({ phrase: null, message: "No active phrase projects assigned to your vendor organization." });
+      }
+
+      if (resolvedProjectName && resolvedProjectName !== "Any") {
+        const compTarget = String(resolvedProjectName).toLowerCase().trim();
+        const cleanComp = compTarget.replace(/_downloaded$/, "").trim();
+        const matchedProj = phraseProjects.find(p => {
+          const pSubId = String(p.subprojectId || "").toLowerCase().trim();
+          const pSubName = String(p.subprojectName || "").toLowerCase().trim();
+          return pSubId === compTarget || pSubId === cleanComp || pSubName === compTarget || pSubName === cleanComp || pSubName.includes(compTarget) || compTarget.includes(pSubId);
+        });
+        if (!matchedProj) {
+          return res.json({ phrase: null, message: "This phrase project is not assigned to your vendor organization." });
+        }
+
+        // Language check for this project
+        if (matchedProj.assignedLanguages && matchedProj.assignedLanguages.length > 0) {
+          const allowedLangs = matchedProj.assignedLanguages.map(l => String(l).toLowerCase().trim());
+          if (language) {
+            const reqLang = String(language).toLowerCase().trim();
+            if (!allowedLangs.includes(reqLang)) {
+              return res.json({ phrase: null, message: `The language "${language}" is not assigned to your vendor organization for this project.` });
+            }
+          } else {
+            baseQuery.language = { $in: allowedLangs.map(l => new RegExp(`^${l}$`, "i")) };
+          }
+        }
+      } else {
+        // Project is "Any" or unspecified: restrict to assigned projects & their assigned languages
+        const allAssignedLangs = [];
+        phraseProjects.forEach(p => {
+          if (p.assignedLanguages && p.assignedLanguages.length > 0) {
+            p.assignedLanguages.forEach(l => allAssignedLangs.push(String(l).toLowerCase().trim()));
+          }
+        });
+        if (allAssignedLangs.length > 0) {
+          if (language) {
+            const reqLang = String(language).toLowerCase().trim();
+            if (!allAssignedLangs.includes(reqLang)) {
+              return res.json({ phrase: null, message: `The language "${language}" is not assigned to your vendor organization.` });
+            }
+          } else {
+            baseQuery.language = { $in: Array.from(new Set(allAssignedLangs)).map(l => new RegExp(`^${l}$`, "i")) };
+          }
+        }
+      }
+    }
+
     const startOfDay = new Date();
     startOfDay.setHours(0, 0, 0, 0);
 
@@ -962,6 +1015,36 @@ export async function submitPhraseRecording(req, res) {
         fs.unlinkSync(req.file.path);
         console.warn(`[submitPhraseRecording] 403: Speaker allocation mismatch for phrase ${phraseId}. Target: ${targetSpk}, User: ${userSpk}`);
         return res.status(403).json({ error: `This phrase is allocated to speaker ${targetSpk}. You cannot record it.` });
+      }
+    }
+
+    // Verify vendor assignment and language allocation
+    if (req.user?.vendorId) {
+      const { Vendor } = await import("../models/Vendor.js");
+      const vendor = await Vendor.findById(req.user.vendorId).lean();
+      const activeProjects = (vendor?.assignedProjects || []).filter((p) => p.category === "phrase" && p.isActive !== false);
+      const phraseComp = String(phrase.companyId || "").toLowerCase().trim();
+      const cleanComp = phraseComp.replace(/_downloaded$/, "").trim();
+      const phraseProj = String(phrase.projectName || "").toLowerCase().trim();
+
+      const matchedProj = activeProjects.find((p) => {
+        const pSubId = String(p.subprojectId || "").toLowerCase().trim();
+        const pSubName = String(p.subprojectName || "").toLowerCase().trim();
+        return pSubId === phraseComp || pSubId === cleanComp || pSubName === phraseComp || pSubName === cleanComp || pSubName === phraseProj || phraseProj.includes(pSubId) || pSubId.includes(phraseProj);
+      });
+
+      if (!matchedProj) {
+        fs.unlinkSync(req.file.path);
+        return res.status(403).json({ error: "This phrase project is not assigned to your vendor organization." });
+      }
+
+      if (matchedProj.assignedLanguages && matchedProj.assignedLanguages.length > 0) {
+        const allowedLangs = matchedProj.assignedLanguages.map(l => String(l).toLowerCase().trim());
+        const phraseLang = String(phrase.language || "").toLowerCase().trim();
+        if (!allowedLangs.includes(phraseLang)) {
+          fs.unlinkSync(req.file.path);
+          return res.status(403).json({ error: `The language "${phrase.language}" is not assigned to your vendor organization for this project.` });
+        }
       }
     }
 

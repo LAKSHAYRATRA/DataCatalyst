@@ -80,7 +80,7 @@ export default function AdminNav() {
             calls: ['/admin/calls', '/admin/topics', '/admin/qa', '/admin/qa-payments', '/admin/languages', '/admin/call-apps'].some(p => path.startsWith(p)),
             scriptedCalls: ['/admin/scripted-calls-review', '/admin/scripted-qa', '/admin/scripted-call-apps', '/admin/scripted-languages', '/admin/scripted-topics'].some(p => path.startsWith(p)),
             transcription: ['/admin/segmentation', '/admin/transcription'].includes(path),
-            users: ['/admin/users', '/admin/payouts', '/admin/finances', '/admin/pan-verification', '/admin/agreements'].some(p => path.startsWith(p)),
+            users: ['/admin/users', '/admin/payouts', '/admin/finances', '/admin/pan-verification', '/admin/agreements', '/admin/vendors'].some(p => path.startsWith(p)),
             phrases: ['/admin/qaphrase', '/admin/phrases', '/admin/language-apps', '/admin/projects', '/admin/companies', '/admin/phrases/downloads'].includes(path)
         });
     }, [location.pathname]);
@@ -329,6 +329,13 @@ export default function AdminNav() {
                                             <Link to="/admin/agreements" onClick={() => setIsMobileMenuOpen(false)}
                                                 className={`flex items-center px-3 py-2 rounded-lg text-xs font-semibold transition-all ${isActive('/admin/agreements') ? 'bg-neutral-700 text-warning-400' : 'text-neutral-400 hover:text-white'}`}>
                                                 <span>Agreements</span>
+                                            </Link>
+                                            <Link to="/admin/vendors" onClick={() => setIsMobileMenuOpen(false)}
+                                                className={`flex items-center px-3 py-2 rounded-lg text-xs font-semibold transition-all ${isActive('/admin/vendors') ? 'bg-neutral-700 text-warning-400' : 'text-neutral-400 hover:text-white'}`}>
+                                                <span className="flex items-center gap-1.5">
+                                                    <span>Vendors & Agencies</span>
+                                                    <span className="text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded bg-primary-900/60 text-primary-300 border border-primary-700/50 leading-none">new</span>
+                                                </span>
                                             </Link>
                                         </div>
                                     )}

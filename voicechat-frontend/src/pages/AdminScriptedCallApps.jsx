@@ -43,6 +43,7 @@ export default function AdminScriptedCallApps() {
     const [apps, setApps] = useState([]);
     const [loading, setLoading] = useState(true);
     const [statusFilter, setStatusFilter] = useState("pending");
+    const [searchQuery, setSearchQuery] = useState("");
     const [page, setPage] = useState(1);
     const [total, setTotal] = useState(0);
     const [totalPages, setTotalPages] = useState(1);
@@ -56,11 +57,12 @@ export default function AdminScriptedCallApps() {
 
     useEffect(() => { 
         loadApps(); 
-    }, [page, statusFilter]);
+    }, [page, statusFilter, searchQuery]);
 
     async function fetchApps() {
         // Query language applications filtered for scripted_call type
-        const qs = `?type=scripted_call&page=${page}&limit=20${statusFilter ? `&status=${statusFilter}` : ""}`;
+        const searchPart = searchQuery ? `&search=${encodeURIComponent(searchQuery.trim())}` : "";
+        const qs = `?type=scripted_call&page=${page}&limit=20${statusFilter ? `&status=${statusFilter}` : ""}${searchPart}`;
         return get(`${REVIEW_BASE}${qs}`);
     }
 
@@ -220,6 +222,14 @@ export default function AdminScriptedCallApps() {
                         ))}
                     </div>
 
+                    <input
+                        type="text"
+                        placeholder="Search name, speaker, vendor..."
+                        value={searchQuery}
+                        onChange={e => { setSearchQuery(e.target.value); setPage(1); }}
+                        className="bg-neutral-800 border border-neutral-700 text-white text-xs rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500 w-52 sm:w-64 shadow-sm"
+                    />
+
                     <div className="ml-auto text-xs text-neutral-400 font-semibold">
                         Total Applicants: <strong className="text-white">{total}</strong>
                     </div>
@@ -258,9 +268,19 @@ export default function AdminScriptedCallApps() {
                                                 {app.userFirstname?.[0] || app.username?.[0] || "U"}
                                             </div>
                                             <div>
-                                                <h3 className="font-bold text-white text-base">
-                                                    {app.userFirstname || app.username} {app.userLastname || ""}
-                                                </h3>
+                                                <div className="flex items-center gap-2 flex-wrap">
+                                                    <h3 className="font-bold text-white text-base">
+                                                        {app.userFirstname || app.username} {app.userLastname || ""}
+                                                    </h3>
+                                                    {(app.vendorCode || app.vendorId?.vendorCode) && (
+                                                        <span
+                                                            className="inline-flex items-center justify-center font-mono font-bold text-[10px] uppercase px-2 py-0.5 rounded-lg bg-neutral-900 border border-purple-500/50 text-purple-300 shadow-sm"
+                                                            title={`Vendor Code: ${app.vendorCode || app.vendorId?.vendorCode}`}
+                                                        >
+                                                            🏢 {app.vendorCode || app.vendorId?.vendorCode}
+                                                        </span>
+                                                    )}
+                                                </div>
                                                 <div className="text-xs text-neutral-400 font-mono">
                                                     {app.userEmail}
                                                 </div>

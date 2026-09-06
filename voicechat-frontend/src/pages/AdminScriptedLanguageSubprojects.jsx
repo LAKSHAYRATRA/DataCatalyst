@@ -1156,7 +1156,8 @@ export default function AdminScriptedLanguageSubprojects() {
                                                 (u.username || "").toLowerCase().includes(q) ||
                                                 (u.email || "").toLowerCase().includes(q) ||
                                                 (u.speaker_id || "").toLowerCase().includes(q) ||
-                                                (u.state || "").toLowerCase().includes(q)
+                                                (u.state || "").toLowerCase().includes(q) ||
+                                                (u.vendorCode || u.vendorId?.vendorCode || "").toLowerCase().includes(q)
                                             );
                                         });
 
@@ -1188,7 +1189,17 @@ export default function AdminScriptedLanguageSubprojects() {
                                                                 <tr key={u._id} className="hover:bg-neutral-700/40">
                                                                     <td className="px-4 py-2.5 font-mono text-primary-400 font-semibold">{u.speaker_id}</td>
                                                                     <td className="px-4 py-2.5 font-medium text-white">
-                                                                        {u.firstname} {u.lastname}
+                                                                        <div className="flex items-center gap-1.5 flex-wrap">
+                                                                            <span>{u.firstname} {u.lastname}</span>
+                                                                            {(u.vendorCode || u.vendorId?.vendorCode) && (
+                                                                                <span
+                                                                                    className="inline-flex items-center justify-center font-mono font-bold text-[10px] uppercase px-2 py-0.5 rounded-lg bg-neutral-900 border border-purple-500/50 text-purple-300 shadow-sm"
+                                                                                    title={`Vendor Code: ${u.vendorCode || u.vendorId?.vendorCode}`}
+                                                                                >
+                                                                                    🏢 {u.vendorCode || u.vendorId?.vendorCode}
+                                                                                </span>
+                                                                            )}
+                                                                        </div>
                                                                         <div className="text-[10px] text-neutral-400 font-normal">@{u.username}</div>
                                                                     </td>
                                                                     <td className="px-4 py-2.5 text-neutral-300">{u.email}</td>

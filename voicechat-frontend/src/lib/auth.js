@@ -7,6 +7,7 @@ export async function clearToken() {
   // Clear local storage synchronously FIRST to prevent route guard loops
   localStorage.removeItem("vc_system_check_passed");
   localStorage.removeItem(USER_INFO_KEY);
+  localStorage.removeItem("vc_token");
 
   // Call logout endpoint to clear HTTP-only cookie
   try {

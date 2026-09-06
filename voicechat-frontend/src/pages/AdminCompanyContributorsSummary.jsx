@@ -696,7 +696,8 @@ export default function AdminCompanyContributorsSummary() {
                         (u.email || "").toLowerCase().includes(q) ||
                         (u.speaker_id || "").toLowerCase().includes(q) ||
                         (u.client_spk_id || "").toLowerCase().includes(q) ||
-                        (u.state || "").toLowerCase().includes(q)
+                        (u.state || "").toLowerCase().includes(q) ||
+                        (u.vendorCode || u.vendorId?.vendorCode || "").toLowerCase().includes(q)
                       );
                     });
 
@@ -751,7 +752,17 @@ export default function AdminCompanyContributorsSummary() {
                                     )}
                                   </td>
                                   <td className="px-4 py-2.5 font-medium text-white">
-                                    {u.firstname} {u.lastname}
+                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                      <span>{u.firstname} {u.lastname}</span>
+                                      {(u.vendorCode || u.vendorId?.vendorCode) && (
+                                        <span
+                                          className="inline-flex items-center justify-center font-mono font-bold text-[10px] uppercase px-2 py-0.5 rounded-lg bg-neutral-900 border border-purple-500/50 text-purple-300 shadow-sm"
+                                          title={`Vendor Code: ${u.vendorCode || u.vendorId?.vendorCode}`}
+                                        >
+                                          🏢 {u.vendorCode || u.vendorId?.vendorCode}
+                                        </span>
+                                      )}
+                                    </div>
                                     <div className="text-[10px] text-neutral-400 font-normal">@{u.username}</div>
                                   </td>
                                   <td className="px-4 py-2.5 text-emerald-400 font-semibold">{formatSecs(u.approvedSeconds)} <span className="text-[10px] text-emerald-500/80 font-normal">({u.approvedCount || 0})</span></td>
@@ -893,7 +904,17 @@ export default function AdminCompanyContributorsSummary() {
                 {/* Contributor Card */}
                 <div className="bg-neutral-950 p-3.5 rounded-xl border border-neutral-800 flex items-center justify-between">
                   <div>
-                    <div className="text-sm font-bold text-white">{editingContributor.firstname} {editingContributor.lastname}</div>
+                    <div className="text-sm font-bold text-white flex items-center gap-1.5 flex-wrap">
+                      <span>{editingContributor.firstname} {editingContributor.lastname}</span>
+                      {(editingContributor.vendorCode || editingContributor.vendorId?.vendorCode) && (
+                        <span
+                          className="inline-flex items-center justify-center font-mono font-bold text-[10px] uppercase px-2 py-0.5 rounded-lg bg-neutral-900 border border-purple-500/50 text-purple-300 shadow-sm"
+                          title={`Vendor Code: ${editingContributor.vendorCode || editingContributor.vendorId?.vendorCode}`}
+                        >
+                          🏢 {editingContributor.vendorCode || editingContributor.vendorId?.vendorCode}
+                        </span>
+                      )}
+                    </div>
                     <div className="text-xs text-neutral-400">@{editingContributor.username}</div>
                   </div>
                   <div className="text-right">

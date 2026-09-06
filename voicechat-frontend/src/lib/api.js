@@ -4,6 +4,10 @@ const BASE = import.meta.env.VITE_BACKEND_URL || (typeof window !== "undefined" 
 
 export async function apiFetch(path, options = {}) {
   const headers = new Headers(options.headers || {});
+  const token = typeof window !== "undefined" ? localStorage.getItem("vc_token") : null;
+  if (token && !headers.has("Authorization")) {
+    headers.set("Authorization", `Bearer ${token}`);
+  }
 
   const res = await fetch(`${BASE}${path}`, {
     ...options,
@@ -21,9 +25,13 @@ export async function apiFetch(path, options = {}) {
     // Handle session expiration or unauthorized access
     if (res.status === 401 || body?.error === "session_expired" || body?.error === "unauthorized") {
       await clearToken();
-      const publicPaths = ["/", "/login", "/signup", "/forgot-password", "/reset-password", "/earnings", "/community", "/about", "/terms", "/privacy", "/support"];
+      const publicPaths = ["/", "/login", "/signup", "/forgot-password", "/reset-password", "/earnings", "/community", "/about", "/terms", "/privacy", "/support", "/vendor/login"];
       if (!publicPaths.includes(window.location.pathname)) {
-        window.location.href = "/login";
+        if (window.location.pathname.startsWith("/vendor")) {
+          window.location.href = "/vendor/login";
+        } else {
+          window.location.href = "/login";
+        }
       }
     }
 

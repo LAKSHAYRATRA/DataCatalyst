@@ -18,6 +18,7 @@ import ffmpeg from "fluent-ffmpeg";
 import ffmpegInstaller from "@ffmpeg-installer/ffmpeg";
 import { generateSignedAgreementPdf, AGREEMENT_VERSION } from "../services/agreementPdf.js";
 import { sendIntroSubmissionEmail, sendAgreementSignedEmail, sendProjectApplicationReceivedEmail } from "../util/emailService.js";
+import { formatUserResponse } from "./authController.js";
 
 ffmpeg.setFfmpegPath(ffmpegInstaller.path);
 
@@ -146,8 +147,23 @@ export async function uploadIntroRecording(req, res) {
 // ─── GET /api/languages ───────────────────────────────────────────────────────
 export async function getLanguages(req, res) {
   try {
-    const langs = await Language.find({ enabled: true }).sort({ name: 1 }).lean();
+    let langs = await Language.find({ enabled: true }).sort({ name: 1 }).lean();
     
+    // If user belongs to a vendor, filter strictly by vendor's assigned Call projects
+    if (req.user?.vendorId) {
+      const { Vendor } = await import("../models/Vendor.js");
+      const vendor = await Vendor.findById(req.user.vendorId).lean();
+      const callProjects = (vendor?.assignedProjects || []).filter((p) => p.category === "call" && p.isActive !== false);
+      if (!vendor || callProjects.length === 0) {
+        return res.json({ languages: [] });
+      }
+      const allowedCodes = callProjects.map((p) => (p.languageCode || "").toLowerCase().trim()).filter(Boolean);
+      if (allowedCodes.length === 0) {
+        return res.json({ languages: [] });
+      }
+      langs = langs.filter((l) => allowedCodes.includes((l.code || "").toLowerCase().trim()));
+    }
+
     if (req.user) {
       const userId = req.user._id;
       const languagesWithProgress = await Promise.all(
@@ -177,10 +193,26 @@ export async function getLanguages(req, res) {
 // ─── GET /api/scripted-languages ───────────────────────────────────────────────
 export async function getScriptedLanguages(req, res) {
   try {
-    const langs = await ScriptedLanguage.find({ enabled: true })
+    let langs = await ScriptedLanguage.find({ enabled: true })
       .select("-companyName") // Strictly hidden from public/users
       .sort({ name: 1 })
       .lean();
+
+    // If user belongs to a vendor, filter strictly by vendor's assigned Scripted Call projects
+    if (req.user?.vendorId) {
+      const { Vendor } = await import("../models/Vendor.js");
+      const vendor = await Vendor.findById(req.user.vendorId).lean();
+      const scriptedProjects = (vendor?.assignedProjects || []).filter((p) => p.category === "scripted_call" && p.isActive !== false);
+      if (!vendor || scriptedProjects.length === 0) {
+        return res.json({ languages: [] });
+      }
+      const allowedCodes = scriptedProjects.map((p) => (p.languageCode || "").toLowerCase().trim()).filter(Boolean);
+      if (allowedCodes.length === 0) {
+        return res.json({ languages: [] });
+      }
+      langs = langs.filter((l) => allowedCodes.includes((l.code || "").toLowerCase().trim()));
+    }
+
     res.json({ languages: langs });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -236,6 +268,55 @@ export async function getMyLanguageApplications(req, res) {
       };
     });
 
+    // If user belongs to a vendor, filter applications strictly by the vendor's active assigned projects
+    if (req.user?.vendorId) {
+      const { Vendor } = await import("../models/Vendor.js");
+      const vendor = await Vendor.findById(req.user.vendorId).lean();
+      const activeProjects = (vendor?.assignedProjects || []).filter((p) => p.isActive !== false);
+      if (!vendor || activeProjects.length === 0) {
+        return res.json({ applications: [], isAdmin: false, isQA: false });
+      }
+
+      applications = applications.filter((app) => {
+        const type = app.applicationType || (app.companyId ? "phrase" : "call");
+        const lang = String(app.languageCode || app.language || "").trim().toLowerCase();
+
+        if (type === "call") {
+          return activeProjects.some(
+            (p) => p.category === "call" && (p.languageCode || "").toLowerCase().trim() === lang
+          );
+        }
+        if (type === "scripted_call") {
+          return activeProjects.some(
+            (p) => p.category === "scripted_call" && (p.languageCode || "").toLowerCase().trim() === lang
+          );
+        }
+        if (type === "phrase") {
+          const compIdentifiers = [
+            String(app.companyId || "").toLowerCase().trim(),
+            String(app.projectName || "").toLowerCase().trim(),
+            String(app.cleanCompanyId || "").toLowerCase().trim(),
+            String(app.matchedCompanyDbId || "").toLowerCase().trim()
+          ].filter(Boolean);
+
+          return activeProjects.some((p) => {
+            if (p.category !== "phrase") return false;
+            const pIds = [
+              String(p.subprojectId || "").toLowerCase().trim(),
+              String(p.subprojectName || "").toLowerCase().trim()
+            ].filter(Boolean);
+            const compMatched = compIdentifiers.some((ci) => pIds.includes(ci) || pIds.some((pid) => pid.includes(ci) || ci.includes(pid)));
+            if (!compMatched) return false;
+            if (p.assignedLanguages && p.assignedLanguages.length > 0) {
+              return p.assignedLanguages.map((l) => String(l).toLowerCase().trim()).includes(lang);
+            }
+            return true;
+          });
+        }
+        return false;
+      });
+    }
+
     res.json({ applications, isAdmin: !!req.user.isAdmin, isQA: !!req.user.isQA });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -258,6 +339,46 @@ export async function submitLanguageApplication(req, res) {
   
   if (applicationType === "phrase" && !companyId) {
     return res.status(400).json({ error: "companyId is required for phrase applications" });
+  }
+
+  // If user belongs to a vendor, strictly verify project assignment before processing
+  if (req.user?.vendorId) {
+    const { Vendor } = await import("../models/Vendor.js");
+    const vendor = await Vendor.findById(req.user.vendorId).lean();
+    const activeProjects = (vendor?.assignedProjects || []).filter((p) => p.isActive !== false);
+    if (!vendor || activeProjects.length === 0) {
+      uploadedFiles.forEach((f) => { try { fs.unlinkSync(f.path); } catch (e) {} });
+      return res.status(403).json({ error: "Your vendor organization does not currently have any active project assignments." });
+    }
+
+    let isAssigned = false;
+    if (applicationType === "call") {
+      isAssigned = activeProjects.some(
+        (p) => p.category === "call" && (p.languageCode || "").toLowerCase().trim() === languageCode
+      );
+    } else if (applicationType === "scripted_call") {
+      isAssigned = activeProjects.some(
+        (p) => p.category === "scripted_call" && (p.languageCode || "").toLowerCase().trim() === languageCode
+      );
+    } else if (applicationType === "phrase") {
+      const compTarget = String(companyId || "").toLowerCase().trim();
+      isAssigned = activeProjects.some((p) => {
+        if (p.category !== "phrase") return false;
+        const pSubId = String(p.subprojectId || "").toLowerCase().trim();
+        const pSubName = String(p.subprojectName || "").toLowerCase().trim();
+        const compMatched = pSubId === compTarget || pSubName === compTarget || pSubName.includes(compTarget) || compTarget.includes(pSubId);
+        if (!compMatched) return false;
+        if (p.assignedLanguages && p.assignedLanguages.length > 0) {
+          return p.assignedLanguages.map((l) => String(l).toLowerCase().trim()).includes(languageCode);
+        }
+        return true;
+      });
+    }
+
+    if (!isAssigned) {
+      uploadedFiles.forEach((f) => { try { fs.unlinkSync(f.path); } catch (e) {} });
+      return res.status(403).json({ error: "This project or language is not assigned to your vendor organization." });
+    }
   }
 
   let samplesMetadata = [];
@@ -1303,44 +1424,127 @@ export async function downloadContributorAgreement(req, res) {
   }
 }
 
-// PATCH /api/user/profile-completion
+// ─── POST /api/user/complete-profile & PATCH /api/user/profile-completion ─────
 export async function updateProfileCompletion(req, res) {
   try {
-    const { accent, dialect } = req.body;
-    if (!isNonEmptyString(accent) || !isNonEmptyString(dialect)) {
-      return res.status(400).json({ error: "Accent and Dialect are required." });
-    }
+    const {
+      firstname,
+      lastname,
+      dob,
+      gender,
+      mobileNumber,
+      regionalLanguage,
+      locality,
+      address,
+      microphoneBrand,
+      microphoneModel,
+      accent,
+      dialect,
+    } = req.body;
 
-    const user = await User.findByIdAndUpdate(
-      req.user._id,
-      { $set: { accent: accent.trim(), dialect: dialect.trim() } },
-      { new: true }
-    );
-
+    const user = await User.findById(req.user._id);
     if (!user) return res.status(404).json({ error: "User not found" });
 
+    // Fallback: If only accent/dialect is supplied (legacy quick overlay)
+    if (accent && dialect && !dob && !gender && !regionalLanguage) {
+      user.accent = accent.trim();
+      user.dialect = dialect.trim();
+      await user.save();
+      return res.json({
+        ok: true,
+        message: "Profile updated successfully",
+        user: formatUserResponse(user)
+      });
+    }
+
+    // Full profile completion validation
+    const finalFirstname = isNonEmptyString(firstname) ? firstname.trim() : (user.firstname || "Contributor");
+    const finalLastname = isNonEmptyString(lastname) ? lastname.trim() : (user.lastname || "");
+
+    if (!isNonEmptyString(finalFirstname)) {
+      return res.status(400).json({ error: "First name is required." });
+    }
+
+    if (!dob) {
+      return res.status(400).json({ error: "Date of birth is required." });
+    }
+    const dobDate = new Date(dob);
+    if (Number.isNaN(dobDate.getTime())) {
+      return res.status(400).json({ error: "Please enter a valid date of birth." });
+    }
+    const today = new Date();
+    let age = today.getFullYear() - dobDate.getFullYear();
+    const m = today.getMonth() - dobDate.getMonth();
+    if (m < 0 || (m === 0 && today.getDate() < dobDate.getDate())) age--;
+    if (age < 18) return res.status(400).json({ error: "You must be at least 18 years old." });
+    if (age > 65) return res.status(400).json({ error: "Age must be under 65." });
+
+    if (!gender || !["male", "female", "other"].includes(gender)) {
+      return res.status(400).json({ error: "Please select a valid gender." });
+    }
+
+    const cleanMobile = String(mobileNumber || req.body?.phone || user.mobileNumber || user.phone || "").trim().replace(/[^0-9]/g, "");
+    if (!cleanMobile || cleanMobile.length < 10) {
+      return res.status(400).json({ error: "Please enter a valid 10-digit mobile number." });
+    }
+
+    if (!isNonEmptyString(regionalLanguage)) {
+      return res.status(400).json({ error: "Regional language is required." });
+    }
+
+    if (!locality || !["urban", "rural"].includes(locality)) {
+      return res.status(400).json({ error: "Please select your locality (urban or rural)." });
+    }
+
+    const street = String(address?.street || req.body?.street || "").trim();
+    const city = String(address?.city || req.body?.city || "").trim();
+    const state = String(address?.state || req.body?.state || "").trim();
+    const pincode = String(address?.pincode || req.body?.pincode || "").trim();
+
+    if (!street || !city || !state) {
+      return res.status(400).json({ error: "Street, city, and state are required." });
+    }
+    if (!/^\d{6}$/.test(pincode)) {
+      return res.status(400).json({ error: "PIN code must be exactly 6 digits." });
+    }
+
+    if (!isNonEmptyString(microphoneBrand) || !isNonEmptyString(microphoneModel)) {
+      return res.status(400).json({ error: "Microphone brand and model are required." });
+    }
+
+    if (!isNonEmptyString(accent) || !isNonEmptyString(dialect)) {
+      return res.status(400).json({ error: "Accent and dialect are required." });
+    }
+
+    // Apply updates
+    user.firstname = finalFirstname;
+    user.lastname = finalLastname;
+    user.dob = dobDate;
+    user.gender = gender;
+    user.mobileNumber = cleanMobile;
+    user.phone = cleanMobile;
+    user.regionalLanguage = regionalLanguage.trim();
+    user.locality = locality;
+    user.address = { street, city, state, pincode };
+    user.microphoneBrand = microphoneBrand.trim();
+    user.microphoneModel = microphoneModel.trim();
+    user.accent = accent.trim();
+    user.dialect = dialect.trim();
+    user.isProfileComplete = true;
+
+    await user.save();
+
     res.json({
-      message: "Profile updated successfully",
-      user: {
-        id: user._id.toString(),
-        firstname: user.firstname,
-        lastname: user.lastname,
-        username: user.username,
-        email: user.email,
-        mobileNumber: user.mobileNumber || user.phone || "",
-        phone: user.mobileNumber || user.phone || "",
-        isAdmin: user.isAdmin,
-        isQA: user.isQA,
-        accountStatus: user.accountStatus,
-        accent: user.accent,
-        dialect: user.dialect,
-        contributorAgreement: user.contributorAgreement
-      }
+      ok: true,
+      message: "Profile completed successfully!",
+      user: formatUserResponse(user)
     });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    res.status(500).json({ error: "Failed to complete profile: " + e.message });
   }
 }
+
+export const completeUserProfile = updateProfileCompletion;
 
 // PATCH /api/user/mobile-number
 export async function updateMobileNumber(req, res) {

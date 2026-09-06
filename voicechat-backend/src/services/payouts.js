@@ -23,7 +23,7 @@ function isRegularUser(user, isSingleUserCheck = false) {
   return user && !user.isAdmin && !user.isQA;
 }
 
-function getCallEntryForUser(call, userId) {
+function getCallEntryForUser(call, userId, user = null) {
   const normalizedUserId = String(userId);
   let me;
   let peer;
@@ -60,8 +60,11 @@ function getCallEntryForUser(call, userId) {
     return null;
   }
 
-  // For scripted calls, ensure payout is strictly calculated on user's own recorded duration
-  if (isScripted && (!payoutUsd || payoutUsd === 0) && durationMinutes > 0 && call.languageHourlyPayout) {
+  // If user has a custom perCallPayrate set by a Studio Partner (hourly payrate in $/hr, and is not QA)
+  if (user && Number(user.perCallPayrate) > 0 && !user.isQA) {
+    payoutUsd = durationMinutes > 0 ? roundCurrency((Number(user.perCallPayrate) * durationMinutes) / 60) : 0;
+  } else if (isScripted && (!payoutUsd || payoutUsd === 0) && durationMinutes > 0 && call.languageHourlyPayout) {
+    // For scripted calls, ensure payout is strictly calculated on user's own recorded duration
     payoutUsd = roundCurrency((call.languageHourlyPayout * durationMinutes) / 60);
   }
 
@@ -437,7 +440,7 @@ export async function getPayoutOverview(userIds = null) {
 
   for (const call of calls) {
     for (const userId of ids) {
-      const entry = getCallEntryForUser(call, userId);
+      const entry = getCallEntryForUser(call, userId, userMap[userId]);
       if (entry) callsByUserId[userId].push(entry);
     }
   }
@@ -457,26 +460,34 @@ export async function getPayoutOverview(userIds = null) {
     }
 
     if (targetKey && phrasesByUserId[targetKey]) {
-      let rate = langRates[String(phrase.language || "").toLowerCase()] || 0;
-      
-      // Check if project has a specific rate
-      if (phrase.projectName) {
-        const project = projects.find(p => p.name === phrase.projectName);
-        if (project && project.languageRates) {
-          const specificRate = project.languageRates.find(r => r.languageCode === phrase.language?.toLowerCase());
-          if (specificRate) {
-            rate = specificRate.hourlyPayout;
+      const targetUser = userMap[targetKey];
+      let rate = 0;
+
+      // Check if user has custom hourlyPhrasePayrate set by a Studio Partner
+      if (targetUser && Number(targetUser.hourlyPhrasePayrate) > 0 && !targetUser.isQA) {
+        rate = Number(targetUser.hourlyPhrasePayrate);
+      } else {
+        rate = langRates[String(phrase.language || "").toLowerCase()] || 0;
+        
+        // Check if project has a specific rate
+        if (phrase.projectName) {
+          const project = projects.find(p => p.name === phrase.projectName);
+          if (project && project.languageRates) {
+            const specificRate = project.languageRates.find(r => r.languageCode === phrase.language?.toLowerCase());
+            if (specificRate) {
+              rate = specificRate.hourlyPayout;
+            }
           }
         }
-      }
 
-      // Company rate overrides all other rates if set
-      if (phrase.companyId) {
-        // Strip _downloaded suffix if present to match the core company rate
-        const coreCompanyId = String(phrase.companyId).replace("_downloaded", "").trim();
-        const company = companies.find(c => c.name === phrase.companyId || c.name === coreCompanyId);
-        if (company && company.hourlyPayout > 0) {
-          rate = company.hourlyPayout;
+        // Company rate overrides all other rates if set
+        if (phrase.companyId) {
+          // Strip _downloaded suffix if present to match the core company rate
+          const coreCompanyId = String(phrase.companyId).replace("_downloaded", "").trim();
+          const company = companies.find(c => c.name === phrase.companyId || c.name === coreCompanyId);
+          if (company && company.hourlyPayout > 0) {
+            rate = company.hourlyPayout;
+          }
         }
       }
 

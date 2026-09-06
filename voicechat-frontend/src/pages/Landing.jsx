@@ -427,11 +427,14 @@ export default function Landing() {
                 Voclara
               </span>
             </div>
-            <div className="flex flex-wrap justify-center gap-8">
+            <div className="flex flex-wrap justify-center items-center gap-8">
               <Link to="/about" className="font-bold text-neutral-500 hover:text-neutral-900 dark:hover:text-white transition-colors uppercase tracking-widest text-sm">About</Link>
               <Link to="/terms" className="font-bold text-neutral-500 hover:text-neutral-900 dark:hover:text-white transition-colors uppercase tracking-widest text-sm">Terms</Link>
               <Link to="/privacy" className="font-bold text-neutral-500 hover:text-neutral-900 dark:hover:text-white transition-colors uppercase tracking-widest text-sm">Privacy</Link>
               <Link to="/support" className="font-bold text-neutral-500 hover:text-neutral-900 dark:hover:text-white transition-colors uppercase tracking-widest text-sm">Support</Link>
+              <Link to="/vendor/login" className="font-bold text-purple-500 hover:text-purple-400 transition-colors uppercase tracking-widest text-sm flex items-center gap-1.5 border border-purple-500/30 px-3 py-1 rounded-lg bg-purple-500/10">
+                <span>🏢 Vendor Portal</span>
+              </Link>
             </div>
           </div>
           <div className="text-center text-sm font-bold text-neutral-400 border-t border-neutral-200 dark:border-neutral-800 pt-8 uppercase tracking-widest">

@@ -40,6 +40,7 @@ export default function AdminCallApps() {
     const [apps, setApps] = useState([]);
     const [loading, setLoading] = useState(true);
     const [statusFilter, setStatusFilter] = useState("pending");
+    const [searchQuery, setSearchQuery] = useState("");
     const [page, setPage] = useState(1);
     const [total, setTotal] = useState(0);
     const [totalPages, setTotalPages] = useState(1);
@@ -53,10 +54,11 @@ export default function AdminCallApps() {
     const [lightboxSrc, setLightboxSrc] = useState(null);
     const audioRefs = React.useRef({});
 
-    useEffect(() => { loadApps(); }, [page, statusFilter]);
+    useEffect(() => { loadApps(); }, [page, statusFilter, searchQuery]);
 
     async function fetchApps() {
-        const qs = `?type=call&page=${page}&limit=20${statusFilter ? `&status=${statusFilter}` : ""}`;
+        const searchPart = searchQuery ? `&search=${encodeURIComponent(searchQuery.trim())}` : "";
+        const qs = `?type=call&page=${page}&limit=20${statusFilter ? `&status=${statusFilter}` : ""}${searchPart}`;
         return get(`${REVIEW_BASE}${qs}`);
     }
 
@@ -232,16 +234,25 @@ export default function AdminCallApps() {
                         <h1 className="text-2xl md:text-3xl font-bold text-white mb-1">Call Applications</h1>
                         <p className="text-neutral-400 text-sm">Review and approve call application audio submissions.</p>
                     </div>
-                    <select
-                        value={statusFilter}
-                        onChange={e => { setStatusFilter(e.target.value); setPage(1); }}
-                        className="bg-neutral-700 border border-neutral-600 text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-warning-500"
-                    >
-                        <option value="">All</option>
-                        <option value="pending">Pending</option>
-                        <option value="approved">Approved</option>
-                        <option value="rejected">Rejected</option>
-                    </select>
+                    <div className="flex items-center gap-3">
+                        <input
+                            type="text"
+                            placeholder="Search name, speaker, vendor..."
+                            value={searchQuery}
+                            onChange={e => { setSearchQuery(e.target.value); setPage(1); }}
+                            className="bg-neutral-800 border border-neutral-700 text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-warning-500 w-52 sm:w-64"
+                        />
+                        <select
+                            value={statusFilter}
+                            onChange={e => { setStatusFilter(e.target.value); setPage(1); }}
+                            className="bg-neutral-700 border border-neutral-600 text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-warning-500"
+                        >
+                            <option value="">All</option>
+                            <option value="pending">Pending</option>
+                            <option value="approved">Approved</option>
+                            <option value="rejected">Rejected</option>
+                        </select>
+                    </div>
                 </div>
 
                 {error && <div className="bg-red-900/50 border border-red-700 text-red-300 px-4 py-3 rounded-lg mb-4">{error}</div>}
@@ -266,14 +277,24 @@ export default function AdminCallApps() {
                                     </thead>
                                     <tbody className="divide-y divide-neutral-700">
                                         {apps.map(app => {
-                                            const key = app.appId;
-                                            return (
-                                                <React.Fragment key={key}>
-                                                    <tr className="hover:bg-neutral-700/40 transition-colors">
-                                                        <td className="px-4 py-3">
-                                                            <div className="text-white font-medium text-xs">{app.userFirstname} {app.userLastname}</div>
-                                                            <div className="text-neutral-400 text-xs">@{app.username}</div>
-                                                        </td>
+                                             const key = app.appId;
+                                             return (
+                                                 <React.Fragment key={key}>
+                                                     <tr className="hover:bg-neutral-700/40 transition-colors">
+                                                         <td className="px-4 py-3">
+                                                             <div className="flex items-center gap-2 flex-wrap">
+                                                                 <span className="text-white font-medium text-xs">{app.userFirstname} {app.userLastname}</span>
+                                                                 {(app.vendorCode || app.vendorId?.vendorCode) && (
+                                                                     <span
+                                                                         className="inline-flex items-center justify-center font-mono font-bold text-[10px] uppercase px-2 py-0.5 rounded-lg bg-neutral-900 border border-purple-500/50 text-purple-300 shadow-sm"
+                                                                         title={`Vendor Code: ${app.vendorCode || app.vendorId?.vendorCode}`}
+                                                                     >
+                                                                         🏢 {app.vendorCode || app.vendorId?.vendorCode}
+                                                                     </span>
+                                                                 )}
+                                                             </div>
+                                                             <div className="text-neutral-400 text-xs">@{app.username}</div>
+                                                         </td>
                                                         <td className="px-4 py-3">
                                                             <code className="bg-neutral-700 text-warning-300 px-2 py-0.5 rounded text-xs font-mono">{app.languageCode}</code>
                                                         </td>

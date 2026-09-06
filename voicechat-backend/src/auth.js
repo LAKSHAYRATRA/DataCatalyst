@@ -93,3 +93,43 @@ export function optionalAuth(jwtSecret) {
   };
 }
 
+export function signVendorToken({ vendorId }, jwtSecret) {
+  const secret = jwtSecret || process.env.JWT_SECRET;
+  return jwt.sign({ sub: vendorId, role: "vendor" }, secret, { expiresIn: "30d" });
+}
+
+export function requireVendorAuth(jwtSecret) {
+  return async (req, res, next) => {
+    const secret = jwtSecret || process.env.JWT_SECRET;
+    let token = req.cookies?.vc_vendor_token || req.cookies?.vc_token;
+
+    if (!token) {
+      const header = req.headers.authorization || "";
+      const [kind, headerToken] = header.split(" ");
+      if (kind === "Bearer" && headerToken) {
+        token = headerToken;
+      }
+    }
+
+    if (!token) {
+      return res.status(401).json({ error: "unauthorized" });
+    }
+
+    try {
+      const payload = verifyToken(token, secret);
+      const { Vendor } = await import("./models/Vendor.js");
+      const vendor = await Vendor.findById(payload.sub);
+
+      if (!vendor || vendor.status === "suspended") {
+        return res.status(401).json({ error: "Vendor account deactivated or not found" });
+      }
+
+      req.vendorId = vendor._id;
+      req.vendor = vendor;
+      next();
+    } catch (e) {
+      return res.status(401).json({ error: "unauthorized" });
+    }
+  };
+}
+

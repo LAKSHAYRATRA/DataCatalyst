@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { apiPostJson } from "../lib/api.js";
 import { setUserInfo } from "../lib/auth.js";
 import { INDIA_STATE_NAMES } from "../lib/indiaData.js";
@@ -19,10 +19,10 @@ function ProgressBar({ step }) {
             <div key={label} className="flex flex-col items-center flex-1">
               <div
                 className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold transition-all duration-300 ${done
-                  ? "bg-primary-600 text-white"
+                  ? "bg-primary-600 text-white shadow-md shadow-primary-600/30"
                   : active
-                    ? "bg-primary-100 text-primary-700 border-2 border-primary-500"
-                    : "bg-neutral-200 text-neutral-500"
+                    ? "bg-primary-500/20 text-primary-300 border-2 border-primary-500 shadow-sm"
+                    : "bg-neutral-800 text-neutral-500 border border-neutral-700/80"
                   }`}
               >
                 {done ? (
@@ -33,16 +33,16 @@ function ProgressBar({ step }) {
                   num
                 )}
               </div>
-              <span className={`text-xs mt-1 font-medium ${active ? "text-primary-600" : "text-neutral-400"}`}>
+              <span className={`text-[11px] mt-1.5 font-medium ${active ? "text-primary-400 font-bold" : "text-neutral-500"}`}>
                 {label}
               </span>
             </div>
           );
         })}
       </div>
-      <div className="relative h-1 bg-neutral-200 rounded-full mt-1">
+      <div className="relative h-1.5 bg-neutral-800 rounded-full mt-2 overflow-hidden">
         <div
-          className="absolute h-1 bg-primary-500 rounded-full transition-all duration-500"
+          className="absolute h-full bg-gradient-to-r from-primary-600 to-indigo-500 rounded-full transition-all duration-500"
           style={{ width: `${((step - 1) / (TOTAL_STEPS - 1)) * 100}%` }}
         />
       </div>
@@ -53,17 +53,19 @@ function ProgressBar({ step }) {
 function FormField({ label, id, required, error, children }) {
   return (
     <div>
-      <label htmlFor={id} className="block text-sm font-medium text-neutral-700 mb-1">
-        {label} {required && <span className="text-error-500">*</span>}
+      <label htmlFor={id} className="block text-xs font-semibold text-neutral-300 uppercase tracking-wider mb-1.5">
+        {label} {required && <span className="text-rose-400">*</span>}
       </label>
       {children}
-      {error && <p className="text-xs text-error-500 mt-1">{error}</p>}
+      {error && <p className="text-xs text-rose-400 mt-1 font-medium">{error}</p>}
     </div>
   );
 }
 
 export default function Signup() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const vendorCode = (searchParams.get("vendor") || searchParams.get("ref") || "").trim().toUpperCase();
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
   const [globalError, setGlobalError] = useState("");
@@ -245,7 +247,9 @@ export default function Signup() {
         dialect: dialect.trim(),
         dob,
         otpCode: otp,
+        vendorCode: vendorCode || undefined,
       });
+      if (res.token) localStorage.setItem("vc_token", res.token);
       setUserInfo(res.user);
       navigate("/intro-recording");
     } catch (e2) {
@@ -261,56 +265,92 @@ export default function Signup() {
     }
   }
 
-  // ─── Render helpers ───────────────────────────────────────────────────────
-  const inputClass = "input w-full";
-  const selectClass = "input w-full appearance-none cursor-pointer";
+  const darkInput = "w-full px-4 py-2.5 bg-neutral-950 border border-neutral-800 rounded-xl text-sm text-white placeholder-neutral-500 focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500/50 transition-all";
+  const darkSelect = "w-full px-4 py-2.5 bg-neutral-950 border border-neutral-800 rounded-xl text-sm text-white focus:outline-none focus:border-primary-500 cursor-pointer";
 
   return (
-    <div className="min-h-screen bg-gradient-subtle flex items-center justify-center p-4">
-      <div className="w-full max-w-lg animate-fade-in">
-        {/* Brand */}
+    <div className="min-h-screen bg-neutral-950 text-neutral-100 flex items-center justify-center p-4 relative overflow-hidden selection:bg-primary-500 selection:text-white">
+      {/* Background Ambient Glows */}
+      <div className="absolute top-1/4 -left-32 w-96 h-96 bg-primary-600/10 rounded-full blur-3xl pointer-events-none" />
+      <div className="absolute bottom-1/4 -right-32 w-96 h-96 bg-indigo-600/10 rounded-full blur-3xl pointer-events-none" />
+
+      <div className="w-full max-w-lg animate-fade-in relative z-10 py-6">
+        {/* Brand Header */}
         <div className="text-center mb-6">
-          <div className="inline-flex items-center justify-center w-16 h-16 mb-3">
-            <img src="/logo.png" alt="Voclara Logo" className="w-16 h-16 object-contain shadow-sm" />
+          <div className="inline-flex items-center justify-center w-16 h-16 mb-3 p-2 rounded-2xl bg-neutral-900 border border-neutral-800 shadow-xl shadow-black/40">
+            <img src="/logo.png" alt="Voclara Logo" className="w-14 h-14 object-contain" />
           </div>
-          <h1 className="text-2xl font-bold text-neutral-900">Create Account</h1>
-          <p className="text-neutral-500 text-sm mt-1">Join Voclara today</p>
+          <h1 className="text-3xl font-extrabold text-white tracking-tight">Create Account</h1>
+          <p className="text-neutral-400 text-sm mt-1">Join Voclara as a voice contributor</p>
         </div>
 
-        <div className="card animate-slide-up">
+        {/* Signup Card */}
+        <div className="bg-neutral-900/90 border border-neutral-800 rounded-3xl p-6 sm:p-8 shadow-2xl backdrop-blur-xl animate-slide-up">
+          {vendorCode && (
+            <div className="mb-6 p-3 bg-purple-500/10 border border-purple-500/30 rounded-xl flex items-center justify-between text-xs text-purple-200">
+              <span className="font-medium">
+                Joining via Agency Partner: <strong className="font-mono font-bold text-purple-300">{vendorCode}</strong>
+              </span>
+              <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded bg-purple-500/20 text-purple-200 border border-purple-500/30">
+                Direct Contributor
+              </span>
+            </div>
+          )}
+
           <ProgressBar step={step} />
 
           {/* ── STEP 1: Personal Info ── */}
           {step === 1 && (
             <div className="space-y-4">
-              <h2 className="text-lg font-semibold text-neutral-800 mb-1">Personal Information</h2>
+              <h2 className="text-base font-bold text-white mb-2 pb-2 border-b border-neutral-800/80">
+                1. Personal Information
+              </h2>
 
               <div className="grid grid-cols-2 gap-3">
                 <FormField label="First Name" id="firstname" required error={fieldErrors.firstname}>
-                  <input id="firstname" type="text" className={inputClass} placeholder="John"
-                    value={firstname} onChange={e => setFirstname(e.target.value)} />
+                  <input
+                    id="firstname"
+                    type="text"
+                    className={darkInput}
+                    placeholder="John"
+                    value={firstname}
+                    onChange={e => setFirstname(e.target.value)}
+                  />
                 </FormField>
                 <FormField label="Last Name" id="lastname" required error={fieldErrors.lastname}>
-                  <input id="lastname" type="text" className={inputClass} placeholder="Doe"
-                    value={lastname} onChange={e => setLastname(e.target.value)} />
+                  <input
+                    id="lastname"
+                    type="text"
+                    className={darkInput}
+                    placeholder="Doe"
+                    value={lastname}
+                    onChange={e => setLastname(e.target.value)}
+                  />
                 </FormField>
               </div>
 
               <FormField label="Email Address" id="email" required error={fieldErrors.email}>
-                <input id="email" type="email" className={inputClass} placeholder="john@example.com"
-                  value={email} onChange={e => setEmail(e.target.value)} autoComplete="email" />
+                <input
+                  id="email"
+                  type="email"
+                  className={darkInput}
+                  placeholder="john@example.com"
+                  value={email}
+                  onChange={e => setEmail(e.target.value)}
+                  autoComplete="email"
+                />
               </FormField>
 
               <FormField label="Mobile Number (10 Digits)" id="mobileNumber" required error={fieldErrors.mobileNumber}>
                 <div className="relative flex rounded-xl shadow-sm">
-                  <span className="inline-flex items-center px-3.5 rounded-l-xl border border-r-0 border-neutral-300 bg-neutral-100 text-neutral-600 text-sm font-bold">
+                  <span className="inline-flex items-center px-3.5 rounded-l-xl border border-r-0 border-neutral-800 bg-neutral-950 text-neutral-400 text-xs font-bold">
                     🇮🇳 +91
                   </span>
                   <input
                     id="mobileNumber"
                     type="tel"
                     maxLength={10}
-                    className="input w-full rounded-l-none font-mono tracking-wider"
+                    className="w-full px-4 py-2.5 bg-neutral-950 border border-neutral-800 rounded-r-xl text-sm text-white placeholder-neutral-500 focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500/50 font-mono tracking-wider"
                     placeholder="9876543210"
                     value={mobileNumber}
                     onChange={e => setMobileNumber(e.target.value.replace(/[^0-9]/g, "").slice(0, 10))}
@@ -320,18 +360,30 @@ export default function Signup() {
 
               <div className="grid grid-cols-2 gap-3">
                 <FormField label="Password" id="password" required error={fieldErrors.password}>
-                  <input id="password" type="password" className={inputClass} placeholder="••••••••"
-                    value={password} onChange={e => setPassword(e.target.value)} />
+                  <input
+                    id="password"
+                    type="password"
+                    className={darkInput}
+                    placeholder="••••••••"
+                    value={password}
+                    onChange={e => setPassword(e.target.value)}
+                  />
                 </FormField>
                 <FormField label="Confirm Password" id="confirmPassword" required error={fieldErrors.confirmPassword}>
-                  <input id="confirmPassword" type="password" className={inputClass} placeholder="••••••••"
-                    value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} />
+                  <input
+                    id="confirmPassword"
+                    type="password"
+                    className={darkInput}
+                    placeholder="••••••••"
+                    value={confirmPassword}
+                    onChange={e => setConfirmPassword(e.target.value)}
+                  />
                 </FormField>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <FormField label="Gender" id="gender" required error={fieldErrors.gender}>
-                  <select id="gender" className={selectClass} value={gender} onChange={e => setGender(e.target.value)}>
+                  <select id="gender" className={darkSelect} value={gender} onChange={e => setGender(e.target.value)}>
                     <option value="">Select gender</option>
                     <option value="male">Male</option>
                     <option value="female">Female</option>
@@ -340,7 +392,7 @@ export default function Signup() {
                 </FormField>
 
                 <FormField label="Primary Language" id="regionalLanguage" required error={fieldErrors.regionalLanguage}>
-                  <select id="regionalLanguage" className={selectClass} value={regionalLanguage} onChange={e => setRegionalLanguage(e.target.value)}>
+                  <select id="regionalLanguage" className={darkSelect} value={regionalLanguage} onChange={e => setRegionalLanguage(e.target.value)}>
                     <option value="">Select language</option>
                     {REGIONAL_LANGUAGES.map(lang => (
                       <option key={lang} value={lang}>{lang}</option>
@@ -349,8 +401,15 @@ export default function Signup() {
                 </FormField>
               </div>
 
-              <FormField label="Date of Birth" id="dob" required error={fieldErrors.dob}>
-                <input id="dob" type="date" className={inputClass} value={dob} onChange={e => setDob(e.target.value)} max={new Date().toISOString().split("T")[0]} />
+              <FormField label="Date of Birth (Must be 18+)" id="dob" required error={fieldErrors.dob}>
+                <input
+                  id="dob"
+                  type="date"
+                  className={darkInput}
+                  value={dob}
+                  onChange={e => setDob(e.target.value)}
+                  max={new Date().toISOString().split("T")[0]}
+                />
               </FormField>
             </div>
           )}
@@ -358,16 +417,24 @@ export default function Signup() {
           {/* ── STEP 2: Address Info ── */}
           {step === 2 && (
             <div className="space-y-4">
-              <h2 className="text-lg font-semibold text-neutral-800 mb-1">Address Details</h2>
+              <h2 className="text-base font-bold text-white mb-2 pb-2 border-b border-neutral-800/80">
+                2. Residential Location
+              </h2>
 
               <FormField label="Street Address" id="street" required error={fieldErrors.street}>
-                <input id="street" type="text" className={inputClass} placeholder="123 Main St, Apt 4B"
-                  value={street} onChange={e => setStreet(e.target.value)} />
+                <input
+                  id="street"
+                  type="text"
+                  className={darkInput}
+                  placeholder="123 Main St, Apt 4B"
+                  value={street}
+                  onChange={e => setStreet(e.target.value)}
+                />
               </FormField>
 
               <div className="grid grid-cols-2 gap-3">
-                <FormField label="State" id="state" required error={fieldErrors.state}>
-                  <select id="state" className={selectClass} value={state} onChange={e => setState(e.target.value)}>
+                <FormField label="State / UT" id="state" required error={fieldErrors.state}>
+                  <select id="state" className={darkSelect} value={state} onChange={e => setState(e.target.value)}>
                     <option value="">Select State</option>
                     {INDIA_STATE_NAMES.map(s => (
                       <option key={s} value={s}>{s}</option>
@@ -376,21 +443,34 @@ export default function Signup() {
                 </FormField>
 
                 <FormField label="City / District" id="city" required error={fieldErrors.city}>
-                  <input id="city" type="text" className={inputClass} placeholder="e.g. Mumbai"
-                    value={city} onChange={e => setCity(e.target.value)} />
+                  <input
+                    id="city"
+                    type="text"
+                    className={darkInput}
+                    placeholder="e.g. Mumbai"
+                    value={city}
+                    onChange={e => setCity(e.target.value)}
+                  />
                 </FormField>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
-                <FormField label="Pincode" id="pincode" required error={fieldErrors.pincode}>
-                  <input id="pincode" type="text" className={inputClass} placeholder="400001"
-                    maxLength={6} value={pincode} onChange={e => setPincode(e.target.value.replace(/\D/g, ""))} />
+                <FormField label="PIN Code" id="pincode" required error={fieldErrors.pincode}>
+                  <input
+                    id="pincode"
+                    type="text"
+                    className={`${darkInput} font-mono`}
+                    placeholder="400001"
+                    maxLength={6}
+                    value={pincode}
+                    onChange={e => setPincode(e.target.value.replace(/\D/g, ""))}
+                  />
                 </FormField>
 
                 <FormField label="Area Locality" id="locality" required>
-                  <select id="locality" className={selectClass} value={locality} onChange={e => setLocality(e.target.value)}>
-                    <option value="urban">Urban</option>
-                    <option value="rural">Rural</option>
+                  <select id="locality" className={darkSelect} value={locality} onChange={e => setLocality(e.target.value)}>
+                    <option value="urban">Urban (City)</option>
+                    <option value="rural">Rural (Village / Town)</option>
                   </select>
                 </FormField>
               </div>
@@ -400,33 +480,59 @@ export default function Signup() {
           {/* ── STEP 3: Equipment & Accents ── */}
           {step === 3 && (
             <div className="space-y-4">
-              <h2 className="text-lg font-semibold text-neutral-800 mb-1">Equipment & Accent</h2>
+              <h2 className="text-base font-bold text-white mb-2 pb-2 border-b border-neutral-800/80">
+                3. Equipment & Dialect
+              </h2>
 
               <div className="grid grid-cols-2 gap-3">
                 <FormField label="Microphone Brand" id="micBrand" required error={fieldErrors.micBrand}>
-                  <input id="micBrand" type="text" className={inputClass} placeholder="e.g. Realtek / Apple"
-                    value={micBrand} onChange={e => setMicBrand(e.target.value)} />
+                  <input
+                    id="micBrand"
+                    type="text"
+                    className={darkInput}
+                    placeholder="e.g. Apple / Samsung / Boat"
+                    value={micBrand}
+                    onChange={e => setMicBrand(e.target.value)}
+                  />
                 </FormField>
                 <FormField label="Microphone Model" id="micModel" required error={fieldErrors.micModel}>
-                  <input id="micModel" type="text" className={inputClass} placeholder="e.g. Built-in / AirPods"
-                    value={micModel} onChange={e => setMicModel(e.target.value)} />
+                  <input
+                    id="micModel"
+                    type="text"
+                    className={darkInput}
+                    placeholder="e.g. Built-in Mic / Earphones"
+                    value={micModel}
+                    onChange={e => setMicModel(e.target.value)}
+                  />
                 </FormField>
               </div>
 
               <FormField label="Accent Description" id="accent" required error={fieldErrors.accent}>
-                <input id="accent" type="text" className={inputClass} placeholder="e.g. Neutral Indian, North Indian"
-                  value={accent} onChange={e => setAccent(e.target.value)} />
+                <input
+                  id="accent"
+                  type="text"
+                  className={darkInput}
+                  placeholder="e.g. Neutral Indian, North Indian"
+                  value={accent}
+                  onChange={e => setAccent(e.target.value)}
+                />
               </FormField>
 
               <FormField label="Dialect" id="dialect" required error={fieldErrors.dialect}>
-                <input id="dialect" type="text" className={inputClass} placeholder="e.g. Standard Hindi"
-                  value={dialect} onChange={e => setDialect(e.target.value)} />
+                <input
+                  id="dialect"
+                  type="text"
+                  className={darkInput}
+                  placeholder="e.g. Standard Hindi, Bhojpuri, Awadhi"
+                  value={dialect}
+                  onChange={e => setDialect(e.target.value)}
+                />
               </FormField>
 
-              <div className="bg-primary-50 border border-primary-100 rounded-lg p-3 mt-2">
-                <p className="text-xs text-primary-700 flex items-start gap-2">
+              <div className="bg-primary-500/10 border border-primary-500/30 rounded-xl p-3 mt-2">
+                <p className="text-xs text-primary-300 flex items-start gap-2">
                   <span className="text-base leading-none">ℹ️</span>
-                  <span>This information helps us understand microphone usage patterns across our users. Any microphone type is fine.</span>
+                  <span>This helps matching you with regional audio tasks. Any standard earphone or phone mic is acceptable.</span>
                 </p>
               </div>
             </div>
@@ -437,23 +543,23 @@ export default function Signup() {
             <form onSubmit={onSubmit}>
               <div className="space-y-5">
                 <div className="text-center">
-                  <div className="inline-flex items-center justify-center w-14 h-14 bg-primary-100 rounded-full mb-3">
-                    <svg className="w-7 h-7 text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <div className="inline-flex items-center justify-center w-14 h-14 bg-primary-500/10 border border-primary-500/30 rounded-2xl mb-3 text-primary-400">
+                    <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                     </svg>
                   </div>
-                  <h2 className="text-lg font-semibold text-neutral-800">Verify Your Email</h2>
-                  <p className="text-sm text-neutral-500 mt-1">
+                  <h2 className="text-lg font-bold text-white">Verify Your Email</h2>
+                  <p className="text-xs text-neutral-400 mt-1">
                     We sent a 6-digit OTP to<br />
-                    <span className="font-semibold text-neutral-700">{email}</span>
+                    <span className="font-mono font-semibold text-primary-300">{email}</span>
                   </p>
                 </div>
 
-                <FormField label="Enter OTP" id="otp" required error={fieldErrors.otp}>
+                <FormField label="Enter 6-Digit OTP" id="otp" required error={fieldErrors.otp}>
                   <input
                     id="otp"
                     type="text"
-                    className={`${inputClass} text-center text-2xl font-mono tracking-widest letter-spacing-4`}
+                    className={`${darkInput} text-center text-2xl font-mono tracking-widest`}
                     placeholder="— — — — — —"
                     value={otp}
                     onChange={e => setOtp(e.target.value.replace(/\D/g, "").slice(0, 6))}
@@ -463,9 +569,9 @@ export default function Signup() {
                   />
                 </FormField>
 
-                <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-800 flex items-start gap-2">
+                <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 text-xs text-amber-300 flex items-start gap-2">
                   <span className="text-base leading-none">⚠️</span>
-                  <span>If you don't find the OTP in your inbox, make sure to check the <strong>SPAM</strong> folder of your mail.</span>
+                  <span>If you don't find the OTP in your inbox, make sure to check your <strong>SPAM</strong> folder.</span>
                 </div>
 
                 <p className="text-xs text-neutral-500 text-center">OTP expires in 10 minutes</p>
@@ -473,13 +579,13 @@ export default function Signup() {
                 {/* Resend */}
                 <div className="text-center">
                   {resendCooldown > 0 ? (
-                    <span className="text-sm text-neutral-400">Resend OTP in {resendCooldown}s</span>
+                    <span className="text-xs text-neutral-500">Resend OTP in {resendCooldown}s</span>
                   ) : (
                     <button
                       type="button"
                       onClick={sendOtp}
                       disabled={loading}
-                      className="text-sm text-primary-600 hover:text-primary-700 font-semibold transition-colors"
+                      className="text-xs text-primary-400 hover:text-primary-300 font-semibold transition-colors"
                     >
                       Resend OTP
                     </button>
@@ -487,12 +593,16 @@ export default function Signup() {
                 </div>
 
                 {globalError && (
-                  <div className="bg-error-50 border border-error-200 text-error-700 px-4 py-3 rounded-lg text-sm animate-scale-in">
+                  <div className="bg-rose-500/10 border border-rose-500/30 text-rose-300 px-4 py-3 rounded-xl text-xs font-medium animate-scale-in">
                     {globalError}
                   </div>
                 )}
 
-                <button type="submit" disabled={loading || otp.length !== 6} className="btn btn-primary w-full">
+                <button
+                  type="submit"
+                  disabled={loading || otp.length !== 6}
+                  className="w-full py-3.5 bg-gradient-to-r from-primary-600 to-indigo-600 hover:from-primary-500 hover:to-indigo-500 text-white font-bold text-sm rounded-xl shadow-lg shadow-primary-600/25 transition-all disabled:opacity-50"
+                >
                   {loading ? (
                     <span className="flex items-center justify-center">
                       <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" fill="none" viewBox="0 0 24 24">
@@ -502,18 +612,18 @@ export default function Signup() {
                       Creating Account...
                     </span>
                   ) : (
-                    "Verify & Create Account"
+                    "Verify & Create Account →"
                   )}
                 </button>
 
-                <p className="text-xs text-neutral-500 text-center leading-relaxed">
+                <p className="text-[11px] text-neutral-500 text-center leading-relaxed">
                   By clicking Verify & Create Account, you agree to Voclara's{" "}
-                  <a href="/Legal/Voclara-ToS.html" target="_blank" rel="noopener noreferrer" className="text-primary-600 underline hover:text-primary-700">
+                  <a href="/Legal/Voclara-ToS.html" target="_blank" rel="noopener noreferrer" className="text-primary-400 underline hover:text-primary-300">
                     Terms of Service
                   </a>{" "}and{" "}
-                  <a href="/Legal/Voclara-Privacy-Policy.html" target="_blank" rel="noopener noreferrer" className="text-primary-600 underline hover:text-primary-700">
+                  <a href="/Legal/Voclara-Privacy-Policy.html" target="_blank" rel="noopener noreferrer" className="text-primary-400 underline hover:text-primary-300">
                     Privacy Policy
-                  </a>. Voice sample consent is captured separately before recording.
+                  </a>.
                 </p>
               </div>
             </form>
@@ -521,17 +631,20 @@ export default function Signup() {
 
           {/* ── Errors (steps 1-3) ── */}
           {step < 4 && globalError && (
-            <div className="mt-4 bg-error-50 border border-error-200 text-error-700 px-4 py-3 rounded-lg text-sm animate-scale-in">
+            <div className="mt-4 bg-rose-500/10 border border-rose-500/30 text-rose-300 px-4 py-3 rounded-xl text-xs font-medium animate-scale-in">
               {globalError}
             </div>
           )}
 
           {/* ── Step navigation (steps 1-3) ── */}
           {step < 4 && (
-            <div className={`mt-6 flex ${step > 1 ? "justify-between" : "justify-end"}`}>
+            <div className={`mt-6 flex items-center ${step > 1 ? "justify-between" : "justify-end"} pt-3 border-t border-neutral-800/80`}>
               {step > 1 && (
-                <button type="button" onClick={goBack}
-                  className="btn btn-outline px-6">
+                <button
+                  type="button"
+                  onClick={goBack}
+                  className="px-5 py-2.5 rounded-xl border border-neutral-800 bg-neutral-900 hover:bg-neutral-800 text-neutral-300 hover:text-white text-xs font-semibold transition-all"
+                >
                   ← Back
                 </button>
               )}
@@ -539,7 +652,7 @@ export default function Signup() {
                 type="button"
                 onClick={goNext}
                 disabled={loading}
-                className="btn btn-primary px-8"
+                className="px-8 py-2.5 bg-gradient-to-r from-primary-600 to-indigo-600 hover:from-primary-500 hover:to-indigo-500 text-white font-bold text-xs rounded-xl shadow-md shadow-primary-600/25 transition-all disabled:opacity-50"
               >
                 {loading && step === 3 ? (
                   <span className="flex items-center">
@@ -552,17 +665,17 @@ export default function Signup() {
                 ) : step === 3 ? (
                   "Send OTP & Verify →"
                 ) : (
-                  "Next →"
+                  "Next Step →"
                 )}
               </button>
             </div>
           )}
 
           {/* ── Sign in link ── */}
-          <div className="mt-6 text-center border-t border-neutral-100 pt-4">
-            <p className="text-sm text-neutral-600">
+          <div className="mt-6 text-center border-t border-neutral-800/80 pt-4">
+            <p className="text-xs text-neutral-400">
               Already have an account?{" "}
-              <Link to="/login" className="text-primary-600 hover:text-primary-700 font-semibold transition-colors">
+              <Link to="/login" className="text-primary-400 hover:text-primary-300 font-semibold transition-colors">
                 Sign in
               </Link>
             </p>

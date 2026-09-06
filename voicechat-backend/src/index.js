@@ -47,7 +47,7 @@ import { pubClient, subClient, redis } from "./config/redis.js";
 ffmpeg.setFfmpegPath(ffmpegInstaller.path);
 
 import { connectDb } from "./db.js";
-import { requireAuth, verifyToken } from "./auth.js";
+import { requireAuth, optionalAuth, verifyToken } from "./auth.js";
 import { requireSignedAgreement } from "./middleware/requireSignedAgreement.js";
 import { User } from "./models/User.js";
 import { CallSession } from "./models/CallSession.js";
@@ -110,6 +110,8 @@ import supportRoutes from "./routes/support.js";
 import phrasesRoutes from "./routes/phrases.js";
 import projectsRoutes from "./routes/projects.js";
 import turnRoutes from "./routes/turn.js";
+import vendorsRoutes from "./routes/vendors.js";
+import vendorPortalRoutes from "./routes/vendorPortal.js";
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 function parseMaxCallMs(value, fallbackMs) {
@@ -305,6 +307,7 @@ app.post(
 );
 app.post("/api/user/upi", requireAuth(JWT_SECRET), updateUpiId);
 app.patch("/api/user/profile-completion", requireAuth(JWT_SECRET), updateProfileCompletion);
+app.post("/api/user/complete-profile", requireAuth(JWT_SECRET), updateProfileCompletion);
 app.patch("/api/user/mobile-number", requireAuth(JWT_SECRET), updateMobileNumber);
 
 // Contributor Agreement
@@ -315,7 +318,7 @@ app.get("/api/user/contributor-agreement/download", requireAuth(JWT_SECRET), dow
 // Languages
 app.get("/api/public/languages", getLanguages);
 app.get("/api/languages", requireAuth(JWT_SECRET), getLanguages);
-app.get("/api/scripted-languages", getScriptedLanguages);
+app.get("/api/scripted-languages", optionalAuth(JWT_SECRET), getScriptedLanguages);
 app.get(
   "/api/language-applications/my",
   requireAuth(JWT_SECRET),
@@ -363,6 +366,8 @@ app.use("/api/support", supportRoutes);
 app.use("/api/phrases", phrasesRoutes);
 app.use("/api/projects", projectsRoutes);
 app.use("/api/turn", turnRoutes);
+app.use("/api/admin/vendors", vendorsRoutes);
+app.use("/api/vendor", vendorPortalRoutes);
 
 // ─── HTTP + Socket.IO server ──────────────────────────────────────────────────
 const server = http.createServer(app);

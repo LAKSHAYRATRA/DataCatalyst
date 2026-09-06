@@ -21,6 +21,7 @@ import AdminPayoutUser from "./pages/AdminPayoutUser.jsx";
 import IntroRecording from "./pages/IntroRecording.jsx";
 import PendingApproval from "./pages/PendingApproval.jsx";
 import ContributorAgreement from "./pages/ContributorAgreement.jsx";
+import CompleteProfile from "./pages/CompleteProfile.jsx";
 import LanguageApply from "./pages/LanguageApply.jsx";
 import AdminLanguages from "./pages/AdminLanguages.jsx";
 import AdminLanguageSubprojects from "./pages/AdminLanguageSubprojects.jsx";
@@ -57,6 +58,9 @@ import AdminPhraseDownloads from "./pages/AdminPhraseDownloads.jsx";
 import AdminQAPayments from "./pages/AdminQAPayments.jsx";
 import AdminAmbiguity from "./pages/AdminAmbiguity.jsx";
 import QaFlags from "./pages/QaFlags.jsx";
+import AdminVendors from "./pages/AdminVendors.jsx";
+import VendorLogin from "./pages/VendorLogin.jsx";
+import VendorPortal from "./pages/VendorPortal.jsx";
 import { getUserInfo, setUserInfo, clearToken } from "./lib/auth.js";
 import { apiGet, apiPatchJson } from "./lib/api.js";
 import { SystemCheckProvider } from "./context/SystemCheckContext.jsx";
@@ -95,6 +99,24 @@ function awaitingAgreementReview(userInfo) {
   return ca.signed === true && ca.adminReviewStatus === "pending";
 }
 
+// Guard complete-profile page — only for logged-in users with incomplete profiles
+function RequireCompleteProfileGated({ children }) {
+  const userInfo = getUserInfo();
+  if (!userInfo) return <Navigate to="/login" replace />;
+  if (isUserDisabled(userInfo)) return <DisabledUser />;
+  if (userInfo.isAdmin) return <Navigate to="/admin/dashboard" replace />;
+  if (userInfo.isQA) return <Navigate to="/admin/qa" replace />;
+  // If profile is already complete (or regular user), redirect to normal flow
+  if (userInfo.isProfileComplete !== false) {
+    const s = userInfo.accountStatus;
+    if (s === "pending_intro" || s === "rejected") return <Navigate to="/intro-recording" replace />;
+    if (s === "pending_approval") return <Navigate to="/pending-approval" replace />;
+    if (needsAgreementSigning(userInfo)) return <Navigate to="/contributor-agreement" replace />;
+    return <Navigate to="/call" replace />;
+  }
+  return children;
+}
+
 // Redirect logged-in users away from /login and /signup
 function RedirectIfAuthenticated({ children }) {
   const userInfo = getUserInfo();
@@ -103,6 +125,7 @@ function RedirectIfAuthenticated({ children }) {
   // QA users go straight to the QA review page
   if (userInfo.isQA && !userInfo.isAdmin) return <Navigate to="/admin/qa" replace />;
   if (userInfo.isAdmin) return <Navigate to="/admin/dashboard" replace />;
+  if (userInfo.isProfileComplete === false) return <Navigate to="/complete-profile" replace />;
   const s = userInfo.accountStatus;
   if (s === "pending_intro" || s === "rejected") return <Navigate to="/intro-recording" replace />;
   if (s === "pending_approval") return <Navigate to="/pending-approval" replace />;
@@ -118,6 +141,7 @@ function RequireAuth({ children }) {
   if (isUserDisabled(userInfo)) return <DisabledUser />;
   if (userInfo.isQA && !userInfo.isAdmin) return <Navigate to="/admin/qa" replace />;
   if (userInfo.isAdmin) return children;
+  if (userInfo.isProfileComplete === false) return <Navigate to="/complete-profile" replace />;
 
   const s = userInfo.accountStatus;
   if (s === "pending_intro" || s === "rejected") return <Navigate to="/intro-recording" replace />;
@@ -134,6 +158,7 @@ function RequirePhraseAccess({ children }) {
   if (isUserDisabled(userInfo)) return <DisabledUser />;
   if (userInfo.isQA && !userInfo.isAdmin) return <Navigate to="/admin/qaphrase" replace />;
   if (userInfo.isAdmin) return children;
+  if (userInfo.isProfileComplete === false) return <Navigate to="/complete-profile" replace />;
 
   const s = userInfo.accountStatus;
   if (s === "pending_intro" || s === "rejected") return <Navigate to="/intro-recording" replace />;
@@ -151,6 +176,7 @@ function RequireDashboardAccess({ children }) {
   if (isUserDisabled(userInfo)) return <DisabledUser />;
   if (userInfo.isQA && !userInfo.isAdmin) return <Navigate to="/admin/qa" replace />;
   if (userInfo.isAdmin) return children;
+  if (userInfo.isProfileComplete === false) return <Navigate to="/complete-profile" replace />;
 
   const s = userInfo.accountStatus;
   if (s === "pending_intro" || s === "rejected") return <Navigate to="/intro-recording" replace />;
@@ -167,6 +193,7 @@ function RequireAgreementAccess({ children }) {
   if (isUserDisabled(userInfo)) return <DisabledUser />;
   if (userInfo.isQA && !userInfo.isAdmin) return <Navigate to="/admin/qa" replace />;
   if (userInfo.isAdmin) return <Navigate to="/admin/dashboard" replace />;
+  if (userInfo.isProfileComplete === false) return <Navigate to="/complete-profile" replace />;
   const s = userInfo.accountStatus;
   if (s === "pending_intro" || s === "rejected") return <Navigate to="/intro-recording" replace />;
   if (s === "pending_approval") return <Navigate to="/pending-approval" replace />;
@@ -182,6 +209,7 @@ function RequireIntroAccess({ children }) {
   if (isUserDisabled(userInfo)) return <DisabledUser />;
   if (userInfo.isQA && !userInfo.isAdmin) return <Navigate to="/admin/qa" replace />;
   if (userInfo.isAdmin) return <Navigate to="/admin/dashboard" replace />;
+  if (userInfo.isProfileComplete === false) return <Navigate to="/complete-profile" replace />;
   if (userInfo.accountStatus === "approved") return <Navigate to="/call" replace />;
   if (userInfo.accountStatus === "pending_approval") return <Navigate to="/pending-approval" replace />;
   return children;
@@ -194,6 +222,7 @@ function RequirePendingAccess({ children }) {
   if (isUserDisabled(userInfo)) return <DisabledUser />;
   if (userInfo.isQA && !userInfo.isAdmin) return <Navigate to="/admin/qa" replace />;
   if (userInfo.isAdmin) return <Navigate to="/admin/dashboard" replace />;
+  if (userInfo.isProfileComplete === false) return <Navigate to="/complete-profile" replace />;
   if (userInfo.accountStatus === "approved") return <Navigate to="/call" replace />;
   if (userInfo.accountStatus === "pending_intro" || userInfo.accountStatus === "rejected")
     return <Navigate to="/intro-recording" replace />;
@@ -514,7 +543,8 @@ export default function App() {
         <Route path="/login" element={<RedirectIfAuthenticated><Login /></RedirectIfAuthenticated>} />
         <Route path="/signup" element={<RedirectIfAuthenticated><Signup /></RedirectIfAuthenticated>} />
 
-        {/* Approval flow */}
+        {/* Approval and Onboarding flow */}
+        <Route path="/complete-profile" element={<RequireCompleteProfileGated><CompleteProfile /></RequireCompleteProfileGated>} />
         <Route path="/intro-recording" element={<RequireIntroAccess><IntroRecording /></RequireIntroAccess>} />
         <Route path="/pending-approval" element={<RequirePendingAccess><PendingApproval /></RequirePendingAccess>} />
         <Route path="/contributor-agreement" element={<RequireAgreementAccess><ContributorAgreement /></RequireAgreementAccess>} />
@@ -578,6 +608,11 @@ export default function App() {
         <Route path="/admin/qa-flags" element={<RequireAdminOrQA><QaFlags /></RequireAdminOrQA>} />
         <Route path="/admin/ambiguity" element={<RequireAdmin><AdminAmbiguity /></RequireAdmin>} />
         <Route path="/admin/media" element={<RequireAdmin><AdminMedia /></RequireAdmin>} />
+        <Route path="/admin/vendors" element={<RequireAdmin><AdminVendors /></RequireAdmin>} />
+        <Route path="/vendor/login" element={<VendorLogin />} />
+        <Route path="/vendor/dashboard" element={<VendorPortal />} />
+        <Route path="/vendor/portal" element={<Navigate to="/vendor/dashboard" replace />} />
+        <Route path="/vendor" element={<Navigate to="/vendor/dashboard" replace />} />
         <Route path="/language-apply" element={<RequireAuth><LanguageApply /></RequireAuth>} />
         <Route path="/phrases" element={<RequirePhraseAccess><PhraseRecording /></RequirePhraseAccess>} />
 

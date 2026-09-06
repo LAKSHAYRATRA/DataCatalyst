@@ -20,7 +20,8 @@ import {
   SlidersHorizontal,
   Sparkles,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  Scissors
 } from 'lucide-react';
 import Swal from 'sweetalert2';
 import { apiGet, apiPostJson, apiPatchJson } from '../lib/api';
@@ -115,6 +116,25 @@ export default function QaPhrases() {
   const [trimSaving, setTrimSaving] = useState(false);
   const [trimAudioUrl, setTrimAudioUrl] = useState(null);
   const trimAudioRef = useRef(null);
+
+  // Rapid Trim Mode States (Pipelined 5-phrase inline trimmer)
+  const [trimMode, setTrimMode] = useState(() => {
+    try {
+      return localStorage.getItem("dc_phrase_trim_mode") === "true";
+    } catch (e) {
+      return false;
+    }
+  });
+  const [phraseTrimTimes, setPhraseTrimTimes] = useState({});
+  const [phraseTrimSaving, setPhraseTrimSaving] = useState({});
+
+  const toggleTrimMode = () => {
+    setTrimMode(prev => {
+      const next = !prev;
+      try { localStorage.setItem("dc_phrase_trim_mode", String(next)); } catch (e) {}
+      return next;
+    });
+  };
 
   const getSpeakerId = (p) => {
     return p.speaker_id || p.assigned_speaker_id || p.contributorId?.speaker_id || (p.contributorId?.username ? `user_${p.contributorId.username}` : null);
@@ -211,7 +231,17 @@ export default function QaPhrases() {
   const handleSaveTrim = async (verdict = null) => {
     if (!trimmingPhrase) return;
     if (endTrimSec <= startTrimSec) {
-      Swal.fire({ icon: "warning", title: "Invalid Trim Range", text: "End time must be greater than start time.", background: "#171717", color: "#ffffff" });
+      Swal.fire({
+        toast: true,
+        position: "bottom-start",
+        icon: "warning",
+        title: "Invalid Trim Range",
+        text: "End time must be greater than start time.",
+        timer: 3000,
+        showConfirmButton: false,
+        background: "#171717",
+        color: "#ffffff"
+      });
       return;
     }
 
@@ -250,11 +280,14 @@ export default function QaPhrases() {
           msg = `Phrase trimmed & REJECTED! (${res.duration}s)`;
         }
 
+        // Non-blocking toast at bottom-left
         Swal.fire({
+          toast: true,
+          position: "bottom-start",
           icon: "success",
           title: "Audio Trimmed!",
           text: msg,
-          timer: 2200,
+          timer: 2500,
           showConfirmButton: false,
           background: "#171717",
           color: "#ffffff"
@@ -263,15 +296,131 @@ export default function QaPhrases() {
     } catch (err) {
       console.error("Failed to trim phrase audio:", err);
       Swal.fire({
+        toast: true,
+        position: "bottom-start",
         icon: "error",
         title: "Trim Failed",
         text: err.message || "Failed to trim phrase audio.",
+        timer: 3500,
+        showConfirmButton: false,
         background: "#171717",
         color: "#ffffff"
       });
     } finally {
       setTrimSaving(false);
     }
+  };
+
+  // Inline Rapid Trim Mode: Save Trim Handler
+  const handleSaveInlineTrim = async (phrase, verdict = null) => {
+    if (!phrase) return;
+    const current = phraseTrimTimes[phrase._id] || {
+      start: 0,
+      end: phrase.duration || 5
+    };
+    const startSec = Number(current.start) || 0;
+    const endSec = Number(current.end) || (phrase.duration || 5);
+
+    if (endSec <= startSec) {
+      Swal.fire({
+        toast: true,
+        position: "bottom-start",
+        icon: "warning",
+        title: "Invalid Trim Range",
+        text: "End cut point must be greater than start cut point.",
+        timer: 2500,
+        showConfirmButton: false,
+        background: "#171717",
+        color: "#ffffff"
+      });
+      return;
+    }
+
+    setPhraseTrimSaving(prev => ({ ...prev, [phrase._id]: true }));
+    try {
+      const res = await apiPostJson(`/api/phrases/qa/trim/${phrase._id}`, {
+        startTrimSec: startSec,
+        endTrimSec: endSec,
+        verdict
+      });
+
+      if (res && res.phrase) {
+        const newStatus = res.phrase.status;
+
+        // In Trim Mode, we advance the pipeline: removing trimmed phrase pulls the next item in
+        if (!isAdmin || verdict === 'approved' || verdict === 'rejected' || trimMode) {
+          setQueue(prev => prev.filter(q => q._id !== phrase._id));
+        } else {
+          setQueue(prev => prev.map(q => q._id === phrase._id ? {
+            ...q,
+            duration: res.duration,
+            lufs: res.lufs,
+            audioFile: res.phrase.audioFile,
+            status: newStatus,
+            wasAudioTrimmed: true
+          } : q));
+        }
+
+        let msg = `Trimmed to ${res.duration}s! (LUFS: ${res.lufs})`;
+        if (!isAdmin) {
+          msg = `Trimmed & moved to Edited Phrases! (${res.duration}s, LUFS: ${res.lufs})`;
+        } else if (verdict === 'approved') {
+          msg = `Trimmed & APPROVED! (${res.duration}s, LUFS: ${res.lufs})`;
+        } else if (verdict === 'rejected') {
+          msg = `Trimmed & REJECTED! (${res.duration}s)`;
+        }
+
+        // Bottom-left non-blocking toast
+        Swal.fire({
+          toast: true,
+          position: "bottom-start",
+          icon: "success",
+          title: "Phrase Trimmed",
+          text: msg,
+          timer: 2500,
+          showConfirmButton: false,
+          background: "#171717",
+          color: "#ffffff"
+        });
+      }
+    } catch (err) {
+      console.error("Failed to trim phrase:", err);
+      Swal.fire({
+        toast: true,
+        position: "bottom-start",
+        icon: "error",
+        title: "Trim Failed",
+        text: err.message || "Failed to trim phrase audio.",
+        timer: 3500,
+        showConfirmButton: false,
+        background: "#171717",
+        color: "#ffffff"
+      });
+    } finally {
+      setPhraseTrimSaving(prev => ({ ...prev, [phrase._id]: false }));
+    }
+  };
+
+  // Skip phrase in Trim Mode and move it to end of queue
+  const handleSkipInlineTrim = (phraseId) => {
+    setQueue(prev => {
+      const idx = prev.findIndex(q => q._id === phraseId);
+      if (idx === -1) return prev;
+      const item = prev[idx];
+      const without = prev.filter(q => q._id !== phraseId);
+      return [...without, item];
+    });
+    Swal.fire({
+      toast: true,
+      position: "bottom-start",
+      icon: "info",
+      title: "Phrase Skipped",
+      text: "Moved to end of queue",
+      timer: 1500,
+      showConfirmButton: false,
+      background: "#171717",
+      color: "#ffffff"
+    });
   };
 
   const handleRevertTrim = async (phraseId) => {
@@ -1033,52 +1182,74 @@ export default function QaPhrases() {
             <p className="text-neutral-500 dark:text-neutral-400">Review contributor recordings and pass or reject them.</p>
           </div>
 
-          {/* Top Status Tabs */}
-          <div className="flex items-center gap-2 bg-neutral-200 dark:bg-neutral-800 p-1.5 rounded-xl border border-neutral-300 dark:border-neutral-700 w-max">
-            <button
-              onClick={() => { setActiveTab('recorded'); setSelectedPhrases(new Set()); }}
-              className={`px-4 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-2 ${
-                activeTab === 'recorded'
-                  ? 'bg-amber-600 text-white shadow-md'
-                  : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white'
-              }`}
-            >
-              <Clock className="w-3.5 h-3.5" /> Pending Review
-            </button>
-            <button
-              onClick={() => { setActiveTab('approved'); setSelectedPhrases(new Set()); }}
-              className={`px-4 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-2 ${
-                activeTab === 'approved'
-                  ? 'bg-emerald-600 text-white shadow-md'
-                  : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white'
-              }`}
-            >
-              <CheckCircle2 className="w-3.5 h-3.5" /> Approved Phrases
-            </button>
-            {isAdmin && (
+          <div className="flex flex-wrap items-center gap-2.5">
+            {/* Top Status Tabs */}
+            <div className="flex items-center gap-2 bg-neutral-200 dark:bg-neutral-800 p-1.5 rounded-xl border border-neutral-300 dark:border-neutral-700 w-max">
               <button
-                onClick={() => { setActiveTab('all'); setSelectedPhrases(new Set()); }}
+                onClick={() => { setActiveTab('recorded'); setSelectedPhrases(new Set()); }}
                 className={`px-4 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-2 ${
-                  activeTab === 'all'
-                    ? 'bg-primary-600 text-white shadow-md'
+                  activeTab === 'recorded'
+                    ? 'bg-amber-600 text-white shadow-md'
                     : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white'
                 }`}
               >
-                <Layers className="w-3.5 h-3.5" /> All Statuses
+                <Clock className="w-3.5 h-3.5" /> Pending Review
               </button>
-            )}
-            {isAdmin && (
               <button
-                onClick={() => { setActiveTab('edited'); setSelectedPhrases(new Set()); }}
+                onClick={() => { setActiveTab('approved'); setSelectedPhrases(new Set()); }}
                 className={`px-4 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-2 ${
-                  activeTab === 'edited'
-                    ? 'bg-indigo-600 text-white shadow-md'
+                  activeTab === 'approved'
+                    ? 'bg-emerald-600 text-white shadow-md'
                     : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white'
                 }`}
               >
-                ✏️ Edited Phrases
+                <CheckCircle2 className="w-3.5 h-3.5" /> Approved Phrases
               </button>
-            )}
+              {isAdmin && (
+                <button
+                  onClick={() => { setActiveTab('all'); setSelectedPhrases(new Set()); }}
+                  className={`px-4 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-2 ${
+                    activeTab === 'all'
+                      ? 'bg-primary-600 text-white shadow-md'
+                      : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white'
+                  }`}
+                >
+                  <Layers className="w-3.5 h-3.5" /> All Statuses
+                </button>
+              )}
+              {isAdmin && (
+                <button
+                  onClick={() => { setActiveTab('edited'); setSelectedPhrases(new Set()); }}
+                  className={`px-4 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-2 ${
+                    activeTab === 'edited'
+                      ? 'bg-indigo-600 text-white shadow-md'
+                      : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white'
+                  }`}
+                >
+                  ✏️ Edited Phrases
+                </button>
+              )}
+            </div>
+
+            {/* Rapid Trim Mode Switch for Admin & QA */}
+            <button
+              type="button"
+              onClick={toggleTrimMode}
+              className={`px-4 py-2 text-xs font-black rounded-xl transition-all flex items-center gap-2 border shadow-sm ${
+                trimMode
+                  ? "bg-gradient-to-r from-purple-600 via-indigo-600 to-purple-600 text-white border-purple-400 shadow-purple-600/30 ring-2 ring-purple-400/50 scale-102"
+                  : "bg-neutral-200 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 border-neutral-300 dark:border-neutral-700 hover:border-purple-500/50 hover:text-purple-400"
+              }`}
+              title="Toggle Rapid Trim Mode (renders first 5 phrases inline with interactive waveforms)"
+            >
+              <Scissors className={`w-3.5 h-3.5 ${trimMode ? "text-amber-300" : ""}`} />
+              <span>{trimMode ? "Trim Mode ON" : "Trim Mode"}</span>
+              <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-full ${
+                trimMode ? "bg-black/40 text-purple-200 border border-purple-400/40" : "bg-neutral-300 dark:bg-neutral-700 text-neutral-600 dark:text-neutral-400"
+              }`}>
+                5 Live
+              </span>
+            </button>
           </div>
         </motion.div>
 
@@ -1544,8 +1715,309 @@ export default function QaPhrases() {
               </div>
             )}
 
-            <AnimatePresence>
-              {paginatedPhrases.map((p) => (
+            {trimMode ? (
+              /* ─── RAPID TRIM MODE PIPELINE VIEW (TOP 5 INLINE) ─────────────── */
+              <div className="space-y-6">
+                {/* Active Trim Pipeline Banner */}
+                <div className="p-4 bg-gradient-to-r from-purple-950/70 via-indigo-950/50 to-neutral-900 border border-purple-500/40 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-xl">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2.5 bg-purple-600/30 text-purple-300 rounded-xl border border-purple-500/40 shadow-sm">
+                      <Scissors className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-black text-white">Rapid Trim Mode Active</span>
+                        <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                          Top 5 Live Preloaded
+                        </span>
+                      </div>
+                      <p className="text-xs text-neutral-300 mt-0.5">
+                        Rendering live waveforms for 5 phrases in parallel. Trimming any phrase immediately advances the queue and pulls the next phrase in.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3 self-end sm:self-center">
+                    <span className="text-xs font-mono text-neutral-400">
+                      In Queue: <strong className="text-white">{displayedPhrases.length}</strong>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={toggleTrimMode}
+                      className="px-3 py-1.5 bg-neutral-800 hover:bg-neutral-750 text-neutral-300 border border-neutral-700 rounded-lg text-xs font-semibold transition-colors"
+                    >
+                      Exit Trim Mode
+                    </button>
+                  </div>
+                </div>
+
+                {displayedPhrases.length === 0 ? (
+                  <div className="text-center py-16 px-4 bg-neutral-900/40 border border-dashed border-neutral-800 rounded-2xl">
+                    <CheckCircle2 className="w-12 h-12 text-emerald-400 mx-auto mb-3" />
+                    <h3 className="text-base font-bold text-white">All Matching Phrases Trimmed!</h3>
+                    <p className="text-xs text-neutral-400 mt-1 max-w-sm mx-auto">
+                      There are no more phrases left in this queue view matching your filters.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={toggleTrimMode}
+                      className="mt-4 px-4 py-2 bg-neutral-800 hover:bg-neutral-700 text-white text-xs font-bold rounded-xl transition-colors"
+                    >
+                      Return to Standard View
+                    </button>
+                  </div>
+                ) : (
+                  <AnimatePresence mode="popLayout">
+                    {displayedPhrases.slice(0, 5).map((p, batchIdx) => {
+                      const trimState = phraseTrimTimes[p._id] || {
+                        start: 0,
+                        end: p.duration || 5
+                      };
+                      const startSec = trimState.start !== undefined ? trimState.start : 0;
+                      const endSec = trimState.end !== undefined ? trimState.end : (p.duration || 5);
+                      const audioUrl = `${import.meta.env.VITE_BACKEND_URL || "http://localhost:3001"}/api/phrases/${p._id}/audio?t=${p.updatedAt || p._id}`;
+                      const isSaving = Boolean(phraseTrimSaving[p._id]);
+                      const trimmedDur = Math.max(0, endSec - startSec);
+                      const originalDur = p.originalDuration || p.duration || 5;
+                      const cutAmount = Math.max(0, (p.duration || originalDur) - trimmedDur);
+
+                      return (
+                        <motion.div
+                          key={p._id}
+                          layout
+                          initial={{ opacity: 0, y: 15 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, scale: 0.95, height: 0 }}
+                          className="bg-neutral-900/90 border border-purple-500/40 hover:border-purple-500/70 rounded-3xl p-5 sm:p-6 shadow-2xl relative space-y-4 transition-all"
+                        >
+                          {/* Top Header Row with Batch Index */}
+                          <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-neutral-800">
+                            <div className="flex flex-wrap items-center gap-2.5">
+                              <span className="w-6 h-6 rounded-full bg-purple-600 text-white font-mono font-bold text-xs flex items-center justify-center shadow-sm">
+                                #{batchIdx + 1}
+                              </span>
+                              <span className="text-sm font-bold text-white font-mono">
+                                ID: {p.phraseId}
+                              </span>
+                              <span className="text-xs font-semibold capitalize bg-neutral-800 text-neutral-200 border border-neutral-700 px-2.5 py-0.5 rounded-lg">
+                                {p.language}
+                              </span>
+                              <span className="text-xs font-mono font-bold bg-amber-500/10 text-amber-300 border border-amber-500/30 px-2.5 py-0.5 rounded-lg">
+                                🎤 {getSpeakerId(p) || "Unassigned"}
+                              </span>
+                              {p.lufs !== undefined && p.lufs !== null && (
+                                <span className={`text-xs font-mono font-bold px-2 py-0.5 rounded-lg border ${
+                                  p.lufs >= -24.0 && p.lufs <= -18.0
+                                    ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/30"
+                                    : p.lufs > -18.0
+                                    ? "bg-rose-500/15 text-rose-300 border-rose-500/30"
+                                    : "bg-amber-500/15 text-amber-300 border-amber-500/30"
+                                }`}>
+                                  📊 {p.lufs} LUFS
+                                </span>
+                              )}
+                              <span className="text-xs font-mono text-neutral-400 bg-neutral-800/80 px-2 py-0.5 rounded-lg border border-neutral-700">
+                                ⏱ {p.duration || originalDur}s
+                              </span>
+                              {p.wasAudioTrimmed && (
+                                <span className="text-[11px] font-bold text-purple-400 bg-purple-950/60 border border-purple-500/30 px-2 py-0.5 rounded-md">
+                                  ✂️ Previously Trimmed
+                                </span>
+                              )}
+                            </div>
+
+                            {/* Quick Skip button */}
+                            <button
+                              type="button"
+                              onClick={() => handleSkipInlineTrim(p._id)}
+                              className="text-xs text-neutral-400 hover:text-white px-2.5 py-1 rounded-lg bg-neutral-800/60 hover:bg-neutral-800 border border-neutral-700/60 transition-colors flex items-center gap-1"
+                              title="Skip this phrase and push to end of queue"
+                            >
+                              <span>Skip for Later</span>
+                              <ChevronRight className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+
+                          {/* Script Text Display */}
+                          <div className="bg-neutral-950/80 border border-neutral-800/90 rounded-2xl p-4">
+                            <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider block mb-1">
+                              Expected Script:
+                            </span>
+                            <p className="text-base sm:text-lg font-medium text-neutral-100 leading-relaxed">
+                              "{p.text}"
+                            </p>
+                          </div>
+
+                          {/* Live Interactive Waveform Trimmer */}
+                          <div className="pt-1">
+                            <InteractiveWaveformTrimmer
+                              audioUrl={audioUrl}
+                              duration={originalDur}
+                              startTrimSec={startSec}
+                              endTrimSec={endSec}
+                              onTrimChange={(newStart, newEnd) => {
+                                setPhraseTrimTimes(prev => ({
+                                  ...prev,
+                                  [p._id]: { start: newStart, end: newEnd }
+                                }));
+                              }}
+                            />
+                          </div>
+
+                          {/* Precise Numeric Time Inputs & Duration Readout */}
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
+                            {/* Start Cut */}
+                            <div className="bg-neutral-950/80 border border-neutral-800 rounded-xl p-3">
+                              <div className="flex items-center justify-between mb-1.5">
+                                <label className="text-[11px] font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
+                                  <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block shadow-sm shadow-emerald-500/50" />
+                                  Start Cut (L)
+                                </label>
+                                <span className="text-[10px] text-neutral-500 font-mono">Seconds</span>
+                              </div>
+                              <input
+                                type="number"
+                                step="0.05"
+                                min="0"
+                                max={Math.max(0, endSec - 0.1)}
+                                value={startSec}
+                                onChange={(e) => {
+                                  const val = parseFloat(e.target.value) || 0;
+                                  setPhraseTrimTimes(prev => ({
+                                    ...prev,
+                                    [p._id]: { start: Math.max(0, Math.min(val, endSec - 0.1)), end: endSec }
+                                  }));
+                                }}
+                                className="w-full bg-neutral-900/90 border border-neutral-750 text-emerald-300 font-mono font-bold text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-emerald-500 transition-colors"
+                              />
+                            </div>
+
+                            {/* End Cut */}
+                            <div className="bg-neutral-950/80 border border-neutral-800 rounded-xl p-3">
+                              <div className="flex items-center justify-between mb-1.5">
+                                <label className="text-[11px] font-bold text-rose-400 uppercase tracking-wider flex items-center gap-1.5">
+                                  <span className="w-2 h-2 rounded-full bg-rose-500 inline-block shadow-sm shadow-rose-500/50" />
+                                  End Cut (R)
+                                </label>
+                                <span className="text-[10px] text-neutral-500 font-mono">Seconds</span>
+                              </div>
+                              <input
+                                type="number"
+                                step="0.05"
+                                min={startSec + 0.1}
+                                max={originalDur}
+                                value={endSec}
+                                onChange={(e) => {
+                                  const val = parseFloat(e.target.value) || (startSec + 0.1);
+                                  setPhraseTrimTimes(prev => ({
+                                    ...prev,
+                                    [p._id]: { start: startSec, end: Math.min(originalDur, Math.max(val, startSec + 0.1)) }
+                                  }));
+                                }}
+                                className="w-full bg-neutral-900/90 border border-neutral-750 text-rose-300 font-mono font-bold text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-rose-500 transition-colors"
+                              />
+                            </div>
+
+                            {/* Trimmed Duration Result */}
+                            <div className="bg-neutral-950/80 border border-neutral-800 rounded-xl p-3 flex flex-col justify-between">
+                              <span className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider block">
+                                Trimmed Duration
+                              </span>
+                              <div className="flex items-baseline gap-2 mt-1">
+                                <span className="text-xl font-mono font-black text-emerald-400">
+                                  {trimmedDur.toFixed(2)}s
+                                </span>
+                                {cutAmount > 0.05 && (
+                                  <span className="text-xs font-mono font-bold text-purple-400">
+                                    (-{cutAmount.toFixed(2)}s cut)
+                                  </span>
+                                )}
+                              </div>
+                              <span className="text-[10px] text-neutral-500 font-mono">
+                                From {Number(p.duration || originalDur).toFixed(2)}s raw
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Action Buttons Row */}
+                          <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-neutral-800">
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => handleSkipInlineTrim(p._id)}
+                                className="py-2.5 px-4 bg-neutral-800 hover:bg-neutral-750 text-neutral-400 hover:text-white rounded-xl text-xs font-bold transition-colors"
+                              >
+                                Skip for Later
+                              </button>
+                              {p.wasAudioTrimmed && p.originalAudioFile && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleRevertTrim(p._id)}
+                                  className="py-2.5 px-3 bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/30 rounded-xl text-xs font-bold transition-colors"
+                                  title="Revert to original untrimmed audio"
+                                >
+                                  ↺ Revert Audio
+                                </button>
+                              )}
+                            </div>
+
+                            <div className="flex flex-wrap items-center gap-2">
+                              {!isAdmin ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleSaveInlineTrim(p)}
+                                  disabled={isSaving}
+                                  className="py-2.5 px-6 bg-purple-600 hover:bg-purple-500 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 disabled:opacity-50 shadow-md shadow-purple-600/20 active:scale-95"
+                                >
+                                  {isSaving ? "Trimming..." : "✂️ Save Trim & Move to Edited"}
+                                </button>
+                              ) : (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleSaveInlineTrim(p)}
+                                    disabled={isSaving}
+                                    className="py-2.5 px-4 bg-neutral-800 hover:bg-neutral-750 text-purple-300 border border-purple-500/30 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 disabled:opacity-50 active:scale-95 shadow-sm"
+                                    title="Save trimmed audio while preserving current status"
+                                  >
+                                    {isSaving ? "Saving..." : "Trim Only"}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleSaveInlineTrim(p, 'rejected')}
+                                    disabled={isSaving}
+                                    className="py-2.5 px-5 bg-rose-600/90 hover:bg-rose-600 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 disabled:opacity-50 shadow-md shadow-rose-600/20 active:scale-95"
+                                  >
+                                    <X className="w-4 h-4" /> <span>{isSaving ? "Saving..." : "Trim & Reject"}</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleSaveInlineTrim(p, 'approved')}
+                                    disabled={isSaving}
+                                    className="py-2.5 px-5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 disabled:opacity-50 shadow-md shadow-emerald-600/20 active:scale-95"
+                                  >
+                                    <Check className="w-4 h-4" /> <span>{isSaving ? "Saving..." : "Trim & Approve"}</span>
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                        </motion.div>
+                      );
+                    })}
+                  </AnimatePresence>
+                )}
+
+                {displayedPhrases.length > 5 && (
+                  <div className="text-center py-3 text-xs font-mono text-neutral-500 bg-neutral-900/40 border border-neutral-800/60 rounded-xl">
+                    Showing top 5 phrases in pipeline ({displayedPhrases.length - 5} remaining in queue). Trimming or skipping advances the next phrase immediately.
+                  </div>
+                )}
+              </div>
+            ) : (
+              /* ─── STANDARD CARD REVIEW VIEW ───────────────────────────────── */
+              <>
+                <AnimatePresence>
+                  {paginatedPhrases.map((p) => (
                 <motion.div 
                   key={p._id}
                   layout
@@ -2161,6 +2633,8 @@ export default function QaPhrases() {
                   </div>
                 )}
               </div>
+            )}
+              </>
             )}
           </div>
         )}

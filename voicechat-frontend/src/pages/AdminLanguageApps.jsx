@@ -899,8 +899,16 @@ export default function AdminLanguageApps() {
                                                                         onClick={() => setSelectedApplicantModal(app)}
                                                                         className="text-left group/name flex flex-col"
                                                                     >
-                                                                        <div className="text-white font-bold text-xs group-hover/name:text-warning-400 group-hover/name:underline transition-colors flex items-center gap-1.5">
+                                                                        <div className="text-white font-bold text-xs group-hover/name:text-warning-400 group-hover/name:underline transition-colors flex items-center gap-1.5 flex-wrap">
                                                                             <span>{app.userFirstname} {app.userLastname}</span>
+                                                                            {(app.vendorCode || app.vendorId?.vendorCode) && (
+                                                                                <span
+                                                                                    className="inline-flex items-center justify-center font-mono font-bold text-[10px] uppercase px-2 py-0.5 rounded-lg bg-neutral-900 border border-purple-500/50 text-purple-300 shadow-sm"
+                                                                                    title={`Vendor Code: ${app.vendorCode || app.vendorId?.vendorCode}`}
+                                                                                >
+                                                                                    🏢 {app.vendorCode || app.vendorId?.vendorCode}
+                                                                                </span>
+                                                                            )}
                                                                             <ChevronRight className="w-3 h-3 text-neutral-500 group-hover/name:text-warning-400 group-hover/name:translate-x-0.5 transition-transform" />
                                                                         </div>
                                                                         <div className="text-neutral-400 text-[11px]">
@@ -1034,8 +1042,16 @@ export default function AdminLanguageApps() {
                         <div className="p-6 bg-neutral-800/90 border-b border-neutral-700 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                             <div>
                                 <div className="flex items-center gap-3">
-                                    <h2 className="text-xl font-bold text-white">
-                                        {selectedApplicantModal.userFirstname} {selectedApplicantModal.userLastname}
+                                    <h2 className="text-xl font-bold text-white flex items-center gap-2 flex-wrap">
+                                        <span>{selectedApplicantModal.userFirstname} {selectedApplicantModal.userLastname}</span>
+                                        {(selectedApplicantModal.vendorCode || selectedApplicantModal.vendorId?.vendorCode) && (
+                                            <span
+                                                className="inline-flex items-center justify-center font-mono font-bold text-[10px] uppercase px-2 py-0.5 rounded-lg bg-neutral-900 border border-purple-500/50 text-purple-300 shadow-sm"
+                                                title={`Vendor Code: ${selectedApplicantModal.vendorCode || selectedApplicantModal.vendorId?.vendorCode}`}
+                                            >
+                                                🏢 {selectedApplicantModal.vendorCode || selectedApplicantModal.vendorId?.vendorCode}
+                                            </span>
+                                        )}
                                     </h2>
                                     <code className="text-xs bg-neutral-950 text-warning-400 px-2.5 py-1 rounded-lg border border-neutral-700 font-mono font-bold">
                                         {selectedApplicantModal.speaker_id || `spk_${selectedApplicantModal.userId}`}

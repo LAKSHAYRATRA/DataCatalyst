@@ -20,34 +20,35 @@ const userSchema = new mongoose.Schema(
     hourlyPhrasePayrate: { type: Number, default: 0, min: 0 },
     tokenVersion: { type: Number, default: 0 },
     isEmailVerified: { type: Boolean, default: false },
-    dob: { type: Date, required: true },
+    dob: { type: Date, default: null },
     mobileNumber: { type: String, default: null, trim: true },
     phone: { type: String, default: null, trim: true },
 
-    // New profile fields
+    // Profile fields (completed during onboarding if created by vendor)
     gender: {
       type: String,
-      enum: ["male", "female", "other"],
-      required: true,
+      enum: ["male", "female", "other", null],
+      default: null,
     },
     regionalLanguage: {
       type: String,
-      required: true,
+      default: null,
       trim: true,
     },
     locality: {
       type: String,
-      enum: ["urban", "rural"],
-      required: true,
+      enum: ["urban", "rural", null],
+      default: null,
     },
     address: {
-      street: { type: String, required: true, trim: true },
-      state: { type: String, required: true, trim: true },
-      city: { type: String, required: true, trim: true },
-      pincode: { type: String, required: true, trim: true },
+      street: { type: String, default: "", trim: true },
+      state: { type: String, default: "", trim: true },
+      city: { type: String, default: "", trim: true },
+      pincode: { type: String, default: "", trim: true },
     },
-    microphoneBrand: { type: String, required: true, trim: true },
-    microphoneModel: { type: String, required: true, trim: true },
+    microphoneBrand: { type: String, default: "", trim: true },
+    microphoneModel: { type: String, default: "", trim: true },
+    isProfileComplete: { type: Boolean, default: false },
 
     // Approval flow
     accountStatus: {
@@ -151,6 +152,13 @@ const userSchema = new mongoose.Schema(
     // Admin promotion audit tracking
     adminPromotedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
     adminPromotedAt: { type: Date, default: null },
+
+    // Vendor / Agency attribution
+    vendorId: { type: mongoose.Schema.Types.ObjectId, ref: "Vendor", default: null },
+    vendorCode: { type: String, default: null, uppercase: true, trim: true },
+    previousVendorId: { type: mongoose.Schema.Types.ObjectId, ref: "Vendor", default: null },
+    previousVendorCode: { type: String, default: null, uppercase: true, trim: true },
+    isVendor: { type: Boolean, default: false },
   },
   { timestamps: true }
 );

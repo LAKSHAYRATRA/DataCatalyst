@@ -14,7 +14,7 @@ import { ScriptedLanguage } from "../models/ScriptedLanguage.js";
 import { PayoutPayment } from "../models/PayoutPayment.js";
 import { isAdmin } from "../middleware/isAdmin.js";
 import { isAdminOrQA } from "../middleware/isQA.js";
-import { requireAuth } from "../auth.js";
+import { requireAuth, optionalAuth } from "../auth.js";
 import bcrypt from "bcryptjs";
 import fs from "fs";
 import path from "path";
@@ -986,10 +986,51 @@ router.get("/fix-speaker-ids", async (req, res) => {
 
 router.get("/companies", requireAuth(JWT_SECRET), async (req, res) => {
     try {
-        const allCompanies = await Company.find({}).sort({ name: 1 }).lean();
+        let allCompanies = await Company.find({}).sort({ name: 1 }).lean();
 
-        // For admin management & batch upload selectors, return ALL companies
+        // For admin management & batch upload selectors, return ALL companies (unless caller is a non-admin vendor contributor)
         if (req.query.forApply !== "true") {
+            if (req.user?.vendorId && !req.user?.isAdmin) {
+                const { Vendor } = await import("../models/Vendor.js");
+                const vendor = await Vendor.findById(req.user.vendorId).lean();
+                const phraseProjects = (vendor?.assignedProjects || []).filter(p => p.category === "phrase" && p.isActive !== false);
+                if (!vendor || phraseProjects.length === 0) {
+                    return res.json({ companies: [] });
+                }
+
+                const allowedSubprojectIds = new Set(phraseProjects.map(p => String(p.subprojectId || "").trim().toLowerCase()).filter(Boolean));
+                const allowedSubprojectNames = new Set(phraseProjects.map(p => String(p.subprojectName || "").trim().toLowerCase()).filter(Boolean));
+
+                allCompanies = allCompanies.map(c => {
+                    const cId = String(c._id || "").trim().toLowerCase();
+                    const cName = String(c.name || "").trim().toLowerCase();
+                    const cProj = String(c.projectName || "").trim().toLowerCase();
+                    const cleanName = cName.replace(/_downloaded$/i, "").trim();
+
+                    const isAssigned = allowedSubprojectIds.has(cId) ||
+                           allowedSubprojectIds.has(cName) ||
+                           allowedSubprojectIds.has(cleanName) ||
+                           allowedSubprojectNames.has(cName) ||
+                           allowedSubprojectNames.has(cProj);
+
+                    if (!isAssigned) return null;
+
+                    const assignedProj = phraseProjects.find(p => {
+                        const pSubId = String(p.subprojectId || "").trim().toLowerCase();
+                        const pSubName = String(p.subprojectName || "").trim().toLowerCase();
+                        return pSubId === cId || pSubId === cName || pSubId === cleanName || pSubName === cName || pSubName === cProj;
+                    });
+
+                    if (assignedProj && Array.isArray(assignedProj.assignedLanguages) && assignedProj.assignedLanguages.length > 0) {
+                        const allowedLangs = new Set(assignedProj.assignedLanguages.map(l => String(l).toLowerCase().trim()));
+                        const filteredLangs = (c.languages || []).filter(l => allowedLangs.has(String(l).toLowerCase().trim()));
+                        if (filteredLangs.length === 0) return null;
+                        return { ...c, languages: filteredLangs };
+                    }
+                    return c;
+                }).filter(Boolean);
+            }
+
             const companiesWithTags = await Promise.all(
                 allCompanies.map(async (c) => {
                     const samplePhrases = await Phrase.find({ companyId: c.name })
@@ -1037,7 +1078,7 @@ router.get("/companies", requireAuth(JWT_SECRET), async (req, res) => {
             }
         }
 
-        const filteredCompanies = allCompanies.map(c => {
+        let filteredCompanies = allCompanies.map(c => {
             if (c.isHidden) return null; // Project is hidden
 
             const compKey = String(c.name || "").trim().toLowerCase();
@@ -1055,6 +1096,48 @@ router.get("/companies", requireAuth(JWT_SECRET), async (req, res) => {
                 languages: visibleLangs
             };
         }).filter(Boolean);
+
+        // If user belongs to a vendor, strictly restrict companies to vendor's assigned Phrase projects and assigned languages
+        if (req.user?.vendorId) {
+            const { Vendor } = await import("../models/Vendor.js");
+            const vendor = await Vendor.findById(req.user.vendorId).lean();
+            const phraseProjects = (vendor?.assignedProjects || []).filter(p => p.category === "phrase" && p.isActive !== false);
+            if (!vendor || phraseProjects.length === 0) {
+                return res.json({ companies: [] });
+            }
+
+            const allowedSubprojectIds = new Set(phraseProjects.map(p => String(p.subprojectId || "").trim().toLowerCase()).filter(Boolean));
+            const allowedSubprojectNames = new Set(phraseProjects.map(p => String(p.subprojectName || "").trim().toLowerCase()).filter(Boolean));
+
+            filteredCompanies = filteredCompanies.map(c => {
+                const cId = String(c._id || "").trim().toLowerCase();
+                const cName = String(c.name || "").trim().toLowerCase();
+                const cProj = String(c.projectName || "").trim().toLowerCase();
+                const cleanName = cName.replace(/_downloaded$/i, "").trim();
+
+                const isAssigned = allowedSubprojectIds.has(cId) ||
+                       allowedSubprojectIds.has(cName) ||
+                       allowedSubprojectIds.has(cleanName) ||
+                       allowedSubprojectNames.has(cName) ||
+                       allowedSubprojectNames.has(cProj);
+
+                if (!isAssigned) return null;
+
+                const assignedProj = phraseProjects.find(p => {
+                    const pSubId = String(p.subprojectId || "").trim().toLowerCase();
+                    const pSubName = String(p.subprojectName || "").trim().toLowerCase();
+                    return pSubId === cId || pSubId === cName || pSubId === cleanName || pSubName === cName || pSubName === cProj;
+                });
+
+                if (assignedProj && Array.isArray(assignedProj.assignedLanguages) && assignedProj.assignedLanguages.length > 0) {
+                    const allowedLangs = new Set(assignedProj.assignedLanguages.map(l => String(l).toLowerCase().trim()));
+                    const filteredLangs = (c.languages || []).filter(l => allowedLangs.has(String(l).toLowerCase().trim()));
+                    if (filteredLangs.length === 0) return null;
+                    return { ...c, languages: filteredLangs };
+                }
+                return c;
+            }).filter(Boolean);
+        }
 
         res.json({ companies: filteredCompanies });
     } catch (e) {
@@ -1156,7 +1239,8 @@ async function listLanguageApplications(req, res) {
         }
 
         const users = await User.find({ "languageApplications.0": { $exists: true } })
-            .select("firstname lastname email username speaker_id languageApplications")
+            .select("firstname lastname email username speaker_id languageApplications vendorCode vendorId")
+            .populate("vendorId", "name vendorCode")
             .lean();
 
         let apps = [];
@@ -1181,7 +1265,8 @@ async function listLanguageApplications(req, res) {
                     const un = (u.username || "").toLowerCase();
                     const em = (u.email || "").toLowerCase();
                     const spk = (u.speaker_id || `spk_${u._id}`).toLowerCase();
-                    if (!fn.includes(search) && !ln.includes(search) && !un.includes(search) && !em.includes(search) && !spk.includes(search)) {
+                    const vc = (u.vendorCode || u.vendorId?.vendorCode || "").toLowerCase();
+                    if (!fn.includes(search) && !ln.includes(search) && !un.includes(search) && !em.includes(search) && !spk.includes(search) && !vc.includes(search)) {
                         return;
                     }
                 }
@@ -1194,6 +1279,8 @@ async function listLanguageApplications(req, res) {
                     userEmail: u.email,
                     username: u.username,
                     speaker_id: u.speaker_id || `spk_${u._id}`,
+                    vendorCode: u.vendorCode || u.vendorId?.vendorCode || null,
+                    vendorId: u.vendorId || null,
                     companyId: app.companyId,
                     ...app,
                 });
@@ -5540,13 +5627,15 @@ router.get("/users", async (req, res) => {
                 { firstname: searchRegex },
                 { lastname: searchRegex },
                 { username: searchRegex },
-                { email: searchRegex }
+                { email: searchRegex },
+                { vendorCode: searchRegex }
             ];
         }
 
         const total = await User.countDocuments(filter);
         const users = await User.find(filter)
-            .select('username email firstname lastname mobileNumber phone dailyCallLimit overallCallLimit dailyPhraseLimit overallPhraseLimit accountStatus isDisabled isAdmin createdAt')
+            .select('username email firstname lastname mobileNumber phone dailyCallLimit overallCallLimit dailyPhraseLimit overallPhraseLimit accountStatus isDisabled isAdmin createdAt vendorCode vendorId speaker_id')
+            .populate('vendorId', 'name vendorCode isStudio')
             .sort({ createdAt: -1 })
             .skip(skip)
             .limit(limit);
@@ -5575,11 +5664,13 @@ router.get("/users/pending", async (req, res) => {
                 { firstname: searchRegex },
                 { lastname: searchRegex },
                 { username: searchRegex },
-                { email: searchRegex }
+                { email: searchRegex },
+                { vendorCode: searchRegex }
             ];
         }
         const users = await User.find(filter)
-            .select('username email firstname lastname mobileNumber phone gender regionalLanguage locality address microphoneBrand microphoneModel introRecordingFile createdAt')
+            .select('username email firstname lastname mobileNumber phone gender regionalLanguage locality address microphoneBrand microphoneModel introRecordingFile createdAt vendorCode vendorId speaker_id perCallPayrate hourlyPhrasePayrate')
+            .populate('vendorId', 'name vendorCode isStudio')
             .sort({ createdAt: -1 });
         res.json({ users });
     } catch (error) {
@@ -6641,7 +6732,7 @@ router.delete("/languages/:id", async (req, res) => {
 // ===== SCRIPTED CALL LANGUAGE MANAGEMENT (Independent from Call Languages) =====
 
 // List all scripted languages
-router.get("/scripted-languages", async (req, res) => {
+router.get("/scripted-languages", optionalAuth(JWT_SECRET), async (req, res) => {
     try {
         const query = {};
         if (req.query.language) {
@@ -6654,7 +6745,20 @@ router.get("/scripted-languages", async (req, res) => {
                 { name: new RegExp(`^${langStr}$`, 'i') }
             ];
         }
-        const langs = await ScriptedLanguage.find(query).sort({ name: 1 });
+        let langs = await ScriptedLanguage.find(query).sort({ name: 1 });
+
+        // If user belongs to a vendor, filter strictly by vendor's assigned Scripted Call projects
+        if (req.user?.vendorId) {
+            const { Vendor } = await import("../models/Vendor.js");
+            const vendor = await Vendor.findById(req.user.vendorId).lean();
+            const scriptedProjects = (vendor?.assignedProjects || []).filter(p => p.category === "scripted_call" && p.isActive !== false);
+            if (!vendor || scriptedProjects.length === 0) {
+                return res.json({ languages: [] });
+            }
+            const allowedCodes = scriptedProjects.map(p => (p.languageCode || "").toLowerCase().trim()).filter(Boolean);
+            langs = langs.filter(l => allowedCodes.includes((l.code || "").toLowerCase().trim()));
+        }
+
         res.json({ languages: langs });
     } catch (e) {
         res.status(500).json({ error: e.message });
@@ -6889,7 +6993,9 @@ router.get("/scripted-languages/:id/contributors-summary", async (req, res) => {
                 },
                 { _id: { $in: Array.from(userRecordedSecsMap.keys()) } }
             ]
-        }).select("firstname lastname email username gender dob locality address speaker_id noiseGateDb languageApplications createdAt").lean();
+        }).select("firstname lastname email username gender dob locality address speaker_id noiseGateDb languageApplications createdAt vendorCode vendorId")
+        .populate("vendorId", "name vendorCode")
+        .lean();
 
         const items = [];
         const seenUserIds = new Set();
@@ -7100,6 +7206,8 @@ function calculateDemographics(items) {
             lastname: u.lastname || "",
             username: u.username || "",
             email: u.email || "",
+            vendorCode: u.vendorCode || u.vendorId?.vendorCode || null,
+            vendorId: u.vendorId || null,
             gender: u.gender || "unknown",
             dob: u.dob || null,
             age: age !== null && Number.isFinite(age) ? age : "N/A",
@@ -7224,7 +7332,8 @@ router.get("/languages/:id/contributors-summary", async (req, res) => {
                 { _id: { $in: callUserIds } }
             ]
         })
-        .select("firstname lastname email username gender dob speaker_id locality address languageApplications createdAt")
+        .select("firstname lastname email username gender dob speaker_id locality address languageApplications createdAt vendorCode vendorId")
+        .populate("vendorId", "name vendorCode")
         .lean();
 
         const userItemMap = new Map();
@@ -7606,7 +7715,9 @@ router.get("/companies/:id/contributors-summary", async (req, res) => {
         const users = await User.find({
             "languageApplications.companyId": { $in: companyRegexes },
             "languageApplications.applicationType": "phrase"
-        }).select("firstname lastname email username gender dob speaker_id client_spk_id locality address languageApplications").lean();
+        }).select("firstname lastname email username gender dob speaker_id client_spk_id locality address languageApplications vendorCode vendorId")
+        .populate("vendorId", "name vendorCode")
+        .lean();
 
         const languageMap = new Map(); // langCode -> { name, phrases: [], usersMap: new Map() }
 
@@ -7646,7 +7757,9 @@ router.get("/companies/:id/contributors-summary", async (req, res) => {
         // Populate users for phrases if contributorId exists
         const contributorIds = phrases.map(p => p.contributorId).filter(Boolean);
         const contributorUsers = await User.find({ _id: { $in: contributorIds } })
-            .select("firstname lastname email username gender dob speaker_id client_spk_id locality address createdAt languageApplications notch5kEnabled deHissMode deEsserMode noiseGateDb").lean();
+            .select("firstname lastname email username gender dob speaker_id client_spk_id locality address createdAt languageApplications notch5kEnabled deHissMode deEsserMode noiseGateDb vendorCode vendorId")
+            .populate("vendorId", "name vendorCode")
+            .lean();
         const contributorUserMap = new Map(contributorUsers.map(u => [String(u._id), u]));
 
         for (const p of phrases) {
@@ -8103,7 +8216,8 @@ router.get("/language-applications", async (req, res) => {
         // Find users with matching language applications
         const matchStage = { "languageApplications.0": { $exists: true } };
         const users = await User.find(matchStage)
-            .select("firstname lastname email username speaker_id languageApplications")
+            .select("firstname lastname email username speaker_id languageApplications vendorCode vendorId")
+            .populate("vendorId", "name vendorCode")
             .lean();
 
         // Flatten to individual applications
@@ -8119,6 +8233,8 @@ router.get("/language-applications", async (req, res) => {
                         userEmail: u.email,
                         username: u.username,
                         speaker_id: u.speaker_id || `spk_${u._id}`,
+                        vendorCode: u.vendorCode || u.vendorId?.vendorCode || null,
+                        vendorId: u.vendorId || null,
                         companyId: app.companyId,
                         ...app,
                     });
@@ -10674,11 +10790,13 @@ router.get("/contributor-agreements/pending", async (req, res) => {
                 { firstname: searchRegex },
                 { lastname: searchRegex },
                 { username: searchRegex },
-                { email: searchRegex }
+                { email: searchRegex },
+                { vendorCode: searchRegex }
             ];
         }
         const users = await User.find(filter)
-            .select("firstname lastname email username speaker_id accountStatus contributorAgreement.signedAt contributorAgreement.agreementVersion contributorAgreement.signerIp contributorAgreement.s3Key")
+            .select("firstname lastname email username speaker_id accountStatus vendorCode vendorId contributorAgreement.signedAt contributorAgreement.agreementVersion contributorAgreement.signerIp contributorAgreement.s3Key")
+            .populate("vendorId", "name vendorCode")
             .sort({ "contributorAgreement.signedAt": 1 })
             .lean();
         res.json({
@@ -10689,6 +10807,8 @@ router.get("/contributor-agreements/pending", async (req, res) => {
                 email: u.email,
                 username: u.username,
                 speaker_id: u.speaker_id,
+                vendorCode: u.vendorCode || u.vendorId?.vendorCode || null,
+                vendorId: u.vendorId || null,
                 accountStatus: u.accountStatus,
                 signedAt: u.contributorAgreement?.signedAt || null,
                 agreementVersion: u.contributorAgreement?.agreementVersion || null,
@@ -10717,11 +10837,13 @@ router.get("/contributor-agreements/approved-users", async (req, res) => {
                 { firstname: searchRegex },
                 { lastname: searchRegex },
                 { username: searchRegex },
-                { email: searchRegex }
+                { email: searchRegex },
+                { vendorCode: searchRegex }
             ];
         }
         const users = await User.find(filter)
-            .select("firstname lastname email username mobileNumber phone speaker_id dailyCallLimit overallCallLimit dailyPhraseLimit overallPhraseLimit isDisabled isAdmin contributorAgreement.signedAt contributorAgreement.adminReviewedAt contributorAgreement.agreementVersion contributorAgreement.s3Key")
+            .select("firstname lastname email username mobileNumber phone speaker_id dailyCallLimit overallCallLimit dailyPhraseLimit overallPhraseLimit isDisabled isAdmin vendorCode vendorId contributorAgreement.signedAt contributorAgreement.adminReviewedAt contributorAgreement.agreementVersion contributorAgreement.s3Key")
+            .populate("vendorId", "name vendorCode")
             .sort({ "contributorAgreement.adminReviewedAt": -1 })
             .lean();
         res.json({
@@ -10733,6 +10855,8 @@ router.get("/contributor-agreements/approved-users", async (req, res) => {
                 username: u.username,
                 mobileNumber: u.mobileNumber || u.phone || null,
                 speaker_id: u.speaker_id,
+                vendorCode: u.vendorCode || u.vendorId?.vendorCode || null,
+                vendorId: u.vendorId || null,
                 dailyCallLimit: u.dailyCallLimit,
                 overallCallLimit: u.overallCallLimit,
                 dailyPhraseLimit: u.dailyPhraseLimit,
