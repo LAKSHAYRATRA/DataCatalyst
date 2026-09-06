@@ -39,6 +39,7 @@ export default function AdminVendors() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [typeFilter, setTypeFilter] = useState("all"); // 'all' | 'studio' | 'normal'
   const [copiedCode, setCopiedCode] = useState(null);
 
   // Catalog of subprojects
@@ -546,6 +547,59 @@ export default function AdminVendors() {
     }
   };
 
+  // Toggle Vendor Type (Studio vs Normal)
+  const handleToggleVendorType = async (vendor) => {
+    const nextIsStudio = !vendor.isStudio;
+    const nextTypeLabel = nextIsStudio ? "Studio Vendor" : "Normal Vendor";
+    const result = await Swal.fire({
+      title: `Switch to ${nextTypeLabel}?`,
+      text: nextIsStudio
+        ? `Change "${vendor.name}" to a Studio Vendor? In Studio mode, custom voice artist rates apply with 0 platform margin skim.`
+        : `Change "${vendor.name}" to a Normal Vendor? In Normal mode, standard community payrates apply with agreed platform margins.`,
+      icon: "question",
+      showCancelButton: true,
+      confirmButtonColor: nextIsStudio ? "#9333ea" : "#2563eb",
+      cancelButtonColor: "#374151",
+      confirmButtonText: `Yes, Switch to ${nextTypeLabel}`,
+      background: "#171717",
+      color: "#ffffff"
+    });
+
+    if (result.isConfirmed) {
+      try {
+        const res = await apiPutJson(`/api/admin/vendors/${vendor._id}`, {
+          isStudio: nextIsStudio
+        });
+        if (res && (res.ok || res.vendor)) {
+          setVendors(prev => prev.map(v => v._id === vendor._id ? { ...v, isStudio: nextIsStudio } : v));
+          Swal.fire({
+            toast: true,
+            position: "bottom-start",
+            icon: "success",
+            title: `Vendor Updated`,
+            text: `"${vendor.name}" is now configured as a ${nextTypeLabel}.`,
+            timer: 2500,
+            showConfirmButton: false,
+            background: "#171717",
+            color: "#ffffff"
+          });
+        }
+      } catch (err) {
+        Swal.fire({
+          toast: true,
+          position: "bottom-start",
+          icon: "error",
+          title: "Update Failed",
+          text: err.message || "Failed to update vendor type",
+          timer: 3000,
+          showConfirmButton: false,
+          background: "#171717",
+          color: "#ffffff"
+        });
+      }
+    }
+  };
+
   // Filtered vendors
   const filteredVendors = vendors.filter((v) => {
     const matchesSearch =
@@ -558,13 +612,21 @@ export default function AdminVendors() {
       statusFilter === "all" ||
       v.status === statusFilter ||
       (statusFilter === "inactive" && (v.status === "inactive" || v.status === "suspended"));
-    return matchesSearch && matchesStatus;
+
+    const matchesType =
+      typeFilter === "all" ||
+      (typeFilter === "studio" && Boolean(v.isStudio)) ||
+      (typeFilter === "normal" && !v.isStudio);
+
+    return matchesSearch && matchesStatus && matchesType;
   });
 
   // Calculate totals
   const totalWorkers = vendors.reduce((acc, v) => acc + (v.stats?.totalWorkers || 0), 0);
   const totalApprovedHours = vendors.reduce((acc, v) => acc + (v.stats?.totalApprovedHours || 0), 0);
   const totalMarginPayable = vendors.reduce((acc, v) => acc + (v.stats?.estimatedMarginPayable || 0), 0);
+  const totalStudios = vendors.filter((v) => Boolean(v.isStudio)).length;
+  const totalNormals = vendors.filter((v) => !v.isStudio).length;
 
   return (
     <div className="min-h-screen bg-neutral-950 text-neutral-100 flex flex-col font-sans">
@@ -608,7 +670,11 @@ export default function AdminVendors() {
               <Building className="w-5 h-5 text-neutral-400" />
             </div>
             <div className="text-3xl font-extrabold text-white mt-2">{vendors.length}</div>
-            <div className="text-xs text-neutral-400 mt-1">Active partner agencies</div>
+            <div className="flex items-center gap-2 text-xs text-neutral-400 mt-1">
+              <span className="text-purple-400 font-bold">{totalStudios} Studio</span>
+              <span>•</span>
+              <span className="text-blue-400 font-bold">{totalNormals} Normal</span>
+            </div>
           </div>
 
           <div className="bg-neutral-900/60 border border-neutral-800 rounded-2xl p-5 shadow-sm">
@@ -672,18 +738,33 @@ export default function AdminVendors() {
             />
           </div>
 
-          <div className="flex items-center gap-2 w-full sm:w-auto self-end">
-            <span className="text-xs text-neutral-400 font-medium">Status:</span>
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="bg-neutral-900 border border-neutral-800 text-neutral-300 text-xs rounded-xl px-3 py-2 focus:outline-none focus:border-primary-500"
-            >
-              <option value="all">All Vendors</option>
-              <option value="active">Active Only</option>
-              <option value="suspended">Suspended Only</option>
-              <option value="inactive">Inactive / Suspended</option>
-            </select>
+          <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto self-end">
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs text-neutral-400 font-medium">Type:</span>
+              <select
+                value={typeFilter}
+                onChange={(e) => setTypeFilter(e.target.value)}
+                className="bg-neutral-900 border border-neutral-800 text-neutral-300 text-xs rounded-xl px-3 py-2 focus:outline-none focus:border-primary-500"
+              >
+                <option value="all">All Types ({vendors.length})</option>
+                <option value="studio">🎙️ Studio Vendors ({totalStudios})</option>
+                <option value="normal">🏢 Normal Vendors ({totalNormals})</option>
+              </select>
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs text-neutral-400 font-medium">Status:</span>
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                className="bg-neutral-900 border border-neutral-800 text-neutral-300 text-xs rounded-xl px-3 py-2 focus:outline-none focus:border-primary-500"
+              >
+                <option value="all">All Statuses</option>
+                <option value="active">Active Only</option>
+                <option value="suspended">Suspended Only</option>
+                <option value="inactive">Inactive / Suspended</option>
+              </select>
+            </div>
           </div>
         </div>
 
@@ -726,7 +807,7 @@ export default function AdminVendors() {
                   <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-5">
                     {/* Left Section: Vendor Identity & Invite Link */}
                     <div className="space-y-2">
-                      <div className="flex items-center gap-3">
+                      <div className="flex flex-wrap items-center gap-2">
                         <h2 className="text-lg font-bold text-white">{vendor.name}</h2>
                         <span
                           className={`text-[11px] font-mono font-bold px-2 py-0.5 rounded-md border ${
@@ -740,14 +821,51 @@ export default function AdminVendors() {
                           {vendor.status.toUpperCase()}
                         </span>
                         {vendor.isStudio ? (
-                          <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-md bg-purple-500/15 text-purple-300 border border-purple-500/30">
-                            STUDIO
+                          <span
+                            className="inline-flex items-center gap-1.5 text-[11px] font-black uppercase px-2.5 py-0.5 rounded-md bg-purple-500/20 text-purple-300 border border-purple-500/40 shadow-sm shadow-purple-900/30"
+                            title="Studio Vendor: Custom Voice Artist rates apply (0 platform margin)"
+                          >
+                            <Sparkles className="w-3.5 h-3.5 text-purple-400" />
+                            Studio Vendor
                           </span>
                         ) : (
-                          <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-md bg-blue-500/15 text-blue-300 border border-blue-500/30">
-                            COMMUNITY
+                          <span
+                            className="inline-flex items-center gap-1.5 text-[11px] font-black uppercase px-2.5 py-0.5 rounded-md bg-blue-500/20 text-blue-300 border border-blue-500/40 shadow-sm shadow-blue-900/30"
+                            title="Normal Vendor: Standard community payrates apply with direct platform margin"
+                          >
+                            <Building className="w-3.5 h-3.5 text-blue-400" />
+                            Normal Vendor
                           </span>
                         )}
+                        <button
+                          type="button"
+                          onClick={() => handleToggleVendorType(vendor)}
+                          className="text-[10px] text-neutral-400 hover:text-white px-2 py-0.5 rounded bg-neutral-800/80 hover:bg-neutral-750 border border-neutral-700/60 transition-colors ml-1"
+                          title={`Click to switch to ${vendor.isStudio ? "Normal Vendor" : "Studio Vendor"}`}
+                        >
+                          ⇄ Switch to {vendor.isStudio ? "Normal" : "Studio"}
+                        </button>
+                      </div>
+
+                      {/* Explicit Vendor Model Subtitle */}
+                      <div className="flex items-center gap-2 pt-0.5">
+                        <span className={`text-[11px] font-semibold px-2.5 py-0.5 rounded-full border inline-flex items-center gap-1.5 ${
+                          vendor.isStudio
+                            ? "bg-purple-950/40 text-purple-300 border-purple-800/60"
+                            : "bg-blue-950/40 text-blue-300 border-blue-800/60"
+                        }`}>
+                          {vendor.isStudio ? (
+                            <>
+                              <span>🎙️</span>
+                              <span><strong>Studio Model:</strong> Custom Voice Artist Payrates • 0 Platform Margin Skim</span>
+                            </>
+                          ) : (
+                            <>
+                              <span>🏢</span>
+                              <span><strong>Normal Vendor Model:</strong> Standard Community Payrates • Independent Platform Margin</span>
+                            </>
+                          )}
+                        </span>
                       </div>
 
                       <div className="flex flex-wrap items-center gap-y-1 gap-x-4 text-xs text-neutral-400">
@@ -1695,10 +1813,23 @@ export default function AdminVendors() {
                     <span className="text-xs font-mono font-bold px-2 py-0.5 rounded bg-primary-600/20 text-primary-400 border border-primary-500/30">
                       {activeVendor.vendorCode}
                     </span>
-                    <h3 className="text-lg font-bold text-white">Community Workers Roster</h3>
+                    {activeVendor.isStudio ? (
+                      <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                        Studio Vendor
+                      </span>
+                    ) : (
+                      <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded bg-blue-500/20 text-blue-300 border border-blue-500/30">
+                        Normal Vendor
+                      </span>
+                    )}
+                    <h3 className="text-lg font-bold text-white">
+                      {activeVendor.isStudio ? "Studio Voice Artists Roster" : "Community Workers Roster"}
+                    </h3>
                   </div>
                   <p className="text-xs text-neutral-400 mt-0.5">
-                    Contributors registered under <span className="text-white font-semibold">{activeVendor.name}</span>
+                    {activeVendor.isStudio
+                      ? `Voice artists enrolled under Studio Partner ${activeVendor.name}`
+                      : `Contributors registered under Normal Vendor ${activeVendor.name}`}
                   </p>
                 </div>
                 <button

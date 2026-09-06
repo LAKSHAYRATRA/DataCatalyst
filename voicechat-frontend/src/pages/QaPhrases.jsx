@@ -21,7 +21,10 @@ import {
   Sparkles,
   ChevronLeft,
   ChevronRight,
-  Scissors
+  Scissors,
+  Zap,
+  BarChart2,
+  MessageSquare
 } from 'lucide-react';
 import Swal from 'sweetalert2';
 import { apiGet, apiPostJson, apiPatchJson } from '../lib/api';
@@ -117,7 +120,7 @@ export default function QaPhrases() {
   const [trimAudioUrl, setTrimAudioUrl] = useState(null);
   const trimAudioRef = useRef(null);
 
-  // Rapid Trim Mode States (Pipelined 5-phrase inline trimmer)
+  // Rapid Trim Mode States (Pipelined 10-waveforms sliding window inline trimmer)
   const [trimMode, setTrimMode] = useState(() => {
     try {
       return localStorage.getItem("dc_phrase_trim_mode") === "true";
@@ -127,6 +130,7 @@ export default function QaPhrases() {
   });
   const [phraseTrimTimes, setPhraseTrimTimes] = useState({});
   const [phraseTrimSaving, setPhraseTrimSaving] = useState({});
+  const [manualActiveWaveforms, setManualActiveWaveforms] = useState(new Set());
 
   const toggleTrimMode = () => {
     setTrimMode(prev => {
@@ -341,11 +345,24 @@ export default function QaPhrases() {
       const res = await apiPostJson(`/api/phrases/qa/trim/${phrase._id}`, {
         startTrimSec: startSec,
         endTrimSec: endSec,
-        verdict
+        verdict,
+        comment: comments[phrase._id] || ''
       });
 
       if (res && res.phrase) {
         const newStatus = res.phrase.status;
+
+        // Clean up any audit comment & manual promotion state for this phrase
+        setComments(prev => {
+          const next = { ...prev };
+          delete next[phrase._id];
+          return next;
+        });
+        setManualActiveWaveforms(prev => {
+          const next = new Set(prev);
+          next.delete(phrase._id);
+          return next;
+        });
 
         // In Trim Mode, we advance the pipeline: removing trimmed phrase pulls the next item in
         if (!isAdmin || verdict === 'approved' || verdict === 'rejected' || trimMode) {
@@ -1240,14 +1257,14 @@ export default function QaPhrases() {
                   ? "bg-gradient-to-r from-purple-600 via-indigo-600 to-purple-600 text-white border-purple-400 shadow-purple-600/30 ring-2 ring-purple-400/50 scale-102"
                   : "bg-neutral-200 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 border-neutral-300 dark:border-neutral-700 hover:border-purple-500/50 hover:text-purple-400"
               }`}
-              title="Toggle Rapid Trim Mode (renders first 5 phrases inline with interactive waveforms)"
+              title="Toggle Rapid Trim Mode (renders interactive waveforms with 10-pipeline sliding window)"
             >
               <Scissors className={`w-3.5 h-3.5 ${trimMode ? "text-amber-300" : ""}`} />
               <span>{trimMode ? "Trim Mode ON" : "Trim Mode"}</span>
               <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-full ${
                 trimMode ? "bg-black/40 text-purple-200 border border-purple-400/40" : "bg-neutral-300 dark:bg-neutral-700 text-neutral-600 dark:text-neutral-400"
               }`}>
-                5 Live
+                {trimMode ? `${Math.min(10, displayedPhrases.length)} / ${displayedPhrases.length} Active` : "10 Pipeline"}
               </span>
             </button>
           </div>
@@ -1716,7 +1733,7 @@ export default function QaPhrases() {
             )}
 
             {trimMode ? (
-              /* ─── RAPID TRIM MODE PIPELINE VIEW (TOP 5 INLINE) ─────────────── */
+              /* ─── RAPID TRIM MODE PIPELINE VIEW (10 ACTIVE WAVEFORMS SLIDING WINDOW) ─── */
               <div className="space-y-6">
                 {/* Active Trim Pipeline Banner */}
                 <div className="p-4 bg-gradient-to-r from-purple-950/70 via-indigo-950/50 to-neutral-900 border border-purple-500/40 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-xl">
@@ -1727,12 +1744,12 @@ export default function QaPhrases() {
                     <div>
                       <div className="flex items-center gap-2">
                         <span className="text-sm font-black text-white">Rapid Trim Mode Active</span>
-                        <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30">
-                          Top 5 Live Preloaded
+                        <span className="text-[10px] font-mono font-bold px-2.5 py-0.5 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                          10 Active Waveforms (Sliding Pipeline)
                         </span>
                       </div>
                       <p className="text-xs text-neutral-300 mt-0.5">
-                        Rendering live waveforms for 5 phrases in parallel. Trimming any phrase immediately advances the queue and pulls the next phrase in.
+                        All {displayedPhrases.length} phrases loaded. Waveforms actively generated for the top 10 phrases. Trimming or passing phrase #1 automatically generates phrase #11.
                       </p>
                     </div>
                   </div>
@@ -1767,7 +1784,8 @@ export default function QaPhrases() {
                   </div>
                 ) : (
                   <AnimatePresence mode="popLayout">
-                    {displayedPhrases.slice(0, 5).map((p, batchIdx) => {
+                    {displayedPhrases.map((p, queueIdx) => {
+                      const isWaveformActive = queueIdx < 10 || manualActiveWaveforms.has(p._id);
                       const trimState = phraseTrimTimes[p._id] || {
                         start: 0,
                         end: p.duration || 5
@@ -1780,6 +1798,87 @@ export default function QaPhrases() {
                       const originalDur = p.originalDuration || p.duration || 5;
                       const cutAmount = Math.max(0, (p.duration || originalDur) - trimmedDur);
 
+                      if (!isWaveformActive) {
+                        /* ─── QUEUED CARD (POSITION 11+ WAITING IN SLIDING PIPELINE) ─── */
+                        return (
+                          <motion.div
+                            key={p._id}
+                            layout
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, scale: 0.95, height: 0 }}
+                            className="bg-neutral-900/60 border border-neutral-800 hover:border-purple-500/40 rounded-2xl p-4 transition-all space-y-3"
+                          >
+                            <div className="flex flex-wrap items-center justify-between gap-2.5 pb-2.5 border-b border-neutral-800/80">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className="w-6 h-6 rounded-full bg-neutral-800 text-neutral-400 font-mono font-bold text-xs flex items-center justify-center border border-neutral-700">
+                                  #{queueIdx + 1}
+                                </span>
+                                <span className="text-xs font-bold text-neutral-300 font-mono">
+                                  ID: {p.phraseId}
+                                </span>
+                                <span className="text-xs font-semibold capitalize bg-neutral-800 text-neutral-300 border border-neutral-700 px-2 py-0.5 rounded-md">
+                                  {p.language}
+                                </span>
+                                <span className="text-xs font-mono font-bold bg-amber-500/10 text-amber-300 border border-amber-500/30 px-2 py-0.5 rounded-md">
+                                  🎤 {getSpeakerId(p) || "Unassigned"}
+                                </span>
+                                {p.emotion && (
+                                  <span className="text-xs font-semibold px-2 py-0.5 rounded-md bg-pink-500/15 text-pink-300 border border-pink-500/30 flex items-center gap-1">
+                                    <span>🎭</span>
+                                    <span className="capitalize">{p.emotion}</span>
+                                  </span>
+                                )}
+                                {p.lufs !== undefined && p.lufs !== null && (
+                                  <span className="text-xs font-mono font-bold px-2 py-0.5 rounded-md bg-neutral-800 text-neutral-400 border border-neutral-700">
+                                    📊 {p.lufs} LUFS
+                                  </span>
+                                )}
+                                <span className="text-xs font-mono text-neutral-400">
+                                  ⏱ {p.duration || 5}s
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => setManualActiveWaveforms(prev => new Set(prev).add(p._id))}
+                                  className="px-3 py-1 bg-purple-600/30 hover:bg-purple-600/50 text-purple-200 border border-purple-500/40 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 hover:scale-102 shadow-sm"
+                                  title="Immediately generate and mount interactive waveform for this phrase"
+                                >
+                                  <Zap className="w-3.5 h-3.5 text-amber-300" />
+                                  <span>Generate Waveform Now</span>
+                                </button>
+                              </div>
+                            </div>
+
+                            <div className="space-y-2">
+                              <p className="text-sm font-medium text-neutral-200 italic line-clamp-2 bg-neutral-950/40 p-2.5 rounded-xl border border-neutral-850">
+                                "{p.text}"
+                              </p>
+
+                              {(p.style || p.speed || p.intent || p.pitch || p.volume) && (
+                                <div className="flex flex-wrap items-center gap-2 text-xs opacity-75">
+                                  {p.style && <span className="text-neutral-400">Style: <strong className="text-neutral-300">{p.style}</strong></span>}
+                                  {p.intent && <span className="text-neutral-400">Intent: <strong className="text-neutral-300">{p.intent}</strong></span>}
+                                  {p.speed && <span className="text-neutral-400">Speed: <strong className="text-neutral-300">{p.speed}</strong></span>}
+                                  {p.pitch && <span className="text-neutral-400">Pitch: <strong className="text-neutral-300">{p.pitch}</strong></span>}
+                                  {p.volume && <span className="text-neutral-400">Volume: <strong className="text-neutral-300">{p.volume}</strong></span>}
+                                </div>
+                              )}
+
+                              <div className="flex items-center justify-between gap-3 bg-neutral-950/70 rounded-xl px-3.5 py-2.5 border border-purple-500/20">
+                                <div className="flex items-center gap-2 text-xs font-mono text-purple-300/80">
+                                  <Clock className="w-3.5 h-3.5 text-purple-400 animate-pulse flex-shrink-0" />
+                                  <span>Waveform Queued — will decode automatically when phrase #{Math.max(1, queueIdx + 1 - 10)} is completed</span>
+                                </div>
+                                <span className="text-[11px] font-mono text-neutral-500">Pipeline #{queueIdx + 1}</span>
+                              </div>
+                            </div>
+                          </motion.div>
+                        );
+                      }
+
+                      /* ─── ACTIVE WAVEFORM CARD (TOP 10 IN PIPELINE) ───────────────── */
                       return (
                         <motion.div
                           key={p._id}
@@ -1793,7 +1892,7 @@ export default function QaPhrases() {
                           <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-neutral-800">
                             <div className="flex flex-wrap items-center gap-2.5">
                               <span className="w-6 h-6 rounded-full bg-purple-600 text-white font-mono font-bold text-xs flex items-center justify-center shadow-sm">
-                                #{batchIdx + 1}
+                                #{queueIdx + 1}
                               </span>
                               <span className="text-sm font-bold text-white font-mono">
                                 ID: {p.phraseId}
@@ -1837,6 +1936,49 @@ export default function QaPhrases() {
                             </button>
                           </div>
 
+                          {/* Delivery Metadata Row (Emotions, Style, Speed, Intent, Pitch, Volume) */}
+                          <div className="flex flex-wrap items-center gap-2 pt-0.5">
+                            {p.emotion && (
+                              <span className="text-xs font-bold px-2.5 py-1 rounded-xl bg-gradient-to-r from-pink-500/20 to-purple-500/20 text-pink-300 border border-pink-500/40 flex items-center gap-1.5 shadow-sm">
+                                <span className="text-sm">🎭</span>
+                                <span>Emotion: <strong className="text-white capitalize">{p.emotion}</strong></span>
+                              </span>
+                            )}
+                            {p.style && (
+                              <span className="bg-neutral-800/90 text-neutral-300 text-xs px-2.5 py-1 rounded-lg border border-neutral-700/80">
+                                🎨 Style: <strong className="text-neutral-100">{p.style}</strong>
+                              </span>
+                            )}
+                            {p.intent && (
+                              <span className="bg-neutral-800/90 text-neutral-300 text-xs px-2.5 py-1 rounded-lg border border-neutral-700/80">
+                                🎯 Intent: <strong className="text-neutral-100">{p.intent}</strong>
+                              </span>
+                            )}
+                            {p.speed && (
+                              <span className="bg-neutral-800/90 text-neutral-300 text-xs px-2.5 py-1 rounded-lg border border-neutral-700/80">
+                                ⚡ Speed: <strong className="text-neutral-100">{p.speed}</strong>
+                              </span>
+                            )}
+                            {p.pitch && (
+                              <span className="bg-neutral-800/90 text-neutral-300 text-xs px-2.5 py-1 rounded-lg border border-neutral-700/80">
+                                🎵 Pitch: <strong className="text-neutral-100">{p.pitch}</strong>
+                              </span>
+                            )}
+                            {p.volume && (
+                              <span className="bg-neutral-800/90 text-neutral-300 text-xs px-2.5 py-1 rounded-lg border border-neutral-700/80">
+                                🔊 Volume: <strong className="text-neutral-100">{p.volume}</strong>
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Instructions (if present) */}
+                          {p.instructions && (
+                            <div className="text-xs text-amber-300/90 bg-amber-500/10 border border-amber-500/20 px-3.5 py-2 rounded-xl flex items-start gap-2">
+                              <span className="font-bold flex-shrink-0">💡 Instructions:</span>
+                              <span>{p.instructions}</span>
+                            </div>
+                          )}
+
                           {/* Script Text Display */}
                           <div className="bg-neutral-950/80 border border-neutral-800/90 rounded-2xl p-4">
                             <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider block mb-1">
@@ -1854,6 +1996,7 @@ export default function QaPhrases() {
                               duration={originalDur}
                               startTrimSec={startSec}
                               endTrimSec={endSec}
+                              loadDelay={Math.min(queueIdx * 80, 800)}
                               onTrimChange={(newStart, newEnd) => {
                                 setPhraseTrimTimes(prev => ({
                                   ...prev,
@@ -1938,6 +2081,187 @@ export default function QaPhrases() {
                             </div>
                           </div>
 
+                          {/* Audit Toolbar: Spectrogram Toggle, QC Audit Toggle, Check LUFS & Comment Input */}
+                          <div className="space-y-3 pt-2">
+                            <div className="flex flex-wrap items-center gap-2">
+                              {/* Mel Spectrogram Toggle */}
+                              <button
+                                type="button"
+                                onClick={() => toggleSpectrogram(p._id)}
+                                className={`px-3 py-2 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 border shadow-sm ${
+                                  showSpectrogram[p._id]
+                                    ? "bg-violet-600 text-white border-violet-400 ring-2 ring-violet-400/40"
+                                    : "bg-neutral-800 hover:bg-neutral-750 text-violet-300 border-violet-500/30 hover:border-violet-500/60"
+                                }`}
+                                title="Toggle 0–24kHz Mel Spectrogram analysis with Audacity settings"
+                              >
+                                <BarChart2 className="w-3.5 h-3.5" />
+                                <span>{showSpectrogram[p._id] ? "Hide Spectrogram" : "Mel Spectrogram (0–24k)"}</span>
+                              </button>
+
+                              {/* QC Audit Toggle */}
+                              <button
+                                type="button"
+                                onClick={() => toggleQc(p._id)}
+                                className={`px-3 py-2 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 border shadow-sm ${
+                                  expandedQc[p._id]
+                                    ? "bg-indigo-600 text-white border-indigo-400 ring-2 ring-indigo-400/40"
+                                    : "bg-neutral-800 hover:bg-neutral-750 text-indigo-300 border-indigo-500/30 hover:border-indigo-500/60"
+                                }`}
+                                title="Open acoustic QC analysis drawer"
+                              >
+                                <Sparkles className="w-3.5 h-3.5" />
+                                <span>{expandedQc[p._id] ? "Close QC Audit" : "QC Audit Analysis"}</span>
+                              </button>
+
+                              {/* Check LUFS Button */}
+                              <button
+                                type="button"
+                                onClick={() => handleCheckLufs(p._id)}
+                                disabled={loadingLufs[p._id]}
+                                className="px-3 py-2 text-xs font-bold rounded-xl bg-neutral-800 hover:bg-neutral-750 text-amber-300 border border-amber-500/30 hover:border-amber-500/60 transition-colors flex items-center gap-1.5 disabled:opacity-50 shadow-sm"
+                                title="Calculate exact ITU-R BS.1770-4 gated speech LUFS"
+                              >
+                                {loadingLufs[p._id] ? (
+                                  <>
+                                    <div className="w-3 h-3 border-2 border-amber-300/40 border-t-amber-300 rounded-full animate-spin" />
+                                    <span>Calculating...</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Volume2 className="w-3.5 h-3.5" />
+                                    <span>Check LUFS</span>
+                                  </>
+                                )}
+                              </button>
+                            </div>
+
+                            {/* QA Audit Comment Field */}
+                            <div className="flex items-center gap-2 bg-neutral-950/90 border border-neutral-800 rounded-xl px-3.5 py-2.5">
+                              <MessageSquare className="w-4 h-4 text-purple-400 flex-shrink-0" />
+                              <input
+                                type="text"
+                                placeholder="Add QA audit comment / rejection reason (optional)..."
+                                value={comments[p._id] || ''}
+                                onChange={(e) => setComments(prev => ({ ...prev, [p._id]: e.target.value }))}
+                                className="w-full bg-transparent text-neutral-200 text-xs placeholder-neutral-500 focus:outline-none"
+                              />
+                              {comments[p._id] && (
+                                <button
+                                  type="button"
+                                  onClick={() => setComments(prev => ({ ...prev, [p._id]: '' }))}
+                                  className="text-neutral-500 hover:text-neutral-300 text-xs"
+                                >
+                                  ✕
+                                </button>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Mel Spectrogram Panel (Expanded on Toggle) */}
+                          {showSpectrogram[p._id] && (
+                            <div className="border-t border-neutral-800 pt-3">
+                              <SpectrogramViewer
+                                audioUrl={`${import.meta.env.VITE_BACKEND_URL || "http://localhost:3001"}/api/phrases/${p._id}/audio`}
+                                title={`Phrase ${p.phraseId || p._id} — Mel Spectrogram`}
+                                maxFreq={24000}
+                                gainDb={20}
+                                rangeDb={120}
+                                height={190}
+                                phraseId={p._id}
+                                initialAiAudit={p.spectrogramAiAudit}
+                                allowReAudit={true}
+                              />
+                            </div>
+                          )}
+
+                          {/* QC Audit Analysis Drawer (Expanded on Toggle) */}
+                          {expandedQc[p._id] && (
+                            <div className="p-4 bg-neutral-950/90 border border-neutral-800 rounded-2xl space-y-3 text-xs">
+                              {loadingQc[p._id] ? (
+                                <div className="flex flex-col items-center justify-center py-6 gap-2">
+                                  <div className="w-6 h-6 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+                                  <span className="text-neutral-400 font-medium">Running acoustic QC frequency checks...</span>
+                                </div>
+                              ) : errorQc[p._id] ? (
+                                <div className="text-rose-400 p-2 flex flex-col gap-2">
+                                  <span>⚠️ {errorQc[p._id]}</span>
+                                  <button
+                                    onClick={() => runQC(p._id, true)}
+                                    className="px-3 py-1 bg-neutral-800 hover:bg-neutral-700 text-white rounded font-semibold text-xs w-max"
+                                  >
+                                    Retry
+                                  </button>
+                                </div>
+                              ) : qcData[p._id] ? (
+                                <div className="space-y-3">
+                                  <div className="flex justify-between items-center border-b border-neutral-800 pb-2">
+                                    <span className="font-bold uppercase tracking-wider text-neutral-400 text-[11px]">
+                                      📊 Acoustic Audit Metrics
+                                    </span>
+                                    <button
+                                      onClick={() => runQC(p._id, true)}
+                                      className="px-2.5 py-1 bg-neutral-800 hover:bg-neutral-700 text-amber-400 rounded-lg font-semibold transition-colors flex items-center gap-1"
+                                    >
+                                      <span>🔄 Re-run QC</span>
+                                    </button>
+                                  </div>
+
+                                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
+                                    <div className="p-2.5 bg-neutral-900 rounded-xl border border-neutral-800">
+                                      <span className="block text-neutral-500 font-bold uppercase tracking-wider text-[10px] mb-0.5">LUFS Loudness</span>
+                                      <span className={`font-mono font-bold text-xs ${
+                                        qcData[p._id].freq.lufs === null || qcData[p._id].freq.lufs === undefined
+                                          ? "text-neutral-400"
+                                          : qcData[p._id].freq.lufs >= -24.0 && qcData[p._id].freq.lufs <= -18.0
+                                          ? "text-emerald-400"
+                                          : qcData[p._id].freq.lufs > -18.0
+                                          ? "text-rose-400"
+                                          : "text-amber-400"
+                                      }`}>
+                                        {qcData[p._id].freq.lufs !== null && qcData[p._id].freq.lufs !== undefined
+                                          ? `${qcData[p._id].freq.lufs} LUFS`
+                                          : '⚠️ No Speech'}
+                                      </span>
+                                    </div>
+                                    <div className="p-2.5 bg-neutral-900 rounded-xl border border-neutral-800">
+                                      <span className="block text-neutral-500 font-bold uppercase tracking-wider text-[10px] mb-0.5">Bit Depth</span>
+                                      <span className="font-semibold text-neutral-200">{qcData[p._id].freq.bit_depth || '—'}</span>
+                                    </div>
+                                    <div className="p-2.5 bg-neutral-900 rounded-xl border border-neutral-800">
+                                      <span className="block text-neutral-500 font-bold uppercase tracking-wider text-[10px] mb-0.5">Noise Floor</span>
+                                      <span className="font-semibold text-neutral-200">{qcData[p._id].freq.noise_floor ? `${qcData[p._id].freq.noise_floor} dBFS` : '—'}</span>
+                                    </div>
+                                    <div className="p-2.5 bg-neutral-900 rounded-xl border border-neutral-800">
+                                      <span className="block text-neutral-500 font-bold uppercase tracking-wider text-[10px] mb-0.5">Crest Factor</span>
+                                      <span className="font-semibold text-neutral-200">{qcData[p._id].freq.crest_factor ? `${qcData[p._id].freq.crest_factor} dB` : '—'}</span>
+                                    </div>
+                                    <div className="p-2.5 bg-neutral-900 rounded-xl border border-neutral-800">
+                                      <span className="block text-neutral-500 font-bold uppercase tracking-wider text-[10px] mb-0.5">Verdict</span>
+                                      <span className="font-semibold text-emerald-400">{qcData[p._id].freq.processing_verdict || 'Clean ✅'}</span>
+                                    </div>
+                                  </div>
+
+                                  {qcData[p._id].freq.spectrogram_img && (
+                                    <div className="pt-2">
+                                      <span className="block text-neutral-400 font-bold uppercase tracking-wider text-[10px] mb-1.5">
+                                        Acoustic Spectrogram Plot (20Hz - 20kHz)
+                                      </span>
+                                      <div className="rounded-xl overflow-hidden border border-neutral-800 max-h-48 bg-black flex items-center justify-center">
+                                        <img
+                                          src={`data:image/png;base64,${qcData[p._id].freq.spectrogram_img}`}
+                                          alt="Spectrogram Plot"
+                                          className="w-full object-contain cursor-zoom-in hover:brightness-110 transition-all"
+                                          onClick={() => setLightboxSrc(qcData[p._id].freq.spectrogram_img)}
+                                        />
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              ) : null}
+                            </div>
+                          )}
+
                           {/* Action Buttons Row */}
                           <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-neutral-800">
                             <div className="flex items-center gap-2">
@@ -1962,21 +2286,50 @@ export default function QaPhrases() {
 
                             <div className="flex flex-wrap items-center gap-2">
                               {!isAdmin ? (
-                                <button
-                                  type="button"
-                                  onClick={() => handleSaveInlineTrim(p)}
-                                  disabled={isSaving}
-                                  className="py-2.5 px-6 bg-purple-600 hover:bg-purple-500 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 disabled:opacity-50 shadow-md shadow-purple-600/20 active:scale-95"
-                                >
-                                  {isSaving ? "Trimming..." : "✂️ Save Trim & Move to Edited"}
-                                </button>
-                              ) : (
                                 <>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleReview(p._id, 'reject')}
+                                    disabled={processing === p._id || isSaving}
+                                    className="py-2.5 px-3.5 bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 border border-rose-500/30 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 disabled:opacity-50 shadow-sm"
+                                    title="Direct Reject phrase without trimming"
+                                  >
+                                    <X className="w-3.5 h-3.5" /> <span>Reject</span>
+                                  </button>
                                   <button
                                     type="button"
                                     onClick={() => handleSaveInlineTrim(p)}
                                     disabled={isSaving}
-                                    className="py-2.5 px-4 bg-neutral-800 hover:bg-neutral-750 text-purple-300 border border-purple-500/30 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 disabled:opacity-50 active:scale-95 shadow-sm"
+                                    className="py-2.5 px-5 bg-purple-600 hover:bg-purple-500 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 disabled:opacity-50 shadow-md shadow-purple-600/20 active:scale-95"
+                                  >
+                                    {isSaving ? "Trimming..." : "✂️ Save Trim & Move to Edited"}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleReview(p._id, 'approve')}
+                                    disabled={processing === p._id || isSaving}
+                                    className="py-2.5 px-4 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 disabled:opacity-50 shadow-md shadow-emerald-600/20 active:scale-95"
+                                    title="Direct Approve phrase"
+                                  >
+                                    <Check className="w-3.5 h-3.5" /> <span>Approve</span>
+                                  </button>
+                                </>
+                              ) : (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleReview(p._id, 'reject')}
+                                    disabled={processing === p._id || isSaving}
+                                    className="py-2.5 px-3 bg-neutral-800 hover:bg-rose-950 text-rose-400 border border-neutral-700 hover:border-rose-500/50 rounded-xl text-xs font-bold transition-all flex items-center gap-1 disabled:opacity-50 shadow-sm"
+                                    title="Reject phrase without trimming"
+                                  >
+                                    <X className="w-3.5 h-3.5" /> <span>Reject</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleSaveInlineTrim(p)}
+                                    disabled={isSaving}
+                                    className="py-2.5 px-3.5 bg-neutral-800 hover:bg-neutral-750 text-purple-300 border border-purple-500/30 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 disabled:opacity-50 active:scale-95 shadow-sm"
                                     title="Save trimmed audio while preserving current status"
                                   >
                                     {isSaving ? "Saving..." : "Trim Only"}
@@ -1985,7 +2338,7 @@ export default function QaPhrases() {
                                     type="button"
                                     onClick={() => handleSaveInlineTrim(p, 'rejected')}
                                     disabled={isSaving}
-                                    className="py-2.5 px-5 bg-rose-600/90 hover:bg-rose-600 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 disabled:opacity-50 shadow-md shadow-rose-600/20 active:scale-95"
+                                    className="py-2.5 px-4 bg-rose-600/90 hover:bg-rose-600 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 disabled:opacity-50 shadow-md shadow-rose-600/20 active:scale-95"
                                   >
                                     <X className="w-4 h-4" /> <span>{isSaving ? "Saving..." : "Trim & Reject"}</span>
                                   </button>
@@ -1993,9 +2346,18 @@ export default function QaPhrases() {
                                     type="button"
                                     onClick={() => handleSaveInlineTrim(p, 'approved')}
                                     disabled={isSaving}
-                                    className="py-2.5 px-5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 disabled:opacity-50 shadow-md shadow-emerald-600/20 active:scale-95"
+                                    className="py-2.5 px-4 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 disabled:opacity-50 shadow-md shadow-emerald-600/20 active:scale-95"
                                   >
                                     <Check className="w-4 h-4" /> <span>{isSaving ? "Saving..." : "Trim & Approve"}</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleReview(p._id, 'approve')}
+                                    disabled={processing === p._id || isSaving}
+                                    className="py-2.5 px-3 bg-emerald-950/60 hover:bg-emerald-900/80 text-emerald-300 border border-emerald-500/40 rounded-xl text-xs font-bold transition-all flex items-center gap-1 disabled:opacity-50 shadow-sm"
+                                    title="Approve phrase directly"
+                                  >
+                                    <Check className="w-3.5 h-3.5" /> <span>Approve</span>
                                   </button>
                                 </>
                               )}
@@ -2007,9 +2369,9 @@ export default function QaPhrases() {
                   </AnimatePresence>
                 )}
 
-                {displayedPhrases.length > 5 && (
-                  <div className="text-center py-3 text-xs font-mono text-neutral-500 bg-neutral-900/40 border border-neutral-800/60 rounded-xl">
-                    Showing top 5 phrases in pipeline ({displayedPhrases.length - 5} remaining in queue). Trimming or skipping advances the next phrase immediately.
+                {displayedPhrases.length > 10 && (
+                  <div className="text-center py-3 text-xs font-mono text-neutral-400 bg-neutral-900/60 border border-purple-500/30 rounded-xl shadow-sm">
+                    Showing <strong>{Math.min(10, displayedPhrases.length)}</strong> active waveforms in sliding pipeline (<strong>{Math.max(0, displayedPhrases.length - 10)}</strong> queued). Trimming or reviewing earlier phrases automatically generates waveforms for the next phrases in queue.
                   </div>
                 )}
               </div>

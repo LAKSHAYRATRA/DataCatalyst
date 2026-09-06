@@ -1961,77 +1961,80 @@ export async function streamPhraseAudio(req, res) {
       return res.status(403).json({ error: "Forbidden" });
     }
 
+    // 1. Check local disk FIRST for instant sub-millisecond response!
+    const cleanKey = String(phrase.audioFile || "").replace(/^phrases\//, "");
+    const possiblePaths = [
+      path.join(process.cwd(), "uploads", phrase.audioFile),
+      path.join(process.cwd(), "uploads", "phrases", cleanKey),
+      path.join(process.cwd(), phrase.audioFile),
+      path.join(process.cwd(), "uploads", path.basename(phrase.audioFile)),
+      path.join(process.cwd(), "uploads", "phrases", path.basename(phrase.audioFile))
+    ];
+
+    let foundPath = possiblePaths.find(p => fs.existsSync(p));
+
+    if (!foundPath) {
+      const searchBase = path.join(process.cwd(), "uploads", "phrases");
+      if (fs.existsSync(searchBase)) {
+        const targetBase = path.basename(phrase.audioFile);
+        const phraseIdStr = phrase._id.toString();
+        const searchDir = (dir) => {
+          const items = fs.readdirSync(dir);
+          for (const item of items) {
+            const full = path.join(dir, item);
+            if (fs.statSync(full).isDirectory()) {
+              const subFound = searchDir(full);
+              if (subFound) return subFound;
+            } else if (item === targetBase || item.includes(phraseIdStr)) {
+              return full;
+            }
+          }
+          return null;
+        };
+        foundPath = searchDir(searchBase);
+      }
+    }
+
+    if (foundPath && fs.existsSync(foundPath)) {
+      const ext = path.extname(foundPath).toLowerCase();
+      const mimeType = ext === ".flac" ? "audio/flac" : (ext === ".wav" ? "audio/wav" : "audio/webm");
+      try {
+        const stat = fs.statSync(foundPath);
+        res.setHeader("Content-Length", stat.size);
+      } catch (e) {}
+      res.setHeader("Content-Disposition", "inline");
+      res.setHeader("X-Content-Type-Options", "nosniff");
+      res.setHeader("Content-Type", mimeType);
+      res.setHeader("Accept-Ranges", "bytes");
+      res.setHeader("Cache-Control", "public, max-age=86400, immutable");
+      return fs.createReadStream(foundPath).pipe(res);
+    }
+
+    // 2. Only if NOT on local disk, attempt S3 with fast streaming
     try {
       const command = new GetObjectCommand({
         Bucket: BUCKET_NAME,
-        Key: phrase.audioFile, // The explicit AWS object prefix key saved previously
+        Key: phrase.audioFile,
       });
       const s3Doc = await s3Client.send(command);
 
       res.setHeader("Content-Disposition", "inline");
       res.setHeader("X-Content-Type-Options", "nosniff");
       res.setHeader("Content-Type", s3Doc.ContentType || "audio/flac");
+      if (s3Doc.ContentLength) {
+        res.setHeader("Content-Length", s3Doc.ContentLength);
+      }
+      if (s3Doc.ETag) {
+        res.setHeader("ETag", s3Doc.ETag);
+      }
+      res.setHeader("Accept-Ranges", "bytes");
+      res.setHeader("Cache-Control", "public, max-age=86400, immutable");
       
       s3Doc.Body.on('error', (err) => {
           console.error('S3 Stream error (phrase recording):', err);
       }).pipe(res);
     } catch (error) {
-      console.warn("AWS S3 GetObject failed for phrase audio, attempting local fallback:", error.message);
-      
-      const cleanKey = String(phrase.audioFile || "").replace(/^phrases\//, "");
-      const possiblePaths = [
-        path.join(process.cwd(), "uploads", phrase.audioFile),
-        path.join(process.cwd(), "uploads", "phrases", cleanKey),
-        path.join(process.cwd(), phrase.audioFile),
-        path.join(process.cwd(), "uploads", path.basename(phrase.audioFile))
-      ];
-
-      let foundPath = possiblePaths.find(p => fs.existsSync(p));
-
-      if (!foundPath) {
-        const searchBase = path.join(process.cwd(), "uploads", "phrases");
-        if (fs.existsSync(searchBase)) {
-          const targetBase = path.basename(phrase.audioFile);
-          const phraseIdStr = phrase._id.toString();
-          const searchDir = (dir) => {
-            const items = fs.readdirSync(dir);
-            for (const item of items) {
-              const full = path.join(dir, item);
-              if (fs.statSync(full).isDirectory()) {
-                const subFound = searchDir(full);
-                if (subFound) return subFound;
-              } else if (item === targetBase || item.includes(phraseIdStr)) {
-                return full;
-              }
-            }
-            return null;
-          };
-          foundPath = searchDir(searchBase);
-
-          if (!foundPath) {
-            const companyFolder = phrase.companyId ? String(phrase.companyId).replace(/[^a-zA-Z0-9_\-\ ]/g, "").trim() : "No Company";
-            const compDir = path.join(searchBase, companyFolder);
-            if (fs.existsSync(compDir)) {
-              const files = fs.readdirSync(compDir)
-                .map(f => ({ name: f, path: path.join(compDir, f), mtime: fs.statSync(path.join(compDir, f)).mtimeMs }))
-                .sort((a, b) => b.mtime - a.mtime);
-              if (files.length > 0) {
-                foundPath = files[0].path;
-              }
-            }
-          }
-        }
-      }
-
-      if (foundPath && fs.existsSync(foundPath)) {
-        const ext = path.extname(foundPath).toLowerCase();
-        const mimeType = ext === ".flac" ? "audio/flac" : (ext === ".wav" ? "audio/wav" : "audio/webm");
-        res.setHeader("Content-Disposition", "inline");
-        res.setHeader("X-Content-Type-Options", "nosniff");
-        res.setHeader("Content-Type", mimeType);
-        return fs.createReadStream(foundPath).pipe(res);
-      }
-
+      console.warn("AWS S3 GetObject failed for phrase audio:", error.message);
       return res.status(404).json({ error: "Audio file missing on AWS S3 and local storage" });
     }
   } catch (error) {
@@ -2471,9 +2474,14 @@ export async function trimPhraseAudio(req, res) {
     phrase.lufs = newLufs;
     phrase.wasAudioTrimmed = true;
 
-    const { verdict } = req.body;
+    const { verdict, comment } = req.body;
     const isQAOnly = req.user.isQA && !req.user.isAdmin;
     const isAdmin = Boolean(req.user.isAdmin);
+
+    if (comment && typeof comment === "string" && comment.trim()) {
+      phrase.qaComment = comment.trim();
+      phrase.reviewNote = comment.trim();
+    }
 
     if (verdict === "approved" || verdict === "rejected") {
       phrase.status = verdict;

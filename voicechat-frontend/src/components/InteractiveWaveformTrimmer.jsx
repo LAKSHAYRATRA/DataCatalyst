@@ -6,7 +6,8 @@ export default function InteractiveWaveformTrimmer({
   duration,
   startTrimSec,
   endTrimSec,
-  onTrimChange
+  onTrimChange,
+  loadDelay = 0
 }) {
   const canvasRef = useRef(null);
   const containerRef = useRef(null);
@@ -55,16 +56,50 @@ export default function InteractiveWaveformTrimmer({
     };
   }, [blobUrl]);
 
-  // 1. Single authenticated fetch & safe PCM decode
+// Global shared AudioContext & in-memory decoded waveform cache
+let sharedAudioContext = null;
+function getSharedAudioContext() {
+  if (typeof window === "undefined") return null;
+  const AudioCtx = window.AudioContext || window.webkitAudioContext;
+  if (!AudioCtx) return null;
+  if (!sharedAudioContext || sharedAudioContext.state === "closed") {
+    sharedAudioContext = new AudioCtx();
+  }
+  return sharedAudioContext;
+}
+
+const waveformCache = new Map();
+
+  // 1. Single authenticated fetch & safe PCM decode with in-memory caching
   useEffect(() => {
     let isCancelled = false;
     async function loadAudioData() {
       if (!audioUrl) return;
+
+      const BACKEND = import.meta.env.VITE_BACKEND_URL || "http://localhost:3001";
+      const fullUrl = String(audioUrl).startsWith("http") ? audioUrl : BACKEND + audioUrl;
+
+      // Check in-memory decoded cache first for instant 0ms mount
+      if (waveformCache.has(fullUrl)) {
+        const cached = waveformCache.get(fullUrl);
+        if (!isCancelled) {
+          setBlobUrl(cached.bUrl);
+          setTotalDuration(cached.fetchedDur);
+          pcmDataRef.current = cached.channelData;
+          sampleRateRef.current = cached.sampleRate;
+          estimatedLufsRef.current = cached.estLufs;
+          maxPeakRef.current = cached.maxVal;
+          setAudioLufs(cached.estLufs);
+          setWaveAmpFactor(cached.ampFactor);
+          setPcmPeaks(cached.peaks);
+          setLoadingAudio(false);
+          onTrimChange(0, cached.fetchedDur);
+        }
+        return;
+      }
+
       setLoadingAudio(true);
       try {
-        const BACKEND = import.meta.env.VITE_BACKEND_URL || "http://localhost:3001";
-        const fullUrl = String(audioUrl).startsWith("http") ? audioUrl : BACKEND + audioUrl;
-
         let token = null;
         try {
           const cookies = document.cookie.split(";").map((c) => c.trim());
@@ -88,11 +123,10 @@ export default function InteractiveWaveformTrimmer({
         const bUrl = URL.createObjectURL(blob);
         setBlobUrl(bUrl);
 
-        // Safe PCM Peak Extraction
+        // Safe PCM Peak Extraction via shared AudioContext
         try {
-          const AudioCtx = window.AudioContext || window.webkitAudioContext;
-          if (AudioCtx) {
-            const audioCtx = new AudioCtx();
+          const audioCtx = getSharedAudioContext();
+          if (audioCtx) {
             const bufferCopy = arrayBuffer.slice(0);
             const decodedBuffer = await audioCtx.decodeAudioData(bufferCopy);
             
@@ -107,15 +141,17 @@ export default function InteractiveWaveformTrimmer({
               pcmDataRef.current = channelData;
               sampleRateRef.current = decodedBuffer.sampleRate;
 
-              // Compute overall max peak and RMS for LUFS estimation
+              // Fast Step Peak & RMS calculation (sampling every 4th sample for 4x speedup)
               let maxVal = 0;
               let sumSquares = 0;
-              for (let i = 0; i < channelData.length; i++) {
+              const sampleStep = 4;
+              for (let i = 0; i < channelData.length; i += sampleStep) {
                 const abs = Math.abs(channelData[i]);
                 if (abs > maxVal) maxVal = abs;
                 sumSquares += abs * abs;
               }
-              const overallRms = Math.sqrt(sumSquares / Math.max(1, channelData.length));
+              const countedSamples = Math.max(1, Math.floor(channelData.length / sampleStep));
+              const overallRms = Math.sqrt(sumSquares / countedSamples);
               const estLufs = parseFloat((-0.691 + 10 * Math.log10(Math.max(1e-9, overallRms * overallRms))).toFixed(1));
               estimatedLufsRef.current = estLufs;
               maxPeakRef.current = maxVal;
@@ -132,18 +168,30 @@ export default function InteractiveWaveformTrimmer({
               const numBars = 160;
               const blockSize = Math.floor(channelData.length / numBars);
               const peaks = new Float32Array(numBars);
+              const barStep = Math.max(1, Math.floor(blockSize / 32));
               for (let i = 0; i < numBars; i++) {
                 const start = i * blockSize;
                 let max = 0;
-                for (let j = 0; j < blockSize; j++) {
+                for (let j = 0; j < blockSize; j += barStep) {
                   const val = Math.abs(channelData[start + j]);
                   if (val > max) max = val;
                 }
                 peaks[i] = Math.min(1.0, max * ampFactor);
               }
               setPcmPeaks(peaks);
+
+              // Save to cache
+              waveformCache.set(fullUrl, {
+                bUrl,
+                fetchedDur,
+                channelData,
+                sampleRate: decodedBuffer.sampleRate,
+                estLufs,
+                maxVal,
+                ampFactor,
+                peaks
+              });
             }
-            try { audioCtx.close(); } catch (e) {}
           }
         } catch (decErr) {
           console.warn("Waveform PCM decode fallback:", decErr);
@@ -156,11 +204,23 @@ export default function InteractiveWaveformTrimmer({
       }
     }
 
-    loadAudioData();
+    let timer = null;
+    const BACKEND = import.meta.env.VITE_BACKEND_URL || "http://localhost:3001";
+    const fullUrl = String(audioUrl).startsWith("http") ? audioUrl : BACKEND + audioUrl;
+
+    if (waveformCache.has(fullUrl) || loadDelay <= 0) {
+      loadAudioData();
+    } else {
+      timer = setTimeout(() => {
+        if (!isCancelled) loadAudioData();
+      }, loadDelay);
+    }
+
     return () => {
       isCancelled = true;
+      if (timer) clearTimeout(timer);
     };
-  }, [audioUrl, duration]);
+  }, [audioUrl, duration, loadDelay]);
 
   // 2. Draw canvas waveform & speech regions
   const drawWaveform = useCallback(() => {
