@@ -37,6 +37,7 @@ import ffmpeg from "fluent-ffmpeg";
 import ffmpegInstaller from "@ffmpeg-installer/ffmpeg";
 import { invokeAudioQC } from "../config/lambda.js";
 import { restitchScriptedCall } from "../services/scriptedStitcher.js";
+import { getArtistRateForProject } from "../controllers/vendorController.js";
 
 ffmpeg.setFfmpegPath(ffmpegInstaller.path);
 
@@ -998,6 +999,9 @@ router.get("/companies", requireAuth(JWT_SECRET), async (req, res) => {
                     return res.json({ companies: [] });
                 }
 
+                const userProjectPayrates = Array.isArray(req.user.projectPayrates) ? req.user.projectPayrates : [];
+                const hasUserAllocations = vendor.isStudio && userProjectPayrates.length > 0;
+
                 const allowedSubprojectIds = new Set(phraseProjects.map(p => String(p.subprojectId || "").trim().toLowerCase()).filter(Boolean));
                 const allowedSubprojectNames = new Set(phraseProjects.map(p => String(p.subprojectName || "").trim().toLowerCase()).filter(Boolean));
 
@@ -1006,6 +1010,30 @@ router.get("/companies", requireAuth(JWT_SECRET), async (req, res) => {
                     const cName = String(c.name || "").trim().toLowerCase();
                     const cProj = String(c.projectName || "").trim().toLowerCase();
                     const cleanName = cName.replace(/_downloaded$/i, "").trim();
+
+                    if (hasUserAllocations) {
+                        const matchedUserProj = userProjectPayrates.find(p => {
+                            if (p.category !== "phrase") return false;
+                            const subId = String(p.subprojectId || "").trim().toLowerCase();
+                            const subName = String(p.subprojectName || "").trim().toLowerCase();
+                            return subId === cId || subId === cName || subId === cleanName || subName === cName || subName === cProj;
+                        });
+                        if (!matchedUserProj) return null;
+
+                        const rateRes = getArtistRateForProject(req.user, "phrase", c._id || c.name, null, c.hourlyPayout);
+                        let updatedC = {
+                            ...c,
+                            hourlyPayout: (rateRes.isProjectConfigured || Number(req.user.hourlyPhrasePayrate) > 0) ? rateRes.artistRate : c.hourlyPayout
+                        };
+
+                        if (matchedUserProj.language && matchedUserProj.language !== "all") {
+                            const allowedLangs = new Set([String(matchedUserProj.language).toLowerCase().trim()]);
+                            const filteredLangs = (c.languages || []).filter(l => allowedLangs.has(String(l).toLowerCase().trim()));
+                            if (filteredLangs.length === 0 && (c.languages || []).length > 0) return null;
+                            updatedC.languages = filteredLangs;
+                        }
+                        return updatedC;
+                    }
 
                     const isAssigned = allowedSubprojectIds.has(cId) ||
                            allowedSubprojectIds.has(cName) ||
@@ -1021,13 +1049,21 @@ router.get("/companies", requireAuth(JWT_SECRET), async (req, res) => {
                         return pSubId === cId || pSubId === cName || pSubId === cleanName || pSubName === cName || pSubName === cProj;
                     });
 
+                    let updatedC = { ...c };
+                    if (vendor.isStudio) {
+                        const rateRes = getArtistRateForProject(req.user, "phrase", c._id || c.name, null, c.hourlyPayout);
+                        if (rateRes.isProjectConfigured || Number(req.user.hourlyPhrasePayrate) > 0) {
+                            updatedC.hourlyPayout = rateRes.artistRate;
+                        }
+                    }
+
                     if (assignedProj && Array.isArray(assignedProj.assignedLanguages) && assignedProj.assignedLanguages.length > 0) {
                         const allowedLangs = new Set(assignedProj.assignedLanguages.map(l => String(l).toLowerCase().trim()));
                         const filteredLangs = (c.languages || []).filter(l => allowedLangs.has(String(l).toLowerCase().trim()));
                         if (filteredLangs.length === 0) return null;
-                        return { ...c, languages: filteredLangs };
+                        updatedC.languages = filteredLangs;
                     }
-                    return c;
+                    return updatedC;
                 }).filter(Boolean);
             }
 
@@ -1106,6 +1142,9 @@ router.get("/companies", requireAuth(JWT_SECRET), async (req, res) => {
                 return res.json({ companies: [] });
             }
 
+            const userProjectPayrates = Array.isArray(req.user.projectPayrates) ? req.user.projectPayrates : [];
+            const hasUserAllocations = vendor.isStudio && userProjectPayrates.length > 0;
+
             const allowedSubprojectIds = new Set(phraseProjects.map(p => String(p.subprojectId || "").trim().toLowerCase()).filter(Boolean));
             const allowedSubprojectNames = new Set(phraseProjects.map(p => String(p.subprojectName || "").trim().toLowerCase()).filter(Boolean));
 
@@ -1114,6 +1153,30 @@ router.get("/companies", requireAuth(JWT_SECRET), async (req, res) => {
                 const cName = String(c.name || "").trim().toLowerCase();
                 const cProj = String(c.projectName || "").trim().toLowerCase();
                 const cleanName = cName.replace(/_downloaded$/i, "").trim();
+
+                if (hasUserAllocations) {
+                    const matchedUserProj = userProjectPayrates.find(p => {
+                        if (p.category !== "phrase") return false;
+                        const subId = String(p.subprojectId || "").trim().toLowerCase();
+                        const subName = String(p.subprojectName || "").trim().toLowerCase();
+                        return subId === cId || subId === cName || subId === cleanName || subName === cName || subName === cProj;
+                    });
+                    if (!matchedUserProj) return null;
+
+                    const rateRes = getArtistRateForProject(req.user, "phrase", c._id || c.name, null, c.hourlyPayout);
+                    let updatedC = {
+                        ...c,
+                        hourlyPayout: (rateRes.isProjectConfigured || Number(req.user.hourlyPhrasePayrate) > 0) ? rateRes.artistRate : c.hourlyPayout
+                    };
+
+                    if (matchedUserProj.language && matchedUserProj.language !== "all") {
+                        const allowedLangs = new Set([String(matchedUserProj.language).toLowerCase().trim()]);
+                        const filteredLangs = (c.languages || []).filter(l => allowedLangs.has(String(l).toLowerCase().trim()));
+                        if (filteredLangs.length === 0 && (c.languages || []).length > 0) return null;
+                        updatedC.languages = filteredLangs;
+                    }
+                    return updatedC;
+                }
 
                 const isAssigned = allowedSubprojectIds.has(cId) ||
                        allowedSubprojectIds.has(cName) ||
@@ -1129,13 +1192,21 @@ router.get("/companies", requireAuth(JWT_SECRET), async (req, res) => {
                     return pSubId === cId || pSubId === cName || pSubId === cleanName || pSubName === cName || pSubName === cProj;
                 });
 
+                let updatedC = { ...c };
+                if (vendor.isStudio) {
+                    const rateRes = getArtistRateForProject(req.user, "phrase", c._id || c.name, null, c.hourlyPayout);
+                    if (rateRes.isProjectConfigured || Number(req.user.hourlyPhrasePayrate) > 0) {
+                        updatedC.hourlyPayout = rateRes.artistRate;
+                    }
+                }
+
                 if (assignedProj && Array.isArray(assignedProj.assignedLanguages) && assignedProj.assignedLanguages.length > 0) {
                     const allowedLangs = new Set(assignedProj.assignedLanguages.map(l => String(l).toLowerCase().trim()));
                     const filteredLangs = (c.languages || []).filter(l => allowedLangs.has(String(l).toLowerCase().trim()));
                     if (filteredLangs.length === 0) return null;
-                    return { ...c, languages: filteredLangs };
+                    updatedC.languages = filteredLangs;
                 }
-                return c;
+                return updatedC;
             }).filter(Boolean);
         }
 
@@ -2071,8 +2142,21 @@ async function applyRecordingDecision(call, userId, action, reviewerId, note, is
     if (action === "approved") {
         const durationMinutes = getRecordingDurationMinutes(call, side);
         const hourlyPayout = await getLanguageHourlyPayout(call.language);
+        let effectiveRate = hourlyPayout;
+        const targetUserId = side === "A" ? (call.userA?._id || call.userA) : (call.userB?._id || call.userB);
+        if (targetUserId) {
+            const targetUser = await User.findById(targetUserId).select("vendorId projectPayrates perCallPayrate isQA").lean();
+            if (targetUser?.vendorId && !targetUser?.isQA) {
+                const isScripted = String(call.callId || "").startsWith("scripted_") || call.endReason === "scripted_completed";
+                const category = isScripted ? "scripted_call" : "call";
+                const rateRes = getArtistRateForProject(targetUser, category, call.language, call.language, hourlyPayout);
+                if (rateRes.isProjectConfigured || Number(targetUser.perCallPayrate) > 0) {
+                    effectiveRate = rateRes.artistRate;
+                }
+            }
+        }
         call[durationKey] = durationMinutes;
-        call[payoutKey] = roundCurrency((hourlyPayout * durationMinutes) / 60);
+        call[payoutKey] = roundCurrency((effectiveRate * durationMinutes) / 60);
     } else {
         call[durationKey] = 0;
         call[payoutKey] = 0;
@@ -5832,6 +5916,28 @@ router.patch("/users/:userId/raw", async (req, res) => {
         res.json({ message: "User metadata updated successfully", user: updatedUser });
     } catch (error) {
         res.status(500).json({ error: error.message });
+    }
+});
+
+// Change/Reset user password from Admin Panel
+router.patch("/users/:userId/password", async (req, res) => {
+    try {
+        const { newPassword } = req.body;
+        if (!newPassword || typeof newPassword !== "string" || newPassword.trim().length < 6) {
+            return res.status(400).json({ error: "Password must be at least 6 characters long." });
+        }
+
+        const user = await User.findById(req.params.userId);
+        if (!user) return res.status(404).json({ error: "User not found" });
+
+        const passwordHash = await bcrypt.hash(newPassword.trim(), 10);
+        user.passwordHash = passwordHash;
+        user.tokenVersion = (user.tokenVersion || 0) + 1;
+        await user.save();
+
+        res.json({ ok: true, message: `Password updated successfully for ${user.username || user.email}` });
+    } catch (error) {
+        res.status(500).json({ error: "Failed to update password: " + error.message });
     }
 });
 

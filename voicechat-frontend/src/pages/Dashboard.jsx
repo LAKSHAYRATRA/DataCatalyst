@@ -291,15 +291,16 @@ export default function Dashboard() {
                     <motion.div
                         initial={{ opacity: 0, y: -8 }}
                         animate={{ opacity: 1, y: 0 }}
-                        className="mb-8 rounded-2xl border border-rose-500/40 bg-rose-500/10 dark:bg-rose-500/10 p-5 md:p-6 flex flex-col md:flex-row md:items-center justify-between gap-4"
+                        className="mb-8 relative overflow-hidden rounded-3xl border border-rose-500/40 bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-rose-950/20 p-6 md:p-7 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-xl"
                     >
-                        <div className="flex items-start gap-4">
-                            <div className="w-11 h-11 rounded-full bg-rose-500/20 flex items-center justify-center flex-shrink-0 mt-0.5">
+                        <div className="absolute top-0 right-0 w-32 h-32 bg-rose-500/10 rounded-full blur-2xl pointer-events-none" />
+                        <div className="flex items-start gap-4 relative z-10">
+                            <div className="w-11 h-11 rounded-2xl bg-rose-500/20 border border-rose-500/30 flex items-center justify-center flex-shrink-0 mt-0.5">
                                 <AlertCircle className="w-5 h-5 text-rose-400" />
                             </div>
                             <div>
-                                <h3 className="text-lg font-semibold text-rose-300">PAN Verification Rejected</h3>
-                                <p className="text-sm text-neutral-300 mt-1">
+                                <h3 className="text-lg font-bold text-rose-300">PAN Verification Rejected</h3>
+                                <p className="text-sm text-neutral-400 mt-1">
                                     {panRejectionReason
                                         ? `Reason: ${panRejectionReason}. Please update and re-submit your PAN card.`
                                         : "Your PAN details could not be verified. Please review and re-submit."}
@@ -308,7 +309,7 @@ export default function Dashboard() {
                         </div>
                         <Link
                             to="/profile"
-                            className="inline-flex items-center justify-center px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-sm font-bold shadow-lg shadow-rose-900/30 transition-all flex-shrink-0"
+                            className="inline-flex items-center justify-center px-5 py-2.5 rounded-2xl bg-rose-600 hover:bg-rose-500 text-white text-sm font-bold shadow-lg shadow-rose-900/30 transition-all flex-shrink-0 relative z-10"
                         >
                             Re-submit PAN
                         </Link>
@@ -319,22 +320,23 @@ export default function Dashboard() {
                     <motion.div
                         initial={{ opacity: 0, y: -8 }}
                         animate={{ opacity: 1, y: 0 }}
-                        className="mb-8 rounded-2xl border border-amber-500/40 bg-amber-500/10 dark:bg-amber-500/10 p-5 md:p-6 flex flex-col md:flex-row md:items-center justify-between gap-4"
+                        className="mb-8 relative overflow-hidden rounded-3xl border border-neutral-800 bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 p-6 md:p-7 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-xl group hover:border-neutral-700 transition-all"
                     >
-                        <div className="flex items-start gap-4">
-                            <div className="w-11 h-11 rounded-full bg-amber-500/20 flex items-center justify-center flex-shrink-0 mt-0.5">
-                                <AlertCircle className="w-5 h-5 text-amber-400" />
+                        <div className="absolute top-0 right-0 w-32 h-32 bg-primary-500/10 rounded-full blur-2xl pointer-events-none" />
+                        <div className="flex items-start gap-4 relative z-10">
+                            <div className="w-11 h-11 rounded-2xl bg-primary-900/40 border border-primary-800/50 flex items-center justify-center flex-shrink-0 mt-0.5">
+                                <AlertCircle className="w-5 h-5 text-primary-400" />
                             </div>
                             <div>
-                                <h3 className="text-lg font-semibold text-amber-300">Action Required: Complete PAN Verification</h3>
-                                <p className="text-sm text-neutral-300 mt-1">
+                                <h3 className="text-lg font-bold text-white">Action Required: Complete PAN Verification</h3>
+                                <p className="text-sm text-neutral-400 mt-1">
                                     Please upload your PAN card details to ensure timely monthly payouts.
                                 </p>
                             </div>
                         </div>
                         <Link
                             to="/profile"
-                            className="inline-flex items-center justify-center px-5 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-sm font-bold shadow-lg shadow-amber-900/30 transition-all flex-shrink-0"
+                            className="inline-flex items-center justify-center px-5 py-2.5 rounded-2xl bg-primary-600 hover:bg-primary-500 text-white text-sm font-bold shadow-lg shadow-primary-900/30 transition-all flex-shrink-0 relative z-10"
                         >
                             Submit PAN Details
                         </Link>
@@ -345,22 +347,23 @@ export default function Dashboard() {
                     <motion.div
                         initial={{ opacity: 0, y: -8 }}
                         animate={{ opacity: 1, y: 0 }}
-                        className="mb-8 rounded-2xl border border-primary-500/40 bg-primary-500/10 dark:bg-primary-500/10 p-5 md:p-6 flex flex-col md:flex-row md:items-center justify-between gap-4"
+                        className="mb-8 relative overflow-hidden rounded-3xl border border-neutral-800 bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 p-6 md:p-7 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-xl group hover:border-neutral-700 transition-all"
                     >
-                        <div className="flex items-start gap-4">
-                            <div className="w-11 h-11 rounded-full bg-primary-500/20 flex items-center justify-center flex-shrink-0 mt-0.5">
+                        <div className="absolute top-0 right-0 w-32 h-32 bg-primary-500/10 rounded-full blur-2xl pointer-events-none" />
+                        <div className="flex items-start gap-4 relative z-10">
+                            <div className="w-11 h-11 rounded-2xl bg-primary-900/40 border border-primary-800/50 flex items-center justify-center flex-shrink-0 mt-0.5">
                                 <CreditCard className="w-5 h-5 text-primary-400" />
                             </div>
                             <div>
-                                <h3 className="text-lg font-semibold text-primary-300">Add UPI ID for Faster Payouts</h3>
-                                <p className="text-sm text-neutral-300 mt-1">
+                                <h3 className="text-lg font-bold text-white">Add UPI ID for Faster Payouts</h3>
+                                <p className="text-sm text-neutral-400 mt-1">
                                     You haven't added a UPI ID yet. Add one in your profile for seamless earnings transfer.
                                 </p>
                             </div>
                         </div>
                         <Link
                             to="/profile"
-                            className="inline-flex items-center justify-center px-5 py-2.5 rounded-xl bg-primary-600 hover:bg-primary-500 text-white text-sm font-bold shadow-lg shadow-primary-900/30 transition-all flex-shrink-0"
+                            className="inline-flex items-center justify-center px-5 py-2.5 rounded-2xl bg-primary-600 hover:bg-primary-500 text-white text-sm font-bold shadow-lg shadow-primary-900/30 transition-all flex-shrink-0 relative z-10"
                         >
                             Add UPI ID
                         </Link>
@@ -371,14 +374,15 @@ export default function Dashboard() {
                     <motion.div
                         initial={{ opacity: 0, y: -8 }}
                         animate={{ opacity: 1, y: 0 }}
-                        className="mb-8 rounded-2xl border border-warning-400/40 bg-warning-500/10 dark:bg-warning-500/10 p-5 md:p-6 flex flex-col md:flex-row md:items-center gap-4"
+                        className="mb-8 relative overflow-hidden rounded-3xl border border-neutral-800 bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 p-6 md:p-7 flex flex-col md:flex-row md:items-center gap-4 shadow-xl"
                     >
-                        <div className="w-11 h-11 rounded-full bg-warning-500/20 flex items-center justify-center flex-shrink-0">
-                            <Clock className="w-5 h-5 text-warning-400" />
+                        <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/10 rounded-full blur-2xl pointer-events-none" />
+                        <div className="w-11 h-11 rounded-2xl bg-indigo-900/40 border border-indigo-800/50 flex items-center justify-center flex-shrink-0 relative z-10">
+                            <Clock className="w-5 h-5 text-indigo-400" />
                         </div>
-                        <div className="flex-1">
-                            <h3 className="text-lg font-semibold text-warning-300">Awaiting Contributor Agreement Approval</h3>
-                            <p className="text-sm text-neutral-300 mt-1">
+                        <div className="flex-1 relative z-10">
+                            <h3 className="text-lg font-bold text-white">Awaiting Contributor Agreement Approval</h3>
+                            <p className="text-sm text-neutral-400 mt-1">
                                 Your signed agreement is being reviewed by our admin team. Once approved, you'll be able to start contributing. This usually takes 24–48 hours.
                             </p>
                         </div>
@@ -501,44 +505,64 @@ export default function Dashboard() {
                     animate="show"
                     className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-10"
                 >
-                    <motion.div variants={item} whileHover={{ y: -5 }} className="bg-white dark:bg-neutral-900 rounded-3xl p-6 border border-neutral-200 dark:border-neutral-800 shadow-sm transition-all duration-300">
-                        <div className="flex items-start justify-between mb-4">
-                            <div className="p-3 bg-primary-50 dark:bg-primary-900/30 rounded-2xl">
-                                <Phone className="w-6 h-6 text-primary-600 dark:text-primary-400" />
+                    <motion.div 
+                        variants={item} 
+                        whileHover={{ y: -4 }} 
+                        className="relative overflow-hidden rounded-3xl p-6 border border-neutral-800 bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 hover:border-neutral-700 shadow-xl transition-all duration-300 group"
+                    >
+                        <div className="absolute top-0 right-0 w-28 h-28 bg-primary-500/10 rounded-full blur-2xl pointer-events-none group-hover:bg-primary-500/15 transition-all" />
+                        <div className="flex items-start justify-between mb-4 relative z-10">
+                            <div className="p-3 bg-primary-900/30 border border-primary-800/40 rounded-2xl">
+                                <Phone className="w-6 h-6 text-primary-400" />
                             </div>
                         </div>
-                        <p className="text-sm font-bold text-neutral-500 dark:text-neutral-400 uppercase tracking-widest mb-1">Total Calls</p>
-                        <p className="text-4xl font-black text-neutral-900 dark:text-white drop-shadow-sm">{totalCalls}</p>
+                        <p className="text-xs font-bold text-neutral-400 uppercase tracking-widest mb-1 relative z-10">Total Calls</p>
+                        <p className="text-4xl font-black text-white drop-shadow-sm relative z-10 font-mono">{totalCalls}</p>
                     </motion.div>
 
-                    <motion.div variants={item} whileHover={{ y: -5 }} className="bg-white dark:bg-neutral-900 rounded-3xl p-6 border border-neutral-200 dark:border-neutral-800 shadow-sm transition-all duration-300">
-                        <div className="flex items-start justify-between mb-4">
-                            <div className="p-3 bg-success-50 dark:bg-success-900/30 rounded-2xl">
-                                <CheckCircle2 className="w-6 h-6 text-success-600 dark:text-success-400" />
+                    <motion.div 
+                        variants={item} 
+                        whileHover={{ y: -4 }} 
+                        className="relative overflow-hidden rounded-3xl p-6 border border-neutral-800 bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 hover:border-neutral-700 shadow-xl transition-all duration-300 group"
+                    >
+                        <div className="absolute top-0 right-0 w-28 h-28 bg-emerald-500/10 rounded-full blur-2xl pointer-events-none group-hover:bg-emerald-500/15 transition-all" />
+                        <div className="flex items-start justify-between mb-4 relative z-10">
+                            <div className="p-3 bg-emerald-900/30 border border-emerald-800/40 rounded-2xl">
+                                <CheckCircle2 className="w-6 h-6 text-emerald-400" />
                             </div>
                         </div>
-                        <p className="text-sm font-bold text-neutral-500 dark:text-neutral-400 uppercase tracking-widest mb-1">Completed</p>
-                        <p className="text-4xl font-black text-neutral-900 dark:text-white drop-shadow-sm">{completedCalls}</p>
+                        <p className="text-xs font-bold text-neutral-400 uppercase tracking-widest mb-1 relative z-10">Completed</p>
+                        <p className="text-4xl font-black text-white drop-shadow-sm relative z-10 font-mono">{completedCalls}</p>
                     </motion.div>
 
-                    <motion.div variants={item} whileHover={{ y: -5 }} className="bg-white dark:bg-neutral-900 rounded-3xl p-6 border border-neutral-200 dark:border-neutral-800 shadow-sm transition-all duration-300">
-                        <div className="flex items-start justify-between mb-4">
-                            <div className="p-3 bg-warning-50 dark:bg-warning-900/30 rounded-2xl">
-                                <Clock className="w-6 h-6 text-warning-600 dark:text-warning-400" />
+                    <motion.div 
+                        variants={item} 
+                        whileHover={{ y: -4 }} 
+                        className="relative overflow-hidden rounded-3xl p-6 border border-neutral-800 bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 hover:border-neutral-700 shadow-xl transition-all duration-300 group"
+                    >
+                        <div className="absolute top-0 right-0 w-28 h-28 bg-cyan-500/10 rounded-full blur-2xl pointer-events-none group-hover:bg-cyan-500/15 transition-all" />
+                        <div className="flex items-start justify-between mb-4 relative z-10">
+                            <div className="p-3 bg-cyan-900/30 border border-cyan-800/40 rounded-2xl">
+                                <Clock className="w-6 h-6 text-cyan-400" />
                             </div>
                         </div>
-                        <p className="text-sm font-bold text-neutral-500 dark:text-neutral-400 uppercase tracking-widest mb-1">Total Mins</p>
-                        <p className="text-4xl font-black text-neutral-900 dark:text-white drop-shadow-sm">{totalMinutes}</p>
+                        <p className="text-xs font-bold text-neutral-400 uppercase tracking-widest mb-1 relative z-10">Total Mins</p>
+                        <p className="text-4xl font-black text-white drop-shadow-sm relative z-10 font-mono">{totalMinutes}</p>
                     </motion.div>
 
-                    <motion.div variants={item} whileHover={{ y: -5 }} className="bg-white dark:bg-neutral-900 rounded-3xl p-6 border border-neutral-200 dark:border-neutral-800 shadow-sm transition-all duration-300">
-                        <div className="flex items-start justify-between mb-4">
-                            <div className="p-3 bg-indigo-50 dark:bg-indigo-900/30 rounded-2xl">
-                                <Activity className="w-6 h-6 text-indigo-600 dark:text-indigo-400" />
+                    <motion.div 
+                        variants={item} 
+                        whileHover={{ y: -4 }} 
+                        className="relative overflow-hidden rounded-3xl p-6 border border-neutral-800 bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 hover:border-neutral-700 shadow-xl transition-all duration-300 group"
+                    >
+                        <div className="absolute top-0 right-0 w-28 h-28 bg-indigo-500/10 rounded-full blur-2xl pointer-events-none group-hover:bg-indigo-500/15 transition-all" />
+                        <div className="flex items-start justify-between mb-4 relative z-10">
+                            <div className="p-3 bg-indigo-900/30 border border-indigo-800/40 rounded-2xl">
+                                <Activity className="w-6 h-6 text-indigo-400" />
                             </div>
                         </div>
-                        <p className="text-sm font-bold text-neutral-500 dark:text-neutral-400 uppercase tracking-widest mb-1">Avg Duration</p>
-                        <p className="text-4xl font-black text-neutral-900 dark:text-white drop-shadow-sm">{avgDuration}m</p>
+                        <p className="text-xs font-bold text-neutral-400 uppercase tracking-widest mb-1 relative z-10">Avg Duration</p>
+                        <p className="text-4xl font-black text-white drop-shadow-sm relative z-10 font-mono">{avgDuration}m</p>
                     </motion.div>
                 </motion.div>
 
@@ -547,14 +571,15 @@ export default function Dashboard() {
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: 0.4 }}
-                    className="bg-white dark:bg-neutral-900 rounded-[2rem] border border-neutral-200 dark:border-neutral-800 shadow-xl overflow-hidden"
+                    className="relative overflow-hidden rounded-3xl border border-neutral-800 bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 shadow-xl"
                 >
-                    <div className="flex items-center justify-between p-8 border-b border-neutral-100 dark:border-neutral-800 bg-neutral-50/50 dark:bg-neutral-900/50">
+                    <div className="absolute top-0 right-0 w-64 h-64 bg-primary-500/5 rounded-full blur-3xl pointer-events-none" />
+                    <div className="flex items-center justify-between p-7 md:p-8 border-b border-neutral-800 bg-neutral-900/50 relative z-10">
                         <div>
-                            <h2 className="text-2xl font-bold tracking-tight mb-1">Call Logs</h2>
-                            <p className="text-sm text-neutral-500 dark:text-neutral-400 font-medium">Tracking {sessions.length} recorded sessions</p>
+                            <h2 className="text-2xl font-bold tracking-tight text-white mb-1">Call Logs</h2>
+                            <p className="text-sm text-neutral-400 font-medium">Tracking {sessions.length} recorded sessions</p>
                         </div>
-                        <span className="p-3 bg-neutral-100 dark:bg-neutral-800 rounded-xl text-neutral-600 dark:text-neutral-300">
+                        <span className="p-3 bg-neutral-800/80 border border-neutral-700/60 rounded-2xl text-neutral-300">
                             <Activity className="w-5 h-5" />
                         </span>
                     </div>
@@ -562,27 +587,27 @@ export default function Dashboard() {
                     {loading ? (
                         <div className="flex flex-col items-center justify-center py-20">
                             <div className="w-12 h-12 border-4 border-primary-200 dark:border-primary-900 border-t-primary-600 dark:border-t-primary-500 rounded-full animate-spin"></div>
-                            <p className="mt-6 text-neutral-500 dark:text-neutral-400 font-medium animate-pulse">Syncing logs...</p>
+                            <p className="mt-6 text-neutral-400 font-medium animate-pulse">Syncing logs...</p>
                         </div>
                     ) : error ? (
-                        <div className="m-8 bg-error-50 dark:bg-error-900/20 border border-error-200 dark:border-error-800 text-error-700 dark:text-error-400 px-6 py-4 rounded-2xl flex items-center gap-3">
+                        <div className="m-8 bg-error-950/30 border border-error-800 text-error-400 px-6 py-4 rounded-2xl flex items-center gap-3">
                             <AlertCircle className="w-6 h-6 shrink-0" />
                             <p className="font-semibold">{error}</p>
                         </div>
                     ) : sessions.length === 0 ? (
-                        <div className="flex flex-col items-center justify-center py-20 px-4 text-center">
-                            <div className="w-20 h-20 bg-neutral-50 dark:bg-neutral-800 rounded-full border-2 border-dashed border-neutral-200 dark:border-neutral-700 flex items-center justify-center mb-6">
-                                <Phone className="w-8 h-8 text-neutral-400 dark:text-neutral-500" />
+                        <div className="flex flex-col items-center justify-center py-20 px-4 text-center relative z-10">
+                            <div className="w-20 h-20 bg-neutral-800/80 rounded-3xl border border-neutral-700 flex items-center justify-center mb-6">
+                                <Phone className="w-8 h-8 text-neutral-400" />
                             </div>
-                            <h3 className="text-xl font-bold mb-2">No Calls Encountered</h3>
-                            <p className="text-neutral-500 dark:text-neutral-400 max-w-sm leading-relaxed">Your data log is currently empty. Start taking calls or recording phrases to populate this table.</p>
+                            <h3 className="text-xl font-bold text-white mb-2">No Calls Encountered</h3>
+                            <p className="text-neutral-400 max-w-sm leading-relaxed">Your data log is currently empty. Start taking calls or recording phrases to populate this table.</p>
                         </div>
                     ) : (
                         <>
                             <div className="overflow-x-auto">
                                 <table className="w-full text-left">
                                     <thead>
-                                        <tr className="border-b border-neutral-100 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-900/80 uppercase text-xs tracking-widest text-neutral-400 dark:text-neutral-500">
+                                        <tr className="border-b border-neutral-800 bg-neutral-900/80 uppercase text-[11px] tracking-widest text-neutral-400">
                                             <th className="px-8 py-5 font-bold">Details</th>
                                             <th className="px-8 py-5 font-bold">Language</th>
                                             <th className="px-8 py-5 font-bold">Duration</th>
@@ -590,27 +615,27 @@ export default function Dashboard() {
                                             <th className="px-8 py-5 font-bold text-center">Review</th>
                                         </tr>
                                     </thead>
-                                    <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800">
+                                    <tbody className="divide-y divide-neutral-800/80">
                                         {currentSessions.map((session, idx) => (
-                                            <tr key={idx} className="hover:bg-neutral-50/80 dark:hover:bg-neutral-800/40 transition-colors">
+                                            <tr key={idx} className="hover:bg-neutral-800/40 transition-colors">
                                                 <td className="px-8 py-5">
                                                     <div className="flex flex-col">
-                                                        <span className="font-bold text-sm text-neutral-900 dark:text-neutral-100 mb-1">
+                                                        <span className="font-bold text-sm text-white mb-1">
                                                             {session.subtopic ? session.subtopic.title : "Unassigned Call"}
                                                         </span>
-                                                        <span className="text-xs text-neutral-500 dark:text-neutral-400 font-medium">
+                                                        <span className="text-xs text-neutral-400 font-medium">
                                                             {formatDate(session.startedAt)}
                                                         </span>
                                                     </div>
                                                 </td>
 
                                                 <td className="px-8 py-5">
-                                                    <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400 border border-indigo-100 dark:border-indigo-800 uppercase tracking-widest">
+                                                    <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-indigo-900/30 text-indigo-400 border border-indigo-800/50 uppercase tracking-widest">
                                                         {session.language || 'Unknown'}
                                                     </span>
                                                 </td>
 
-                                                <td className="px-8 py-5 text-sm font-mono font-bold text-neutral-700 dark:text-neutral-300">
+                                                <td className="px-8 py-5 text-sm font-mono font-bold text-neutral-300">
                                                     {formatDuration(
                                                         session.recordingAStartedAt || session.recordingBStartedAt || session.actualCallStartedAt || session.startedAt,
                                                         session.endedAt
@@ -625,7 +650,7 @@ export default function Dashboard() {
                                                     <button
                                                         onClick={() => setFeedbackModal({ note: session.reviewNote, status: session.callStatus, reviewedBy: session.reviewedBy })}
                                                         title="View admin note"
-                                                        className="inline-flex items-center justify-center p-2 rounded-xl bg-neutral-100 dark:bg-neutral-800 text-neutral-500 dark:text-neutral-400 hover:bg-primary-50 dark:hover:bg-primary-900/40 hover:text-primary-600 dark:hover:text-primary-400 transition-colors"
+                                                        className="inline-flex items-center justify-center p-2 rounded-xl bg-neutral-800 text-neutral-400 hover:bg-primary-900/40 hover:text-primary-400 transition-colors"
                                                     >
                                                         <MessageSquare className="w-5 h-5" />
                                                     </button>
@@ -638,15 +663,15 @@ export default function Dashboard() {
 
                             {/* Pagination */}
                             {totalPages > 1 && (
-                                <div className="flex flex-col sm:flex-row items-center justify-between p-6 bg-neutral-50 dark:bg-neutral-900/80 border-t border-neutral-100 dark:border-neutral-800 gap-4">
-                                    <div className="text-sm font-bold text-neutral-500 tracking-wide uppercase">
+                                <div className="flex flex-col sm:flex-row items-center justify-between p-6 bg-neutral-900/60 border-t border-neutral-800 gap-4">
+                                    <div className="text-xs font-bold text-neutral-400 tracking-wider uppercase">
                                         Showing {startIndex + 1}-{Math.min(endIndex, sessions.length)} of {sessions.length}
                                     </div>
                                     <div className="flex items-center gap-2">
                                         <button
                                             onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
                                             disabled={currentPage === 1}
-                                            className="p-2 rounded-xl border border-neutral-200 dark:border-neutral-700 hover:bg-neutral-100 dark:hover:bg-neutral-800 disabled:opacity-30 transition-all text-neutral-600 dark:text-neutral-300"
+                                            className="p-2 rounded-xl border border-neutral-700 hover:bg-neutral-800 disabled:opacity-30 transition-all text-neutral-300"
                                         >
                                             <ChevronLeft className="w-5 h-5" />
                                         </button>
@@ -656,9 +681,9 @@ export default function Dashboard() {
                                                 <button
                                                     key={i}
                                                     onClick={() => setCurrentPage(i + 1)}
-                                                    className={`w-10 h-10 flex items-center justify-center text-sm font-bold rounded-xl transition-all ${currentPage === i + 1
-                                                        ? 'bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-900 shadow-md transform scale-110'
-                                                        : 'text-neutral-500 hover:bg-neutral-200 dark:hover:bg-neutral-800'
+                                                    className={`w-9 h-9 flex items-center justify-center text-xs font-bold rounded-xl transition-all ${currentPage === i + 1
+                                                        ? 'bg-white text-neutral-950 shadow-md font-black'
+                                                        : 'text-neutral-400 hover:bg-neutral-800 hover:text-white'
                                                         }`}
                                                 >
                                                     {i + 1}
@@ -669,7 +694,7 @@ export default function Dashboard() {
                                         <button
                                             onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
                                             disabled={currentPage === totalPages}
-                                            className="p-2 rounded-xl border border-neutral-200 dark:border-neutral-700 hover:bg-neutral-100 dark:hover:bg-neutral-800 disabled:opacity-30 transition-all text-neutral-600 dark:text-neutral-300"
+                                            className="p-2 rounded-xl border border-neutral-700 hover:bg-neutral-800 disabled:opacity-30 transition-all text-neutral-300"
                                         >
                                             <ChevronRight className="w-5 h-5" />
                                         </button>

@@ -135,7 +135,7 @@ export default function AdminAmbiguity() {
     };
 
     return (
-        <div className="min-h-screen bg-neutral-900 pt-16 md:pt-0 md:pl-64 text-white">
+        <div className="min-h-screen bg-neutral-950 pt-16 md:pt-0 md:pl-64 text-white">
             <AdminNav />
 
             <div className="p-6 max-w-7xl mx-auto space-y-6">

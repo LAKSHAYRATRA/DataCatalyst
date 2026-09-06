@@ -8,7 +8,7 @@ export default function AdminMergedCallStudio() {
     const navigate = useNavigate();
 
     return (
-        <div className="min-h-screen bg-neutral-900 text-white flex">
+        <div className="min-h-screen bg-neutral-950 text-white flex">
             <AdminNav />
             <div className="flex-1 md:ml-64 min-w-0 flex flex-col min-h-screen">
                 <MergedCallStudio 

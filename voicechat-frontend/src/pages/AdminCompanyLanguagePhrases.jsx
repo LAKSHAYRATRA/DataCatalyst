@@ -747,7 +747,7 @@ export default function AdminCompanyLanguagePhrases() {
   };
 
   return (
-    <div className="min-h-screen bg-neutral-900 flex text-white transition-colors duration-300">
+    <div className="min-h-screen bg-neutral-950 flex text-white transition-colors duration-300">
       <AdminNav />
       <main className="flex-1 md:ml-64 p-4 md:p-8 w-full max-w-[99%] 2xl:max-w-[1920px] mx-auto text-neutral-100">
         {/* Header Navigation */}
@@ -799,13 +799,13 @@ export default function AdminCompanyLanguagePhrases() {
         {/* Language Allocation & Workload Summary Banner */}
         {summary && summary.totalCount > 0 && (
           <div className="mb-6 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3">
-            <div className="bg-neutral-800/90 border border-neutral-700 p-3.5 rounded-xl shadow-sm">
+            <div className="bg-gradient-to-br from-neutral-950 via-neutral-900 to-neutral-850 border border-neutral-800 p-3.5 rounded-2xl shadow-sm">
               <div className="text-[10px] font-bold uppercase tracking-wider text-neutral-400">Total Phrases</div>
               <div className="text-xl font-black text-white mt-0.5">{summary.totalCount}</div>
               <div className="text-[10px] text-neutral-400 mt-0.5">{language.toUpperCase()} Workload</div>
             </div>
 
-            <div className="bg-indigo-950/40 border border-indigo-700/60 p-3.5 rounded-xl shadow-sm">
+            <div className="bg-gradient-to-br from-indigo-950/50 via-neutral-950 to-neutral-900 border border-indigo-700/60 p-3.5 rounded-2xl shadow-sm">
               <div className="text-[10px] font-bold uppercase tracking-wider text-indigo-300 flex items-center gap-1">
                 <span>🔒</span> Reserved
               </div>
@@ -815,7 +815,7 @@ export default function AdminCompanyLanguagePhrases() {
               </div>
             </div>
 
-            <div className="bg-teal-950/40 border border-teal-700/60 p-3.5 rounded-xl shadow-sm">
+            <div className="bg-gradient-to-br from-teal-950/50 via-neutral-950 to-neutral-900 border border-teal-700/60 p-3.5 rounded-2xl shadow-sm">
               <div className="text-[10px] font-bold uppercase tracking-wider text-teal-300 flex items-center gap-1">
                 <span>🌐</span> Open Pool
               </div>
@@ -825,13 +825,13 @@ export default function AdminCompanyLanguagePhrases() {
               </div>
             </div>
 
-            <div className="bg-neutral-800/90 border border-neutral-700 p-3.5 rounded-xl shadow-sm">
-              <div className="text-[10px] font-bold uppercase tracking-wider text-neutral-400">Pending</div>
+            <div className="bg-gradient-to-br from-amber-950/40 via-neutral-950 to-neutral-900 border border-amber-500/30 p-3.5 rounded-2xl shadow-sm">
+              <div className="text-[10px] font-bold uppercase tracking-wider text-amber-300">Pending</div>
               <div className="text-xl font-black text-amber-400 mt-0.5">{summary.pendingCount}</div>
               <div className="text-[10px] text-neutral-400 mt-0.5">Unrecorded</div>
             </div>
 
-            <div className={`p-3.5 rounded-xl shadow-sm border ${summary.lockedCount > 0 ? 'bg-violet-950/40 border-violet-700/60' : 'bg-neutral-800/90 border-neutral-700'}`}>
+            <div className={`p-3.5 rounded-2xl shadow-sm border ${summary.lockedCount > 0 ? 'bg-gradient-to-br from-violet-950/60 via-neutral-950 to-neutral-900 border-violet-700/60' : 'bg-gradient-to-br from-neutral-950 via-neutral-900 to-neutral-850 border-neutral-800'}`}>
               <div className="text-[10px] font-bold uppercase tracking-wider text-violet-300 flex items-center justify-between">
                 <span>Locked</span>
                 {summary.lockedCount > 0 && <span className="text-[10px] animate-pulse text-violet-400 font-bold">ACTIVE</span>}
@@ -840,14 +840,14 @@ export default function AdminCompanyLanguagePhrases() {
               <div className="text-[10px] text-violet-400/80 mt-0.5">In Progress</div>
             </div>
 
-            <div className="bg-neutral-800/90 border border-neutral-700 p-3.5 rounded-xl shadow-sm">
-              <div className="text-[10px] font-bold uppercase tracking-wider text-neutral-400">Recorded</div>
+            <div className="bg-gradient-to-br from-blue-950/40 via-neutral-950 to-neutral-900 border border-blue-500/30 p-3.5 rounded-2xl shadow-sm">
+              <div className="text-[10px] font-bold uppercase tracking-wider text-blue-300">Recorded</div>
               <div className="text-xl font-black text-blue-400 mt-0.5">{summary.recordedCount}</div>
               <div className="text-[10px] text-neutral-400 mt-0.5">In QA Queue</div>
             </div>
 
-            <div className="bg-neutral-800/90 border border-neutral-700 p-3.5 rounded-xl shadow-sm">
-              <div className="text-[10px] font-bold uppercase tracking-wider text-neutral-400">Approved</div>
+            <div className="bg-gradient-to-br from-emerald-950/40 via-neutral-950 to-neutral-900 border border-emerald-500/30 p-3.5 rounded-2xl shadow-sm">
+              <div className="text-[10px] font-bold uppercase tracking-wider text-emerald-300">Approved</div>
               <div className="text-xl font-black text-emerald-400 mt-0.5">{summary.approvedCount}</div>
               <div className="text-[10px] text-neutral-400 mt-0.5">QA Approved</div>
             </div>

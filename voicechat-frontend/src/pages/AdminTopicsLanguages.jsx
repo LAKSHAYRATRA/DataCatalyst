@@ -103,7 +103,7 @@ export default function AdminTopicsLanguages() {
     });
 
     return (
-        <div className="min-h-screen bg-neutral-900 text-white flex">
+        <div className="min-h-screen bg-neutral-950 text-white flex">
             <AdminNav />
             <div className="flex-1 md:ml-64 p-6 min-w-0">
                 {/* Header */}
@@ -188,12 +188,13 @@ export default function AdminTopicsLanguages() {
                             <Link
                                 key={lang.key}
                                 to={`/admin/topics/${encodeURIComponent(lang.key)}/subprojects`}
-                                className="group p-5 rounded-2xl bg-neutral-800/70 hover:bg-neutral-800 border border-neutral-700/70 hover:border-primary-500/60 transition-all duration-200 shadow-md flex flex-col justify-between"
+                                className="relative overflow-hidden group p-6 rounded-3xl bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 hover:to-neutral-800/80 border border-neutral-800 hover:border-primary-500/60 transition-all duration-300 shadow-xl flex flex-col justify-between"
                             >
-                                <div>
+                                <div className="absolute top-0 right-0 w-32 h-32 bg-primary-500/10 rounded-full blur-2xl pointer-events-none group-hover:bg-primary-500/20 transition-all" />
+                                <div className="relative z-10">
                                     <div className="flex items-center justify-between gap-2 mb-3">
                                         <div className="flex items-center gap-2.5">
-                                            <div className="w-9 h-9 rounded-xl bg-primary-900/40 border border-primary-700/50 flex items-center justify-center text-primary-400 group-hover:scale-105 transition-transform">
+                                            <div className="w-10 h-10 rounded-xl bg-primary-950/60 border border-primary-800/50 flex items-center justify-center text-primary-400 group-hover:scale-105 transition-transform shadow-md">
                                                 <Globe className="w-4 h-4" />
                                             </div>
                                             <div>
@@ -207,20 +208,20 @@ export default function AdminTopicsLanguages() {
                                         </div>
 
                                         {lang.isEnabled ? (
-                                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-950/60 text-emerald-300 border border-emerald-700/50 flex items-center gap-1">
+                                            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-950/60 text-emerald-300 border border-emerald-700/50 flex items-center gap-1">
                                                 <CheckCircle2 className="w-2.5 h-2.5" />
                                                 <span>Active</span>
                                             </span>
                                         ) : (
-                                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-neutral-900 text-neutral-400 border border-neutral-700">
+                                            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-neutral-950 text-neutral-500 border border-neutral-800">
                                                 Inactive
                                             </span>
                                         )}
                                     </div>
 
                                     {/* Stats grid */}
-                                    <div className="grid grid-cols-2 gap-2 my-4 pt-3 border-t border-neutral-700/40 text-xs">
-                                        <div className="p-2 rounded-lg bg-neutral-900/60 border border-neutral-750">
+                                    <div className="grid grid-cols-2 gap-2 my-4 pt-3 border-t border-neutral-800 text-xs">
+                                        <div className="p-2.5 rounded-xl bg-neutral-950/80 border border-neutral-800">
                                             <div className="text-[10px] font-semibold text-neutral-400 flex items-center gap-1">
                                                 <FolderKanban className="w-3 h-3 text-indigo-400" />
                                                 <span>Subprojects</span>
@@ -230,7 +231,7 @@ export default function AdminTopicsLanguages() {
                                             </div>
                                         </div>
 
-                                        <div className="p-2 rounded-lg bg-neutral-900/60 border border-neutral-750">
+                                        <div className="p-2.5 rounded-xl bg-neutral-950/80 border border-neutral-800">
                                             <div className="text-[10px] font-semibold text-neutral-400 flex items-center gap-1">
                                                 <Layers className="w-3 h-3 text-amber-400" />
                                                 <span>Topics</span>
@@ -242,9 +243,9 @@ export default function AdminTopicsLanguages() {
                                     </div>
                                 </div>
 
-                                <div className="pt-2 flex items-center justify-between text-xs font-bold text-primary-400 group-hover:text-primary-300">
-                                    <span>View Subprojects ({lang.subprojects.length})</span>
-                                    <ArrowRight className="w-4 h-4 transform group-hover:translate-x-1 transition-transform" />
+                                <div className="pt-3 border-t border-neutral-800/80 flex items-center justify-between text-xs font-bold text-primary-400 group-hover:text-primary-300 relative z-10">
+                                    <span>Manage Topics</span>
+                                    <ArrowRight className="w-3.5 h-3.5 transform group-hover:translate-x-1 transition-transform" />
                                 </div>
                             </Link>
                         ))}

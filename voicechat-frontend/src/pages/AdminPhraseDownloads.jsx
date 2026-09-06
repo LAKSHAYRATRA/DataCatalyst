@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import Swal from "sweetalert2";
 import { apiGet } from "../lib/api.js";
+import AdminNav from "../components/AdminNav.jsx";
 
 export default function AdminPhraseDownloads() {
   const [companies, setCompanies] = useState([]);
@@ -381,388 +382,410 @@ export default function AdminPhraseDownloads() {
     const hasRecorded = (cStats.recorded || 0) > 0;
 
     return (
-      <div className="p-6 max-w-6xl mx-auto space-y-6">
-        {/* Top Breadcrumb Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-neutral-200 dark:border-neutral-700 pb-5">
-          <div className="flex items-center gap-4">
-            <button
-              onClick={() => setSelectedCompany(null)}
-              className="p-2.5 rounded-xl bg-neutral-100 hover:bg-neutral-200 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-neutral-700 dark:text-neutral-200 transition-colors flex items-center gap-2 text-sm font-bold shadow-xs"
-            >
-              <ArrowLeft className="w-4 h-4" />
-              <span>Back to Companies</span>
-            </button>
-            <div>
-              <div className="flex items-center gap-3">
-                <h1 className="text-2xl sm:text-3xl font-black text-neutral-900 dark:text-white">
-                  {comp.name}
-                </h1>
-                {comp.projectName && (
-                  <span className="text-xs font-bold px-3 py-1 rounded-full bg-primary-100 dark:bg-primary-900/40 text-primary-700 dark:text-primary-300 border border-primary-300 dark:border-primary-700/50">
-                    {comp.projectName}
-                  </span>
-                )}
+      <div className="min-h-screen bg-neutral-950 flex text-white transition-colors duration-300">
+        <AdminNav />
+        <main className="flex-1 md:ml-64 p-4 md:p-8 w-full max-w-[1720px] mx-auto space-y-6 text-neutral-100">
+          {/* Top Breadcrumb Header */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-neutral-800 pb-5">
+            <div className="flex items-center gap-4">
+              <button
+                onClick={() => setSelectedCompany(null)}
+                className="p-2.5 rounded-xl bg-neutral-800 hover:bg-neutral-750 text-neutral-200 border border-neutral-700 transition-colors flex items-center gap-2 text-sm font-bold shadow-xs"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                <span>Back to Companies</span>
+              </button>
+              <div>
+                <div className="flex items-center gap-3">
+                  <h1 className="text-2xl sm:text-3xl font-black text-white">
+                    {comp.name}
+                  </h1>
+                  {comp.projectName && (
+                    <span className="text-xs font-bold px-3 py-1 rounded-full bg-primary-900/40 text-primary-300 border border-primary-700/50">
+                      {comp.projectName}
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-neutral-400 mt-1 flex items-center gap-2">
+                  <Globe className="w-3.5 h-3.5 text-primary-500" />
+                  <span>{activeLangs.length} {activeLangs.length === 1 ? 'Language' : 'Languages'} Active in this Project</span>
+                </p>
               </div>
-              <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1 flex items-center gap-2">
-                <Globe className="w-3.5 h-3.5 text-primary-500" />
-                <span>{activeLangs.length} {activeLangs.length === 1 ? 'Language' : 'Languages'} Active in this Project</span>
-              </p>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                onClick={loadData}
+                disabled={loading}
+                className="btn btn-outline btn-sm flex items-center gap-2"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
+                Refresh
+              </button>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <button
-              onClick={loadData}
-              disabled={loading}
-              className="btn btn-outline btn-sm flex items-center gap-2"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
-              Refresh
-            </button>
-          </div>
-        </div>
-
-        {/* Naming Pattern Info Banner */}
-        <div className="bg-white dark:bg-neutral-800 p-4 rounded-2xl border border-neutral-200 dark:border-neutral-700 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-3">
-          <div>
-            <span className="block text-[11px] font-bold text-neutral-400 uppercase tracking-wider mb-1">
-              Naming Pattern Template
-            </span>
-            <code className="text-sm text-neutral-800 dark:text-neutral-200 font-mono bg-neutral-100 dark:bg-neutral-900 px-2.5 py-1 rounded-md">
-              {comp.namingPattern || "{phraseId}"}
-            </code>
-          </div>
-          {comp.availableTags && comp.availableTags.length > 0 && (
-            <div className="flex flex-wrap gap-1.5 items-center">
-              <span className="text-xs text-neutral-400 font-semibold mr-1">Dynamic Tags:</span>
-              {comp.availableTags.map(tag => (
-                <span key={tag} className="text-xs font-mono font-bold bg-warning-50 dark:bg-warning-900/30 text-warning-700 dark:text-warning-300 px-2 py-0.5 rounded-md border border-warning-200 dark:border-warning-800/50">{`{${tag}}`}</span>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* 4 KPI Cards */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <div className="bg-white dark:bg-neutral-800 p-4 rounded-2xl border border-neutral-200 dark:border-neutral-700 shadow-xs flex items-center gap-3.5">
-            <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400">
-              <CheckCircle className="w-6 h-6" />
-            </div>
+          {/* Naming Pattern Info Banner */}
+          <div className="relative overflow-hidden rounded-3xl border border-neutral-800 bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 p-5 shadow-xl">
+            <div className="absolute top-0 right-0 w-48 h-48 bg-primary-500/5 rounded-full blur-2xl pointer-events-none" />
+            <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-3 w-full">
             <div>
-              <span className="block text-xs text-neutral-400 font-bold uppercase tracking-wider">Approved</span>
-              <span className="text-2xl font-black text-neutral-900 dark:text-white">{cStats.approved || 0}</span>
+              <span className="block text-[11px] font-bold text-neutral-400 uppercase tracking-wider mb-1">
+                Naming Pattern Template
+              </span>
+              <code className="text-sm text-neutral-200 font-mono bg-neutral-900/90 px-3 py-1 rounded-xl border border-neutral-800">
+                {comp.namingPattern || "{phraseId}"}
+              </code>
+            </div>
+            {comp.availableTags && comp.availableTags.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 items-center">
+                <span className="text-xs text-neutral-400 font-semibold mr-1">Dynamic Tags:</span>
+                {comp.availableTags.map(tag => (
+                  <span key={tag} className="text-xs font-mono font-bold bg-neutral-800 text-neutral-300 px-2 py-0.5 rounded-lg border border-neutral-700">{`{${tag}}`}</span>
+                ))}
+              </div>
+            )}
             </div>
           </div>
 
-          <div className="bg-white dark:bg-neutral-800 p-4 rounded-2xl border border-neutral-200 dark:border-neutral-700 shadow-xs flex items-center gap-3.5">
-            <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400">
-              <Clock className="w-6 h-6" />
+          {/* 4 KPI Cards */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="relative overflow-hidden rounded-3xl border border-neutral-800 bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 p-5 shadow-xl flex items-center gap-3.5">
+              <div className="absolute top-0 right-0 w-24 h-24 bg-primary-500/5 rounded-full blur-xl pointer-events-none" />
+              <div className="p-3 rounded-2xl bg-emerald-950/40 text-emerald-400 border border-emerald-900/50">
+                <CheckCircle className="w-6 h-6" />
+              </div>
+              <div>
+                <span className="block text-xs text-neutral-400 font-bold uppercase tracking-wider">Approved</span>
+                <span className="text-2xl font-black text-white">{cStats.approved || 0}</span>
+              </div>
             </div>
-            <div>
-              <span className="block text-xs text-neutral-400 font-bold uppercase tracking-wider">Recorded / QA</span>
-              <span className="text-2xl font-black text-neutral-900 dark:text-white">{cStats.recorded || 0}</span>
+
+            <div className="relative overflow-hidden rounded-3xl border border-neutral-800 bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 p-5 shadow-xl flex items-center gap-3.5">
+              <div className="absolute top-0 right-0 w-24 h-24 bg-primary-500/5 rounded-full blur-xl pointer-events-none" />
+              <div className="p-3 rounded-2xl bg-amber-950/40 text-amber-400 border border-amber-900/50">
+                <Clock className="w-6 h-6" />
+              </div>
+              <div>
+                <span className="block text-xs text-neutral-400 font-bold uppercase tracking-wider">Recorded / QA</span>
+                <span className="text-2xl font-black text-white">{cStats.recorded || 0}</span>
+              </div>
+            </div>
+
+            <div className="relative overflow-hidden rounded-3xl border border-neutral-800 bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 p-5 shadow-xl flex items-center gap-3.5">
+              <div className="absolute top-0 right-0 w-24 h-24 bg-primary-500/5 rounded-full blur-xl pointer-events-none" />
+              <div className="p-3 rounded-2xl bg-rose-950/40 text-rose-400 border border-rose-900/50">
+                <XCircle className="w-6 h-6" />
+              </div>
+              <div>
+                <span className="block text-xs text-neutral-400 font-bold uppercase tracking-wider">Rejected</span>
+                <span className="text-2xl font-black text-white">{cStats.rejected || 0}</span>
+              </div>
+            </div>
+
+            <div className="relative overflow-hidden rounded-3xl border border-neutral-800 bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 p-5 shadow-xl flex items-center gap-3.5">
+              <div className="absolute top-0 right-0 w-24 h-24 bg-primary-500/5 rounded-full blur-xl pointer-events-none" />
+              <div className="p-3 rounded-2xl bg-neutral-800 text-neutral-300 border border-neutral-700">
+                <FileAudio className="w-6 h-6" />
+              </div>
+              <div>
+                <span className="block text-xs text-neutral-400 font-bold uppercase tracking-wider">Total Phrases</span>
+                <span className="text-2xl font-black text-white">
+                  {Object.values(cStats).reduce((a, b) => a + b, 0)}
+                </span>
+              </div>
             </div>
           </div>
 
-          <div className="bg-white dark:bg-neutral-800 p-4 rounded-2xl border border-neutral-200 dark:border-neutral-700 shadow-xs flex items-center gap-3.5">
-            <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400">
-              <XCircle className="w-6 h-6" />
-            </div>
-            <div>
-              <span className="block text-xs text-neutral-400 font-bold uppercase tracking-wider">Rejected</span>
-              <span className="text-2xl font-black text-neutral-900 dark:text-white">{cStats.rejected || 0}</span>
-            </div>
-          </div>
-
-          <div className="bg-white dark:bg-neutral-800 p-4 rounded-2xl border border-neutral-200 dark:border-neutral-700 shadow-xs flex items-center gap-3.5">
-            <div className="p-3 rounded-xl bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400">
-              <FileAudio className="w-6 h-6" />
-            </div>
-            <div>
-              <span className="block text-xs text-neutral-400 font-bold uppercase tracking-wider">Total Phrases</span>
-              <span className="text-2xl font-black text-neutral-900 dark:text-white">
-                {Object.values(cStats).reduce((a, b) => a + b, 0)}
+          {/* LANGUAGE-WISE DOWNLOADS SECTION */}
+          <div className="relative overflow-hidden rounded-3xl border border-neutral-800 bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 p-6 shadow-xl space-y-4">
+            <div className="absolute top-0 right-0 w-64 h-64 bg-primary-500/5 rounded-full blur-3xl pointer-events-none" />
+            <div className="relative z-10 space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                  <Globe className="w-5 h-5 text-primary-500" />
+                  <span>Languages Active in {comp.name}</span>
+                </h2>
+                <p className="text-xs text-neutral-400 mt-0.5">
+                  Download phrases scoped to each individual language with custom metadata filters and speaker duration caps.
+                </p>
+              </div>
+              <span className="text-xs font-mono font-bold px-2.5 py-1 rounded-full bg-neutral-800 text-neutral-300 border border-neutral-700">
+                {activeLangs.length} {activeLangs.length === 1 ? 'Language' : 'Languages'}
               </span>
             </div>
-          </div>
-        </div>
 
-        {/* LANGUAGE-WISE DOWNLOADS SECTION */}
-        <div className="bg-white dark:bg-neutral-800 rounded-2xl p-6 border border-neutral-200 dark:border-neutral-700 shadow-xs space-y-4">
-          <div className="flex items-center justify-between">
+            <div className="grid grid-cols-1 gap-3 pt-2">
+              {activeLangs.map((lang) => {
+                const langKey = lang.toLowerCase();
+                const lStat = cLangMap[langKey] || { approved: 0, recorded: 0, pending: 0, rejected: 0 };
+                const lTotal = (lStat.approved || 0) + (lStat.recorded || 0) + (lStat.rejected || 0);
+                const hasLangApproved = (lStat.approved || 0) > 0;
+                const hasLangRecorded = (lStat.recorded || 0) > 0;
+
+                return (
+                  <div
+                    key={lang}
+                    className="bg-neutral-900/70 p-4 rounded-2xl border border-neutral-800 flex flex-col md:flex-row md:items-center justify-between gap-4 hover:border-neutral-700 transition-all shadow-md"
+                  >
+                    <div className="space-y-1.5">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-2.5 h-2.5 rounded-full bg-primary-500"></div>
+                        <span className="text-base font-black text-white capitalize">{lang}</span>
+                        <span className="text-xs font-mono font-bold px-2.5 py-0.5 rounded-full bg-neutral-800 text-neutral-300 border border-neutral-700">
+                          {lTotal} total phrases
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-4 text-xs">
+                        <span className="text-emerald-400 font-bold flex items-center gap-1">
+                          <CheckCircle className="w-3.5 h-3.5" />
+                          {lStat.approved || 0} Approved
+                        </span>
+                        <span className="text-amber-400 font-bold flex items-center gap-1">
+                          <Clock className="w-3.5 h-3.5" />
+                          {lStat.recorded || 0} Pending (Recorded)
+                        </span>
+                        {lStat.rejected > 0 && (
+                          <span className="text-rose-400 font-bold flex items-center gap-1">
+                            <XCircle className="w-3.5 h-3.5" />
+                            {lStat.rejected} Rejected
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Language Action Buttons */}
+                    <div className="flex flex-wrap items-center gap-2.5">
+                      <button
+                        type="button"
+                        onClick={() => openDownloadModal(comp.name, "approved", langKey)}
+                        disabled={!hasLangApproved}
+                        className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all shadow-xs ${
+                          hasLangApproved
+                            ? "bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-600/20 active:scale-95 cursor-pointer"
+                            : "bg-neutral-800 text-neutral-500 border border-neutral-700 cursor-not-allowed"
+                        }`}
+                        title={hasLangApproved ? `Download ${lStat.approved} approved phrases in ${lang}` : `No approved phrases in ${lang}`}
+                      >
+                        <Download className="w-4 h-4" />
+                        <span>Download Approved ({lStat.approved || 0})</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => openDownloadModal(comp.name, "recorded", langKey)}
+                        disabled={!hasLangRecorded}
+                        className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all shadow-xs ${
+                          hasLangRecorded
+                            ? "bg-amber-600 hover:bg-amber-500 text-white shadow-amber-600/20 active:scale-95 cursor-pointer"
+                            : "bg-neutral-800 text-neutral-500 border border-neutral-700 cursor-not-allowed"
+                        }`}
+                        title={hasLangRecorded ? `Download ${lStat.recorded} pending phrases in ${lang}` : `No pending phrases in ${lang}`}
+                      >
+                        <Clock className="w-4 h-4" />
+                        <span>Download Pending ({lStat.recorded || 0})</span>
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            </div>
+          </div>
+
+          {/* MASTER PROJECT-WIDE DOWNLOADS SECTION */}
+          <div className="relative overflow-hidden rounded-3xl border border-neutral-800 bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 p-6 shadow-xl space-y-4">
+            <div className="absolute top-0 right-0 w-64 h-64 bg-primary-500/5 rounded-full blur-3xl pointer-events-none" />
+            <div className="relative z-10 space-y-4">
             <div>
-              <h2 className="text-lg font-bold text-neutral-900 dark:text-white flex items-center gap-2">
-                <Globe className="w-5 h-5 text-primary-500" />
-                <span>Languages Active in {comp.name}</span>
+              <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                <FolderArchive className="w-5 h-5 text-primary-500" />
+                <span>Download Complete Project (All Languages Combined)</span>
               </h2>
-              <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-0.5">
-                Download phrases scoped to each individual language with custom metadata filters and speaker duration caps.
+              <p className="text-xs text-neutral-400 mt-0.5">
+                Bundles all phrases across all languages in this project into a structured ZIP archive with language folders and root manifests.
               </p>
             </div>
-            <span className="text-xs font-mono font-bold px-2.5 py-1 rounded-full bg-neutral-100 dark:bg-neutral-700 text-neutral-600 dark:text-neutral-300">
-              {activeLangs.length} {activeLangs.length === 1 ? 'Language' : 'Languages'}
-            </span>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-2">
+              <button
+                onClick={() => openDownloadModal(comp.name, "approved", "")}
+                disabled={!hasApproved}
+                className={`p-4 rounded-2xl font-bold flex flex-col items-center justify-center gap-2 text-center transition-all ${
+                  hasApproved
+                    ? "bg-emerald-600 hover:bg-emerald-500 text-white shadow-md shadow-emerald-600/20 active:scale-95 cursor-pointer"
+                    : "bg-neutral-800 text-neutral-500 border border-neutral-700 cursor-not-allowed text-xs"
+                }`}
+              >
+                <Download className="w-5 h-5" />
+                <span className="text-sm">All Approved Phrases</span>
+                <span className="text-xs opacity-80 font-normal">({cStats.approved || 0} Phrases)</span>
+              </button>
+
+              <button
+                onClick={() => openDownloadModal(comp.name, "recorded", "")}
+                disabled={!hasRecorded}
+                className={`p-4 rounded-2xl font-bold flex flex-col items-center justify-center gap-2 text-center transition-all ${
+                  hasRecorded
+                    ? "bg-amber-600 hover:bg-amber-500 text-white shadow-md shadow-amber-600/20 active:scale-95 cursor-pointer"
+                    : "bg-neutral-800 text-neutral-500 border border-neutral-700 cursor-not-allowed text-xs"
+                }`}
+              >
+                <Clock className="w-5 h-5" />
+                <span className="text-sm">All Pending Phrases</span>
+                <span className="text-xs opacity-80 font-normal">({cStats.recorded || 0} Phrases)</span>
+              </button>
+
+              <button
+                onClick={() => handleAppDownload(comp.name, "approved_apps")}
+                className="p-4 rounded-2xl font-bold flex flex-col items-center justify-center gap-2 text-center bg-neutral-800 hover:bg-neutral-750 text-neutral-200 text-sm transition-all shadow-xs border border-neutral-700 cursor-pointer"
+              >
+                <Download className="w-5 h-5 text-primary-400" />
+                <span className="text-sm">Approved Mic Apps</span>
+                <span className="text-xs opacity-80 font-normal">(Language-Wise)</span>
+              </button>
+
+              <button
+                onClick={() => handleAppDownload(comp.name, "all_apps")}
+                className="p-4 rounded-2xl font-bold flex flex-col items-center justify-center gap-2 text-center bg-neutral-800 hover:bg-neutral-750 border border-neutral-700 text-neutral-300 text-sm transition-all cursor-pointer"
+              >
+                <Download className="w-5 h-5 text-neutral-400" />
+                <span className="text-sm">All Mic Check Apps</span>
+                <span className="text-xs opacity-80 font-normal">(All Submissions)</span>
+              </button>
+            </div>
+            </div>
           </div>
 
-          <div className="grid grid-cols-1 gap-3 pt-2">
-            {activeLangs.map((lang) => {
-              const langKey = lang.toLowerCase();
-              const lStat = cLangMap[langKey] || { approved: 0, recorded: 0, pending: 0, rejected: 0 };
-              const lTotal = (lStat.approved || 0) + (lStat.recorded || 0) + (lStat.rejected || 0);
-              const hasLangApproved = (lStat.approved || 0) > 0;
-              const hasLangRecorded = (lStat.recorded || 0) > 0;
-
-              return (
-                <div
-                  key={lang}
-                  className="bg-neutral-50 dark:bg-neutral-850 p-4 rounded-xl border border-neutral-200 dark:border-neutral-700 flex flex-col md:flex-row md:items-center justify-between gap-4 hover:border-primary-500/50 transition-all shadow-xs"
-                >
-                  <div className="space-y-1.5">
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-2.5 h-2.5 rounded-full bg-primary-500"></div>
-                      <span className="text-base font-black text-neutral-900 dark:text-white capitalize">{lang}</span>
-                      <span className="text-xs font-mono font-bold px-2.5 py-0.5 rounded-full bg-neutral-200 dark:bg-neutral-750 text-neutral-700 dark:text-neutral-300">
-                        {lTotal} total phrases
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-4 text-xs">
-                      <span className="text-emerald-600 dark:text-emerald-400 font-bold flex items-center gap-1">
-                        <CheckCircle className="w-3.5 h-3.5" />
-                        {lStat.approved || 0} Approved
-                      </span>
-                      <span className="text-amber-600 dark:text-amber-400 font-bold flex items-center gap-1">
-                        <Clock className="w-3.5 h-3.5" />
-                        {lStat.recorded || 0} Pending (Recorded)
-                      </span>
-                      {lStat.rejected > 0 && (
-                        <span className="text-rose-500 font-bold flex items-center gap-1">
-                          <XCircle className="w-3.5 h-3.5" />
-                          {lStat.rejected} Rejected
-                        </span>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Language Action Buttons */}
-                  <div className="flex flex-wrap items-center gap-2.5">
-                    <button
-                      type="button"
-                      onClick={() => openDownloadModal(comp.name, "approved", langKey)}
-                      disabled={!hasLangApproved}
-                      className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all shadow-xs ${
-                        hasLangApproved
-                          ? "bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-600/20 active:scale-95 cursor-pointer"
-                          : "bg-neutral-200 dark:bg-neutral-750 text-neutral-400 dark:text-neutral-500 cursor-not-allowed"
-                      }`}
-                      title={hasLangApproved ? `Download ${lStat.approved} approved phrases in ${lang}` : `No approved phrases in ${lang}`}
-                    >
-                      <Download className="w-4 h-4" />
-                      <span>Download Approved ({lStat.approved || 0})</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => openDownloadModal(comp.name, "recorded", langKey)}
-                      disabled={!hasLangRecorded}
-                      className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all shadow-xs ${
-                        hasLangRecorded
-                          ? "bg-amber-600 hover:bg-amber-500 text-white shadow-amber-600/20 active:scale-95 cursor-pointer"
-                          : "bg-neutral-200 dark:bg-neutral-750 text-neutral-400 dark:text-neutral-500 cursor-not-allowed"
-                      }`}
-                      title={hasLangRecorded ? `Download ${lStat.recorded} recorded phrases in ${lang}` : `No recorded phrases in ${lang}`}
-                    >
-                      <Clock className="w-4 h-4" />
-                      <span>Download Pending ({lStat.recorded || 0})</span>
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* MASTER PROJECT-WIDE DOWNLOADS SECTION */}
-        <div className="bg-white dark:bg-neutral-800 rounded-2xl p-6 border border-neutral-200 dark:border-neutral-700 shadow-xs space-y-4">
-          <div>
-            <h2 className="text-lg font-bold text-neutral-900 dark:text-white flex items-center gap-2">
-              <FolderArchive className="w-5 h-5 text-primary-500" />
-              <span>Download Complete Project (All Languages Combined)</span>
-            </h2>
-            <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-0.5">
-              Bundles all phrases across all languages in this project into a structured ZIP archive with language folders and root manifests.
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-2">
-            <button
-              onClick={() => openDownloadModal(comp.name, "approved", "")}
-              disabled={!hasApproved}
-              className={`p-4 rounded-xl font-bold flex flex-col items-center justify-center gap-2 text-center transition-all ${
-                hasApproved
-                  ? "bg-emerald-600 hover:bg-emerald-500 text-white shadow-md shadow-emerald-600/20 active:scale-95"
-                  : "bg-neutral-100 dark:bg-neutral-750 text-neutral-400 dark:text-neutral-500 cursor-not-allowed text-xs"
-              }`}
-            >
-              <Download className="w-5 h-5" />
-              <span className="text-sm">All Approved Phrases</span>
-              <span className="text-xs opacity-80 font-normal">({cStats.approved || 0} Phrases)</span>
-            </button>
-
-            <button
-              onClick={() => openDownloadModal(comp.name, "recorded", "")}
-              disabled={!hasRecorded}
-              className={`p-4 rounded-xl font-bold flex flex-col items-center justify-center gap-2 text-center transition-all ${
-                hasRecorded
-                  ? "bg-amber-600 hover:bg-amber-500 text-white shadow-md shadow-amber-600/20 active:scale-95"
-                  : "bg-neutral-100 dark:bg-neutral-750 text-neutral-400 dark:text-neutral-500 cursor-not-allowed text-xs"
-              }`}
-            >
-              <Clock className="w-5 h-5" />
-              <span className="text-sm">All Pending Phrases</span>
-              <span className="text-xs opacity-80 font-normal">({cStats.recorded || 0} Phrases)</span>
-            </button>
-
-            <button
-              onClick={() => handleAppDownload(comp.name, "approved_apps")}
-              className="p-4 rounded-xl font-bold flex flex-col items-center justify-center gap-2 text-center bg-neutral-200 hover:bg-neutral-300 dark:bg-neutral-700 dark:hover:bg-neutral-650 text-neutral-800 dark:text-neutral-200 text-sm transition-all shadow-xs"
-            >
-              <Download className="w-5 h-5 text-primary-500" />
-              <span className="text-sm">Approved Mic Apps</span>
-              <span className="text-xs opacity-80 font-normal">(Language-Wise)</span>
-            </button>
-
-            <button
-              onClick={() => handleAppDownload(comp.name, "all_apps")}
-              className="p-4 rounded-xl font-bold flex flex-col items-center justify-center gap-2 text-center border border-neutral-300 dark:border-neutral-600 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-750 text-sm transition-all"
-            >
-              <Download className="w-5 h-5 text-neutral-400" />
-              <span className="text-sm">All Mic Check Apps</span>
-              <span className="text-xs opacity-80 font-normal">(All Submissions)</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Modal rendering is outside the view condition below */}
-        {renderDownloadModal()}
+          {/* Modal rendering is outside the view condition below */}
+          {renderDownloadModal()}
+        </main>
       </div>
     );
   }
 
   // Render View 1: Companies Overview List
   return (
-    <div className="p-6 max-w-6xl mx-auto space-y-6">
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-3xl font-black text-neutral-900 dark:text-white flex items-center gap-3">
-            <Download className="w-8 h-8 text-warning-500" />
-            <span>Phrase Downloads</span>
-          </h1>
-          <p className="text-sm text-neutral-500 dark:text-neutral-400 mt-1">
-            Click any company / project to manage and download phrases language-wise with complete metadata JSONs and duration caps.
-          </p>
+    <div className="min-h-screen bg-neutral-950 flex text-white transition-colors duration-300">
+      <AdminNav />
+      <main className="flex-1 md:ml-64 p-4 md:p-8 w-full max-w-[1720px] mx-auto space-y-6 text-neutral-100">
+        <div className="flex justify-between items-center">
+          <div>
+            <h1 className="text-3xl font-black text-white flex items-center gap-3">
+              <Download className="w-8 h-8 text-primary-400" />
+              <span>Phrase Downloads</span>
+            </h1>
+            <p className="text-sm text-neutral-400 mt-1">
+              Click any company / project to manage and download phrases language-wise with complete metadata JSONs and duration caps.
+            </p>
+          </div>
+          <button
+            onClick={loadData}
+            disabled={loading}
+            className="btn btn-outline flex items-center gap-2"
+          >
+            <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
+            Refresh Projects
+          </button>
         </div>
-        <button
-          onClick={loadData}
-          disabled={loading}
-          className="btn btn-outline flex items-center gap-2"
-        >
-          <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
-          Refresh Projects
-        </button>
-      </div>
 
-      {loading ? (
-        <div className="flex justify-center py-20">
-          <div className="w-12 h-12 border-4 border-warning-200 border-t-warning-600 rounded-full animate-spin"></div>
-        </div>
-      ) : companies.length === 0 ? (
-        <div className="bg-white dark:bg-neutral-800 rounded-2xl p-12 text-center border border-neutral-200 dark:border-neutral-700">
-          <p className="text-neutral-500 dark:text-neutral-400">No companies found in database.</p>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {companies.map((c) => {
-            const compLower = (c.name || "").toLowerCase();
-            const cStats = stats[c.name] || stats[compLower] || { pending: 0, recorded: 0, approved: 0, rejected: 0 };
-            const cLangMap = languageStats[c.name] || languageStats[compLower] || {};
+        {loading ? (
+          <div className="flex justify-center py-20">
+            <div className="w-12 h-12 border-4 border-primary-200 border-t-primary-600 rounded-full animate-spin"></div>
+          </div>
+        ) : companies.length === 0 ? (
+          <div className="bg-neutral-900/50 border border-neutral-800 rounded-3xl p-12 text-center">
+            <p className="text-neutral-400">No companies found in database.</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {companies.map((c) => {
+              const compLower = (c.name || "").toLowerCase();
+              const cStats = stats[c.name] || stats[compLower] || { pending: 0, recorded: 0, approved: 0, rejected: 0 };
+              const cLangMap = languageStats[c.name] || languageStats[compLower] || {};
 
-            const definedLangs = Array.isArray(c.languages) ? c.languages : [];
-            const detectedLangs = Object.keys(cLangMap);
-            const cLangs = Array.from(new Set([...definedLangs, ...detectedLangs])).filter(Boolean);
-            if (cLangs.length === 0) {
-              cLangs.push("hindi");
-            }
+              const definedLangs = Array.isArray(c.languages) ? c.languages : [];
+              const detectedLangs = Object.keys(cLangMap);
+              const cLangs = Array.from(new Set([...definedLangs, ...detectedLangs])).filter(Boolean);
+              if (cLangs.length === 0) {
+                cLangs.push("hindi");
+              }
 
-            const totalPhrases = Object.values(cStats).reduce((a, b) => a + b, 0);
+              const totalPhrases = Object.values(cStats).reduce((a, b) => a + b, 0);
 
-            return (
-              <div
-                key={c._id}
-                onClick={() => setSelectedCompany(c)}
-                className="bg-white dark:bg-neutral-800 rounded-2xl p-6 border border-neutral-200 dark:border-neutral-700 shadow-sm hover:shadow-xl hover:border-primary-500/80 transition-all cursor-pointer group flex flex-col justify-between"
-              >
-                <div>
-                  <div className="flex justify-between items-start mb-3">
-                    <div className="flex items-center gap-3">
-                      <div className="p-3 rounded-xl bg-primary-50 dark:bg-primary-950/50 text-primary-600 dark:text-primary-400 group-hover:bg-primary-600 group-hover:text-white transition-all shadow-xs">
-                        <Building2 className="w-6 h-6" />
+              return (
+                <div
+                  key={c._id}
+                  onClick={() => setSelectedCompany(c)}
+                  className="group relative overflow-hidden rounded-3xl border border-neutral-800 hover:border-neutral-700 bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 p-6 shadow-xl hover:shadow-2xl transition-all cursor-pointer flex flex-col justify-between"
+                >
+                  <div className="absolute top-0 right-0 w-32 h-32 bg-primary-500/5 rounded-full blur-2xl pointer-events-none" />
+                  <div className="relative z-10 flex flex-col justify-between h-full">
+                  <div>
+                    <div className="flex justify-between items-start mb-3">
+                      <div className="flex items-center gap-3">
+                        <div className="p-3 rounded-2xl bg-neutral-800 text-neutral-300 group-hover:bg-neutral-700 group-hover:text-white transition-all shadow-xs border border-neutral-700">
+                          <Building2 className="w-6 h-6" />
+                        </div>
+                        <div>
+                          <h2 className="text-xl font-black text-white group-hover:text-primary-400 transition-colors">
+                            {c.name}
+                          </h2>
+                          {c.projectName && (
+                            <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-neutral-800 text-neutral-300 border border-neutral-700 inline-block mt-0.5">
+                              {c.projectName}
+                            </span>
+                          )}
+                        </div>
                       </div>
-                      <div>
-                        <h2 className="text-xl font-black text-neutral-900 dark:text-white group-hover:text-primary-500 transition-colors">
-                          {c.name}
-                        </h2>
-                        {c.projectName && (
-                          <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-neutral-100 dark:bg-neutral-700 text-neutral-600 dark:text-neutral-300 inline-block mt-0.5">
-                            {c.projectName}
-                          </span>
-                        )}
+                    </div>
+
+                    {/* Active Languages Pills */}
+                    <div className="mt-3 mb-5 flex flex-wrap gap-1.5 items-center">
+                      <span className="text-[11px] text-neutral-400 font-semibold mr-1 flex items-center gap-1">
+                        <Globe className="w-3 h-3 text-primary-400" />
+                        Languages:
+                      </span>
+                      {cLangs.slice(0, 3).map((l) => (
+                        <span key={l} className="text-xs font-bold capitalize px-2 py-0.5 rounded-md bg-neutral-800 text-neutral-300 border border-neutral-700">
+                          {l}
+                        </span>
+                      ))}
+                      {cLangs.length > 3 && (
+                        <span className="text-xs font-bold px-1.5 py-0.5 rounded-md bg-neutral-800 text-neutral-400">
+                          +{cLangs.length - 3} more
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Quick Metrics Bar */}
+                    <div className="grid grid-cols-2 gap-2.5 mb-4">
+                      <div className="bg-neutral-900/70 p-2.5 rounded-2xl border border-neutral-800">
+                        <span className="block text-[10px] text-neutral-400 font-bold uppercase">Approved</span>
+                        <span className="text-base font-black text-emerald-400">{cStats.approved || 0}</span>
+                      </div>
+                      <div className="bg-neutral-900/70 p-2.5 rounded-2xl border border-neutral-800">
+                        <span className="block text-[10px] text-neutral-400 font-bold uppercase">Pending / QA</span>
+                        <span className="text-base font-black text-amber-400">{cStats.recorded || 0}</span>
                       </div>
                     </div>
                   </div>
 
-                  {/* Active Languages Pills */}
-                  <div className="mt-3 mb-5 flex flex-wrap gap-1.5 items-center">
-                    <span className="text-[11px] text-neutral-400 font-semibold mr-1 flex items-center gap-1">
-                      <Globe className="w-3 h-3 text-primary-400" />
-                      Languages:
-                    </span>
-                    {cLangs.slice(0, 3).map((l) => (
-                      <span key={l} className="text-xs font-bold capitalize px-2 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800/40">
-                        {l}
-                      </span>
-                    ))}
-                    {cLangs.length > 3 && (
-                      <span className="text-xs font-bold px-1.5 py-0.5 rounded-md bg-neutral-100 dark:bg-neutral-700 text-neutral-500">
-                        +{cLangs.length - 3} more
-                      </span>
-                    )}
+                  {/* Card Action Banner */}
+                  <div className="pt-3 border-t border-neutral-800/70 flex items-center justify-between text-xs font-bold text-neutral-400 group-hover:text-white group-hover:translate-x-1 transition-all">
+                    <span>Open Project & Languages ({totalPhrases} Phrases)</span>
+                    <ChevronRight className="w-4 h-4" />
                   </div>
-
-                  {/* Quick Metrics Bar */}
-                  <div className="grid grid-cols-2 gap-2.5 mb-4">
-                    <div className="bg-neutral-50 dark:bg-neutral-850 p-2.5 rounded-xl border border-neutral-100 dark:border-neutral-750">
-                      <span className="block text-[10px] text-neutral-400 font-bold uppercase">Approved</span>
-                      <span className="text-base font-black text-emerald-600 dark:text-emerald-400">{cStats.approved || 0}</span>
-                    </div>
-                    <div className="bg-neutral-50 dark:bg-neutral-850 p-2.5 rounded-xl border border-neutral-100 dark:border-neutral-750">
-                      <span className="block text-[10px] text-neutral-400 font-bold uppercase">Pending / QA</span>
-                      <span className="text-base font-black text-amber-600 dark:text-amber-400">{cStats.recorded || 0}</span>
-                    </div>
                   </div>
                 </div>
+              );
+            })}
+          </div>
+        )}
 
-                {/* Card Action Banner */}
-                <div className="pt-3 border-t border-neutral-100 dark:border-neutral-750 flex items-center justify-between text-xs font-bold text-primary-600 dark:text-primary-400 group-hover:translate-x-1 transition-transform">
-                  <span>Open Project & Languages ({totalPhrases} Phrases)</span>
-                  <ChevronRight className="w-4 h-4" />
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {renderDownloadModal()}
+        {renderDownloadModal()}
+      </main>
     </div>
   );
 
@@ -775,16 +798,15 @@ export default function AdminPhraseDownloads() {
         onClick={() => setDialogOpen(false)}
       >
         <div 
-          className="bg-neutral-900 border border-neutral-700 rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden text-white relative"
+          className="relative overflow-hidden bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 border border-neutral-800 rounded-3xl w-full max-w-2xl max-h-[90vh] flex flex-col shadow-2xl text-white"
           onClick={(e) => e.stopPropagation()}
         >
+          <div className="absolute top-0 right-0 w-64 h-64 bg-primary-500/5 rounded-full blur-3xl pointer-events-none" />
           {/* Modal Header */}
-          <div className={`p-4 sm:p-5 flex items-center justify-between border-b shrink-0 ${
-            dialogStatus === "approved" ? "border-emerald-700/40 bg-emerald-950/40" : "border-amber-700/40 bg-amber-950/40"
-          }`}>
+          <div className="p-4 sm:p-5 flex items-center justify-between border-b border-neutral-800 bg-neutral-900/80 shrink-0 relative z-10">
             <div className="flex items-center gap-3 min-w-0">
               <div className={`p-2 rounded-xl shrink-0 ${
-                dialogStatus === "approved" ? "bg-emerald-600/30 text-emerald-400 border border-emerald-500/40" : "bg-amber-600/30 text-amber-400 border border-amber-500/40"
+                dialogStatus === "approved" ? "bg-emerald-600/30 text-emerald-400 border border-emerald-500/40" : "bg-neutral-800 text-neutral-300 border border-neutral-700"
               }`}>
                 <FolderArchive className="w-5 h-5" />
               </div>
@@ -792,7 +814,7 @@ export default function AdminPhraseDownloads() {
                 <h3 className="text-base sm:text-lg font-bold text-white flex items-center gap-2 flex-wrap">
                   <span className="truncate">{dialogCompany}</span>
                   {dialogLanguage && dialogLanguage !== "all" && (
-                    <span className="text-xs px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wider bg-indigo-950/80 text-indigo-300 border border-indigo-600/50 flex items-center gap-1">
+                    <span className="text-xs px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wider bg-neutral-800 text-neutral-300 border border-neutral-700 flex items-center gap-1">
                       <Globe className="w-3 h-3" />
                       {dialogLanguage}
                     </span>
@@ -800,7 +822,7 @@ export default function AdminPhraseDownloads() {
                   <span className={`text-xs px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wider ${
                     dialogStatus === "approved" 
                       ? "bg-emerald-900/60 text-emerald-300 border border-emerald-600/50" 
-                      : "bg-amber-900/60 text-amber-300 border border-amber-600/50"
+                      : "bg-neutral-800 text-neutral-300 border border-neutral-700"
                   }`}>
                     {dialogStatus === "approved" ? "Approved Phrases" : "Pending (Recorded) Phrases"}
                   </span>

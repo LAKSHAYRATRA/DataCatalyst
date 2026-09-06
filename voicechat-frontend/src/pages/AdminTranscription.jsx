@@ -272,7 +272,7 @@ export default function AdminTranscription() {
   });
 
   return (
-    <div className="min-h-screen bg-neutral-900 pt-16 md:pt-0 md:pl-64 text-neutral-100">
+    <div className="min-h-screen bg-neutral-950 pt-16 md:pt-0 md:pl-64 text-neutral-100">
       <AdminNav />
 
       <div className="max-w-7xl mx-auto px-4 md:px-6 py-6 md:py-12 space-y-6">
@@ -297,8 +297,9 @@ export default function AdminTranscription() {
         </div>
 
         {/* 5 Tab Navigation & Search Bar */}
-        <div className="bg-neutral-800 border border-neutral-700 rounded-xl p-4 flex flex-col md:flex-row items-center justify-between gap-4">
-          <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
+        <div className="relative overflow-hidden rounded-3xl border border-neutral-800 bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 p-4 md:p-5 shadow-xl flex flex-col md:flex-row items-center justify-between gap-4">
+          <div className="absolute top-0 right-0 w-64 h-64 bg-primary-500/5 rounded-full blur-3xl pointer-events-none" />
+          <div className="flex flex-wrap items-center gap-2 w-full md:w-auto relative z-10">
             {[
               { id: "all", label: "All Calls" },
               { id: "pending_transcription", label: "⏳ Pending Transcription" },
@@ -346,11 +347,12 @@ export default function AdminTranscription() {
         )}
 
         {/* Calls Table (Calls Only) */}
-        <div className="bg-neutral-800 border border-neutral-700 rounded-xl overflow-hidden shadow-lg">
-          <div className="overflow-x-auto">
+        <div className="relative overflow-hidden rounded-3xl border border-neutral-800 bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 shadow-xl">
+          <div className="absolute top-0 right-0 w-64 h-64 bg-primary-500/5 rounded-full blur-3xl pointer-events-none" />
+          <div className="overflow-x-auto relative z-10">
             <table className="w-full text-left border-collapse">
               <thead>
-                <tr className="bg-neutral-750 border-b border-neutral-700 text-[11px] font-bold text-neutral-400 uppercase tracking-wider">
+                <tr className="bg-neutral-900/80 border-b border-neutral-800 text-[11px] font-bold text-neutral-400 uppercase tracking-wider">
                   <th className="p-3.5">Call ID</th>
                   <th className="p-3.5">Speakers</th>
                   <th className="p-3.5">Language / Topic</th>
@@ -449,7 +451,7 @@ export default function AdminTranscription() {
 
           {/* Pagination */}
           {pages > 1 && (
-            <div className="bg-neutral-750 px-4 py-3 border-t border-neutral-700 flex items-center justify-between">
+            <div className="bg-neutral-900/80 px-6 py-4 border-t border-neutral-800 flex items-center justify-between relative z-10">
               <span className="text-xs text-neutral-400">
                 Showing page {page} of {pages} ({total} calls)
               </span>
@@ -457,14 +459,14 @@ export default function AdminTranscription() {
                 <button
                   onClick={() => setPage(p => Math.max(1, p - 1))}
                   disabled={page <= 1}
-                  className="px-3 py-1 bg-neutral-700 hover:bg-neutral-600 disabled:opacity-50 text-white rounded text-xs transition-colors"
+                  className="px-3 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 border border-neutral-700/80 disabled:opacity-40 rounded-xl text-xs font-semibold transition-all"
                 >
                   Previous
                 </button>
                 <button
                   onClick={() => setPage(p => Math.min(pages, p + 1))}
                   disabled={page >= pages}
-                  className="px-3 py-1 bg-neutral-700 hover:bg-neutral-600 disabled:opacity-50 text-white rounded text-xs transition-colors"
+                  className="px-3 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 border border-neutral-700/80 disabled:opacity-40 rounded-xl text-xs font-semibold transition-all"
                 >
                   Next
                 </button>
@@ -477,10 +479,11 @@ export default function AdminTranscription() {
       {/* Segment-by-Segment Review Inspector Modal */}
       {selectedCall && (
         <div className="fixed inset-0 bg-black/85 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in" onClick={handleCloseVerifyModal}>
-          <div className="bg-neutral-900 border border-neutral-700 rounded-2xl max-w-6xl w-full max-h-[92vh] flex flex-col shadow-2xl overflow-hidden" onClick={(e) => e.stopPropagation()}>
+          <div className="relative overflow-hidden rounded-3xl border border-neutral-800 bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 max-w-6xl w-full max-h-[92vh] flex flex-col shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="absolute top-0 right-0 w-64 h-64 bg-primary-500/5 rounded-full blur-3xl pointer-events-none" />
             
             {/* Modal Top Bar */}
-            <div className="p-5 bg-neutral-800 border-b border-neutral-700 flex items-center justify-between">
+            <div className="p-5 bg-neutral-900/80 border-b border-neutral-800 flex items-center justify-between relative z-10">
               <div>
                 <div className="flex items-center gap-3">
                   <h2 className="text-lg md:text-xl font-bold text-white flex items-center gap-2">

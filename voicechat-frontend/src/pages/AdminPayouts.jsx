@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import AdminNav from "../components/AdminNav.jsx";
+import AdminVendorPayoutsModal from "../components/AdminVendorPayoutsModal.jsx";
 import { apiGet, apiPostJson } from "../lib/api.js";
 import Swal from "sweetalert2";
 
@@ -9,23 +10,29 @@ function money(value) {
 }
 
 export default function AdminPayouts() {
-  const [activeTab, setActiveTab] = useState("contributor"); // "contributor" | "qa"
+  const [activeTab, setActiveTab] = useState("contributor"); // "contributor" | "qa" | "vendor"
   const [users, setUsers] = useState([]);
   const [qaData, setQaData] = useState(null);
+  const [vendors, setVendors] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
   const [selectedQaModal, setSelectedQaModal] = useState(null);
+  const [selectedVendorId, setSelectedVendorId] = useState(null);
+  const [vendorModalOpen, setVendorModalOpen] = useState(false);
+  const [copiedVendorUpi, setCopiedVendorUpi] = useState(null);
 
   async function load(searchVal = search) {
     try {
       setLoading(true);
-      const [data, qaRes] = await Promise.all([
+      const [data, qaRes, vendorRes] = await Promise.all([
         apiGet(`/api/admin/payouts/users?search=${encodeURIComponent(searchVal)}`),
-        apiGet("/api/admin/qa/payments-stats").catch(() => null)
+        apiGet("/api/admin/qa/payments-stats").catch(() => null),
+        apiGet("/api/admin/vendors").catch(() => ({ vendors: [] }))
       ]);
       setUsers(data.users || []);
       setQaData(qaRes);
+      setVendors(vendorRes?.vendors || []);
     } catch (e) {
       setError(e.message);
     } finally {
@@ -226,9 +233,9 @@ export default function AdminPayouts() {
   }
 
   return (
-    <div className="min-h-screen bg-neutral-900 pt-16 md:pt-0 md:pl-64">
+    <div className="min-h-screen bg-neutral-950 text-neutral-100 pt-16 md:pt-0 md:pl-64">
       <AdminNav />
-      <div className="max-w-7xl mx-auto px-4 md:px-6 py-6 md:py-12">
+      <div className="w-full max-w-[1720px] mx-auto px-4 md:px-8 py-6 md:py-10">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-8">
           <div>
             <h1 className="text-2xl md:text-3xl font-bold text-white mb-2">Payouts</h1>
@@ -272,6 +279,16 @@ export default function AdminPayouts() {
           >
             🛡️ QA
           </button>
+          <button
+            onClick={() => setActiveTab("vendor")}
+            className={`px-6 py-2.5 rounded-xl text-sm font-extrabold transition-all shadow-md flex items-center gap-2 ${
+              activeTab === "vendor"
+                ? "bg-warning-500 text-neutral-950 shadow-warning-500/20 scale-105"
+                : "bg-warning-600/20 border border-warning-500/40 text-warning-400 hover:bg-warning-600/30 font-bold"
+            }`}
+          >
+            🏢 Vendor / Studio
+          </button>
         </div>
 
         {loading ? (
@@ -292,10 +309,11 @@ export default function AdminPayouts() {
                 <button type="submit" className="px-4 py-2 rounded-xl bg-warning-600 hover:bg-warning-700 text-sm font-semibold text-white transition-all shadow-md active:scale-95">Search</button>
               </form>
             </div>
-            <div className="bg-neutral-800 border border-neutral-700 rounded-2xl overflow-hidden">
-              <div className="overflow-x-auto">
+            <div className="relative overflow-hidden rounded-3xl border border-neutral-800 bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 shadow-xl">
+              <div className="absolute top-0 right-0 w-64 h-64 bg-primary-500/5 rounded-full blur-3xl pointer-events-none" />
+              <div className="overflow-x-auto relative z-10">
                 <table className="w-full text-sm">
-                  <thead className="bg-neutral-700">
+                  <thead className="bg-neutral-900/80 border-b border-neutral-800">
                     <tr>
                       {["Name", "Email", "Calls (Appr/Tot)", "Phrases (Appr/Tot)", "Earned", "Remaining", "Action"].map((h) => (
                         <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-neutral-300 uppercase tracking-wider whitespace-nowrap">{h}</th>
@@ -346,28 +364,30 @@ export default function AdminPayouts() {
               {!users.length && <div className="text-center py-16 text-neutral-500">No payout data found.</div>}
             </div>
           </div>
-        ) : (
+        ) : activeTab === "qa" ? (
           /* QA Payouts View */
           <div className="space-y-6 animate-fade-in">
-            <div className="bg-neutral-800 border border-neutral-700 p-5 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-xl">
-              <div>
-                <div className="text-xs uppercase font-bold text-warning-400 tracking-wider mb-1">Total QA Expense / Payout Owed</div>
+            <div className="relative overflow-hidden rounded-3xl border border-neutral-800 bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 p-6 shadow-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="absolute top-0 right-0 w-48 h-48 bg-primary-500/5 rounded-full blur-3xl pointer-events-none" />
+              <div className="relative z-10">
+                <div className="text-xs uppercase font-bold text-neutral-400 tracking-wider mb-1">Total QA Expense / Payout Owed</div>
                 <div className="text-3xl font-black text-white">
                   {money(qaData?.totalCompanyQaExpenseUsd || 0)}
                 </div>
               </div>
-              <div className="text-xs text-neutral-400">
+              <div className="text-xs text-neutral-400 relative z-10">
                 QA Reviewers: <strong className="text-white text-sm">{qaData?.stats?.length || 0}</strong>
               </div>
             </div>
 
-            <div className="bg-neutral-800 border border-neutral-700 rounded-2xl overflow-hidden shadow-xl">
-              <div className="p-4 border-b border-neutral-700 font-bold text-sm text-neutral-200">
+            <div className="relative overflow-hidden rounded-3xl border border-neutral-800 bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 shadow-xl">
+              <div className="absolute top-0 right-0 w-64 h-64 bg-primary-500/5 rounded-full blur-3xl pointer-events-none" />
+              <div className="p-4 border-b border-neutral-800 font-bold text-sm text-neutral-200 bg-neutral-900/80 relative z-10">
                 QA Reviewers Payout Overview
               </div>
-              <div className="overflow-x-auto">
+              <div className="overflow-x-auto relative z-10">
                 <table className="w-full text-xs">
-                  <thead className="bg-neutral-700 text-neutral-300 uppercase tracking-wider font-semibold">
+                  <thead className="bg-neutral-900/60 text-neutral-300 uppercase tracking-wider font-semibold border-b border-neutral-800">
                     <tr>
                       <th className="px-4 py-3 text-left">QA Reviewer</th>
                       <th className="px-4 py-3 text-left">Per Call Rate</th>
@@ -447,6 +467,195 @@ export default function AdminPayouts() {
                 </table>
               </div>
             </div>
+          </div>
+        ) : (
+          /* Vendor / Studio Payouts View */
+          <div className="space-y-6 animate-fade-in">
+            {(() => {
+              const totalVendorEarnings = vendors.reduce((acc, v) => acc + (v.stats?.totalMarginEarned || 0), 0);
+              const totalArtistPayouts = vendors.reduce((acc, v) => acc + (v.stats?.totalArtistPayout || 0), 0);
+              const totalVendorWorkers = vendors.reduce((acc, v) => acc + (v.stats?.totalWorkers || 0), 0);
+              const totalApprovedHours = vendors.reduce((acc, v) => acc + (v.stats?.totalApprovedHours || 0), 0);
+
+              const filteredVendors = vendors.filter((v) => {
+                const ven = v.vendor || v;
+                if (!search.trim()) return true;
+                const q = search.toLowerCase();
+                return (
+                  (ven.name || "").toLowerCase().includes(q) ||
+                  (ven.vendorCode || "").toLowerCase().includes(q) ||
+                  (ven.email || "").toLowerCase().includes(q) ||
+                  (ven.contactPerson || "").toLowerCase().includes(q) ||
+                  (ven.payoutDetails?.upiId || "").toLowerCase().includes(q)
+                );
+              });
+
+              return (
+                <>
+                  {/* Top Stats Cards */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div className="relative overflow-hidden rounded-3xl p-6 border border-neutral-800 bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 shadow-xl">
+                      <div className="absolute top-0 right-0 w-28 h-28 bg-primary-500/10 rounded-full blur-2xl pointer-events-none" />
+                      <div className="text-xs uppercase font-bold text-neutral-400 tracking-wider mb-1 relative z-10">Vendors & Studios</div>
+                      <div className="text-3xl font-black text-white relative z-10">{vendors.length}</div>
+                      <div className="text-xs text-neutral-400 mt-1 relative z-10">Registered partner agencies</div>
+                    </div>
+
+                    <div className="relative overflow-hidden rounded-3xl p-6 border border-neutral-800 bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 shadow-xl">
+                      <div className="absolute top-0 right-0 w-28 h-28 bg-emerald-500/10 rounded-full blur-2xl pointer-events-none" />
+                      <div className="text-xs uppercase font-bold text-emerald-400 tracking-wider mb-1 relative z-10">Vendor Total Margins</div>
+                      <div className="text-3xl font-black text-emerald-300 font-mono relative z-10">{money(totalVendorEarnings)}</div>
+                      <div className="text-xs text-neutral-400 mt-1 relative z-10">Agency & studio volume earnings</div>
+                    </div>
+
+                    <div className="relative overflow-hidden rounded-3xl p-6 border border-neutral-800 bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 shadow-xl">
+                      <div className="absolute top-0 right-0 w-28 h-28 bg-indigo-500/10 rounded-full blur-2xl pointer-events-none" />
+                      <div className="text-xs uppercase font-bold text-indigo-400 tracking-wider mb-1 relative z-10">Contributors Total Cut</div>
+                      <div className="text-3xl font-black text-indigo-300 font-mono relative z-10">{money(totalArtistPayouts)}</div>
+                      <div className="text-xs text-neutral-400 mt-1 relative z-10">Direct payouts for {totalVendorWorkers} artists</div>
+                    </div>
+
+                    <div className="relative overflow-hidden rounded-3xl p-6 border border-neutral-800 bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 shadow-xl">
+                      <div className="absolute top-0 right-0 w-28 h-28 bg-cyan-500/10 rounded-full blur-2xl pointer-events-none" />
+                      <div className="text-xs uppercase font-bold text-neutral-400 tracking-wider mb-1 relative z-10">Approved Workload</div>
+                      <div className="text-3xl font-black text-white font-mono relative z-10">{totalApprovedHours.toFixed(1)} <span className="text-sm font-semibold text-neutral-400">hrs</span></div>
+                      <div className="text-xs text-neutral-400 mt-1 relative z-10">Completed across all vendors</div>
+                    </div>
+                  </div>
+
+                  {/* Search and Table */}
+                  <div className="space-y-4">
+                    <div className="flex justify-between items-center flex-wrap gap-3">
+                      <p className="text-xs text-neutral-400">
+                        Click any vendor to view all their <strong className="text-white">contributor accounts</strong>, their <strong className="text-indigo-400">individual cuts</strong>, and the <strong className="text-emerald-400">vendor's total cut</strong>.
+                      </p>
+                      <form onSubmit={handleSearchSubmit} className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          value={search}
+                          onChange={e => setSearch(e.target.value)}
+                          placeholder="Search vendor name, code, email..."
+                          className="w-64 px-3 py-2 bg-neutral-800 border border-neutral-700 rounded-xl text-sm text-white placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-warning-500"
+                        />
+                        <button type="submit" className="px-4 py-2 rounded-xl bg-warning-600 hover:bg-warning-700 text-sm font-semibold text-white transition-all shadow-md active:scale-95">Search</button>
+                      </form>
+                    </div>
+
+                    <div className="relative overflow-hidden rounded-3xl border border-neutral-800 bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 shadow-xl">
+                      <div className="absolute top-0 right-0 w-64 h-64 bg-primary-500/5 rounded-full blur-3xl pointer-events-none" />
+                      <div className="overflow-x-auto relative z-10">
+                        <table className="w-full text-sm">
+                          <thead className="bg-neutral-900/80 border-b border-neutral-800">
+                            <tr>
+                              {["Vendor / Studio", "Code", "Type", "Artists", "Approved Hrs", "Accrued Margin", "Paid Out", "Pending Balance", "UPI ID", "Action"].map((h) => (
+                                <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-neutral-300 uppercase tracking-wider whitespace-nowrap">{h}</th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-neutral-700">
+                            {filteredVendors.map((entry) => {
+                              const ven = entry.vendor || entry;
+                              const stats = entry.stats || {};
+                              const upi = ven.payoutDetails?.upiId;
+                              const vendorCut = stats.totalMarginEarned || 0;
+                              const totalPaid = stats.totalPaidOut || 0;
+                              const remaining = stats.remainingBalance !== undefined ? stats.remainingBalance : Math.max(0, vendorCut - totalPaid);
+
+                              return (
+                                <tr
+                                  key={ven._id}
+                                  onClick={() => {
+                                    setSelectedVendorId(ven._id);
+                                    setVendorModalOpen(true);
+                                  }}
+                                  className="hover:bg-neutral-700/50 transition-colors cursor-pointer group"
+                                >
+                                  <td className="px-4 py-3 text-white font-medium whitespace-nowrap">
+                                    <div className="font-bold text-white group-hover:text-primary-400 transition-colors">{ven.name}</div>
+                                    <div className="text-xs text-neutral-400">{ven.contactPerson ? `${ven.contactPerson} • ` : ""}{ven.email}</div>
+                                  </td>
+                                  <td className="px-4 py-3 whitespace-nowrap">
+                                    <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-neutral-900 border border-neutral-700 text-primary-400">
+                                      {ven.vendorCode}
+                                    </span>
+                                  </td>
+                                  <td className="px-4 py-3 whitespace-nowrap">
+                                    {ven.isStudio ? (
+                                      <span className="text-[11px] font-bold px-2 py-0.5 rounded-md bg-purple-950/80 text-purple-300 border border-purple-800/60">
+                                        Voice Studio
+                                      </span>
+                                    ) : (
+                                      <span className="text-[11px] font-bold px-2 py-0.5 rounded-md bg-blue-950/80 text-blue-300 border border-blue-800/60">
+                                        Vendor Agency
+                                      </span>
+                                    )}
+                                  </td>
+                                  <td className="px-4 py-3 text-neutral-200 whitespace-nowrap font-medium">
+                                    {stats.totalWorkers || 0} artists
+                                  </td>
+                                  <td className="px-4 py-3 text-neutral-300 font-mono whitespace-nowrap">
+                                    {stats.totalApprovedHours || 0}h
+                                  </td>
+                                  <td className="px-4 py-3 text-white font-mono font-bold whitespace-nowrap">
+                                    {money(vendorCut)}
+                                  </td>
+                                  <td className="px-4 py-3 text-emerald-400 font-mono font-bold whitespace-nowrap">
+                                    {money(totalPaid)}
+                                  </td>
+                                  <td className="px-4 py-3 text-cyan-300 font-mono font-bold whitespace-nowrap">
+                                    {money(remaining)}
+                                  </td>
+                                  <td className="px-4 py-3 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                                    {upi ? (
+                                      <div className="flex items-center gap-1.5 font-mono text-xs text-amber-400 bg-neutral-900 px-2 py-1 rounded-lg border border-neutral-750">
+                                        <span>{upi}</span>
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            navigator.clipboard.writeText(upi);
+                                            setCopiedVendorUpi(ven._id);
+                                            setTimeout(() => setCopiedVendorUpi(null), 2000);
+                                          }}
+                                          className="p-1 hover:bg-neutral-800 rounded text-neutral-400 hover:text-white transition-colors"
+                                          title="Copy UPI"
+                                        >
+                                          {copiedVendorUpi === ven._id ? <span className="text-[10px] text-emerald-400 font-bold">Copied!</span> : <span className="text-[10px] text-neutral-400">Copy</span>}
+                                        </button>
+                                      </div>
+                                    ) : (
+                                      <span className="text-neutral-500 italic text-xs">Not Provided</span>
+                                    )}
+                                  </td>
+                                  <td className="px-4 py-3 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setSelectedVendorId(ven._id);
+                                        setVendorModalOpen(true);
+                                      }}
+                                      className="inline-flex px-3 py-1.5 rounded-lg bg-primary-600 hover:bg-primary-500 text-white font-bold text-xs whitespace-nowrap transition-colors shadow-sm"
+                                    >
+                                      Manage Payouts & Cuts
+                                    </button>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                            {!filteredVendors.length && (
+                              <tr>
+                                <td colSpan="10" className="text-center py-16 text-neutral-500">
+                                  No vendor or studio payout data found.
+                                </td>
+                              </tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </div>
+                </>
+              );
+            })()}
           </div>
         )}
 
@@ -528,6 +737,16 @@ export default function AdminPayouts() {
             </div>
           </div>
         )}
+
+        {/* VENDOR & STUDIO BREAKDOWN MODAL */}
+        <AdminVendorPayoutsModal
+          vendorId={selectedVendorId}
+          isOpen={vendorModalOpen}
+          onClose={() => {
+            setVendorModalOpen(false);
+            setSelectedVendorId(null);
+          }}
+        />
       </div>
     </div>
   );

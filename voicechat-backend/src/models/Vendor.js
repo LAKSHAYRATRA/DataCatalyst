@@ -50,6 +50,15 @@ const vendorSchema = new mongoose.Schema(
       enum: ["active", "inactive", "suspended"],
       default: "active"
     },
+    address: { type: String, trim: true, default: "" },
+    city: { type: String, trim: true, default: "" },
+    state: { type: String, trim: true, default: "" },
+    cityState: { type: String, trim: true, default: "" },
+    panOrGst: { type: String, trim: true, uppercase: true, default: "" },
+    agreementSigned: { type: Boolean, default: false },
+    agreementSignedAt: { type: Date, default: null },
+    agreementSignatory: { type: String, trim: true, default: "" },
+    agreementPdfPath: { type: String, default: null },
     notes: { type: String, default: "" }
   },
   { timestamps: true }

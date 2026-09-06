@@ -488,7 +488,7 @@ export default function AdminQA() {
     const pages = callPages;
 
     return (
-        <div className="min-h-screen bg-neutral-900 pt-16 md:pt-0 md:pl-64">
+        <div className="min-h-screen bg-neutral-950 text-neutral-100 pt-16 md:pt-0 md:pl-64">
             <AdminNav />
             <div className="max-w-7xl mx-auto px-4 md:px-6 py-6 md:py-12">
                 <div className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -546,10 +546,11 @@ export default function AdminQA() {
                 ) : calls.length === 0 ? (
                     <div className="text-center py-16 text-neutral-500">No calls found.</div>
                 ) : (
-                    <div className="bg-neutral-800 border border-neutral-700 rounded-xl overflow-hidden">
-                        <div className="overflow-x-auto">
+                    <div className="relative overflow-hidden rounded-3xl border border-neutral-800 bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 shadow-xl">
+                        <div className="absolute top-0 right-0 w-64 h-64 bg-primary-500/5 rounded-full blur-3xl pointer-events-none" />
+                        <div className="overflow-x-auto relative z-10">
                             <table className="w-full text-sm">
-                                <thead className="bg-neutral-700">
+                                <thead className="bg-neutral-900/80 border-b border-neutral-800">
                                     <tr>
                                         {["Call ID", "Users", "Topic", "Language", "Date", "Duration", "Action"].map((h) => (
                                             <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-neutral-300 uppercase tracking-wider whitespace-nowrap">{h}</th>
@@ -613,12 +614,12 @@ export default function AdminQA() {
                                 </tbody>
                             </table>
                         </div>
-                        <div className="bg-neutral-700 px-4 py-3 flex items-center justify-between">
-                            <span className="text-xs text-neutral-400">{total} total</span>
+                        <div className="bg-neutral-900/80 border-t border-neutral-800 px-6 py-4 flex items-center justify-between relative z-10">
+                            <span className="text-xs text-neutral-400">{total} total calls</span>
                             <div className="flex items-center gap-2">
-                                <button onClick={() => setPage((p) => p - 1)} disabled={page === 1} className="px-3 py-1 bg-neutral-600 text-white rounded text-xs disabled:opacity-40">Prev</button>
-                                <span className="text-xs text-neutral-300">Page {page} / {pages}</span>
-                                <button onClick={() => setPage((p) => p + 1)} disabled={page >= pages} className="px-3 py-1 bg-neutral-600 text-white rounded text-xs disabled:opacity-40">Next</button>
+                                <button onClick={() => setPage((p) => p - 1)} disabled={page === 1} className="px-3 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 border border-neutral-700/80 rounded-xl text-xs font-semibold disabled:opacity-40 transition-all">Prev</button>
+                                <span className="text-xs text-neutral-300 font-medium">Page {page} of {pages}</span>
+                                <button onClick={() => setPage((p) => p + 1)} disabled={page >= pages} className="px-3 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 border border-neutral-700/80 rounded-xl text-xs font-semibold disabled:opacity-40 transition-all">Next</button>
                             </div>
                         </div>
                     </div>
@@ -626,8 +627,9 @@ export default function AdminQA() {
             </div>
 
             {reviewing && (
-                <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50" onClick={closeCallReview}>
-                    <div className="bg-neutral-800 border border-neutral-700 rounded-xl max-w-6xl w-full max-h-[90vh] overflow-y-auto p-4 md:p-6 animate-scale-in" onClick={(e) => e.stopPropagation()}>
+                <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50" onClick={closeCallReview}>
+                    <div className="relative overflow-hidden rounded-3xl border border-neutral-800 bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 shadow-2xl max-w-6xl w-full max-h-[90vh] overflow-y-auto p-4 md:p-6 animate-scale-in" onClick={(e) => e.stopPropagation()}>
+                        <div className="absolute top-0 right-0 w-64 h-64 bg-primary-500/5 rounded-full blur-3xl pointer-events-none" />
                         <div className="flex items-center justify-between mb-4 md:mb-6">
                             <div className="flex items-center gap-3">
                                 <h2 className="text-xl md:text-2xl font-bold text-white">Review Call</h2>

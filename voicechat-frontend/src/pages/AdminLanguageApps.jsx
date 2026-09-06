@@ -486,15 +486,15 @@ export default function AdminLanguageApps() {
     const totalGlobalPending = projects.reduce((acc, p) => acc + (p.pendingApplicants || 0), 0);
 
     return (
-        <div className="min-h-screen bg-neutral-900 text-neutral-100 flex transition-colors duration-300">
+        <div className="min-h-screen bg-neutral-950 text-neutral-100 flex transition-colors duration-300">
             <AdminNav />
-            <div className="flex-1 md:ml-64 p-6 md:p-10 max-w-7xl mx-auto space-y-6">
+            <div className="flex-1 md:ml-64 p-4 md:p-8 w-full max-w-[1720px] mx-auto space-y-6">
 
                 {/* Persistent Breadcrumb Bar */}
-                <div className="flex items-center gap-2 text-xs font-semibold text-neutral-400 bg-neutral-800/80 border border-neutral-700/80 px-4 py-3 rounded-xl shadow-lg">
+                <div className="relative overflow-hidden flex items-center gap-2 text-xs font-semibold text-neutral-400 bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 border border-neutral-800 px-5 py-3.5 rounded-2xl shadow-xl">
                     <button
                         onClick={() => { setSelectedProject(null); setSelectedLanguage(null); setSearchQuery(""); }}
-                        className={`flex items-center gap-1.5 transition-colors ${!selectedProject ? 'text-warning-400 font-bold' : 'hover:text-white'}`}
+                        className={`flex items-center gap-1.5 transition-colors ${!selectedProject ? 'text-white font-bold' : 'hover:text-white'}`}
                     >
                         <Layers className="w-3.5 h-3.5" />
                         <span>Phrase Projects</span>
@@ -505,7 +505,7 @@ export default function AdminLanguageApps() {
                             <span className="text-neutral-600">/</span>
                             <button
                                 onClick={() => { setSelectedLanguage(null); setSearchQuery(""); }}
-                                className={`flex items-center gap-1.5 transition-colors ${!selectedLanguage ? 'text-warning-400 font-bold' : 'hover:text-white'}`}
+                                className={`flex items-center gap-1.5 transition-colors ${!selectedLanguage ? 'text-white font-bold' : 'hover:text-white'}`}
                             >
                                 <Building2 className="w-3.5 h-3.5" />
                                 <span>{selectedProject.projectName || selectedProject.name}</span>
@@ -516,7 +516,7 @@ export default function AdminLanguageApps() {
                     {selectedLanguage && (
                         <>
                             <span className="text-neutral-600">/</span>
-                            <span className="text-warning-400 font-bold flex items-center gap-1.5">
+                            <span className="text-white font-bold flex items-center gap-1.5">
                                 <Globe className="w-3.5 h-3.5" />
                                 <span>{selectedLanguage.name} ({selectedLanguage.code})</span>
                             </span>
@@ -538,7 +538,9 @@ export default function AdminLanguageApps() {
                 {!selectedProject && (
                     <div className="space-y-6 animate-fade-in">
                         {/* Level 1 Header */}
-                        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-neutral-800/60 border border-neutral-700/60 p-6 rounded-2xl shadow-xl">
+                        <div className="relative overflow-hidden rounded-3xl border border-neutral-800 bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 p-6 shadow-xl">
+                            <div className="absolute top-0 right-0 w-64 h-64 bg-primary-500/5 rounded-full blur-3xl pointer-events-none" />
+                            <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
                             <div>
                                 <h1 className="text-2xl md:text-3xl font-extrabold text-white flex items-center gap-3">
                                     <span>Phrase Applications</span>
@@ -569,6 +571,7 @@ export default function AdminLanguageApps() {
                                     <RefreshCw className={`w-4 h-4 ${loadingHierarchy ? 'animate-spin' : ''}`} />
                                 </button>
                             </div>
+                            </div>
                         </div>
 
                         {/* Search & Stats Bar */}
@@ -580,14 +583,14 @@ export default function AdminLanguageApps() {
                                     placeholder="Search projects..."
                                     value={searchQuery}
                                     onChange={(e) => setSearchQuery(e.target.value)}
-                                    className="w-full pl-10 pr-4 py-2.5 bg-neutral-800/90 border border-neutral-700 text-white text-sm rounded-xl focus:outline-none focus:ring-2 focus:ring-warning-500 transition-all placeholder:text-neutral-500 shadow-md"
+                                    className="w-full pl-10 pr-4 py-2.5 bg-neutral-900/80 border border-neutral-800 text-white text-sm rounded-2xl focus:outline-none focus:ring-2 focus:ring-primary-500 transition-all placeholder:text-neutral-500 shadow-md"
                                 />
                             </div>
-                            <div className="bg-neutral-800/80 border border-neutral-700/60 px-4 py-2.5 rounded-xl flex items-center justify-between">
+                            <div className="bg-neutral-900/80 border border-neutral-800 px-4 py-2.5 rounded-2xl flex items-center justify-between">
                                 <span className="text-xs text-neutral-400 font-semibold">Total Projects</span>
                                 <span className="text-base font-bold text-white font-mono">{projects.length}</span>
                             </div>
-                            <div className="bg-neutral-800/80 border border-neutral-700/60 px-4 py-2.5 rounded-xl flex items-center justify-between">
+                            <div className="bg-neutral-900/80 border border-neutral-800 px-4 py-2.5 rounded-2xl flex items-center justify-between">
                                 <span className="text-xs text-neutral-400 font-semibold">Pending Reviews</span>
                                 <span className={`text-base font-bold font-mono ${totalGlobalPending > 0 ? 'text-amber-400' : 'text-emerald-400'}`}>
                                     {totalGlobalPending}
@@ -598,11 +601,11 @@ export default function AdminLanguageApps() {
                         {/* Project Cards Grid */}
                         {loadingHierarchy ? (
                             <div className="flex flex-col items-center justify-center py-20 gap-3">
-                                <div className="w-12 h-12 border-4 border-warning-200 border-t-warning-500 rounded-full animate-spin" />
+                                <div className="w-12 h-12 border-4 border-primary-200 border-t-primary-500 rounded-full animate-spin" />
                                 <span className="text-sm text-neutral-400">Loading project catalog...</span>
                             </div>
                         ) : filteredProjects.length === 0 ? (
-                            <div className="text-center py-20 bg-neutral-800/40 border border-neutral-700/50 rounded-2xl text-neutral-500">
+                            <div className="text-center py-20 bg-neutral-900/50 border border-neutral-800 rounded-3xl text-neutral-500">
                                 <Building2 className="w-12 h-12 mx-auto mb-3 opacity-30 text-neutral-400" />
                                 <p className="text-base font-semibold text-neutral-300">No matching projects found</p>
                                 <p className="text-xs text-neutral-500 mt-1">Try refining your search query.</p>
@@ -615,16 +618,18 @@ export default function AdminLanguageApps() {
                                         <div
                                             key={proj.id || proj.name}
                                             onClick={() => { setSelectedProject(proj); setSelectedLanguage(null); setSearchQuery(""); }}
-                                            className="group bg-neutral-800/80 hover:bg-neutral-800 border border-neutral-700/70 hover:border-warning-500/60 rounded-2xl p-6 transition-all duration-300 shadow-lg hover:shadow-2xl hover:scale-[1.01] cursor-pointer flex flex-col justify-between"
+                                            className="group relative overflow-hidden rounded-3xl border border-neutral-800 hover:border-neutral-700 bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 p-6 transition-all duration-300 shadow-xl hover:shadow-2xl hover:scale-[1.01] cursor-pointer flex flex-col justify-between"
                                         >
+                                            <div className="absolute top-0 right-0 w-32 h-32 bg-primary-500/5 rounded-full blur-2xl pointer-events-none" />
+                                            <div className="relative z-10 flex flex-col justify-between h-full">
                                             <div>
                                                 <div className="flex items-start justify-between gap-3 mb-4">
                                                     <div className="flex items-center gap-3">
-                                                        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-neutral-700 to-neutral-900 border border-neutral-600 flex items-center justify-center group-hover:border-warning-500/50 transition-colors">
-                                                            <Building2 className="w-5 h-5 text-warning-400" />
+                                                        <div className="w-10 h-10 rounded-xl bg-neutral-800 border border-neutral-700 flex items-center justify-center group-hover:border-neutral-600 transition-colors">
+                                                            <Building2 className="w-5 h-5 text-neutral-300 group-hover:text-white transition-colors" />
                                                         </div>
                                                         <div>
-                                                            <h3 className="text-base font-bold text-white group-hover:text-warning-300 transition-colors leading-tight">
+                                                            <h3 className="text-base font-bold text-white group-hover:text-primary-400 transition-colors leading-tight">
                                                                 {proj.projectName || proj.name}
                                                             </h3>
                                                             {proj.projectName && proj.projectName !== proj.name && (
@@ -634,7 +639,7 @@ export default function AdminLanguageApps() {
                                                     </div>
                                                     {hasPending ? (
                                                         <span className="px-2.5 py-1 bg-amber-500/20 border border-amber-500/40 text-amber-300 text-xs font-bold rounded-lg shadow-sm animate-pulse">
-                                                            {proj.pendingApplicants} Pending
+                                                             {proj.pendingApplicants} Pending
                                                         </span>
                                                     ) : (
                                                         <span className="px-2.5 py-1 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-semibold rounded-lg">
@@ -649,7 +654,7 @@ export default function AdminLanguageApps() {
                                                     </p>
                                                 )}
 
-                                                <div className="grid grid-cols-2 gap-2 bg-neutral-900/60 border border-neutral-700/40 rounded-xl p-3 text-xs mb-4">
+                                                <div className="grid grid-cols-2 gap-2 bg-neutral-900/60 border border-neutral-800 rounded-xl p-3 text-xs mb-4">
                                                     <div>
                                                         <span className="text-neutral-500 block text-[10px] uppercase font-bold">Languages</span>
                                                         <span className="text-white font-bold font-mono text-sm">
@@ -665,9 +670,10 @@ export default function AdminLanguageApps() {
                                                 </div>
                                             </div>
 
-                                            <div className="pt-3 border-t border-neutral-700/50 flex items-center justify-between text-xs text-warning-400 font-semibold group-hover:text-warning-300">
+                                            <div className="pt-3 border-t border-neutral-800/60 flex items-center justify-between text-xs text-neutral-400 font-semibold group-hover:text-white transition-colors">
                                                 <span>View Ongoing Languages</span>
                                                 <ChevronRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                                            </div>
                                             </div>
                                         </div>
                                     );
@@ -683,7 +689,9 @@ export default function AdminLanguageApps() {
                 {selectedProject && !selectedLanguage && (
                     <div className="space-y-6 animate-fade-in">
                         {/* Header Navigation */}
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-neutral-800/60 border border-neutral-700/60 p-6 rounded-2xl shadow-xl">
+                        <div className="relative overflow-hidden rounded-3xl border border-neutral-800 bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 p-6 shadow-xl">
+                            <div className="absolute top-0 right-0 w-64 h-64 bg-primary-500/5 rounded-full blur-3xl pointer-events-none" />
+                            <div className="relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                             <div className="flex items-center gap-4">
                                 <button
                                     onClick={() => { setSelectedProject(null); setSearchQuery(""); }}
@@ -712,11 +720,12 @@ export default function AdminLanguageApps() {
                                     <RefreshCw className={`w-4 h-4 ${loadingHierarchy ? 'animate-spin' : ''}`} />
                                 </button>
                             </div>
+                            </div>
                         </div>
 
                         {/* Languages Grid */}
                         {(!selectedProject.languages || selectedProject.languages.length === 0) ? (
-                            <div className="text-center py-20 bg-neutral-800/40 border border-neutral-700/50 rounded-2xl text-neutral-500">
+                            <div className="text-center py-20 bg-neutral-900/50 border border-neutral-800 rounded-3xl text-neutral-500">
                                 <Globe className="w-12 h-12 mx-auto mb-3 opacity-30 text-neutral-400" />
                                 <p className="text-base font-semibold text-neutral-300">No active languages in this project</p>
                                 <p className="text-xs text-neutral-500 mt-1">Upload phrases to this project to enable languages.</p>
@@ -729,16 +738,18 @@ export default function AdminLanguageApps() {
                                         <div
                                             key={lang.code}
                                             onClick={() => { setSelectedLanguage(lang); setSearchQuery(""); setPage(1); }}
-                                            className="group bg-neutral-800/80 hover:bg-neutral-800 border border-neutral-700/70 hover:border-warning-500/60 rounded-2xl p-5 transition-all duration-300 shadow-lg hover:shadow-2xl hover:scale-[1.02] cursor-pointer flex flex-col justify-between"
+                                            className="group relative overflow-hidden rounded-3xl border border-neutral-800 hover:border-neutral-700 bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 p-5 transition-all duration-300 shadow-xl hover:shadow-2xl hover:scale-[1.02] cursor-pointer flex flex-col justify-between"
                                         >
+                                            <div className="absolute top-0 right-0 w-32 h-32 bg-primary-500/5 rounded-full blur-2xl pointer-events-none" />
+                                            <div className="relative z-10 flex flex-col justify-between h-full">
                                             <div>
                                                 <div className="flex items-start justify-between gap-2 mb-3">
                                                     <div className="flex items-center gap-2.5">
-                                                        <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-neutral-700 to-neutral-900 border border-neutral-600 flex items-center justify-center group-hover:border-warning-500/50">
-                                                            <Globe className="w-4 h-4 text-warning-400" />
+                                                        <div className="w-9 h-9 rounded-xl bg-neutral-800 border border-neutral-700 flex items-center justify-center group-hover:border-neutral-600">
+                                                            <Globe className="w-4 h-4 text-neutral-300 group-hover:text-white" />
                                                         </div>
                                                         <div>
-                                                            <h3 className="text-base font-bold text-white group-hover:text-warning-300 transition-colors">
+                                                            <h3 className="text-base font-bold text-white group-hover:text-primary-400 transition-colors">
                                                                 {lang.name}
                                                             </h3>
                                                             <span className="text-xs font-mono text-neutral-400 block uppercase">
@@ -758,7 +769,7 @@ export default function AdminLanguageApps() {
                                                     )}
                                                 </div>
 
-                                                <div className="space-y-1.5 bg-neutral-900/60 border border-neutral-700/40 rounded-xl p-3 text-xs mb-3 font-mono">
+                                                <div className="space-y-1.5 bg-neutral-900/60 border border-neutral-800 rounded-xl p-3 text-xs mb-3 font-mono">
                                                     <div className="flex justify-between text-neutral-400">
                                                         <span>Pending:</span>
                                                         <span className={`font-bold ${hasPending ? 'text-amber-400' : 'text-neutral-300'}`}>
@@ -780,9 +791,10 @@ export default function AdminLanguageApps() {
                                                 </div>
                                             </div>
 
-                                            <div className="pt-3 border-t border-neutral-700/50 flex items-center justify-between text-xs text-warning-400 font-semibold group-hover:text-warning-300">
+                                            <div className="pt-3 border-t border-neutral-800/60 flex items-center justify-between text-xs text-neutral-400 font-semibold group-hover:text-white transition-colors">
                                                 <span>Review Applicants</span>
                                                 <ChevronRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                                            </div>
                                             </div>
                                         </div>
                                     );
@@ -798,7 +810,9 @@ export default function AdminLanguageApps() {
                 {selectedProject && selectedLanguage && (
                     <div className="space-y-6 animate-fade-in">
                         {/* Header with Breadcrumb and Controls */}
-                        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-neutral-800/60 border border-neutral-700/60 p-6 rounded-2xl shadow-xl">
+                        <div className="relative overflow-hidden rounded-3xl border border-neutral-800 bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 p-6 shadow-xl">
+                            <div className="absolute top-0 right-0 w-64 h-64 bg-primary-500/5 rounded-full blur-3xl pointer-events-none" />
+                            <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
                             <div className="flex items-center gap-4">
                                 <button
                                     onClick={() => { setSelectedLanguage(null); setSearchQuery(""); }}
@@ -813,7 +827,7 @@ export default function AdminLanguageApps() {
                                         <h1 className="text-2xl md:text-3xl font-extrabold text-white">
                                             {selectedLanguage.name} Applicants
                                         </h1>
-                                        <code className="text-xs px-2 py-0.5 rounded bg-warning-500/20 text-warning-300 font-mono border border-warning-500/30">
+                                        <code className="text-xs px-2 py-0.5 rounded bg-primary-500/20 text-primary-300 font-mono border border-primary-500/30">
                                             {selectedLanguage.code}
                                         </code>
                                     </div>
@@ -828,7 +842,7 @@ export default function AdminLanguageApps() {
                                 <select
                                     value={statusFilter}
                                     onChange={e => { setStatusFilter(e.target.value); setPage(1); }}
-                                    className="bg-neutral-800 border border-neutral-700 text-white text-xs font-semibold rounded-xl px-3.5 py-2.5 focus:outline-none focus:ring-2 focus:ring-warning-500 shadow-md"
+                                    className="bg-neutral-800 border border-neutral-700 text-white text-xs font-semibold rounded-xl px-3.5 py-2.5 focus:outline-none focus:ring-2 focus:ring-primary-500 shadow-md"
                                 >
                                     <option value="">All Statuses</option>
                                     <option value="pending">Pending Only</option>
@@ -844,6 +858,7 @@ export default function AdminLanguageApps() {
                                     <RefreshCw className={`w-4 h-4 ${loadingApps ? 'animate-spin' : ''}`} />
                                 </button>
                             </div>
+                            </div>
                         </div>
 
                         {/* Search applicants bar */}
@@ -854,18 +869,18 @@ export default function AdminLanguageApps() {
                                 placeholder="Search applicants by name, username, or speaker ID..."
                                 value={searchQuery}
                                 onChange={(e) => { setSearchQuery(e.target.value); setPage(1); }}
-                                className="w-full pl-10 pr-4 py-2.5 bg-neutral-800/90 border border-neutral-700 text-white text-sm rounded-xl focus:outline-none focus:ring-2 focus:ring-warning-500 transition-all placeholder:text-neutral-500 shadow-md"
+                                className="w-full pl-10 pr-4 py-2.5 bg-neutral-900/80 border border-neutral-800 text-white text-sm rounded-2xl focus:outline-none focus:ring-2 focus:ring-primary-500 transition-all placeholder:text-neutral-500 shadow-md"
                             />
                         </div>
 
                         {/* Applicants Table */}
                         {loadingApps ? (
                             <div className="flex flex-col items-center justify-center py-20 gap-3">
-                                <div className="w-12 h-12 border-4 border-warning-200 border-t-warning-500 rounded-full animate-spin" />
+                                <div className="w-12 h-12 border-4 border-primary-200 border-t-primary-500 rounded-full animate-spin" />
                                 <span className="text-sm text-neutral-400">Loading applicants...</span>
                             </div>
                         ) : apps.length === 0 ? (
-                            <div className="text-center py-20 bg-neutral-800/40 border border-neutral-700/50 rounded-2xl text-neutral-500">
+                            <div className="text-center py-20 bg-neutral-900/50 border border-neutral-800 rounded-3xl text-neutral-500">
                                 <Users className="w-12 h-12 mx-auto mb-3 opacity-30 text-neutral-400" />
                                 <p className="text-base font-semibold text-neutral-300">No applicants found</p>
                                 <p className="text-xs text-neutral-500 mt-1">
@@ -874,10 +889,11 @@ export default function AdminLanguageApps() {
                             </div>
                         ) : (
                             <>
-                                <div className="bg-neutral-800/90 border border-neutral-700/80 rounded-2xl overflow-hidden shadow-2xl">
-                                    <div className="overflow-x-auto">
+                                <div className="relative overflow-hidden rounded-3xl border border-neutral-800 bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 shadow-xl">
+                                    <div className="absolute top-0 right-0 w-64 h-64 bg-primary-500/5 rounded-full blur-3xl pointer-events-none" />
+                                    <div className="relative z-10 overflow-x-auto">
                                         <table className="w-full text-sm">
-                                            <thead className="bg-neutral-700/70 border-b border-neutral-700">
+                                            <thead className="bg-neutral-900/80 border-b border-neutral-800 text-neutral-400">
                                                 <tr>
                                                     {["Applicant (Click to Inspect)", "Speaker ID", "Status", "Samples", "Applied At", "Quick Actions"].map(h => (
                                                         <th key={h} className="px-4 py-3.5 text-left text-xs font-semibold text-neutral-300 uppercase tracking-wider whitespace-nowrap">
@@ -886,20 +902,20 @@ export default function AdminLanguageApps() {
                                                     ))}
                                                 </tr>
                                             </thead>
-                                            <tbody className="divide-y divide-neutral-700/60">
+                                            <tbody className="divide-y divide-neutral-800/60">
                                                 {apps.map(app => {
                                                     const key = app.appId;
                                                     const speakerId = app.speaker_id || app.speakerId || `spk_${app.userId}`;
                                                     const sampleCount = app.sampleRecordings?.length || 1;
                                                     return (
                                                         <React.Fragment key={key}>
-                                                            <tr className="hover:bg-neutral-700/30 transition-colors">
+                                                            <tr className="hover:bg-neutral-800/50 transition-colors">
                                                                 <td className="px-4 py-3.5">
                                                                     <button
                                                                         onClick={() => setSelectedApplicantModal(app)}
                                                                         className="text-left group/name flex flex-col"
                                                                     >
-                                                                        <div className="text-white font-bold text-xs group-hover/name:text-warning-400 group-hover/name:underline transition-colors flex items-center gap-1.5 flex-wrap">
+                                                                        <div className="text-white font-bold text-xs group-hover/name:text-primary-400 group-hover/name:underline transition-colors flex items-center gap-1.5 flex-wrap">
                                                                             <span>{app.userFirstname} {app.userLastname}</span>
                                                                             {(app.vendorCode || app.vendorId?.vendorCode) && (
                                                                                 <span
@@ -909,7 +925,7 @@ export default function AdminLanguageApps() {
                                                                                     🏢 {app.vendorCode || app.vendorId?.vendorCode}
                                                                                 </span>
                                                                             )}
-                                                                            <ChevronRight className="w-3 h-3 text-neutral-500 group-hover/name:text-warning-400 group-hover/name:translate-x-0.5 transition-transform" />
+                                                                            <ChevronRight className="w-3 h-3 text-neutral-500 group-hover/name:text-primary-400 group-hover/name:translate-x-0.5 transition-transform" />
                                                                         </div>
                                                                         <div className="text-neutral-400 text-[11px]">
                                                                             @{app.username}
@@ -927,7 +943,7 @@ export default function AdminLanguageApps() {
                                                                 <td className="px-4 py-3.5">
                                                                     <button
                                                                         onClick={() => setSelectedApplicantModal(app)}
-                                                                        className="px-2.5 py-1 bg-warning-500/10 hover:bg-warning-500/20 border border-warning-500/30 text-warning-300 rounded-lg text-xs font-bold font-mono transition-colors flex items-center gap-1.5"
+                                                                        className="px-2.5 py-1 bg-primary-500/10 hover:bg-primary-500/20 border border-primary-500/30 text-primary-300 rounded-lg text-xs font-bold font-mono transition-colors flex items-center gap-1.5"
                                                                     >
                                                                         <FileAudio className="w-3.5 h-3.5" />
                                                                         <span>{sampleCount} Sample{sampleCount !== 1 ? 's' : ''}</span>
@@ -955,7 +971,7 @@ export default function AdminLanguageApps() {
                                                                             className="px-2.5 py-1.5 bg-neutral-700 hover:bg-neutral-600 text-white rounded-lg text-xs font-bold flex items-center gap-1 transition-colors shadow-sm"
                                                                             title="Inspect and listen to all sample recordings"
                                                                         >
-                                                                            <Play className="w-3.5 h-3.5 text-warning-400" />
+                                                                            <Play className="w-3.5 h-3.5 text-primary-400" />
                                                                             <span>Inspect</span>
                                                                         </button>
                                                                         <button
@@ -1036,10 +1052,11 @@ export default function AdminLanguageApps() {
             {/* ========================================================================= */}
             {selectedApplicantModal && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 md:p-6 bg-black/80 backdrop-blur-sm animate-fade-in">
-                    <div className="bg-neutral-900 border border-neutral-700 rounded-3xl w-full max-w-4xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
+                    <div className="relative overflow-hidden bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 border border-neutral-800 rounded-3xl w-full max-w-4xl max-h-[90vh] flex flex-col shadow-2xl">
+                        <div className="absolute top-0 right-0 w-64 h-64 bg-primary-500/5 rounded-full blur-3xl pointer-events-none" />
                         
                         {/* Modal Header */}
-                        <div className="p-6 bg-neutral-800/90 border-b border-neutral-700 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                        <div className="p-6 bg-neutral-900/80 border-b border-neutral-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4 relative z-10">
                             <div>
                                 <div className="flex items-center gap-3">
                                     <h2 className="text-xl font-bold text-white flex items-center gap-2 flex-wrap">
@@ -1309,7 +1326,7 @@ export default function AdminLanguageApps() {
                         </div>
 
                         {/* Modal Footer (Approve / Reject Action Bar) */}
-                        <div className="p-5 bg-neutral-800/90 border-t border-neutral-700 flex items-center justify-between gap-4">
+                        <div className="p-5 bg-neutral-900/80 border-t border-neutral-800 flex items-center justify-between gap-4 relative z-10">
                             <div className="text-xs text-neutral-400">
                                 Status: <b className="text-white capitalize">{selectedApplicantModal.status}</b>
                             </div>
@@ -1369,11 +1386,12 @@ export default function AdminLanguageApps() {
             {/* ========================================================================= */}
             {namingModalOpen && namingTarget && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in">
-                    <div className="bg-neutral-900 border border-neutral-700 rounded-3xl w-full max-w-xl shadow-2xl overflow-hidden flex flex-col space-y-0">
+                    <div className="relative overflow-hidden bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 border border-neutral-800 rounded-3xl w-full max-w-xl shadow-2xl flex flex-col space-y-0">
+                        <div className="absolute top-0 right-0 w-64 h-64 bg-primary-500/5 rounded-full blur-3xl pointer-events-none" />
                         {/* Header */}
-                        <div className="p-6 bg-gradient-to-r from-neutral-800 to-neutral-850 border-b border-neutral-700 flex items-center justify-between">
+                        <div className="p-6 bg-neutral-900/80 border-b border-neutral-800 flex items-center justify-between relative z-10">
                             <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 rounded-xl bg-warning-500/20 border border-warning-500/40 flex items-center justify-center text-warning-400">
+                                <div className="w-10 h-10 rounded-xl bg-neutral-800 border border-neutral-700 flex items-center justify-center text-primary-400">
                                     <Tag className="w-5 h-5" />
                                 </div>
                                 <div>

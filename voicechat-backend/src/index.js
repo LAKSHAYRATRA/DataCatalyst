@@ -1,5 +1,5 @@
 import "dotenv/config";
-
+// Voicechat Backend Server (Studio & Vendor Partner Engine)
 process.on("uncaughtException", (err) => {
   console.error("Uncaught Exception:", err);
 });

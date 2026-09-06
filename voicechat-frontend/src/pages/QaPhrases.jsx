@@ -1397,9 +1397,9 @@ export default function QaPhrases() {
   };
 
   return (
-    <div className="min-h-screen bg-neutral-50 dark:bg-neutral-900 flex transition-colors duration-300">
+    <div className="min-h-screen bg-neutral-950 flex text-white transition-colors duration-300">
       <AdminNav />
-      <main className="flex-1 md:ml-64 p-8 max-w-5xl mx-auto text-neutral-900 dark:text-neutral-50">
+      <main className="flex-1 md:ml-64 p-4 md:p-8 w-full max-w-[1720px] mx-auto text-neutral-100">
         <motion.div 
           initial={{ y: -20, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
@@ -1407,18 +1407,18 @@ export default function QaPhrases() {
         >
           <div>
             <h1 className="text-3xl font-bold mb-1">QA Queue: Phrases</h1>
-            <p className="text-neutral-500 dark:text-neutral-400">Review contributor recordings and pass or reject them.</p>
+            <p className="text-neutral-400">Review contributor recordings and pass or reject them.</p>
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5">
             {/* Top Status Tabs */}
-            <div className="flex items-center gap-2 bg-neutral-200 dark:bg-neutral-800 p-1.5 rounded-xl border border-neutral-300 dark:border-neutral-700 w-max">
+            <div className="flex items-center gap-2 bg-neutral-900/80 p-1.5 rounded-2xl border border-neutral-800 w-max">
               <button
                 onClick={() => { setActiveTab('recorded'); setSelectedPhrases(new Set()); }}
-                className={`px-4 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-2 ${
+                className={`px-4 py-2 text-xs font-bold rounded-xl transition-all flex items-center gap-2 ${
                   activeTab === 'recorded'
-                    ? 'bg-amber-600 text-white shadow-md'
-                    : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white'
+                    ? 'bg-primary-600 text-white shadow-md'
+                    : 'text-neutral-400 hover:text-white'
                 }`}
               >
                 <Clock className="w-3.5 h-3.5" /> Pending Review
@@ -1637,11 +1637,9 @@ export default function QaPhrases() {
                     initial={{ opacity: 0, height: 0 }}
                     animate={{ opacity: 1, height: 'auto' }}
                     exit={{ opacity: 0, height: 0 }}
-                    className="bg-neutral-900/95 border border-neutral-700/80 rounded-2xl p-5 shadow-2xl relative overflow-hidden backdrop-blur-md space-y-4"
+                    className="relative overflow-hidden rounded-3xl border border-neutral-800 bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 shadow-xl p-6 space-y-4"
                   >
-                    {/* Ambient Glow */}
-                    <div className="absolute -top-20 -right-20 w-48 h-48 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
-                    <div className="absolute -bottom-20 -left-20 w-48 h-48 bg-primary-600/10 rounded-full blur-3xl pointer-events-none" />
+                    <div className="absolute top-0 right-0 w-64 h-64 bg-primary-500/5 rounded-full blur-3xl pointer-events-none" />
 
                     <div className="flex items-center justify-between border-b border-neutral-800 pb-3 relative z-10">
                       <div className="flex items-center gap-2">
@@ -2011,10 +2009,11 @@ export default function QaPhrases() {
                       return (
                         <div
                           key={`deck-slot-${slotIdx}`}
-                          className="bg-neutral-900/90 border border-purple-500/40 hover:border-purple-500/70 rounded-3xl p-5 sm:p-6 shadow-2xl relative space-y-4 transition-all"
+                          className="relative overflow-hidden rounded-3xl border border-neutral-800 bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 shadow-xl p-5 sm:p-6 space-y-4 transition-all"
                         >
+                          <div className="absolute top-0 right-0 w-48 h-48 bg-primary-500/5 rounded-full blur-3xl pointer-events-none" />
                           {/* Slot Header Row with Slot Index & Details */}
-                          <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-neutral-800">
+                          <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-neutral-800 relative z-10">
                             <div className="flex flex-wrap items-center gap-2.5">
                               <span className="px-2.5 py-0.5 rounded-full bg-purple-600 text-white font-mono font-bold text-xs flex items-center justify-center shadow-sm">
                                 Slot #{slotIdx + 1}
@@ -2512,9 +2511,10 @@ export default function QaPhrases() {
                   initial={{ opacity: 0, scale: 0.95 }}
                   animate={{ opacity: 1, scale: 1 }}
                   exit={{ opacity: 0, scale: 0.95, height: 0 }}
-                  className={`card border-l-4 ${activeTab === 'approved' ? 'border-l-emerald-500' : 'border-l-warning-500'} ${selectedPhrases.has(p._id) ? 'ring-2 ring-amber-500/60 bg-amber-500/5' : ''}`}
+                  className={`relative overflow-hidden rounded-3xl border border-neutral-800 bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 shadow-xl p-5 sm:p-6 transition-all ${selectedPhrases.has(p._id) ? 'ring-2 ring-primary-500/60' : ''}`}
                 >
-                  <div className="flex flex-col gap-4">
+                  <div className="absolute top-0 right-0 w-48 h-48 bg-primary-500/5 rounded-full blur-3xl pointer-events-none" />
+                  <div className="relative z-10 flex flex-col gap-4">
                     <div className="flex flex-col md:flex-row gap-6">
                       <div className="flex-1">
                         <div className="flex flex-wrap items-center gap-3 mb-2">
@@ -2975,44 +2975,44 @@ export default function QaPhrases() {
                               </div>
 
                               <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-                                <div className="p-3 bg-white dark:bg-neutral-850 rounded-lg border border-neutral-200/50 dark:border-neutral-800/80">
+                                <div className="p-3 bg-neutral-800 rounded-lg border border-neutral-700">
                                   <span className="block text-neutral-400 font-bold uppercase tracking-wider mb-1">LUFS Loudness</span>
                                   <span className={`font-mono font-bold text-xs ${
                                     qcData[p._id].freq.lufs === null || qcData[p._id].freq.lufs === undefined
                                       ? "text-neutral-400"
                                       : qcData[p._id].freq.lufs >= -24.0 && qcData[p._id].freq.lufs <= -18.0
-                                      ? "text-emerald-500"
+                                      ? "text-emerald-400"
                                       : qcData[p._id].freq.lufs > -18.0
-                                      ? "text-rose-500"
-                                      : "text-amber-500"
+                                      ? "text-rose-400"
+                                      : "text-amber-400"
                                   }`}>
                                     {qcData[p._id].freq.lufs !== null && qcData[p._id].freq.lufs !== undefined
                                       ? `${qcData[p._id].freq.lufs} LUFS (${qcData[p._id].freq.lufs >= -24.0 && qcData[p._id].freq.lufs <= -18.0 ? '✓ Target' : qcData[p._id].freq.lufs > -18.0 ? '⚠️ Too Loud' : '⚠️ Too Quiet'})`
                                       : '⚠️ No Speech'}
                                   </span>
                                 </div>
-                                <div className="p-3 bg-white dark:bg-neutral-850 rounded-lg border border-neutral-200/50 dark:border-neutral-800/80">
+                                <div className="p-3 bg-neutral-800 rounded-lg border border-neutral-700">
                                   <span className="block text-neutral-400 font-bold uppercase tracking-wider mb-1">Bit Depth</span>
-                                  <span className="font-semibold text-neutral-900 dark:text-neutral-100">{qcData[p._id].freq.bit_depth || '—'}</span>
+                                  <span className="font-semibold text-neutral-100">{qcData[p._id].freq.bit_depth || '—'}</span>
                                 </div>
-                                <div className="p-3 bg-white dark:bg-neutral-850 rounded-lg border border-neutral-200/50 dark:border-neutral-800/80">
+                                <div className="p-3 bg-neutral-800 rounded-lg border border-neutral-700">
                                   <span className="block text-neutral-400 font-bold uppercase tracking-wider mb-1">Noise Floor</span>
-                                  <span className="font-semibold text-neutral-900 dark:text-neutral-100">{qcData[p._id].freq.noise_floor ? `${qcData[p._id].freq.noise_floor} dBFS` : '—'}</span>
+                                  <span className="font-semibold text-neutral-100">{qcData[p._id].freq.noise_floor ? `${qcData[p._id].freq.noise_floor} dBFS` : '—'}</span>
                                 </div>
-                                <div className="p-3 bg-white dark:bg-neutral-850 rounded-lg border border-neutral-200/50 dark:border-neutral-800/80">
+                                <div className="p-3 bg-neutral-800 rounded-lg border border-neutral-700">
                                   <span className="block text-neutral-400 font-bold uppercase tracking-wider mb-1">Crest Factor</span>
-                                  <span className="font-semibold text-neutral-900 dark:text-neutral-100">{qcData[p._id].freq.crest_factor ? `${qcData[p._id].freq.crest_factor} dB` : '—'}</span>
+                                  <span className="font-semibold text-neutral-100">{qcData[p._id].freq.crest_factor ? `${qcData[p._id].freq.crest_factor} dB` : '—'}</span>
                                 </div>
-                                <div className="p-3 bg-white dark:bg-neutral-850 rounded-lg border border-neutral-200/50 dark:border-neutral-800/80">
+                                <div className="p-3 bg-neutral-800 rounded-lg border border-neutral-700">
                                   <span className="block text-neutral-400 font-bold uppercase tracking-wider mb-1">Processing Verdict</span>
-                                  <span className="font-semibold text-neutral-900 dark:text-neutral-100">{qcData[p._id].freq.processing_verdict || 'Clean ✅'}</span>
+                                  <span className="font-semibold text-neutral-100">{qcData[p._id].freq.processing_verdict || 'Clean ✅'}</span>
                                 </div>
                               </div>
 
                               <div className="pt-2">
                                 <span className="block text-neutral-400 font-bold uppercase tracking-wider mb-2">Spectrogram Plot (20Hz - 20kHz)</span>
                                 {qcData[p._id].freq.spectrogram_img ? (
-                                  <div className="rounded-xl overflow-hidden border border-neutral-200 dark:border-neutral-800">
+                                  <div className="rounded-xl overflow-hidden border border-neutral-700">
                                     <img 
                                       src={`data:image/png;base64,${qcData[p._id].freq.spectrogram_img}`} 
                                       alt="Spectrogram Plot" 
@@ -3021,7 +3021,7 @@ export default function QaPhrases() {
                                     />
                                   </div>
                                 ) : (
-                                  <div className="p-4 text-center text-neutral-400 bg-white dark:bg-neutral-850 border border-dashed border-neutral-300 dark:border-neutral-700 rounded-xl">
+                                  <div className="p-4 text-center text-neutral-400 bg-neutral-800 border border-dashed border-neutral-700 rounded-xl">
                                     No spectrogram plot generated.
                                   </div>
                                 )}
@@ -3051,24 +3051,27 @@ export default function QaPhrases() {
               <motion.div 
                 initial={{ opacity: 0 }} 
                 animate={{ opacity: 1 }} 
-                className="card text-center py-16 px-4 border border-dashed border-neutral-700 bg-neutral-900/40 rounded-2xl my-6"
+                className="relative overflow-hidden rounded-3xl border border-neutral-800 bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 shadow-xl text-center py-16 px-4 my-6"
               >
-                <div className="w-12 h-12 rounded-full bg-neutral-800 text-amber-400 mx-auto mb-3 flex items-center justify-center border border-neutral-700">
-                  <Filter className="w-6 h-6" />
+                <div className="absolute top-0 right-0 w-64 h-64 bg-primary-500/5 rounded-full blur-3xl pointer-events-none" />
+                <div className="relative z-10">
+                  <div className="w-12 h-12 rounded-2xl bg-neutral-800 text-neutral-400 mx-auto mb-3 flex items-center justify-center border border-neutral-700">
+                    <Filter className="w-6 h-6" />
+                  </div>
+                  <h3 className="text-base font-bold text-neutral-200">No Matching Phrases Found</h3>
+                  <p className="text-xs text-neutral-400 mt-1 max-w-sm mx-auto">
+                    There are {queue.length} phrases loaded in this view, but none match your active filter settings.
+                  </p>
+                  {activeFiltersCount > 0 && (
+                    <button
+                      type="button"
+                      onClick={handleResetFilters}
+                      className="mt-4 px-4 py-2 bg-neutral-800 hover:bg-neutral-750 text-neutral-200 border border-neutral-700 text-xs font-bold rounded-xl transition-colors inline-flex items-center gap-1.5"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" /> Clear All Filters
+                    </button>
+                  )}
                 </div>
-                <h3 className="text-base font-bold text-neutral-200">No Matching Phrases Found</h3>
-                <p className="text-xs text-neutral-400 mt-1 max-w-sm mx-auto">
-                  There are {queue.length} phrases loaded in this view, but none match your active filter settings.
-                </p>
-                {activeFiltersCount > 0 && (
-                  <button
-                    type="button"
-                    onClick={handleResetFilters}
-                    className="mt-4 px-4 py-2 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-xs font-bold rounded-lg transition-colors inline-flex items-center gap-1.5"
-                  >
-                    <RotateCcw className="w-3.5 h-3.5" /> Clear All Filters
-                  </button>
-                )}
               </motion.div>
             ) : null}
 
@@ -3153,9 +3156,11 @@ export default function QaPhrases() {
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.95 }}
-                className="bg-neutral-900/95 border border-neutral-800 rounded-2xl p-6 w-full max-w-2xl shadow-2xl relative text-left text-white backdrop-blur-xl"
+                className="relative overflow-hidden rounded-3xl border border-neutral-800 bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 shadow-2xl p-6 w-full max-w-2xl text-left text-white"
               >
-                <div className="flex items-center justify-between border-b border-neutral-800 pb-4 mb-4">
+                <div className="absolute top-0 right-0 w-64 h-64 bg-primary-500/5 rounded-full blur-3xl pointer-events-none" />
+                <div className="relative z-10">
+                  <div className="flex items-center justify-between border-b border-neutral-800 pb-4 mb-4">
                   <div className="flex items-center gap-3">
                     <div className="bg-purple-500/10 text-purple-400 p-2.5 rounded-xl border border-purple-500/20 text-lg flex items-center justify-center">
                       ✂️
@@ -3315,6 +3320,7 @@ export default function QaPhrases() {
                       </>
                     )}
                   </div>
+                </div>
                 </div>
               </motion.div>
             </div>

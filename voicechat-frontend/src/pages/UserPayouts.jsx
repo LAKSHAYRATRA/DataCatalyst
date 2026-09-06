@@ -170,32 +170,53 @@ export default function UserPayouts() {
           <div className="bg-error-50 border border-error-200 text-error-700 px-4 py-3 rounded-lg">{error}</div>
         ) : (
           <>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="card">
-                <div className="text-sm text-neutral-600 dark:text-neutral-400 mb-1">Earned</div>
-                <div className="text-3xl font-bold text-neutral-900 dark:text-white">{money(summary?.totalMoneyMadeUsd)}</div>
-                <div className="text-xs text-neutral-500 dark:text-neutral-400 mt-2">From approved live calls, scripted calls, and phrases</div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="relative overflow-hidden rounded-3xl p-6 md:p-7 border border-neutral-800 bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 hover:border-neutral-700 shadow-xl transition-all duration-300 group">
+                <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/10 rounded-full blur-2xl pointer-events-none group-hover:bg-emerald-500/15 transition-all" />
+                <div className="relative z-10">
+                  <div className="text-xs font-bold text-neutral-400 uppercase tracking-widest mb-1.5 flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+                    Earned
+                  </div>
+                  <div className="text-3xl md:text-4xl font-black text-white drop-shadow-sm font-mono">{money(summary?.totalMoneyMadeUsd)}</div>
+                  <div className="text-xs text-neutral-400 mt-2 font-medium">From approved live calls, scripted calls, and phrases</div>
+                </div>
               </div>
-              <div className="card">
-                <div className="text-sm text-neutral-600 dark:text-neutral-400 mb-1">Paid Out</div>
-                <div className="text-3xl font-bold text-neutral-900 dark:text-white">{money(summary?.totalPaidOutUsd)}</div>
-                <div className="text-xs text-neutral-500 dark:text-neutral-400 mt-2">{data?.payments?.length || 0} payout records</div>
+
+              <div className="relative overflow-hidden rounded-3xl p-6 md:p-7 border border-neutral-800 bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 hover:border-neutral-700 shadow-xl transition-all duration-300 group">
+                <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/10 rounded-full blur-2xl pointer-events-none group-hover:bg-indigo-500/15 transition-all" />
+                <div className="relative z-10">
+                  <div className="text-xs font-bold text-neutral-400 uppercase tracking-widest mb-1.5 flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-indigo-400"></span>
+                    Paid Out
+                  </div>
+                  <div className="text-3xl md:text-4xl font-black text-white drop-shadow-sm font-mono">{money(summary?.totalPaidOutUsd)}</div>
+                  <div className="text-xs text-neutral-400 mt-2 font-medium">{data?.payments?.length || 0} payout records</div>
+                </div>
               </div>
-              <div className="card">
-                <div className="text-sm text-neutral-600 dark:text-neutral-400 mb-1">Remaining Payout</div>
-                <div className="text-3xl font-bold text-warning-700 dark:text-warning-500">{money(summary?.totalRemainingPayoutUsd)}</div>
-                <div className="text-xs text-neutral-500 dark:text-neutral-400 mt-2">{pendingCallsCount} live calls, {pendingScriptedCount} scripted calls, {pendingPhrasesCount} phrases pending</div>
+
+              <div className="relative overflow-hidden rounded-3xl p-6 md:p-7 border border-neutral-800 bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 hover:border-neutral-700 shadow-xl transition-all duration-300 group">
+                <div className="absolute top-0 right-0 w-32 h-32 bg-cyan-500/10 rounded-full blur-2xl pointer-events-none group-hover:bg-cyan-500/15 transition-all" />
+                <div className="relative z-10">
+                  <div className="text-xs font-bold text-neutral-400 uppercase tracking-widest mb-1.5 flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-cyan-400"></span>
+                    Remaining Payout
+                  </div>
+                  <div className="text-3xl md:text-4xl font-black text-white drop-shadow-sm font-mono">{money(summary?.totalRemainingPayoutUsd)}</div>
+                  <div className="text-xs text-neutral-400 mt-2 font-medium">{pendingCallsCount} live calls, {pendingScriptedCount} scripted calls, {pendingPhrasesCount} phrases pending</div>
+                </div>
               </div>
             </div>
 
-            <div className="card border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900/50 p-6 rounded-2xl">
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+            <div className="relative overflow-hidden rounded-3xl p-6 md:p-7 border border-neutral-800 bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 hover:border-neutral-700 shadow-xl transition-all duration-300 group">
+              <div className="absolute top-0 right-0 w-32 h-32 bg-primary-500/10 rounded-full blur-2xl pointer-events-none" />
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 relative z-10">
                 <div>
-                  <h3 className="text-lg font-semibold text-neutral-900 dark:text-white flex items-center gap-2">
+                  <h3 className="text-lg font-bold text-white flex items-center gap-2">
                     <span className="w-2.5 h-2.5 rounded-full bg-primary-500 animate-pulse"></span>
                     UPI ID for Payouts
                   </h3>
-                  <p className="text-sm text-neutral-500 dark:text-neutral-400 mt-1">
+                  <p className="text-sm text-neutral-400 mt-1 font-medium">
                     Your earnings will be sent to this UPI account.
                   </p>
                 </div>
@@ -208,14 +229,14 @@ export default function UserPayouts() {
                         value={upiInput}
                         onChange={(e) => setUpiInput(e.target.value)}
                         placeholder="username@bank"
-                        className="px-4 py-2 rounded-xl border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 w-full sm:w-64"
+                        className="px-4 py-2.5 rounded-2xl border border-neutral-700 bg-neutral-800 text-white text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 w-full sm:w-64"
                         disabled={upiSaving}
                         required
                       />
                       <div className="flex gap-2">
                         <button
                           type="submit"
-                          className="px-4 py-2 rounded-xl bg-primary-600 hover:bg-primary-700 text-white font-semibold text-sm shadow-sm transition-all duration-200"
+                          className="px-5 py-2.5 rounded-2xl bg-primary-600 hover:bg-primary-500 text-white font-bold text-sm shadow-md transition-all duration-200"
                           disabled={upiSaving}
                         >
                           {upiSaving ? "Saving..." : "Save"}
@@ -227,7 +248,7 @@ export default function UserPayouts() {
                             setUpiInput(data?.summary?.user?.upiId || "");
                             setUpiError("");
                           }}
-                          className="px-4 py-2 rounded-xl bg-neutral-200 dark:bg-neutral-800 hover:bg-neutral-300 dark:hover:bg-neutral-700 text-neutral-700 dark:text-neutral-300 font-semibold text-sm transition-all duration-200"
+                          className="px-4 py-2.5 rounded-2xl bg-neutral-800 hover:bg-neutral-700 text-neutral-300 font-bold text-sm transition-all duration-200"
                           disabled={upiSaving}
                         >
                           Cancel
@@ -237,11 +258,11 @@ export default function UserPayouts() {
                   ) : (
                     <div className="flex flex-wrap items-center gap-4">
                       {data?.summary?.user?.upiId ? (
-                        <div className="bg-neutral-100 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 px-4 py-2 rounded-xl text-sm font-mono text-neutral-900 dark:text-white">
+                        <div className="bg-neutral-800/80 border border-neutral-700 px-4 py-2 rounded-2xl text-sm font-mono text-white">
                           {data.summary.user.upiId}
                         </div>
                       ) : (
-                        <div className="text-sm font-semibold text-error-600 dark:text-error-400 flex items-center gap-1.5">
+                        <div className="text-sm font-semibold text-rose-400 flex items-center gap-1.5">
                           ⚠️ No UPI ID added
                         </div>
                       )}
@@ -250,7 +271,7 @@ export default function UserPayouts() {
                           setEditingUpi(true);
                           setUpiInput(data?.summary?.user?.upiId || "");
                         }}
-                        className="px-4 py-2 rounded-xl bg-neutral-200 dark:bg-neutral-800 hover:bg-neutral-300 dark:hover:bg-neutral-700 text-neutral-700 dark:text-neutral-300 font-semibold text-sm transition-all duration-200"
+                        className="px-5 py-2.5 rounded-2xl bg-neutral-800 hover:bg-neutral-700 text-neutral-200 font-bold text-sm border border-neutral-700 transition-all duration-200"
                       >
                         {data?.summary?.user?.upiId ? "Modify" : "Add UPI ID"}
                       </button>
@@ -260,19 +281,19 @@ export default function UserPayouts() {
               </div>
               
               {upiError && (
-                <div className="mt-3 text-sm text-error-600 dark:text-error-400">
+                <div className="mt-3 text-sm text-rose-400 relative z-10 font-semibold">
                   {upiError}
                 </div>
               )}
               {upiSuccess && (
-                <div className="mt-3 text-sm text-success-600 dark:text-success-400">
+                <div className="mt-3 text-sm text-emerald-400 relative z-10 font-semibold">
                   {upiSuccess}
                 </div>
               )}
             </div>
 
-            <div className="card relative overflow-hidden bg-gradient-to-r from-[#5865F2]/10 to-[#5865F2]/20 border border-[#5865F2]/30 p-6 rounded-2xl flex flex-col md:flex-row md:items-center justify-between gap-6 transition-all duration-300 hover:shadow-lg hover:shadow-[#5865F2]/5">
-              <div className="absolute top-0 right-0 w-32 h-32 bg-[#5865F2] rounded-full blur-[70px] opacity-25 pointer-events-none transform translate-x-1/3 -translate-y-1/3"></div>
+            <div className="relative overflow-hidden bg-gradient-to-r from-[#5865F2]/15 via-neutral-900/90 to-[#5865F2]/10 border border-[#5865F2]/30 p-6 md:p-7 rounded-3xl flex flex-col md:flex-row md:items-center justify-between gap-6 transition-all duration-300 hover:shadow-xl hover:shadow-[#5865F2]/5">
+              <div className="absolute top-0 right-0 w-36 h-36 bg-[#5865F2] rounded-full blur-[80px] opacity-20 pointer-events-none"></div>
               <div className="flex items-center gap-4 relative z-10">
                 <div className="w-12 h-12 bg-[#5865F2] rounded-2xl flex items-center justify-center shadow-lg shadow-[#5865F2]/30 shrink-0">
                   <svg className="w-6 h-6 fill-current text-white" viewBox="0 0 127.14 96.36">
@@ -280,8 +301,8 @@ export default function UserPayouts() {
                   </svg>
                 </div>
                 <div>
-                  <h3 className="text-lg font-bold text-neutral-950 dark:text-white">Join our Discord Community</h3>
-                  <p className="text-sm text-neutral-600 dark:text-neutral-400 mt-0.5">
+                  <h3 className="text-lg font-bold text-white">Join our Discord Community</h3>
+                  <p className="text-sm text-neutral-400 mt-0.5 font-medium">
                     Connect with fellow contributors, get real-time support, and stay updated on active tasks.
                   </p>
                 </div>
@@ -291,27 +312,28 @@ export default function UserPayouts() {
                 href="https://discord.gg/TVuj7Brytq"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="btn bg-[#5865F2] hover:bg-[#4752C4] text-white font-semibold text-sm px-6 py-3 rounded-xl transition-all duration-300 shadow-md shadow-[#5865F2]/20 hover:shadow-lg hover:shadow-[#5865F2]/30 text-center shrink-0 relative z-10"
+                className="btn bg-[#5865F2] hover:bg-[#4752C4] text-white font-bold text-sm px-6 py-3 rounded-2xl transition-all duration-300 shadow-md shadow-[#5865F2]/20 hover:shadow-lg hover:shadow-[#5865F2]/30 text-center shrink-0 relative z-10"
               >
                 Join Discord
               </a>
             </div>
 
-            <div className="card">
-              <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6 border-b border-neutral-200 dark:border-neutral-800 pb-5">
-                <div className="inline-flex flex-wrap p-1.5 rounded-2xl bg-neutral-200/80 dark:bg-neutral-900/90 border border-neutral-300 dark:border-neutral-800 shadow-inner gap-1.5">
+            <div className="relative overflow-hidden rounded-3xl p-6 md:p-8 border border-neutral-800 bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 shadow-xl">
+              <div className="absolute top-0 right-0 w-64 h-64 bg-primary-500/5 rounded-full blur-3xl pointer-events-none" />
+              <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6 border-b border-neutral-800 pb-5 relative z-10">
+                <div className="inline-flex flex-wrap p-1.5 rounded-2xl bg-neutral-900 border border-neutral-800 shadow-inner gap-1.5">
                   <button
                     onClick={() => { setTab("calls"); setSubTab("all"); }}
                     className={`flex items-center gap-2.5 px-5 py-2.5 rounded-xl text-sm font-bold transition-all duration-300 ${
                       tab === "calls"
                         ? "bg-gradient-to-r from-primary-600 to-indigo-600 text-white shadow-lg shadow-primary-500/30 scale-[1.02]"
-                        : "text-neutral-700 dark:text-neutral-300 hover:text-neutral-900 dark:hover:text-white hover:bg-neutral-300/60 dark:hover:bg-neutral-800"
+                        : "text-neutral-300 hover:text-white hover:bg-neutral-800"
                     }`}
                   >
-                    <PhoneCall className={`w-4 h-4 ${tab === "calls" ? "text-white" : "text-primary-600 dark:text-primary-400"}`} />
+                    <PhoneCall className={`w-4 h-4 ${tab === "calls" ? "text-white" : "text-primary-400"}`} />
                     <span>Calls</span>
                     <span className={`px-2 py-0.5 rounded-full text-xs font-extrabold ${
-                      tab === "calls" ? "bg-white/20 text-white" : "bg-neutral-300 dark:bg-neutral-800 text-neutral-800 dark:text-neutral-200"
+                      tab === "calls" ? "bg-white/20 text-white" : "bg-neutral-800 text-neutral-300"
                     }`}>
                       {callsList.length}
                     </span>
@@ -322,13 +344,13 @@ export default function UserPayouts() {
                     className={`flex items-center gap-2.5 px-5 py-2.5 rounded-xl text-sm font-bold transition-all duration-300 ${
                       tab === "scripted"
                         ? "bg-gradient-to-r from-primary-600 to-indigo-600 text-white shadow-lg shadow-primary-500/30 scale-[1.02]"
-                        : "text-neutral-700 dark:text-neutral-300 hover:text-neutral-900 dark:hover:text-white hover:bg-neutral-300/60 dark:hover:bg-neutral-800"
+                        : "text-neutral-300 hover:text-white hover:bg-neutral-800"
                     }`}
                   >
-                    <Radio className={`w-4 h-4 ${tab === "scripted" ? "text-white" : "text-primary-600 dark:text-primary-400"}`} />
+                    <Radio className={`w-4 h-4 ${tab === "scripted" ? "text-white" : "text-primary-400"}`} />
                     <span>Scripted Calls</span>
                     <span className={`px-2 py-0.5 rounded-full text-xs font-extrabold ${
-                      tab === "scripted" ? "bg-white/20 text-white" : "bg-neutral-300 dark:bg-neutral-800 text-neutral-800 dark:text-neutral-200"
+                      tab === "scripted" ? "bg-white/20 text-white" : "bg-neutral-800 text-neutral-300"
                     }`}>
                       {scriptedList.length}
                     </span>
@@ -339,13 +361,13 @@ export default function UserPayouts() {
                     className={`flex items-center gap-2.5 px-5 py-2.5 rounded-xl text-sm font-bold transition-all duration-300 ${
                       tab === "phrases"
                         ? "bg-gradient-to-r from-primary-600 to-indigo-600 text-white shadow-lg shadow-primary-500/30 scale-[1.02]"
-                        : "text-neutral-700 dark:text-neutral-300 hover:text-neutral-900 dark:hover:text-white hover:bg-neutral-300/60 dark:hover:bg-neutral-800"
+                        : "text-neutral-300 hover:text-white hover:bg-neutral-800"
                     }`}
                   >
-                    <Mic2 className={`w-4 h-4 ${tab === "phrases" ? "text-white" : "text-primary-600 dark:text-primary-400"}`} />
+                    <Mic2 className={`w-4 h-4 ${tab === "phrases" ? "text-white" : "text-primary-400"}`} />
                     <span>Phrases</span>
                     <span className={`px-2 py-0.5 rounded-full text-xs font-extrabold ${
-                      tab === "phrases" ? "bg-white/20 text-white" : "bg-neutral-300 dark:bg-neutral-800 text-neutral-800 dark:text-neutral-200"
+                      tab === "phrases" ? "bg-white/20 text-white" : "bg-neutral-800 text-neutral-300"
                     }`}>
                       {data?.phrases?.length || 0}
                     </span>
@@ -356,20 +378,20 @@ export default function UserPayouts() {
                     className={`flex items-center gap-2.5 px-5 py-2.5 rounded-xl text-sm font-bold transition-all duration-300 ${
                       tab === "payments"
                         ? "bg-gradient-to-r from-primary-600 to-indigo-600 text-white shadow-lg shadow-primary-500/30 scale-[1.02]"
-                        : "text-neutral-700 dark:text-neutral-300 hover:text-neutral-900 dark:hover:text-white hover:bg-neutral-300/60 dark:hover:bg-neutral-800"
+                        : "text-neutral-300 hover:text-white hover:bg-neutral-800"
                     }`}
                   >
-                    <CreditCard className={`w-4 h-4 ${tab === "payments" ? "text-white" : "text-primary-600 dark:text-primary-400"}`} />
+                    <CreditCard className={`w-4 h-4 ${tab === "payments" ? "text-white" : "text-primary-400"}`} />
                     <span>Payments</span>
                     <span className={`px-2 py-0.5 rounded-full text-xs font-extrabold ${
-                      tab === "payments" ? "bg-white/20 text-white" : "bg-neutral-300 dark:bg-neutral-800 text-neutral-800 dark:text-neutral-200"
+                      tab === "payments" ? "bg-white/20 text-white" : "bg-neutral-800 text-neutral-300"
                     }`}>
                       {data?.payments?.length || 0}
                     </span>
                   </button>
                 </div>
-                <div className="text-xs font-bold uppercase tracking-wider text-neutral-500 dark:text-neutral-400 bg-neutral-100 dark:bg-neutral-900/80 px-3.5 py-2 rounded-xl border border-neutral-200 dark:border-neutral-800 self-start md:self-auto">
-                  Showing <span className="text-neutral-900 dark:text-white font-extrabold">
+                <div className="text-xs font-bold uppercase tracking-wider text-neutral-400 bg-neutral-900 px-3.5 py-2 rounded-xl border border-neutral-800 self-start md:self-auto">
+                  Showing <span className="text-white font-extrabold">
                     {tab === "calls" ? `${callsList.length} calls` : tab === "scripted" ? `${scriptedList.length} scripted calls` : tab === "phrases" ? `${data?.phrases?.length || 0} phrases` : `${data?.payments?.length || 0} payments`}
                   </span>
                 </div>
@@ -379,18 +401,18 @@ export default function UserPayouts() {
               {(tab === "calls" || tab === "scripted" || tab === "phrases") && (
                 <div className="mb-6 space-y-4">
                   {/* Duration Counters */}
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4 bg-neutral-900 dark:bg-neutral-900 text-white p-5 rounded-2xl border border-neutral-800 shadow-md">
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4 bg-neutral-950/80 text-white p-6 rounded-3xl border border-neutral-800 shadow-inner relative overflow-hidden">
                     <div>
-                      <span className="block text-xs font-bold text-success-400 uppercase tracking-wider mb-1 flex items-center gap-1.5">
-                        <span className="w-2 h-2 rounded-full bg-success-400"></span> Approved Duration
+                      <span className="block text-xs font-bold text-emerald-400 uppercase tracking-wider mb-1 flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-emerald-400"></span> Approved Duration
                       </span>
                       <span className="font-mono font-bold text-xl md:text-2xl text-white tracking-wide">
                         {formatHHMMSSFromSeconds(tab === "calls" ? callApprovedSecs : tab === "scripted" ? scriptedApprovedSecs : phraseApprovedSecs)}
                       </span>
                     </div>
                     <div>
-                      <span className="block text-xs font-bold text-warning-400 uppercase tracking-wider mb-1 flex items-center gap-1.5">
-                        <span className="w-2 h-2 rounded-full bg-warning-400"></span> Pending Review Duration
+                      <span className="block text-xs font-bold text-cyan-400 uppercase tracking-wider mb-1 flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-cyan-400"></span> Pending Review Duration
                       </span>
                       <span className="font-mono font-bold text-xl md:text-2xl text-white tracking-wide">
                         {formatHHMMSSFromSeconds(tab === "calls" ? callPendingSecs : tab === "scripted" ? scriptedPendingSecs : phrasePendingSecs)}
@@ -408,13 +430,13 @@ export default function UserPayouts() {
 
                   {/* Sub-filters Toggle */}
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-xs font-bold uppercase tracking-wider text-neutral-500 mr-1">Filter Status:</span>
+                    <span className="text-xs font-bold uppercase tracking-wider text-neutral-400 mr-1">Filter Status:</span>
                     <button
                       onClick={() => setSubTab("all")}
                       className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all ${
                         subTab === "all"
-                          ? "bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 shadow-sm"
-                          : "bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400 hover:bg-neutral-200 dark:hover:bg-neutral-700"
+                          ? "bg-white text-neutral-950 font-black shadow-sm"
+                          : "bg-neutral-850 text-neutral-300 hover:bg-neutral-800"
                       }`}
                     >
                       All ({tab === "calls" ? callsList.length : tab === "scripted" ? scriptedList.length : phrasesList.length})
@@ -423,8 +445,8 @@ export default function UserPayouts() {
                       onClick={() => setSubTab("pending")}
                       className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all ${
                         subTab === "pending"
-                          ? "bg-warning-500 text-white shadow-sm"
-                          : "bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400 hover:bg-neutral-200 dark:hover:bg-neutral-700"
+                          ? "bg-primary-600 text-white font-black shadow-sm"
+                          : "bg-neutral-850 text-neutral-300 hover:bg-neutral-800"
                       }`}
                     >
                       Pending ({tab === "calls" ? pendingCallsCount : tab === "scripted" ? pendingScriptedCount : pendingPhrasesCount})
@@ -433,8 +455,8 @@ export default function UserPayouts() {
                       onClick={() => setSubTab("reviewed")}
                       className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all ${
                         subTab === "reviewed"
-                          ? "bg-success-600 text-white shadow-sm"
-                          : "bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400 hover:bg-neutral-200 dark:hover:bg-neutral-700"
+                          ? "bg-emerald-600 text-white font-black shadow-sm"
+                          : "bg-neutral-850 text-neutral-300 hover:bg-neutral-800"
                       }`}
                     >
                       Reviewed ({tab === "calls" ? reviewedCallsCount : tab === "scripted" ? reviewedScriptedCount : reviewedPhrasesCount})
@@ -446,19 +468,19 @@ export default function UserPayouts() {
               {tab === "calls" ? (
                 <div className="space-y-3">
                   {filteredCalls.map((call) => (
-                    <div key={call.callId} className="rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900/50 p-4 flex flex-col gap-3 transition-colors duration-300">
+                    <div key={call.callId} className="rounded-2xl border border-neutral-800 bg-neutral-900/60 hover:bg-neutral-850/80 hover:border-neutral-700 p-5 flex flex-col gap-3 transition-all shadow-sm">
                       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
                         <div>
-                          <div className="text-sm font-semibold text-neutral-900 dark:text-white">{call.topic}</div>
-                          <div className="text-sm text-neutral-600 dark:text-neutral-400">{call.subtopic || "-"} • {call.language || "-"}</div>
-                          <div className="text-xs text-neutral-500 dark:text-neutral-500 mt-2">{formatDate(call.startedAt)} • {call.durationMinutes?.toFixed?.(2) || "0.00"} min</div>
+                          <div className="text-base font-bold text-white">{call.topic}</div>
+                          <div className="text-xs text-neutral-400 mt-0.5">{call.subtopic || "-"} • {call.language || "-"}</div>
+                          <div className="text-xs text-neutral-500 mt-2 font-mono">{formatDate(call.startedAt)} • {call.durationMinutes?.toFixed?.(2) || "0.00"} min</div>
                         </div>
                         <div className="text-left md:text-right">
-                          <div className="text-xl font-bold text-neutral-900 dark:text-white">{money(call.payoutUsd)}</div>
-                          <span className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-semibold capitalize mt-1 ${
-                            call.status === "approved" ? "bg-success-100 text-success-700 dark:bg-success-900/40 dark:text-success-300" :
-                            call.status === "rejected" ? "bg-error-100 text-error-700 dark:bg-error-900/40 dark:text-error-300" :
-                            "bg-warning-100 text-warning-700 dark:bg-warning-900/40 dark:text-warning-300"
+                          <div className="text-xl font-bold font-mono text-white">{money(call.payoutUsd)}</div>
+                          <span className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-bold capitalize mt-1 border ${
+                            call.status === "approved" ? "bg-emerald-950/60 text-emerald-300 border-emerald-800/60" :
+                            call.status === "rejected" ? "bg-rose-950/60 text-rose-300 border-rose-800/60" :
+                            "bg-cyan-950/60 text-cyan-300 border-cyan-800/60"
                           }`}>
                             {call.status === "recorded" || call.status === "pending" ? "Pending Review" : call.status}
                           </span>
@@ -466,38 +488,38 @@ export default function UserPayouts() {
                       </div>
 
                       {call.reviewNote && (
-                        <div className="mt-1 pt-3 border-t border-neutral-100 dark:border-neutral-800/80 bg-neutral-50/80 dark:bg-neutral-800/40 p-3 rounded-xl text-xs">
-                          <div className="text-neutral-700 dark:text-neutral-300 flex items-start gap-2">
-                            <span className="font-semibold text-neutral-900 dark:text-white shrink-0">Feedback Note:</span>
+                        <div className="mt-1 pt-3 border-t border-neutral-800/80 bg-neutral-950/60 p-3.5 rounded-xl text-xs">
+                          <div className="text-neutral-300 flex items-start gap-2">
+                            <span className="font-bold text-white shrink-0">Feedback Note:</span>
                             <span className="italic">"{call.reviewNote}"</span>
                           </div>
                         </div>
                       )}
                     </div>
                   ))}
-                  {!filteredCalls.length && <div className="text-center py-12 text-neutral-500 dark:text-neutral-400">No {subTab !== "all" ? subTab : ""} calls found.</div>}
+                  {!filteredCalls.length && <div className="text-center py-12 text-neutral-400">No {subTab !== "all" ? subTab : ""} calls found.</div>}
                 </div>
               ) : tab === "scripted" ? (
                 <div className="space-y-3">
                   {filteredScripted.map((call) => (
-                    <div key={call.callId} className="rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900/50 p-4 flex flex-col gap-3 transition-colors duration-300">
+                    <div key={call.callId} className="rounded-2xl border border-neutral-800 bg-neutral-900/60 hover:bg-neutral-850/80 hover:border-neutral-700 p-5 flex flex-col gap-3 transition-all shadow-sm">
                       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
                         <div>
-                          <div className="text-sm font-semibold text-neutral-900 dark:text-white flex items-center gap-2">
-                            <Radio className="w-4 h-4 text-indigo-500" />
+                          <div className="text-base font-bold text-white flex items-center gap-2">
+                            <Radio className="w-4 h-4 text-indigo-400" />
                             <span>{call.subtopic && call.subtopic !== "-" ? call.subtopic : call.topic || "Scripted Conversation"}</span>
                           </div>
-                          <div className="text-sm text-neutral-600 dark:text-neutral-400 mt-0.5">
+                          <div className="text-xs text-neutral-400 mt-0.5">
                             {call.topic && call.topic !== "-" && call.topic !== call.subtopic ? `${call.topic} • ` : ""}<span className="capitalize">{call.language || "-"}</span>
                           </div>
-                          <div className="text-xs text-neutral-500 dark:text-neutral-500 mt-2">{formatDate(call.startedAt)} • {call.durationMinutes?.toFixed?.(2) || "0.00"} min</div>
+                          <div className="text-xs text-neutral-500 mt-2 font-mono">{formatDate(call.startedAt)} • {call.durationMinutes?.toFixed?.(2) || "0.00"} min</div>
                         </div>
                         <div className="text-left md:text-right">
-                          <div className="text-xl font-bold text-neutral-900 dark:text-white">{money(call.payoutUsd)}</div>
-                          <span className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-semibold capitalize mt-1 ${
-                            call.status === "approved" ? "bg-success-100 text-success-700 dark:bg-success-900/40 dark:text-success-300" :
-                            call.status === "rejected" ? "bg-error-100 text-error-700 dark:bg-error-900/40 dark:text-error-300" :
-                            "bg-warning-100 text-warning-700 dark:bg-warning-900/40 dark:text-warning-300"
+                          <div className="text-xl font-bold font-mono text-white">{money(call.payoutUsd)}</div>
+                          <span className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-bold capitalize mt-1 border ${
+                            call.status === "approved" ? "bg-emerald-950/60 text-emerald-300 border-emerald-800/60" :
+                            call.status === "rejected" ? "bg-rose-950/60 text-rose-300 border-rose-800/60" :
+                            "bg-cyan-950/60 text-cyan-300 border-cyan-800/60"
                           }`}>
                             {call.status === "recorded" || call.status === "pending" ? "Pending Review" : call.status}
                           </span>
@@ -505,33 +527,33 @@ export default function UserPayouts() {
                       </div>
 
                       {call.reviewNote && (
-                        <div className="mt-1 pt-3 border-t border-neutral-100 dark:border-neutral-800/80 bg-neutral-50/80 dark:bg-neutral-800/40 p-3 rounded-xl text-xs">
-                          <div className="text-neutral-700 dark:text-neutral-300 flex items-start gap-2">
-                            <span className="font-semibold text-neutral-900 dark:text-white shrink-0">Feedback Note:</span>
+                        <div className="mt-1 pt-3 border-t border-neutral-800/80 bg-neutral-950/60 p-3.5 rounded-xl text-xs">
+                          <div className="text-neutral-300 flex items-start gap-2">
+                            <span className="font-bold text-white shrink-0">Feedback Note:</span>
                             <span className="italic">"{call.reviewNote}"</span>
                           </div>
                         </div>
                       )}
                     </div>
                   ))}
-                  {!filteredScripted.length && <div className="text-center py-12 text-neutral-500 dark:text-neutral-400">No {subTab !== "all" ? subTab : ""} scripted calls found.</div>}
+                  {!filteredScripted.length && <div className="text-center py-12 text-neutral-400">No {subTab !== "all" ? subTab : ""} scripted calls found.</div>}
                 </div>
               ) : tab === "phrases" ? (
                 <div className="space-y-3">
                   {filteredPhrases.map((phrase) => (
-                    <div key={phrase.phraseId} className="rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900/50 p-4 flex flex-col gap-3 transition-colors duration-300">
+                    <div key={phrase.phraseId} className="rounded-2xl border border-neutral-800 bg-neutral-900/60 hover:bg-neutral-850/80 hover:border-neutral-700 p-5 flex flex-col gap-3 transition-all shadow-sm">
                       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
                         <div className="flex-1 min-w-0 pr-4">
-                          <div className="text-sm font-semibold text-neutral-900 dark:text-white truncate" title={phrase.text}>{phrase.text}</div>
-                          <div className="text-sm text-neutral-600 dark:text-neutral-400 capitalize">{phrase.language || "-"}</div>
-                          <div className="text-xs text-neutral-500 dark:text-neutral-500 mt-2">{formatDate(phrase.recordedAt)} • {phrase.duration?.toFixed?.(2) || "0.00"} sec</div>
+                          <div className="text-base font-bold text-white truncate" title={phrase.text}>{phrase.text}</div>
+                          <div className="text-xs text-neutral-400 capitalize">{phrase.language || "-"}</div>
+                          <div className="text-xs text-neutral-500 mt-2 font-mono">{formatDate(phrase.recordedAt)} • {phrase.duration?.toFixed?.(2) || "0.00"} sec</div>
                         </div>
                         <div className="text-left md:text-right flex-shrink-0">
-                          <div className="text-xl font-bold text-neutral-900 dark:text-white">{money(phrase.payoutUsd)}</div>
-                          <span className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-semibold capitalize mt-1 ${
-                            phrase.status === "approved" ? "bg-success-100 text-success-700 dark:bg-success-900/40 dark:text-success-300" :
-                            phrase.status === "rejected" ? "bg-error-100 text-error-700 dark:bg-error-900/40 dark:text-error-300" :
-                            "bg-warning-100 text-warning-700 dark:bg-warning-900/40 dark:text-warning-300"
+                          <div className="text-xl font-bold font-mono text-white">{money(phrase.payoutUsd)}</div>
+                          <span className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-bold capitalize mt-1 border ${
+                            phrase.status === "approved" ? "bg-emerald-950/60 text-emerald-300 border-emerald-800/60" :
+                            phrase.status === "rejected" ? "bg-rose-950/60 text-rose-300 border-rose-800/60" :
+                            "bg-cyan-950/60 text-cyan-300 border-cyan-800/60"
                           }`}>
                             {phrase.status === "recorded" || phrase.status === "pending" ? "Pending Review" : phrase.status}
                           </span>
@@ -539,40 +561,40 @@ export default function UserPayouts() {
                       </div>
 
                       {phrase.qaComment && (
-                        <div className="mt-1 pt-3 border-t border-neutral-100 dark:border-neutral-800/80 bg-neutral-50/80 dark:bg-neutral-800/40 p-3 rounded-xl text-xs">
-                          <div className="text-neutral-700 dark:text-neutral-300 flex items-start gap-2">
-                            <span className="font-semibold text-neutral-900 dark:text-white shrink-0">Feedback Note:</span>
+                        <div className="mt-1 pt-3 border-t border-neutral-800/80 bg-neutral-950/60 p-3.5 rounded-xl text-xs">
+                          <div className="text-neutral-300 flex items-start gap-2">
+                            <span className="font-bold text-white shrink-0">Feedback Note:</span>
                             <span className="italic">"{phrase.qaComment}"</span>
                           </div>
                         </div>
                       )}
                     </div>
                   ))}
-                  {!filteredPhrases.length && <div className="text-center py-12 text-neutral-500 dark:text-neutral-400">No {subTab !== "all" ? subTab : ""} phrases found.</div>}
+                  {!filteredPhrases.length && <div className="text-center py-12 text-neutral-400">No {subTab !== "all" ? subTab : ""} phrases found.</div>}
                 </div>
               ) : (
                 (data?.payments || []).length ? (
                   <div className="overflow-x-auto">
                     <table className="w-full">
                       <thead>
-                        <tr className="border-b border-neutral-200 dark:border-neutral-800">
+                        <tr className="border-b border-neutral-800 bg-neutral-900/80 uppercase text-[11px] tracking-widest text-neutral-400">
                           {["Amount", "Paid At", "Details"].map((h) => (
-                            <th key={h} className="px-4 py-3 text-left text-sm font-semibold text-neutral-700 dark:text-neutral-300">{h}</th>
+                            <th key={h} className="px-6 py-4 text-left font-bold">{h}</th>
                           ))}
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-neutral-200 dark:divide-neutral-800">
+                      <tbody className="divide-y divide-neutral-800/80">
                         {(data?.payments || []).map((payment) => (
-                          <tr key={payment.id}>
-                            <td className="px-4 py-4 text-sm font-semibold text-neutral-900 dark:text-white">{money(payment.amountUsd)}</td>
-                            <td className="px-4 py-4 text-sm text-neutral-700 dark:text-neutral-300">{formatDate(payment.paidAt)}</td>
-                            <td className="px-4 py-4 text-sm text-neutral-600 dark:text-neutral-400">{payment.note || "-"}</td>
+                          <tr key={payment.id} className="hover:bg-neutral-800/30 transition-colors">
+                            <td className="px-6 py-4 text-sm font-bold font-mono text-white">{money(payment.amountUsd)}</td>
+                            <td className="px-6 py-4 text-sm text-neutral-300">{formatDate(payment.paidAt)}</td>
+                            <td className="px-6 py-4 text-sm text-neutral-400">{payment.note || "-"}</td>
                           </tr>
                         ))}
                       </tbody>
                     </table>
                   </div>
-                ) : <div className="text-center py-12 text-neutral-500 dark:text-neutral-400">No payments have been recorded yet.</div>
+                ) : <div className="text-center py-12 text-neutral-400">No payments have been recorded yet.</div>
               )}
             </div>
           </>

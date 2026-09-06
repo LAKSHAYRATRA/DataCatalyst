@@ -78,7 +78,7 @@ export default function AdminPayoutUser() {
   const summary = data?.summary;
 
   return (
-    <div className="min-h-screen bg-neutral-900 pt-16 md:pt-0 md:pl-64">
+    <div className="min-h-screen bg-neutral-950 text-neutral-100 pt-16 md:pt-0 md:pl-64">
       <AdminNav />
       <div className="max-w-7xl mx-auto px-4 md:px-6 py-6 md:py-12 space-y-6">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">

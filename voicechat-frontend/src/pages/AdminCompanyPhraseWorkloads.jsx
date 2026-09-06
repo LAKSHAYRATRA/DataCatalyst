@@ -85,7 +85,7 @@ export default function AdminCompanyPhraseWorkloads() {
   };
 
   return (
-    <div className="min-h-screen bg-neutral-900 flex text-white transition-colors duration-300">
+    <div className="min-h-screen bg-neutral-950 flex text-white transition-colors duration-300">
       <AdminNav />
       <main className="flex-1 md:ml-64 p-6 md:p-8 max-w-7xl mx-auto text-neutral-100">
         {/* Header Navigation */}
@@ -117,13 +117,13 @@ export default function AdminCompanyPhraseWorkloads() {
         {/* Company Allocation & Progress Summary Banner */}
         {summary && summary.totalPhrases > 0 && (
           <div className="mb-8 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-            <div className="bg-neutral-800/90 border border-neutral-700 p-4 rounded-xl shadow-sm">
+            <div className="bg-gradient-to-br from-neutral-950 via-neutral-900 to-neutral-850 border border-neutral-800 p-4 rounded-2xl shadow-sm">
               <div className="text-[11px] font-bold uppercase tracking-wider text-neutral-400">Total Workload</div>
               <div className="text-2xl font-black text-white mt-1">{summary.totalPhrases}</div>
               <div className="text-[11px] text-neutral-400 mt-0.5">{languages.length} {languages.length === 1 ? 'Language' : 'Languages'}</div>
             </div>
 
-            <div className="bg-indigo-950/40 border border-indigo-700/60 p-4 rounded-xl shadow-sm">
+            <div className="bg-gradient-to-br from-indigo-950/50 via-neutral-950 to-neutral-900 border border-indigo-700/60 p-4 rounded-2xl shadow-sm">
               <div className="text-[11px] font-bold uppercase tracking-wider text-indigo-300 flex items-center gap-1">
                 <span>🔒</span> Reserved
               </div>
@@ -133,7 +133,7 @@ export default function AdminCompanyPhraseWorkloads() {
               </div>
             </div>
 
-            <div className="bg-teal-950/40 border border-teal-700/60 p-4 rounded-xl shadow-sm">
+            <div className="bg-gradient-to-br from-teal-950/50 via-neutral-950 to-neutral-900 border border-teal-700/60 p-4 rounded-2xl shadow-sm">
               <div className="text-[11px] font-bold uppercase tracking-wider text-teal-300 flex items-center gap-1">
                 <span>🌐</span> Open Pool
               </div>
@@ -143,20 +143,20 @@ export default function AdminCompanyPhraseWorkloads() {
               </div>
             </div>
 
-            <div className="bg-neutral-800/90 border border-neutral-700 p-4 rounded-xl shadow-sm">
-              <div className="text-[11px] font-bold uppercase tracking-wider text-neutral-400">Pending</div>
+            <div className="bg-gradient-to-br from-amber-950/40 via-neutral-950 to-neutral-900 border border-amber-500/30 p-4 rounded-2xl shadow-sm">
+              <div className="text-[11px] font-bold uppercase tracking-wider text-amber-300">Pending</div>
               <div className="text-2xl font-black text-amber-400 mt-1">{summary.totalPending}</div>
               <div className="text-[11px] text-neutral-400 mt-0.5">Unrecorded</div>
             </div>
 
-            <div className="bg-neutral-800/90 border border-neutral-700 p-4 rounded-xl shadow-sm">
-              <div className="text-[11px] font-bold uppercase tracking-wider text-neutral-400">Recorded</div>
+            <div className="bg-gradient-to-br from-cyan-950/40 via-neutral-950 to-neutral-900 border border-cyan-500/30 p-4 rounded-2xl shadow-sm">
+              <div className="text-[11px] font-bold uppercase tracking-wider text-cyan-300">Recorded</div>
               <div className="text-2xl font-black text-cyan-400 mt-1">{summary.totalRecorded}</div>
               <div className="text-[11px] text-neutral-400 mt-0.5">Waiting QA</div>
             </div>
 
-            <div className="bg-neutral-800/90 border border-neutral-700 p-4 rounded-xl shadow-sm">
-              <div className="text-[11px] font-bold uppercase tracking-wider text-neutral-400">Approved</div>
+            <div className="bg-gradient-to-br from-emerald-950/40 via-neutral-950 to-neutral-900 border border-emerald-500/30 p-4 rounded-2xl shadow-sm">
+              <div className="text-[11px] font-bold uppercase tracking-wider text-emerald-300">Approved</div>
               <div className="text-2xl font-black text-emerald-400 mt-1">{summary.totalApproved}</div>
               <div className="text-[11px] text-neutral-400 mt-0.5">QA Completed</div>
             </div>
@@ -164,12 +164,12 @@ export default function AdminCompanyPhraseWorkloads() {
         )}
 
         {loading ? (
-          <div className="bg-neutral-800 border border-neutral-700 rounded-2xl text-center py-20 shadow-xl">
+          <div className="bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 border border-neutral-800 rounded-3xl text-center py-20 shadow-xl">
             <Loader2 className="w-8 h-8 animate-spin text-primary-500 mx-auto mb-3" />
             <p className="text-neutral-400">Loading workload languages...</p>
           </div>
         ) : languages.length === 0 ? (
-          <div className="bg-neutral-800 border border-neutral-700 rounded-2xl text-center py-20 shadow-xl">
+          <div className="bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 border border-neutral-800 rounded-3xl text-center py-20 shadow-xl">
             <FileText className="w-12 h-12 text-neutral-500 mx-auto mb-4" />
             <h3 className="text-xl font-semibold mb-2 text-white">No Phrase Workloads Found</h3>
             <p className="text-neutral-400 mb-6">
@@ -196,15 +196,15 @@ export default function AdminCompanyPhraseWorkloads() {
                 <div
                   key={lang.code}
                   onClick={() => navigate(`/admin/companies/${id}/phrase-workloads/${lang.code}`)}
-                  className={`bg-neutral-800 hover:bg-neutral-750 border transition-all cursor-pointer group flex flex-col justify-between p-6 rounded-2xl shadow-xl space-y-4 ${
+                  className={`border transition-all cursor-pointer group flex flex-col justify-between p-6 rounded-3xl shadow-xl space-y-4 hover:shadow-2xl hover:scale-[1.01] duration-200 relative overflow-hidden ${
                     lang.isHidden 
-                      ? 'border-rose-600/50 bg-rose-950/20' 
-                      : 'border-neutral-700 hover:border-primary-500/60'
+                      ? 'border-rose-600/50 bg-gradient-to-br from-neutral-950 via-rose-950/20 to-neutral-900' 
+                      : 'bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 border-neutral-800 hover:border-warning-500/60'
                   }`}
                 >
-                  <div>
+                  <div className="relative z-10">
                     <div className="flex items-center justify-between mb-4">
-                      <div className="w-12 h-12 rounded-xl bg-neutral-700 text-warning-400 flex items-center justify-center font-bold text-lg group-hover:scale-110 transition-transform border border-neutral-600">
+                      <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-neutral-800 to-neutral-900 text-warning-400 flex items-center justify-center font-bold text-lg group-hover:scale-110 transition-transform border border-neutral-700 shadow-inner">
                         {lang.code.substring(0, 2).toUpperCase()}
                       </div>
                       <div className="flex items-center gap-1.5">
@@ -213,7 +213,7 @@ export default function AdminCompanyPhraseWorkloads() {
                             <EyeOff className="w-3 h-3" /> Hidden
                           </span>
                         )}
-                        <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-neutral-900/80 border border-neutral-700 text-neutral-300 flex items-center gap-1.5">
+                        <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-neutral-950/80 border border-neutral-800 text-neutral-300 flex items-center gap-1.5">
                           <Layers className="w-3.5 h-3.5 text-primary-500" />
                           {lang.count} {lang.count === 1 ? "Phrase" : "Phrases"}
                         </span>
@@ -228,7 +228,7 @@ export default function AdminCompanyPhraseWorkloads() {
                     </p>
 
                     {/* Allocation Breakdown Chips */}
-                    <div className="mt-4 pt-3 border-t border-neutral-700/60 flex flex-wrap items-center gap-2">
+                    <div className="mt-4 pt-3 border-t border-neutral-800 flex flex-wrap items-center gap-2">
                       <span className="text-[11px] font-semibold px-2 py-0.5 rounded bg-indigo-950/80 text-indigo-300 border border-indigo-700/60 font-mono flex items-center gap-1">
                         <span>🔒</span> {lang.reservedCount ?? 0} Reserved
                       </span>
@@ -238,14 +238,14 @@ export default function AdminCompanyPhraseWorkloads() {
                     </div>
                   </div>
 
-                  <div className="pt-3 border-t border-neutral-700/80 flex items-center justify-between">
+                  <div className="pt-3 border-t border-neutral-800 flex items-center justify-between relative z-10">
                     <button
                       type="button"
                       onClick={(e) => toggleHideLanguage(e, lang.code, lang.isHidden)}
                       className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 shadow-sm ${
                         lang.isHidden
                           ? "bg-emerald-600 hover:bg-emerald-500 text-white"
-                          : "bg-neutral-700 hover:bg-neutral-600 text-rose-300 border border-rose-500/30"
+                          : "bg-neutral-800 hover:bg-neutral-750 text-rose-300 border border-rose-500/30"
                       }`}
                       title={lang.isHidden ? "Unhide language for this project" : "Hide language for this project"}
                     >

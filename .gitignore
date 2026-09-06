@@ -26,6 +26,13 @@ turn.zip
 offer letter/
 offer_letter/
 *offer*letter*
+work contracts/
+work_contracts/
+Work Contracts/
+Work_Contracts/
+*work*contract*
+__pycache__/
+*.pyc
 
 # Reference/scratch code dumps (not imported by the app)
 friend_suggestion/

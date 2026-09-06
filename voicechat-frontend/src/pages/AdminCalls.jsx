@@ -1217,11 +1217,11 @@ export default function AdminCalls() {
     };
 
     return (
-        <div className="min-h-screen bg-neutral-900 pt-16 md:pt-0 md:pl-64">
+        <div className="min-h-screen bg-neutral-950 text-neutral-100 pt-16 md:pt-0 md:pl-64">
             <AdminNav />
 
             {/* Content */}
-            <div className="max-w-7xl mx-auto px-4 md:px-6 py-6 md:py-12">
+            <div className="w-full max-w-[1720px] mx-auto px-4 md:px-8 py-6 md:py-10">
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6 md:mb-8">
                     <div>
                         <h1 className="text-2xl md:text-3xl font-bold text-white mb-2">Call Management</h1>
@@ -1306,8 +1306,9 @@ export default function AdminCalls() {
 
                         {/* Pipeline Subtabs: Pending Segmentation, Pending Transcription, Finished */}
                         {["pending_segmentation", "pending_transcription", "finished"].includes(statusFilter) && (
-                            <div className="flex flex-wrap items-center justify-between gap-3 mb-4 p-3 bg-neutral-800/80 border border-neutral-700/80 rounded-xl animate-in fade-in slide-in-from-top-2 duration-200">
-                                <div className="flex flex-wrap items-center gap-2">
+                            <div className="relative overflow-hidden rounded-3xl border border-neutral-800 bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 p-4 mb-4 flex flex-wrap items-center justify-between gap-3 shadow-xl animate-in fade-in slide-in-from-top-2 duration-200">
+                                <div className="absolute top-0 right-0 w-32 h-32 bg-primary-500/5 rounded-full blur-2xl pointer-events-none" />
+                                <div className="flex flex-wrap items-center gap-2 relative z-10">
                                     <span className="text-xs font-bold text-neutral-400 uppercase tracking-wider mr-1">
                                         {statusFilter === "pending_segmentation" ? "Segmentation Pipeline:" : statusFilter === "pending_transcription" ? "Transcription Pipeline:" : "Completed Pipeline:"}
                                     </span>
@@ -1347,7 +1348,8 @@ export default function AdminCalls() {
                         )}
 
                         {statusFilter === "rejected" && (
-                            <div className="flex flex-wrap items-center justify-between gap-3 mb-4 p-3 bg-neutral-800/80 border border-neutral-700/80 rounded-xl animate-in fade-in slide-in-from-top-2 duration-200">
+                            <div className="relative overflow-hidden rounded-3xl border border-neutral-800 bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 p-4 mb-4 flex flex-wrap items-center justify-between gap-3 shadow-xl animate-in fade-in slide-in-from-top-2 duration-200">
+                                <div className="absolute top-0 right-0 w-32 h-32 bg-primary-500/5 rounded-full blur-2xl pointer-events-none" />
                                 {isAdmin ? (
                                     <div className="flex flex-wrap items-center gap-2">
                                         <span className="text-xs font-bold text-neutral-400 uppercase tracking-wider mr-1">
@@ -1448,10 +1450,11 @@ export default function AdminCalls() {
                         )}
 
                         {/* Calls Table */}
-                        <div className="bg-neutral-800 rounded-xl overflow-hidden shadow-xl border border-neutral-700">
-                            <div className="overflow-x-auto">
+                        <div className="relative overflow-hidden rounded-3xl border border-neutral-800 bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 shadow-xl">
+                            <div className="absolute top-0 right-0 w-64 h-64 bg-primary-500/5 rounded-full blur-3xl pointer-events-none" />
+                            <div className="overflow-x-auto relative z-10">
                                 <table className="w-full">
-                                    <thead className="bg-neutral-900 border-b border-neutral-700">
+                                    <thead className="bg-neutral-900/80 border-b border-neutral-800">
                                         <tr>
                                             <th className="w-8 px-2 py-2.5 text-center">
                                                 <input
@@ -1897,25 +1900,25 @@ export default function AdminCalls() {
                             </div>
 
                             {/* Pagination */}
-                            <div className="bg-neutral-700 px-4 md:px-6 py-4 flex flex-col sm:flex-row items-center justify-between gap-3">
-                                <div className="text-xs md:text-sm text-neutral-300">
+                            <div className="bg-neutral-900/80 border-t border-neutral-800 px-4 md:px-6 py-4 flex flex-col sm:flex-row items-center justify-between gap-3 relative z-10">
+                                <div className="text-xs md:text-sm text-neutral-400">
                                     Showing {((pagination.page - 1) * pagination.limit) + 1} to {Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total} calls
                                 </div>
-                                <div className="flex space-x-2">
+                                <div className="flex items-center space-x-2">
                                     <button
                                         onClick={() => setPagination(prev => ({ ...prev, page: prev.page - 1 }))}
                                         disabled={pagination.page === 1}
-                                        className="px-3 py-1 bg-neutral-600 text-neutral-300 rounded hover:bg-neutral-500 disabled:opacity-50 disabled:cursor-not-allowed text-xs md:text-sm"
+                                        className="px-3 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 border border-neutral-700/80 rounded-xl disabled:opacity-40 disabled:hover:bg-neutral-800 disabled:cursor-not-allowed text-xs md:text-sm font-semibold transition-all"
                                     >
                                         Previous
                                     </button>
-                                    <span className="px-3 py-1 text-neutral-300 text-xs md:text-sm">
+                                    <span className="px-3 py-1.5 text-neutral-300 text-xs md:text-sm font-medium">
                                         Page {pagination.page} of {pagination.pages}
                                     </span>
                                     <button
                                         onClick={() => setPagination(prev => ({ ...prev, page: prev.page + 1 }))}
                                         disabled={pagination.page >= pagination.pages}
-                                        className="px-3 py-1 bg-neutral-600 text-neutral-300 rounded hover:bg-neutral-500 disabled:opacity-50 disabled:cursor-not-allowed text-xs md:text-sm"
+                                        className="px-3 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 border border-neutral-700/80 rounded-xl disabled:opacity-40 disabled:hover:bg-neutral-800 disabled:cursor-not-allowed text-xs md:text-sm font-semibold transition-all"
                                     >
                                         Next
                                     </button>
@@ -1937,7 +1940,8 @@ export default function AdminCalls() {
 
                     return (
                         <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50" onClick={() => setSelectedCall(null)}>
-                            <div className="bg-neutral-800 border border-neutral-700 rounded-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto p-4 md:p-6 animate-scale-in" onClick={(e) => e.stopPropagation()}>
+                            <div className="relative overflow-hidden rounded-3xl border border-neutral-800 bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto p-4 md:p-6 animate-scale-in" onClick={(e) => e.stopPropagation()}>
+                                <div className="absolute top-0 right-0 w-64 h-64 bg-primary-500/5 rounded-full blur-3xl pointer-events-none" />
                                 <div className="flex items-center justify-between mb-4 md:mb-6">
                                     <div>
                                         <h2 className="text-xl md:text-2xl font-bold text-white flex items-center gap-2">
@@ -2138,7 +2142,8 @@ export default function AdminCalls() {
 
                 return (
                 <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50" onClick={() => setSelectedCall(null)}>
-                    <div className="bg-neutral-800 border border-neutral-700 rounded-xl max-w-6xl w-full max-h-[90vh] overflow-y-auto p-4 md:p-6 animate-scale-in" onClick={(e) => e.stopPropagation()}>
+                    <div className="relative overflow-hidden rounded-3xl border border-neutral-800 bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 shadow-2xl max-w-7xl w-full max-h-[90vh] overflow-y-auto p-4 md:p-6 animate-scale-in" onClick={(e) => e.stopPropagation()}>
+                        <div className="absolute top-0 right-0 w-64 h-64 bg-primary-500/5 rounded-full blur-3xl pointer-events-none" />
                         <div className="flex items-center justify-between mb-4 md:mb-6">
                             <div className="flex items-center gap-3">
                                 <h2 className="text-xl md:text-2xl font-bold text-white">Call Details</h2>

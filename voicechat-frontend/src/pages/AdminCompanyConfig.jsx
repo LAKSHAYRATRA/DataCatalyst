@@ -168,7 +168,7 @@ export default function AdminCompanyConfig() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-neutral-900 flex text-white">
+      <div className="min-h-screen bg-neutral-950 flex text-white">
         <AdminNav />
         <main className="flex-1 md:ml-64 p-8 flex items-center justify-center">
           <Loader2 className="w-8 h-8 animate-spin text-warning-500" />
@@ -179,7 +179,7 @@ export default function AdminCompanyConfig() {
 
   if (!company) {
     return (
-      <div className="min-h-screen bg-neutral-900 flex text-white">
+      <div className="min-h-screen bg-neutral-950 flex text-white">
         <AdminNav />
         <main className="flex-1 md:ml-64 p-8 text-center py-20">
           <p className="text-xl text-neutral-400 mb-4">Company not found.</p>
@@ -192,7 +192,7 @@ export default function AdminCompanyConfig() {
   }
 
   return (
-    <div className="min-h-screen bg-neutral-900 flex text-neutral-100 transition-colors duration-300">
+    <div className="min-h-screen bg-neutral-950 flex text-neutral-100 transition-colors duration-300">
       <AdminNav />
       <main className="flex-1 md:ml-64 p-6 md:p-10 max-w-6xl mx-auto">
         
@@ -228,8 +228,9 @@ export default function AdminCompanyConfig() {
         </div>
 
         {/* Project Title Card */}
-        <div className="bg-neutral-800/80 border border-neutral-700/80 rounded-2xl p-6 mb-8 shadow-xl">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 border border-neutral-800 rounded-3xl p-6 mb-8 shadow-xl relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-80 h-80 bg-warning-500/5 rounded-full blur-3xl pointer-events-none" />
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 relative z-10">
             <div className="flex items-center gap-4">
               <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-neutral-700 to-neutral-900 border border-neutral-600 flex items-center justify-center shadow-inner">
                 <Building2 className="w-6 h-6 text-warning-400" />
@@ -259,38 +260,38 @@ export default function AdminCompanyConfig() {
             <div className="flex flex-wrap gap-2">
               <button 
                 onClick={() => navigate(`/admin/companies/${company._id}/phrase-workloads`)}
-                className="px-3 py-2 bg-neutral-700 hover:bg-neutral-600 text-warning-300 hover:text-warning-200 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors border border-neutral-600 shadow-sm"
+                className="px-3.5 py-2 bg-gradient-to-r from-neutral-800 to-neutral-850 hover:from-neutral-750 hover:to-neutral-800 text-warning-300 hover:text-warning-200 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all border border-neutral-750 hover:border-warning-500/40 shadow-sm"
               >
-                <Layers className="w-3.5 h-3.5" />
+                <Layers className="w-3.5 h-3.5 text-warning-400" />
                 <span>Phrase Workloads</span>
               </button>
               <button 
                 onClick={() => navigate(`/admin/companies/${company._id}/user-customizations`)}
-                className="px-3 py-2 bg-neutral-700 hover:bg-neutral-600 text-neutral-200 hover:text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors border border-neutral-600 shadow-sm"
+                className="px-3.5 py-2 bg-gradient-to-r from-neutral-800 to-neutral-850 hover:from-neutral-750 hover:to-neutral-800 text-neutral-200 hover:text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all border border-neutral-750 hover:border-neutral-650 shadow-sm"
               >
-                <Users className="w-3.5 h-3.5" />
+                <Users className="w-3.5 h-3.5 text-primary-400" />
                 <span>User Tags</span>
               </button>
               <button 
                 onClick={() => navigate(`/admin/companies/${company._id}/download-customizations`)}
-                className="px-3 py-2 bg-neutral-700 hover:bg-neutral-600 text-neutral-200 hover:text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors border border-neutral-600 shadow-sm"
+                className="px-3.5 py-2 bg-gradient-to-r from-neutral-800 to-neutral-850 hover:from-neutral-750 hover:to-neutral-800 text-neutral-200 hover:text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all border border-neutral-750 hover:border-neutral-650 shadow-sm"
               >
-                <Download className="w-3.5 h-3.5" />
+                <Download className="w-3.5 h-3.5 text-emerald-400" />
                 <span>Download Tags</span>
               </button>
               <button 
                 onClick={() => navigate(`/admin/companies/${company._id}/contributors-summary`)}
-                className="px-3 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors shadow-sm"
+                className="px-3.5 py-2 bg-gradient-to-r from-amber-600 to-warning-600 hover:from-amber-500 hover:to-warning-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-md shadow-amber-600/20"
               >
                 <span>📊 Summary</span>
               </button>
               <button 
                 type="button"
                 onClick={toggleBoost}
-                className={`px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm ${
+                className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm ${
                   company.isBoosted
                     ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 hover:bg-amber-500/30'
-                    : 'bg-neutral-700 hover:bg-neutral-600 text-neutral-300 hover:text-white'
+                    : 'bg-neutral-800 hover:bg-neutral-750 text-neutral-300 hover:text-white border border-neutral-750'
                 }`}
                 title={company.isBoosted ? "Unboost from Dashboard" : "Boost & Recommend on Contributor Dashboard"}
               >
@@ -298,10 +299,10 @@ export default function AdminCompanyConfig() {
               </button>
               <button
                 onClick={toggleHide}
-                className={`px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm ${
+                className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm ${
                   company.isHidden 
                     ? "bg-emerald-600 hover:bg-emerald-500 text-white" 
-                    : "bg-neutral-800 hover:bg-neutral-700 text-rose-300 border border-rose-500/40"
+                    : "bg-neutral-800 hover:bg-neutral-750 text-rose-300 border border-rose-500/40"
                 }`}
               >
                 {company.isHidden ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
@@ -315,9 +316,9 @@ export default function AdminCompanyConfig() {
         <form onSubmit={handleSave} className="space-y-6">
           
           {/* Boost Project Banner Card */}
-          <div className="bg-neutral-800/80 border border-amber-500/30 p-5 rounded-2xl shadow-lg flex flex-col sm:flex-row sm:items-center justify-between gap-4 relative overflow-hidden">
-            <div className="absolute top-0 right-0 w-32 h-32 bg-amber-500/5 rounded-full blur-2xl pointer-events-none" />
-            <div className="space-y-1">
+          <div className="bg-gradient-to-br from-neutral-900 via-amber-950/25 to-neutral-900 border border-amber-500/40 p-6 rounded-3xl shadow-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4 relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-48 h-48 bg-amber-500/10 rounded-full blur-2xl pointer-events-none" />
+            <div className="space-y-1 relative z-10">
               <label className="text-sm font-bold text-white flex items-center gap-2">
                 <Sparkles className="w-4 h-4 text-amber-400" />
                 <span>🚀 Boost Project (Recommended on Dashboard)</span>
@@ -326,7 +327,7 @@ export default function AdminCompanyConfig() {
                 Pin and feature this phrase project prominently under "Recommended Projects" on the contributor dashboard for rapid applicant acquisition.
               </p>
             </div>
-            <div className="flex items-center gap-3 self-start sm:self-center">
+            <div className="flex items-center gap-3 self-start sm:self-center relative z-10">
               <span className={`text-xs font-bold transition-colors duration-200 ${company.isBoosted ? 'text-amber-400' : 'text-neutral-400'}`}>
                 {company.isBoosted ? "🔥 Active on Dashboard" : "Unboosted"}
               </span>
@@ -354,17 +355,18 @@ export default function AdminCompanyConfig() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             
             {/* Project Display Name */}
-            <div className="bg-neutral-800/80 border border-neutral-700/70 p-5 rounded-2xl shadow-lg">
-              <label className="block text-sm font-bold text-white mb-1 flex items-center gap-2">
+            <div className="bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 border border-neutral-800 p-6 rounded-3xl shadow-xl relative overflow-hidden">
+              <div className="absolute top-0 right-0 w-32 h-32 bg-warning-500/5 rounded-full blur-2xl pointer-events-none" />
+              <label className="block text-sm font-bold text-white mb-1 flex items-center gap-2 relative z-10">
                 <Building2 className="w-4 h-4 text-warning-400" />
                 <span>Project Display Name</span>
               </label>
-              <p className="text-xs text-neutral-400 mb-3">
+              <p className="text-xs text-neutral-400 mb-3 relative z-10">
                 The public name shown to contributors on their dashboard and recording studio.
               </p>
               <input 
                 type="text"
-                className="w-full px-4 py-2.5 bg-neutral-900/90 border border-neutral-700 rounded-xl text-white text-sm focus:outline-none focus:ring-2 focus:ring-warning-500 transition-all"
+                className="w-full px-4 py-2.5 bg-neutral-950/80 border border-neutral-700 rounded-xl text-white text-sm focus:outline-none focus:ring-2 focus:ring-warning-500 transition-all relative z-10"
                 placeholder="e.g. Acme Speech Project..."
                 value={company.projectName || ''}
                 onChange={(e) => handleFieldChange('projectName', e.target.value)}
@@ -372,25 +374,25 @@ export default function AdminCompanyConfig() {
             </div>
 
             {/* Number of Samples Input (NEW) */}
-            <div className="bg-neutral-800/80 border border-warning-500/30 p-5 rounded-2xl shadow-lg relative overflow-hidden">
-              <div className="absolute top-0 right-0 w-24 h-24 bg-warning-500/5 rounded-full blur-2xl pointer-events-none" />
-              <label className="block text-sm font-bold text-white mb-1 flex items-center gap-2">
+            <div className="bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 border border-warning-500/30 p-6 rounded-3xl shadow-xl relative overflow-hidden">
+              <div className="absolute top-0 right-0 w-32 h-32 bg-warning-500/10 rounded-full blur-2xl pointer-events-none" />
+              <label className="block text-sm font-bold text-white mb-1 flex items-center gap-2 relative z-10">
                 <FileAudio className="w-4 h-4 text-warning-400" />
                 <span>Number Of Samples</span>
                 <span className="text-[10px] uppercase px-2 py-0.5 bg-warning-500/20 text-warning-300 font-extrabold rounded-md border border-warning-500/30">
                   Application Gate
                 </span>
               </label>
-              <p className="text-xs text-neutral-400 mb-3">
+              <p className="text-xs text-neutral-400 mb-3 relative z-10">
                 Number of test recordings a contributor must submit when applying for this project (e.g. 5 samples).
               </p>
-              <div className="relative">
+              <div className="relative z-10">
                 <input 
                   type="number"
                   min="1"
                   max="20"
                   step="1"
-                  className="w-full px-4 py-2.5 pr-28 bg-neutral-900/90 border border-neutral-700 rounded-xl text-white text-sm font-mono font-bold focus:outline-none focus:ring-2 focus:ring-warning-500 transition-all"
+                  className="w-full px-4 py-2.5 pr-28 bg-neutral-950/80 border border-neutral-700 rounded-xl text-white text-sm font-mono font-bold focus:outline-none focus:ring-2 focus:ring-warning-500 transition-all"
                   value={company.numberOfSamples !== undefined ? company.numberOfSamples : 1}
                   onChange={(e) => handleFieldChange('numberOfSamples', Math.max(1, Number(e.target.value) || 1))}
                 />
@@ -402,22 +404,23 @@ export default function AdminCompanyConfig() {
           </div>
 
           {/* Phrase Naming Pattern Section */}
-          <div className="bg-neutral-800/80 border border-neutral-700/70 p-5 rounded-2xl shadow-lg">
-            <label className="block text-sm font-bold text-white mb-1 flex items-center gap-2">
+          <div className="bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 border border-neutral-800 p-6 rounded-3xl shadow-xl relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-48 h-48 bg-warning-500/5 rounded-full blur-3xl pointer-events-none" />
+            <label className="block text-sm font-bold text-white mb-1 flex items-center gap-2 relative z-10">
               <FileText className="w-4 h-4 text-warning-400" />
               <span>Phrase Naming Pattern</span>
             </label>
-            <p className="text-xs text-neutral-400 mb-3">
+            <p className="text-xs text-neutral-400 mb-3 relative z-10">
               Define the file naming convention for exported phrase audio recordings.
             </p>
-            <div className="flex flex-wrap items-center gap-1.5 mb-3 text-xs">
+            <div className="flex flex-wrap items-center gap-1.5 mb-3 text-xs relative z-10">
               <span className="text-neutral-400 text-[11px] font-semibold">Tags:</span>
               {['{phraseId}', '{client_spk_id}', '{spk_id}', '{speaker_id}', '{first_name}', '{last_name}', '{gender}', '{recording_date}', '{language}', '{freq}', '{spkfreq}'].map(tag => (
                 <button
                   type="button"
                   key={tag}
                   onClick={() => handleFieldChange('namingPattern', (company.namingPattern || '') + tag)}
-                  className="bg-neutral-900 hover:bg-neutral-700 text-neutral-300 px-2 py-0.5 rounded-lg border border-neutral-700 font-mono text-[11px] transition-colors"
+                  className="bg-neutral-950/90 hover:bg-neutral-800 text-neutral-300 px-2 py-0.5 rounded-lg border border-neutral-800 font-mono text-[11px] transition-colors"
                   title="Click to append tag"
                 >
                   {tag}
@@ -437,7 +440,7 @@ export default function AdminCompanyConfig() {
             </div>
             <input 
               type="text"
-              className="w-full px-4 py-2.5 bg-neutral-900/90 border border-neutral-700 rounded-xl text-white text-sm font-mono focus:outline-none focus:ring-2 focus:ring-warning-500 transition-all"
+              className="w-full px-4 py-2.5 bg-neutral-950/80 border border-neutral-700 rounded-xl text-white text-sm font-mono focus:outline-none focus:ring-2 focus:ring-warning-500 transition-all relative z-10"
               placeholder="e.g. {language}_{speaker_id}_{phraseId}"
               value={company.namingPattern || '{phraseId}'}
               onChange={(e) => handleFieldChange('namingPattern', e.target.value)}
@@ -448,17 +451,18 @@ export default function AdminCompanyConfig() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             
             {/* Max Contribution Limit */}
-            <div className="bg-neutral-800/80 border border-neutral-700/70 p-5 rounded-2xl shadow-lg">
-              <label className="block text-sm font-bold text-white mb-1 flex items-center gap-2">
+            <div className="bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 border border-neutral-800 p-6 rounded-3xl shadow-xl relative overflow-hidden">
+              <div className="absolute top-0 right-0 w-24 h-24 bg-warning-500/5 rounded-full blur-xl pointer-events-none" />
+              <label className="block text-sm font-bold text-white mb-1 flex items-center gap-2 relative z-10">
                 <Clock className="w-4 h-4 text-warning-400" />
                 <span>Max Contribution Limit</span>
               </label>
-              <p className="text-xs text-neutral-400 mb-3">Total recording minutes allowed per contributor for this project.</p>
-              <div className="relative">
+              <p className="text-xs text-neutral-400 mb-3 relative z-10">Total recording minutes allowed per contributor for this project.</p>
+              <div className="relative z-10">
                 <input 
                   type="number"
                   min="0"
-                  className="w-full px-4 py-2.5 pr-20 bg-neutral-900/90 border border-neutral-700 rounded-xl text-white text-sm font-mono font-bold focus:outline-none focus:ring-2 focus:ring-warning-500"
+                  className="w-full px-4 py-2.5 pr-20 bg-neutral-950/80 border border-neutral-700 rounded-xl text-white text-sm font-mono font-bold focus:outline-none focus:ring-2 focus:ring-warning-500"
                   value={company.maxContributionMinutes !== undefined ? company.maxContributionMinutes : 195}
                   onChange={(e) => handleFieldChange('maxContributionMinutes', e.target.value)}
                 />
@@ -467,19 +471,20 @@ export default function AdminCompanyConfig() {
             </div>
 
             {/* Hourly Payrate */}
-            <div className="bg-neutral-800/80 border border-neutral-700/70 p-5 rounded-2xl shadow-lg">
-              <label className="block text-sm font-bold text-white mb-1 flex items-center gap-2">
+            <div className="bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 border border-neutral-800 p-6 rounded-3xl shadow-xl relative overflow-hidden">
+              <div className="absolute top-0 right-0 w-24 h-24 bg-emerald-500/5 rounded-full blur-xl pointer-events-none" />
+              <label className="block text-sm font-bold text-white mb-1 flex items-center gap-2 relative z-10">
                 <DollarSign className="w-4 h-4 text-warning-400" />
                 <span>Flat Hourly Payrate</span>
               </label>
-              <p className="text-xs text-neutral-400 mb-3">Project-specific hourly payrate (0 = fallback to defaults).</p>
-              <div className="relative">
+              <p className="text-xs text-neutral-400 mb-3 relative z-10">Project-specific hourly payrate (0 = fallback to defaults).</p>
+              <div className="relative z-10">
                 <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-400 font-bold">$</span>
                 <input 
                   type="number"
                   min="0"
                   step="0.01"
-                  className="w-full pl-8 pr-20 px-4 py-2.5 bg-neutral-900/90 border border-neutral-700 rounded-xl text-white text-sm font-mono font-bold focus:outline-none focus:ring-2 focus:ring-warning-500"
+                  className="w-full pl-8 pr-20 px-4 py-2.5 bg-neutral-950/80 border border-neutral-700 rounded-xl text-white text-sm font-mono font-bold focus:outline-none focus:ring-2 focus:ring-warning-500"
                   value={company.hourlyPayout !== undefined ? company.hourlyPayout : 0}
                   onChange={(e) => handleFieldChange('hourlyPayout', e.target.value)}
                 />
@@ -488,18 +493,19 @@ export default function AdminCompanyConfig() {
             </div>
 
             {/* Single Phrase Frequency */}
-            <div className="bg-neutral-800/80 border border-neutral-700/70 p-5 rounded-2xl shadow-lg">
-              <label className="block text-sm font-bold text-white mb-1 flex items-center gap-2">
+            <div className="bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 border border-neutral-800 p-6 rounded-3xl shadow-xl relative overflow-hidden">
+              <div className="absolute top-0 right-0 w-24 h-24 bg-cyan-500/5 rounded-full blur-xl pointer-events-none" />
+              <label className="block text-sm font-bold text-white mb-1 flex items-center gap-2 relative z-10">
                 <Repeat className="w-4 h-4 text-warning-400" />
                 <span>Single Phrase Frequency</span>
               </label>
-              <p className="text-xs text-neutral-400 mb-3">Unique contributors per phrase before retiring.</p>
-              <div className="relative">
+              <p className="text-xs text-neutral-400 mb-3 relative z-10">Unique contributors per phrase before retiring.</p>
+              <div className="relative z-10">
                 <input 
                   type="number"
                   min="1"
                   step="1"
-                  className="w-full px-4 py-2.5 pr-28 bg-neutral-900/90 border border-neutral-700 rounded-xl text-white text-sm font-mono font-bold focus:outline-none focus:ring-2 focus:ring-warning-500"
+                  className="w-full px-4 py-2.5 pr-28 bg-neutral-950/80 border border-neutral-700 rounded-xl text-white text-sm font-mono font-bold focus:outline-none focus:ring-2 focus:ring-warning-500"
                   value={company.singlePhraseFrequency !== undefined ? company.singlePhraseFrequency : 1}
                   onChange={(e) => handleFieldChange('singlePhraseFrequency', e.target.value)}
                 />
@@ -509,8 +515,9 @@ export default function AdminCompanyConfig() {
           </div>
 
           {/* Phrase Text Editing Toggle */}
-          <div className="bg-neutral-800/80 border border-neutral-700/70 p-5 rounded-2xl shadow-lg flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div className="space-y-1">
+          <div className="bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 border border-neutral-800 p-6 rounded-3xl shadow-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4 relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-48 h-48 bg-warning-500/5 rounded-full blur-2xl pointer-events-none" />
+            <div className="space-y-1 relative z-10">
               <label className="text-sm font-bold text-white flex items-center gap-2">
                 <Edit3 className="w-4 h-4 text-warning-400" />
                 <span>Editable Phrases in Review</span>
@@ -519,7 +526,7 @@ export default function AdminCompanyConfig() {
                 Allow QA reviewers and Admins to edit script text during review (e.g. cleaning laughs or skipped words).
               </p>
             </div>
-            <div className="flex items-center gap-3 self-start sm:self-center">
+            <div className="flex items-center gap-3 self-start sm:self-center relative z-10">
               <span className={`text-xs font-bold transition-colors duration-200 ${company.allowPhraseTextEdit ? 'text-warning-400' : 'text-neutral-400'}`}>
                 {company.allowPhraseTextEdit ? "✓ Editing Enabled" : "Disabled (Read-Only)"}
               </span>
@@ -544,8 +551,9 @@ export default function AdminCompanyConfig() {
           </div>
 
           {/* LUFS Constraint Toggle */}
-          <div className="bg-neutral-800/80 border border-neutral-700/70 p-5 rounded-2xl shadow-lg flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div className="space-y-1">
+          <div className="bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 border border-neutral-800 p-6 rounded-3xl shadow-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4 relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-48 h-48 bg-warning-500/5 rounded-full blur-2xl pointer-events-none" />
+            <div className="space-y-1 relative z-10">
               <label className="text-sm font-bold text-white flex items-center gap-2">
                 <Volume2 className="w-4 h-4 text-warning-400" />
                 <span>LUFS Constraint</span>
@@ -554,7 +562,7 @@ export default function AdminCompanyConfig() {
                 Enforce EBU R128 speech loudness constraints (-18.0 to -25.0 LUFS) during contributor recordings. If disabled, contributors can record and submit phrases for this company without loudness restrictions.
               </p>
             </div>
-            <div className="flex items-center gap-3 self-start sm:self-center">
+            <div className="flex items-center gap-3 self-start sm:self-center relative z-10">
               <span className={`text-xs font-bold transition-colors duration-200 ${company.enforceLufs !== false ? 'text-warning-400' : 'text-neutral-400'}`}>
                 {company.enforceLufs !== false ? "✓ Constraint Active (-18 to -25 LUFS)" : "Disabled (Unrestricted)"}
               </span>

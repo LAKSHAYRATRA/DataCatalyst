@@ -925,7 +925,7 @@ export default function AdminScriptedCallsReview() {
     }
 
     return (
-        <div className="min-h-screen bg-neutral-900 text-white flex">
+        <div className="min-h-screen bg-neutral-950 text-white flex">
             <AdminNav />
             <div className="flex-1 md:ml-64 p-6 min-w-0">
                 {/* Header */}
@@ -1018,10 +1018,11 @@ export default function AdminScriptedCallsReview() {
                 )}
 
                 {/* Call Table */}
-                <div className="mt-6 bg-neutral-800/60 border border-neutral-700/60 rounded-2xl overflow-hidden shadow-xl">
-                    <div className="overflow-x-auto">
+                <div className="mt-6 relative overflow-hidden rounded-3xl border border-neutral-800 bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 shadow-xl">
+                    <div className="absolute top-0 right-0 w-64 h-64 bg-primary-500/5 rounded-full blur-3xl pointer-events-none" />
+                    <div className="overflow-x-auto relative z-10">
                         <table className="w-full text-left text-xs">
-                            <thead className="bg-neutral-800/90 text-neutral-400 uppercase font-semibold border-b border-neutral-700/80">
+                            <thead className="bg-neutral-900/80 text-neutral-400 uppercase font-semibold border-b border-neutral-800">
                                 <tr>
                                     <th className="py-3.5 px-4 w-10">
                                         <input
@@ -1120,21 +1121,21 @@ export default function AdminScriptedCallsReview() {
 
                     {/* Pagination */}
                     {callPages > 1 && (
-                        <div className="p-4 border-t border-neutral-750 flex items-center justify-between text-xs text-neutral-400">
+                        <div className="p-4 border-t border-neutral-800 bg-neutral-900/80 flex items-center justify-between text-xs text-neutral-400 relative z-10">
                             <span>Total {callTotal} scripted calls</span>
                             <div className="flex items-center gap-2">
                                 <button
                                     onClick={() => setPage(p => Math.max(1, p - 1))}
                                     disabled={page === 1}
-                                    className="px-3 py-1 rounded-lg bg-neutral-800 hover:bg-neutral-700 disabled:opacity-40"
+                                    className="px-3 py-1.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-200 border border-neutral-700/80 disabled:opacity-40 transition-all font-semibold"
                                 >
                                     Prev
                                 </button>
-                                <span>Page {page} of {callPages}</span>
+                                <span className="font-medium text-neutral-300">Page {page} of {callPages}</span>
                                 <button
                                     onClick={() => setPage(p => Math.min(callPages, p + 1))}
                                     disabled={page === callPages}
-                                    className="px-3 py-1 rounded-lg bg-neutral-800 hover:bg-neutral-700 disabled:opacity-40"
+                                    className="px-3 py-1.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-200 border border-neutral-700/80 disabled:opacity-40 transition-all font-semibold"
                                 >
                                     Next
                                 </button>
@@ -1146,9 +1147,10 @@ export default function AdminScriptedCallsReview() {
                 {/* Review Modal */}
                 {reviewing && (
                     <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto" onClick={closeCallReview}>
-                        <div className="bg-neutral-850 border border-neutral-700/80 rounded-2xl w-full max-w-5xl my-8 overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-150 flex flex-col max-h-[90vh]" onClick={e => e.stopPropagation()}>
+                        <div className="relative overflow-hidden rounded-3xl border border-neutral-800 bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 w-full max-w-5xl my-8 shadow-2xl animate-in fade-in zoom-in-95 duration-150 flex flex-col max-h-[90vh]" onClick={e => e.stopPropagation()}>
+                            <div className="absolute top-0 right-0 w-64 h-64 bg-primary-500/5 rounded-full blur-3xl pointer-events-none" />
                             {/* Modal Header */}
-                            <div className="p-5 border-b border-neutral-750 flex items-center justify-between bg-neutral-800/80">
+                            <div className="p-5 border-b border-neutral-800 flex items-center justify-between bg-neutral-900/80 relative z-10">
                                 <div>
                                     <div className="flex items-center gap-2">
                                         <h2 className="text-lg font-bold text-white">

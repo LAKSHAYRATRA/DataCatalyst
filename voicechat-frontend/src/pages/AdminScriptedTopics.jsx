@@ -452,7 +452,7 @@ export default function AdminScriptedTopics() {
     const activeTurnsPreview = parseScriptLines(subtopicForm.rawScript);
 
     return (
-        <div className="min-h-screen bg-neutral-900 text-white flex">
+        <div className="min-h-screen bg-neutral-950 text-white flex">
             <AdminNav />
             <div className="flex-1 md:ml-64 p-6 md:p-8 min-w-0 max-w-7xl mx-auto space-y-6">
 

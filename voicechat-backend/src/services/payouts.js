@@ -13,6 +13,7 @@ import { ScriptedTopic } from "../models/ScriptedTopic.js";
 import { ScriptedSubtopic } from "../models/ScriptedSubtopic.js";
 import { ScriptedSubmission } from "../models/ScriptedSubmission.js";
 import { ScriptedLanguage } from "../models/ScriptedLanguage.js";
+import { getArtistRateForProject } from "../controllers/vendorController.js";
 
 function roundCurrency(value) {
   return Math.round(value * 100) / 100;
@@ -60,9 +61,16 @@ function getCallEntryForUser(call, userId, user = null) {
     return null;
   }
 
-  // If user has a custom perCallPayrate set by a Studio Partner (hourly payrate in $/hr, and is not QA)
-  if (user && Number(user.perCallPayrate) > 0 && !user.isQA) {
-    payoutUsd = durationMinutes > 0 ? roundCurrency((Number(user.perCallPayrate) * durationMinutes) / 60) : 0;
+  // If user belongs to a studio partner or has custom projectPayrates/perCallPayrate (and is not QA)
+  if (user && !user.isQA && (user.vendorId || (user.projectPayrates && user.projectPayrates.length > 0) || Number(user.perCallPayrate) > 0)) {
+    const category = isScripted ? "scripted_call" : "call";
+    const baseRate = call.languageHourlyPayout || 25;
+    const resolved = getArtistRateForProject(user, category, call.language, call.language, baseRate);
+    if (resolved.isProjectConfigured || Number(user.perCallPayrate) > 0) {
+      payoutUsd = durationMinutes > 0 ? roundCurrency((resolved.artistRate * durationMinutes) / 60) : 0;
+    } else if (isScripted && (!payoutUsd || payoutUsd === 0) && durationMinutes > 0 && call.languageHourlyPayout) {
+      payoutUsd = roundCurrency((call.languageHourlyPayout * durationMinutes) / 60);
+    }
   } else if (isScripted && (!payoutUsd || payoutUsd === 0) && durationMinutes > 0 && call.languageHourlyPayout) {
     // For scripted calls, ensure payout is strictly calculated on user's own recorded duration
     payoutUsd = roundCurrency((call.languageHourlyPayout * durationMinutes) / 60);
@@ -129,12 +137,14 @@ function createSummary(user, callEntries, phraseEntries, payments, qaEarningsUsd
   for (const phrase of phraseEntries) {
     if (phrase.status === "approved") {
       stats.totalApprovedPhrases += 1;
-      stats.totalMoneyMadeUsd += Number(phrase.payoutUsd) || 0;
+      const amt = typeof phrase.rawPayoutUsd === "number" ? phrase.rawPayoutUsd : (Number(phrase.payoutUsd) || 0);
+      stats.totalMoneyMadeUsd += amt;
     } else if (phrase.status === "rejected") {
       stats.rejectedPhrases += 1;
     } else {
       stats.pendingPhrases += 1;
-      pendingUsd += Number(phrase.payoutUsd) || 0;
+      const amt = typeof phrase.rawPayoutUsd === "number" ? phrase.rawPayoutUsd : (Number(phrase.payoutUsd) || 0);
+      pendingUsd += amt;
     }
   }
 
@@ -171,7 +181,7 @@ async function loadUsers(userIds) {
     filter.isQA = false;
   }
   return User.find(filter)
-    .select("firstname lastname username email upiId speaker_id isAdmin isQA perCallPayrate hourlyPhrasePayrate")
+    .select("firstname lastname username email upiId speaker_id isAdmin isQA perCallPayrate hourlyPhrasePayrate projectPayrates vendorId")
     .sort({ firstname: 1, lastname: 1, email: 1 })
     .lean();
 }
@@ -463,40 +473,46 @@ export async function getPayoutOverview(userIds = null) {
       const targetUser = userMap[targetKey];
       let rate = 0;
 
-      // Check if user has custom hourlyPhrasePayrate set by a Studio Partner
-      if (targetUser && Number(targetUser.hourlyPhrasePayrate) > 0 && !targetUser.isQA) {
-        rate = Number(targetUser.hourlyPhrasePayrate);
+      if (typeof phrase.artistRate === "number") {
+        rate = phrase.artistRate;
       } else {
-        rate = langRates[String(phrase.language || "").toLowerCase()] || 0;
-        
-        // Check if project has a specific rate
+        // 1. Determine standard platform rate
+        let platformRate = langRates[String(phrase.language || "").toLowerCase()] || 0;
         if (phrase.projectName) {
           const project = projects.find(p => p.name === phrase.projectName);
           if (project && project.languageRates) {
             const specificRate = project.languageRates.find(r => r.languageCode === phrase.language?.toLowerCase());
             if (specificRate) {
-              rate = specificRate.hourlyPayout;
+              platformRate = specificRate.hourlyPayout;
             }
           }
         }
-
-        // Company rate overrides all other rates if set
         if (phrase.companyId) {
-          // Strip _downloaded suffix if present to match the core company rate
           const coreCompanyId = String(phrase.companyId).replace("_downloaded", "").trim();
           const company = companies.find(c => c.name === phrase.companyId || c.name === coreCompanyId);
           if (company && company.hourlyPayout > 0) {
-            rate = company.hourlyPayout;
+            platformRate = company.hourlyPayout;
           }
+        }
+
+        // 2. Check if user belongs to a studio partner or has custom projectPayrates/hourlyPhrasePayrate
+        if (targetUser && !targetUser.isQA && (targetUser.vendorId || (targetUser.projectPayrates && targetUser.projectPayrates.length > 0) || Number(targetUser.hourlyPhrasePayrate) > 0)) {
+          const resolved = getArtistRateForProject(targetUser, "phrase", phrase.companyId || phrase.projectName, phrase.language, platformRate);
+          if (resolved.isProjectConfigured || Number(targetUser.hourlyPhrasePayrate) > 0) {
+            rate = resolved.artistRate;
+          } else {
+            rate = platformRate;
+          }
+        } else {
+          rate = platformRate;
         }
       }
 
       let phrasePayout = 0;
+      let rawPhrasePayout = 0;
       if (phrase.duration && rate > 0) {
-        phrasePayout = (phrase.duration / 3600) * rate;
-        if (phrasePayout > 0) {
-          phrasePayout = Math.max(0.01, roundCurrency(phrasePayout));
-        }
+        rawPhrasePayout = (phrase.duration / 3600) * rate;
+        phrasePayout = roundCurrency(rawPhrasePayout);
       }
 
       const reviewedByObj = phrase.qaId ? {
@@ -515,6 +531,7 @@ export async function getPayoutOverview(userIds = null) {
         duration: phrase.duration || 0,
         recordedAt: phrase.recordedAt || phrase.createdAt,
         payoutUsd: roundCurrency(phrasePayout),
+        rawPayoutUsd: rawPhrasePayout,
         qaComment: phrase.qaComment || phrase.comment || null,
         reviewedAt: phrase.reviewedAt || phrase.rejectedAt || null,
         reviewedBy: reviewedByObj
@@ -630,9 +647,10 @@ export async function getFinancesOverview() {
       const displayName = compDoc?.projectName || compDoc?.name || p.projectName || compKey;
       const hourlyPayout = compDoc?.hourlyPayout || 0;
 
+      const phraseAmt = typeof p.rawPayoutUsd === "number" ? p.rawPayoutUsd : (Number(p.payoutUsd) || 0);
       const proj = getOrCreateProject(compKey, displayName, hourlyPayout, "phrase");
       proj.approvedCount += 1;
-      proj.totalEarnedUsd += p.payoutUsd;
+      proj.totalEarnedUsd += phraseAmt;
 
       if (!proj.contributorsMap.has(userId)) {
         proj.contributorsMap.set(userId, {
@@ -650,7 +668,7 @@ export async function getFinancesOverview() {
       }
       const cObj = proj.contributorsMap.get(userId);
       cObj.approvedPhrases += 1;
-      cObj.earnedUsd += p.payoutUsd;
+      cObj.earnedUsd += phraseAmt;
     }
   }
 

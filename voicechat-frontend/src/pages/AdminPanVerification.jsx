@@ -115,7 +115,7 @@ export default function AdminPanVerification() {
   }
 
   return (
-    <div className="min-h-screen bg-neutral-900 text-neutral-100 md:pl-64">
+    <div className="min-h-screen bg-neutral-950 text-neutral-100 md:pl-64">
       <AdminNav />
       <div className="max-w-6xl mx-auto p-6 md:p-8 pt-20 md:pt-8">
         <div className="mb-6">

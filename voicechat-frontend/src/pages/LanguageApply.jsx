@@ -706,95 +706,110 @@ export default function LanguageApply() {
                 {/* Highlighted Application Type Cards (3 Tracks) */}
                 {(phase === "select" || phase === "done") && (
                     <div className="max-w-4xl mx-auto mb-8">
-                        <label className="block text-center text-xs font-bold uppercase tracking-wider text-neutral-500 dark:text-neutral-400 mb-3">
+                        <label className="block text-center text-xs font-bold uppercase tracking-wider text-neutral-400 mb-3">
                             Step 1: Choose Application Track
                         </label>
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
                             {/* Call Application Card */}
                             <button
                                 type="button"
                                 onClick={() => { setApplicationType("call"); setSelectedLanguage(""); setSelectedCompany(""); }}
-                                className={`relative text-left p-5 rounded-2xl border-2 transition-all duration-200 cursor-pointer flex flex-col justify-between ${
+                                className={`relative overflow-hidden text-left p-6 rounded-3xl border transition-all duration-300 cursor-pointer flex flex-col justify-between shadow-xl group ${
                                     applicationType === "call"
-                                        ? "border-primary-500 bg-primary-50/50 dark:bg-primary-950/40 shadow-lg ring-2 ring-primary-500/30 scale-[1.02]"
-                                        : "border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 hover:border-neutral-300 dark:hover:border-neutral-700 hover:bg-neutral-50 dark:hover:bg-neutral-800/50 opacity-80 hover:opacity-100"
+                                        ? "border-primary-500 bg-gradient-to-br from-neutral-900 via-neutral-900/90 to-primary-950/40 shadow-primary-500/10 ring-2 ring-primary-500/30 scale-[1.02]"
+                                        : "border-neutral-800 bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 hover:border-neutral-700 hover:bg-neutral-850/70 opacity-80 hover:opacity-100"
                                 }`}
                             >
-                                {applicationType === "call" && (
-                                    <div className="absolute top-3 right-3 text-primary-500">
-                                        <CheckCircle2 className="w-5 h-5 fill-primary-500 text-white" />
+                                <div className={`absolute top-0 right-0 w-32 h-32 rounded-full blur-2xl pointer-events-none transition-all ${
+                                    applicationType === "call" ? "bg-primary-500/20" : "bg-primary-500/5 group-hover:bg-primary-500/10"
+                                }`} />
+                                <div className="relative z-10 w-full">
+                                    {applicationType === "call" && (
+                                        <div className="absolute top-0 right-0 text-primary-400">
+                                            <CheckCircle2 className="w-5 h-5 fill-primary-500 text-white" />
+                                        </div>
+                                    )}
+                                    <div className="flex items-center gap-3 mb-4">
+                                        <div className={`p-3 rounded-2xl border ${applicationType === "call" ? "bg-primary-600 border-primary-500 text-white shadow-lg shadow-primary-600/30" : "bg-neutral-800/80 border-neutral-700/60 text-primary-400"}`}>
+                                            <PhoneCall className="w-5 h-5" />
+                                        </div>
+                                        <div>
+                                            <span className="text-[10px] font-extrabold text-primary-400 uppercase tracking-widest block">Live Voice Chat</span>
+                                            <h3 className="font-bold text-sm text-white">Call Application</h3>
+                                        </div>
                                     </div>
-                                )}
-                                <div className="flex items-center gap-3 mb-3">
-                                    <div className={`p-3 rounded-xl ${applicationType === "call" ? "bg-primary-500 text-white shadow-md" : "bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400"}`}>
-                                        <PhoneCall className="w-5 h-5" />
-                                    </div>
-                                    <div>
-                                        <span className="text-[10px] font-bold text-primary-600 dark:text-primary-400 uppercase tracking-wider block">Live Voice Chat</span>
-                                        <h3 className="font-bold text-sm text-neutral-900 dark:text-white">Call Application</h3>
-                                    </div>
+                                    <p className="text-xs text-neutral-400 leading-relaxed font-medium">
+                                        Apply for 1-on-1 live voice calls, pair audio dialogues, and real-time conversations.
+                                    </p>
                                 </div>
-                                <p className="text-xs text-neutral-500 dark:text-neutral-400 leading-relaxed">
-                                    Apply for 1-on-1 live voice calls, pair audio dialogues, and real-time conversations.
-                                </p>
                             </button>
 
                             {/* Scripted Call Application Card */}
                             <button
                                 type="button"
                                 onClick={() => { setApplicationType("scripted_call"); setSelectedLanguage(""); setSelectedCompany(""); }}
-                                className={`relative text-left p-5 rounded-2xl border-2 transition-all duration-200 cursor-pointer flex flex-col justify-between ${
+                                className={`relative overflow-hidden text-left p-6 rounded-3xl border transition-all duration-300 cursor-pointer flex flex-col justify-between shadow-xl group ${
                                     applicationType === "scripted_call"
-                                        ? "border-indigo-500 bg-indigo-50/50 dark:bg-indigo-950/40 shadow-lg ring-2 ring-indigo-500/30 scale-[1.02]"
-                                        : "border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 hover:border-neutral-300 dark:hover:border-neutral-700 hover:bg-neutral-50 dark:hover:bg-neutral-800/50 opacity-80 hover:opacity-100"
+                                        ? "border-indigo-500 bg-gradient-to-br from-neutral-900 via-neutral-900/90 to-indigo-950/40 shadow-indigo-500/10 ring-2 ring-indigo-500/30 scale-[1.02]"
+                                        : "border-neutral-800 bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 hover:border-neutral-700 hover:bg-neutral-850/70 opacity-80 hover:opacity-100"
                                 }`}
                             >
-                                {applicationType === "scripted_call" && (
-                                    <div className="absolute top-3 right-3 text-indigo-500">
-                                        <CheckCircle2 className="w-5 h-5 fill-indigo-500 text-white" />
+                                <div className={`absolute top-0 right-0 w-32 h-32 rounded-full blur-2xl pointer-events-none transition-all ${
+                                    applicationType === "scripted_call" ? "bg-indigo-500/20" : "bg-indigo-500/5 group-hover:bg-indigo-500/10"
+                                }`} />
+                                <div className="relative z-10 w-full">
+                                    {applicationType === "scripted_call" && (
+                                        <div className="absolute top-0 right-0 text-indigo-400">
+                                            <CheckCircle2 className="w-5 h-5 fill-indigo-500 text-white" />
+                                        </div>
+                                    )}
+                                    <div className="flex items-center gap-3 mb-4">
+                                        <div className={`p-3 rounded-2xl border ${applicationType === "scripted_call" ? "bg-indigo-600 border-indigo-500 text-white shadow-lg shadow-indigo-600/30" : "bg-neutral-800/80 border-neutral-700/60 text-indigo-400"}`}>
+                                            <Radio className="w-5 h-5" />
+                                        </div>
+                                        <div>
+                                            <span className="text-[10px] font-extrabold text-indigo-400 uppercase tracking-widest block">Scripted Dialogues</span>
+                                            <h3 className="font-bold text-sm text-white">Scripted Call Application</h3>
+                                        </div>
                                     </div>
-                                )}
-                                <div className="flex items-center gap-3 mb-3">
-                                    <div className={`p-3 rounded-xl ${applicationType === "scripted_call" ? "bg-indigo-600 text-white shadow-md" : "bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400"}`}>
-                                        <Radio className="w-5 h-5" />
-                                    </div>
-                                    <div>
-                                        <span className="text-[10px] font-bold text-indigo-500 uppercase tracking-wider block">Scripted Dialogues</span>
-                                        <h3 className="font-bold text-sm text-neutral-900 dark:text-white">Scripted Call Application</h3>
-                                    </div>
+                                    <p className="text-xs text-neutral-400 leading-relaxed font-medium">
+                                        Apply for 2-person scripted dialogues, scenario turns, and verse recordings.
+                                    </p>
                                 </div>
-                                <p className="text-xs text-neutral-500 dark:text-neutral-400 leading-relaxed">
-                                    Apply for 2-person scripted dialogues, scenario turns, and verse recordings.
-                                </p>
                             </button>
 
                             {/* Phrase Studio Application Card */}
                             <button
                                 type="button"
                                 onClick={() => { setApplicationType("phrase"); setSelectedLanguage(""); setSelectedCompany(""); }}
-                                className={`relative text-left p-5 rounded-2xl border-2 transition-all duration-200 cursor-pointer flex flex-col justify-between ${
+                                className={`relative overflow-hidden text-left p-6 rounded-3xl border transition-all duration-300 cursor-pointer flex flex-col justify-between shadow-xl group ${
                                     applicationType === "phrase"
-                                        ? "border-primary-500 bg-primary-50/50 dark:bg-primary-950/40 shadow-lg ring-2 ring-primary-500/30 scale-[1.02]"
-                                        : "border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 hover:border-neutral-300 dark:hover:border-neutral-700 hover:bg-neutral-50 dark:hover:bg-neutral-800/50 opacity-80 hover:opacity-100"
+                                        ? "border-primary-500 bg-gradient-to-br from-neutral-900 via-neutral-900/90 to-primary-950/40 shadow-primary-500/10 ring-2 ring-primary-500/30 scale-[1.02]"
+                                        : "border-neutral-800 bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 hover:border-neutral-700 hover:bg-neutral-850/70 opacity-80 hover:opacity-100"
                                 }`}
                             >
-                                {applicationType === "phrase" && (
-                                    <div className="absolute top-3 right-3 text-primary-500">
-                                        <CheckCircle2 className="w-5 h-5 fill-primary-500 text-white" />
+                                <div className={`absolute top-0 right-0 w-32 h-32 rounded-full blur-2xl pointer-events-none transition-all ${
+                                    applicationType === "phrase" ? "bg-primary-500/20" : "bg-primary-500/5 group-hover:bg-primary-500/10"
+                                }`} />
+                                <div className="relative z-10 w-full">
+                                    {applicationType === "phrase" && (
+                                        <div className="absolute top-0 right-0 text-primary-400">
+                                            <CheckCircle2 className="w-5 h-5 fill-primary-500 text-white" />
+                                        </div>
+                                    )}
+                                    <div className="flex items-center gap-3 mb-4">
+                                        <div className={`p-3 rounded-2xl border ${applicationType === "phrase" ? "bg-primary-600 border-primary-500 text-white shadow-lg shadow-primary-600/30" : "bg-neutral-800/80 border-neutral-700/60 text-primary-400"}`}>
+                                            <FileText className="w-5 h-5" />
+                                        </div>
+                                        <div>
+                                            <span className="text-[10px] font-extrabold text-primary-400 uppercase tracking-widest block">Scripted Recording</span>
+                                            <h3 className="font-bold text-sm text-white">Phrase Studio Application</h3>
+                                        </div>
                                     </div>
-                                )}
-                                <div className="flex items-center gap-3 mb-3">
-                                    <div className={`p-3 rounded-xl ${applicationType === "phrase" ? "bg-primary-500 text-white shadow-md" : "bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400"}`}>
-                                        <FileText className="w-5 h-5" />
-                                    </div>
-                                    <div>
-                                        <span className="text-[10px] font-bold text-primary-600 dark:text-primary-400 uppercase tracking-wider block">Scripted Recording</span>
-                                        <h3 className="font-bold text-sm text-neutral-900 dark:text-white">Phrase Studio Application</h3>
-                                    </div>
+                                    <p className="text-xs text-neutral-400 leading-relaxed font-medium">
+                                        Apply for single phrase recording projects and script reading.
+                                    </p>
                                 </div>
-                                <p className="text-xs text-neutral-500 dark:text-neutral-400 leading-relaxed">
-                                    Apply for single phrase recording projects and script reading.
-                                </p>
                             </button>
                         </div>
                     </div>
@@ -802,11 +817,13 @@ export default function LanguageApply() {
 
                 {/* Project Selection */}
                 {(phase === "select" || phase === "done") && (
-                    <div className="card animate-slide-up max-w-2xl mx-auto">
-                        <h2 className="text-lg font-bold text-neutral-900 dark:text-white mb-1">
+                    <div className="relative overflow-hidden rounded-3xl p-7 md:p-9 border border-neutral-800 bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 shadow-2xl max-w-2xl mx-auto animate-slide-up">
+                        <div className="absolute top-0 right-0 w-48 h-48 bg-primary-500/10 rounded-full blur-3xl pointer-events-none" />
+                        <div className="relative z-10">
+                        <h2 className="text-xl font-black text-white mb-1 tracking-tight">
                             {applicationType === 'phrase' ? 'Select Phrase Project' : applicationType === 'scripted_call' ? 'Select Scripted Call Language' : 'Select Call Language'}
                         </h2>
-                        <p className="text-sm text-neutral-500 dark:text-neutral-400 mb-5">
+                        <p className="text-sm text-neutral-400 mb-6 font-medium">
                             {applicationType === 'phrase' ? 'Choose a project and language to apply for.' : applicationType === 'scripted_call' ? 'Choose an active scripted language to apply for.' : 'Choose a language you want to participate in calls for.'}
                         </p>
 
@@ -970,14 +987,17 @@ export default function LanguageApply() {
                                 )}
                             </div>
                         )}
+                        </div>
                     </div>
                 )}
 
                 {/* Recording Phase */}
                 {phase === "record" && (applicationType === 'call' || samplePhrase) && (
-                    <div className="card animate-slide-up max-w-2xl mx-auto">
+                    <div className="relative overflow-hidden rounded-3xl p-7 md:p-9 border border-neutral-800 bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 shadow-2xl max-w-2xl mx-auto animate-slide-up">
+                        <div className="absolute top-0 right-0 w-48 h-48 bg-primary-500/10 rounded-full blur-3xl pointer-events-none" />
+                        <div className="relative z-10">
                         <div className="flex items-center justify-between mb-3">
-                            <h2 className="text-lg font-bold text-neutral-900 dark:text-white">Record Sample: {applicationType === 'phrase' ? (companies.find(c => c.name === selectedCompany)?.projectName || selectedCompany) : ''} {selectedLanguage && `(${selectedLanguage})`}</h2>
+                            <h2 className="text-xl font-black text-white tracking-tight">Record Sample: {applicationType === 'phrase' ? (companies.find(c => c.name === selectedCompany)?.projectName || selectedCompany) : ''} {selectedLanguage && `(${selectedLanguage})`}</h2>
                             <div className="flex items-center gap-3">
                                 {applicationType === 'phrase' && (
                                     <button 
@@ -1201,7 +1221,7 @@ export default function LanguageApply() {
 
                         {/* Scripted Call Test Phrase Box */}
                         {applicationType === 'scripted_call' && samplePhrase && (
-                            <div className="bg-neutral-900 border border-neutral-800 p-6 rounded-2xl mb-5 space-y-3">
+                            <div className="bg-neutral-950/80 border border-neutral-800 p-6 rounded-3xl mb-5 space-y-3 shadow-inner">
                                 <div className="flex items-center gap-2 text-indigo-400 text-xs font-bold uppercase tracking-wider">
                                     <Radio className="w-4 h-4" />
                                     <span>Scripted Call Test Phrase ({selectedLanguage})</span>
@@ -1218,16 +1238,16 @@ export default function LanguageApply() {
                         {/* Sample Phrase Box */}
                         {applicationType === 'phrase' && samplePhrase && (
                             <>
-                                <div className="bg-neutral-50 dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 p-6 rounded-xl mb-4">
-                                    <p className="text-xl md:text-2xl font-medium leading-relaxed">"{samplePhrase.text}"</p>
+                                <div className="bg-neutral-950/80 border border-neutral-800 p-6 rounded-3xl mb-4 shadow-inner">
+                                    <p className="text-xl md:text-2xl font-medium leading-relaxed text-white">"{samplePhrase.text}"</p>
                                 </div>
-                                <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6 bg-neutral-100/50 dark:bg-neutral-900/50 p-4 rounded-xl text-neutral-800 dark:text-neutral-200 text-sm border border-neutral-200 dark:border-neutral-800">
-                                    {samplePhrase.emotion && (!userCustomizations || userCustomizations.length === 0 || userCustomizations.some(uk => uk.toLowerCase() === 'emotion')) && <div><span className="block text-xs uppercase opacity-60 mb-1">Emotion</span><span className="font-medium">{samplePhrase.emotion}</span></div>}
-                                    {samplePhrase.style && (!userCustomizations || userCustomizations.length === 0 || userCustomizations.some(uk => uk.toLowerCase() === 'style')) && <div><span className="block text-xs uppercase opacity-60 mb-1">Style</span><span className="font-medium">{samplePhrase.style}</span></div>}
-                                    {samplePhrase.speed && (!userCustomizations || userCustomizations.length === 0 || userCustomizations.some(uk => uk.toLowerCase() === 'speed')) && <div><span className="block text-xs uppercase opacity-60 mb-1">Speed</span><span className="font-medium">{samplePhrase.speed}</span></div>}
-                                    {samplePhrase.intent && (!userCustomizations || userCustomizations.length === 0 || userCustomizations.some(uk => uk.toLowerCase() === 'intent')) && <div><span className="block text-xs uppercase opacity-60 mb-1">Intent</span><span className="font-medium">{samplePhrase.intent}</span></div>}
-                                    {samplePhrase.pitch && (!userCustomizations || userCustomizations.length === 0 || userCustomizations.some(uk => uk.toLowerCase() === 'pitch')) && <div><span className="block text-xs uppercase opacity-60 mb-1">Pitch</span><span className="font-medium">{samplePhrase.pitch}</span></div>}
-                                    {samplePhrase.volume && (!userCustomizations || userCustomizations.length === 0 || userCustomizations.some(uk => uk.toLowerCase() === 'volume')) && <div><span className="block text-xs uppercase opacity-60 mb-1">Volume</span><span className="font-medium">{samplePhrase.volume}</span></div>}
+                                <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6 bg-neutral-900/60 p-5 rounded-2xl text-neutral-200 text-sm border border-neutral-800">
+                                    {samplePhrase.emotion && (!userCustomizations || userCustomizations.length === 0 || userCustomizations.some(uk => uk.toLowerCase() === 'emotion')) && <div><span className="block text-xs uppercase opacity-60 mb-1">Emotion</span><span className="font-medium text-white">{samplePhrase.emotion}</span></div>}
+                                    {samplePhrase.style && (!userCustomizations || userCustomizations.length === 0 || userCustomizations.some(uk => uk.toLowerCase() === 'style')) && <div><span className="block text-xs uppercase opacity-60 mb-1">Style</span><span className="font-medium text-white">{samplePhrase.style}</span></div>}
+                                    {samplePhrase.speed && (!userCustomizations || userCustomizations.length === 0 || userCustomizations.some(uk => uk.toLowerCase() === 'speed')) && <div><span className="block text-xs uppercase opacity-60 mb-1">Speed</span><span className="font-medium text-white">{samplePhrase.speed}</span></div>}
+                                    {samplePhrase.intent && (!userCustomizations || userCustomizations.length === 0 || userCustomizations.some(uk => uk.toLowerCase() === 'intent')) && <div><span className="block text-xs uppercase opacity-60 mb-1">Intent</span><span className="font-medium text-white">{samplePhrase.intent}</span></div>}
+                                    {samplePhrase.pitch && (!userCustomizations || userCustomizations.length === 0 || userCustomizations.some(uk => uk.toLowerCase() === 'pitch')) && <div><span className="block text-xs uppercase opacity-60 mb-1">Pitch</span><span className="font-medium text-white">{samplePhrase.pitch}</span></div>}
+                                    {samplePhrase.volume && (!userCustomizations || userCustomizations.length === 0 || userCustomizations.some(uk => uk.toLowerCase() === 'volume')) && <div><span className="block text-xs uppercase opacity-60 mb-1">Volume</span><span className="font-medium text-white">{samplePhrase.volume}</span></div>}
                                     {samplePhrase.tags && Object.entries(samplePhrase.tags)
                                         .filter(([key]) => {
                                              if (userCustomizations && userCustomizations.length > 0) {
@@ -1385,6 +1405,7 @@ export default function LanguageApply() {
                                     </div>
                                 </>
                             )}
+                        </div>
                         </div>
                     </div>
                 )}

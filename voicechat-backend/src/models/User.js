@@ -1,5 +1,22 @@
 import mongoose from "mongoose";
 
+const userProjectPayrateSchema = new mongoose.Schema(
+  {
+    category: {
+      type: String,
+      enum: ["call", "scripted_call", "phrase"],
+      required: true
+    },
+    subprojectId: { type: String, required: true },
+    subprojectName: { type: String, default: "" },
+    language: { type: String, default: "" },
+    projectRate: { type: Number, default: 25 },
+    artistRate: { type: Number, default: 18 },
+    studioRate: { type: Number, default: 7 }
+  },
+  { _id: false }
+);
+
 const userSchema = new mongoose.Schema(
   {
     firstname: { type: String, trim: true },
@@ -18,6 +35,7 @@ const userSchema = new mongoose.Schema(
     overallPhraseLimit: { type: Number, default: -1 }, // -1 means unlimited
     perCallPayrate: { type: Number, default: 0, min: 0 },
     hourlyPhrasePayrate: { type: Number, default: 0, min: 0 },
+    projectPayrates: [userProjectPayrateSchema],
     tokenVersion: { type: Number, default: 0 },
     isEmailVerified: { type: Boolean, default: false },
     dob: { type: Date, default: null },

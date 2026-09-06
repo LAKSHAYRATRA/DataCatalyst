@@ -111,6 +111,10 @@ export function requireVendorAuth(jwtSecret) {
       }
     }
 
+    if (!token && req.query?.token) {
+      token = req.query.token;
+    }
+
     if (!token) {
       return res.status(401).json({ error: "unauthorized" });
     }

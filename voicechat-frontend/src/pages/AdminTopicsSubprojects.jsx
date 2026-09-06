@@ -116,7 +116,7 @@ export default function AdminTopicsSubprojects() {
     });
 
     return (
-        <div className="min-h-screen bg-neutral-900 text-white flex">
+        <div className="min-h-screen bg-neutral-950 text-white flex">
             <AdminNav />
             <div className="flex-1 md:ml-64 p-6 min-w-0">
                 {/* Breadcrumbs & Header */}

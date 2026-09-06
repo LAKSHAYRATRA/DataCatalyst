@@ -37,6 +37,11 @@ const phraseSchema = new mongoose.Schema(
     lufs: { type: Number, default: null }, // BS.1770-4 gated LUFS score
     recordedAt: { type: Date, default: null },
 
+    // Historical Snapshot Payrates ($/hr) locked at time of recording
+    artistRate: { type: Number, default: null },
+    studioRate: { type: Number, default: null },
+    projectRate: { type: Number, default: null },
+
     // Audio Trimming & Backup Info
     wasAudioTrimmed: { type: Boolean, default: false },
     originalAudioFile: { type: String, default: null },

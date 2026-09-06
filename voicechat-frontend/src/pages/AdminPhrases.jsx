@@ -192,32 +192,34 @@ export default function AdminPhrases() {
   };
 
   return (
-    <div className="min-h-screen bg-neutral-50 dark:bg-neutral-900 flex transition-colors duration-300">
+    <div className="min-h-screen bg-neutral-950 flex text-white transition-colors duration-300">
       <AdminNav />
-      <main className="flex-1 md:ml-64 p-8 max-w-6xl mx-auto text-neutral-900 dark:text-neutral-50">
+      <main className="flex-1 md:ml-64 p-4 md:p-8 w-full max-w-[1720px] mx-auto text-neutral-100">
         <motion.div 
         initial={{ y: -20, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
         className="mb-8"
       >
         <h1 className="text-3xl font-bold mb-2">Phrases Admin</h1>
-        <p className="text-neutral-500 dark:text-neutral-400">Upload JSON manifests and track script recording progress.</p>
+        <p className="text-neutral-400">Upload JSON manifests and track script recording progress.</p>
       </motion.div>
 
       <motion.div 
         initial={{ scale: 0.95, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
-        className="card mb-8"
+        className="relative overflow-hidden rounded-3xl border border-neutral-800 bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 p-6 mb-8 shadow-xl"
       >
-        <h2 className="text-xl font-semibold mb-4">Upload New Batch</h2>
+        <div className="absolute top-0 right-0 w-64 h-64 bg-primary-500/5 rounded-full blur-3xl pointer-events-none" />
+        <div className="relative z-10">
+        <h2 className="text-xl font-semibold mb-4 text-white">Upload New Batch</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div>
             <div className="mb-4">
-              <label className="block text-sm font-medium mb-2 opacity-80">
+              <label className="block text-sm font-medium mb-2 text-neutral-300">
                 Company / Project <span className="text-error-500 font-bold">*</span> (Mandatory)
               </label>
               <select 
-                className="input w-full bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 cursor-pointer" 
+                className="input w-full bg-neutral-700 border border-neutral-600 text-white cursor-pointer focus:border-primary-500" 
                 value={companyId}
                 onChange={(e) => setCompanyId(e.target.value)}
                 required
@@ -233,11 +235,11 @@ export default function AdminPhrases() {
                 const comp = companiesList.find(c => c.name === companyId);
                 if (!comp) return null;
                 return (
-                  <div className="mt-2 p-2.5 bg-neutral-100 dark:bg-neutral-800/80 rounded-lg text-xs flex flex-wrap gap-x-4 gap-y-1 items-center border border-neutral-200 dark:border-neutral-700">
-                    <div><span className="font-bold text-neutral-500 dark:text-neutral-400">Company:</span> {comp.name}</div>
-                    <div><span className="font-bold text-neutral-500 dark:text-neutral-400">Display Name:</span> {comp.projectName || comp.name}</div>
-                    <div><span className="font-bold text-neutral-500 dark:text-neutral-400">Hourly Pay:</span> ${comp.hourlyPayout ?? 0}/hr</div>
-                    <div><span className="font-bold text-neutral-500 dark:text-neutral-400">Max Limit:</span> {comp.maxContributionMinutes ?? 195}m</div>
+                  <div className="mt-2 p-2.5 bg-neutral-750 rounded-lg text-xs flex flex-wrap gap-x-4 gap-y-1 items-center border border-neutral-700 text-neutral-300">
+                    <div><span className="font-bold text-neutral-400">Company:</span> {comp.name}</div>
+                    <div><span className="font-bold text-neutral-400">Display Name:</span> {comp.projectName || comp.name}</div>
+                    <div><span className="font-bold text-neutral-400">Hourly Pay:</span> ${comp.hourlyPayout ?? 0}/hr</div>
+                    <div><span className="font-bold text-neutral-400">Max Limit:</span> {comp.maxContributionMinutes ?? 195}m</div>
                   </div>
                 );
               })()}
@@ -248,11 +250,11 @@ export default function AdminPhrases() {
               )}
             </div>
             <div className="mb-4">
-              <label className="block text-sm font-medium mb-2 opacity-80">
+              <label className="block text-sm font-medium mb-2 text-neutral-300">
                 Language <span className="text-error-500 font-bold">*</span> (Mandatory)
               </label>
               <select 
-                className="input w-full bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 cursor-pointer" 
+                className="input w-full bg-neutral-700 border border-neutral-600 text-white cursor-pointer focus:border-primary-500" 
                 value={language}
                 onChange={(e) => setLanguage(e.target.value)}
                 required
@@ -272,30 +274,30 @@ export default function AdminPhrases() {
             </div>
 
             <div className="mb-4">
-              <label className="block text-sm font-medium mb-2 opacity-80 flex items-center justify-between">
+              <label className="block text-sm font-medium mb-2 text-neutral-300 flex items-center justify-between">
                 <span>Allocate to Speaker ID (Optional)</span>
                 <span className="text-xs text-indigo-400 font-mono">🔒 Reserved for Speaker</span>
               </label>
               <input 
                 type="text" 
-                className="input w-full bg-white dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 text-neutral-900 dark:text-neutral-100 font-mono text-sm" 
+                className="input w-full bg-neutral-700 border border-neutral-600 text-white font-mono text-sm focus:border-primary-500" 
                 placeholder="e.g. spk_129 (Leave blank for Open Pool)" 
                 value={speakerId}
                 onChange={(e) => setSpeakerId(e.target.value)}
               />
-              <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
+              <p className="text-xs text-neutral-400 mt-1">
                 If specified, all phrases in this uploaded batch will be reserved exclusively for this speaker ID.
               </p>
             </div>
 
             <div className="mb-4">
-              <label className="block text-sm font-medium mb-2 opacity-80">
+              <label className="block text-sm font-medium mb-2 text-neutral-300">
                 Custom JSON Metadata Tags
               </label>
               <div className="flex gap-2 mb-2">
                 <input 
                   type="text" 
-                  className="input flex-1 bg-white dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 text-neutral-900 dark:text-neutral-100"
+                  className="input flex-1 bg-neutral-700 border border-neutral-600 text-white focus:border-primary-500"
                   placeholder="Enter JSON key (e.g. domain)"
                   value={newKey}
                   onChange={(e) => setNewKey(e.target.value)}
@@ -309,7 +311,7 @@ export default function AdminPhrases() {
                 <button 
                   type="button" 
                   onClick={handleAddKey}
-                  className="btn btn-secondary px-4 py-2 border border-neutral-300 dark:border-neutral-700 text-sm font-semibold"
+                  className="btn bg-neutral-700 hover:bg-neutral-600 border border-neutral-600 text-white px-4 py-2 text-sm font-semibold"
                 >
                   + Add
                 </button>
@@ -318,26 +320,26 @@ export default function AdminPhrases() {
                 {metadataKeys.map(k => (
                   <span 
                     key={k} 
-                    className="inline-flex items-center gap-1.5 px-3 py-1 bg-neutral-200 dark:bg-neutral-800 text-sm font-semibold rounded-full border border-neutral-300 dark:border-neutral-700"
+                    className="inline-flex items-center gap-1.5 px-3 py-1 bg-neutral-700 text-sm font-semibold rounded-full border border-neutral-600 text-neutral-200"
                   >
                     {k}
                     <button 
                       type="button" 
                       onClick={() => handleRemoveKey(k)}
-                      className="text-error-500 hover:text-error-600 font-bold ml-1 focus:outline-none"
+                      className="text-error-400 hover:text-error-300 font-bold ml-1 focus:outline-none"
                     >
                       &times;
                     </button>
                   </span>
                 ))}
               </div>
-              <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1.5">
+              <p className="text-xs text-neutral-400 mt-1.5">
                 Type the exact keys from your JSON elements (e.g., age, gender, domain). Matching values will be displayed to contributors in the recording studio.
               </p>
             </div>
           </div>
           <div>
-            <label className="block text-sm font-medium mb-2 opacity-80">Method 1: JSON File Upload</label>
+            <label className="block text-sm font-medium mb-2 text-neutral-300">Method 1: JSON File Upload</label>
             <div className="flex items-center gap-4 mb-6">
               <input 
                 type="file" 
@@ -348,7 +350,7 @@ export default function AdminPhrases() {
               />
               <label 
                 htmlFor="json-upload" 
-                className="btn btn-secondary flex items-center gap-2 cursor-pointer"
+                className="btn bg-neutral-700 hover:bg-neutral-650 border border-neutral-600 text-white flex items-center gap-2 cursor-pointer"
               >
                 <FileJson className="w-5 h-5" />
                 Select File
@@ -358,9 +360,9 @@ export default function AdminPhrases() {
               </span>
             </div>
 
-            <label className="block text-sm font-medium mb-2 opacity-80">Method 2: Paste Raw JSON Array</label>
+            <label className="block text-sm font-medium mb-2 text-neutral-300">Method 2: Paste Raw JSON Array</label>
             <textarea
-              className="w-full h-48 bg-neutral-100 dark:bg-neutral-900 border border-neutral-300 dark:border-neutral-700 rounded-lg p-3 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary-500 custom-scrollbar resize-none"
+              className="w-full h-48 bg-neutral-900 border border-neutral-700 text-neutral-100 rounded-lg p-3 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary-500 custom-scrollbar resize-none"
               placeholder={'[\n  {\n    "id": "phrase_en_001",\n    "text": "Hello world"\n  }\n]'}
               value={pastedJson}
               onChange={(e) => setPastedJson(e.target.value)}
@@ -403,6 +405,7 @@ export default function AdminPhrases() {
             {loading ? 'Processing...' : 'Upload Database'}
           </button>
         </div>
+        </div>
       </motion.div>
 
       {/* Database Overview Table with Search & Allocation Filter */}
@@ -432,12 +435,14 @@ export default function AdminPhrases() {
             initial={{ y: 20, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
             transition={{ delay: 0.1 }}
-            className="card overflow-hidden space-y-4"
+            className="relative overflow-hidden rounded-3xl border border-neutral-800 bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 p-6 shadow-xl space-y-4"
           >
+            <div className="absolute top-0 right-0 w-64 h-64 bg-primary-500/5 rounded-full blur-3xl pointer-events-none" />
+            <div className="relative z-10 space-y-4">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
               <div>
-                <h2 className="text-xl font-semibold">Database Overview ({phrasesList.length} Total Phrases)</h2>
-                <p className="text-xs opacity-70 mt-0.5">
+                <h2 className="text-xl font-semibold text-white">Database Overview ({phrasesList.length} Total Phrases)</h2>
+                <p className="text-xs text-neutral-400 mt-0.5">
                   Showing {filteredPhrases.length} of {phrasesList.length} phrases • <span className="text-indigo-400 font-semibold">{reservedCount} Reserved</span> • <span className="text-emerald-400 font-semibold">{openPoolCount} Open Pool</span>
                 </p>
               </div>
@@ -449,13 +454,13 @@ export default function AdminPhrases() {
                   placeholder="🔍 Search ID, text, spk_..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="input input-sm text-xs bg-white dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 px-3 py-1.5 rounded-lg w-48"
+                  className="input input-sm text-xs bg-neutral-800/80 border border-neutral-700 text-white placeholder-neutral-500 px-3 py-1.5 rounded-xl w-48 focus:border-primary-500"
                 />
 
                 <select
                   value={allocationFilter}
                   onChange={(e) => setAllocationFilter(e.target.value)}
-                  className="input input-sm text-xs bg-white dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 px-2.5 py-1.5 rounded-lg font-medium"
+                  className="input input-sm text-xs bg-neutral-800/80 border border-neutral-700 text-white px-2.5 py-1.5 rounded-xl font-medium focus:border-primary-500"
                 >
                   <option value="all">All Allocations</option>
                   <option value="reserved">🔒 Reserved Only ({reservedCount})</option>
@@ -465,7 +470,7 @@ export default function AdminPhrases() {
                 <select
                   value={statusFilter}
                   onChange={(e) => setStatusFilter(e.target.value)}
-                  className="input input-sm text-xs bg-white dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 px-2.5 py-1.5 rounded-lg capitalize"
+                  className="input input-sm text-xs bg-neutral-800/80 border border-neutral-700 text-white px-2.5 py-1.5 rounded-xl capitalize focus:border-primary-500"
                 >
                   <option value="all">All Statuses</option>
                   <option value="pending">Pending</option>
@@ -478,7 +483,7 @@ export default function AdminPhrases() {
                 <select
                   value={selectedCompanyFilter}
                   onChange={(e) => setSelectedCompanyFilter(e.target.value)}
-                  className="input input-sm text-xs bg-white dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 px-2.5 py-1.5 rounded-lg"
+                  className="input input-sm text-xs bg-neutral-800/80 border border-neutral-700 text-white px-2.5 py-1.5 rounded-xl focus:border-primary-500"
                 >
                   <option value="all">All Projects</option>
                   {companiesList.map(c => (
@@ -490,27 +495,27 @@ export default function AdminPhrases() {
 
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse whitespace-nowrap">
-                <thead>
-                  <tr className="border-b border-neutral-200 dark:border-neutral-700 text-xs uppercase font-bold tracking-wider">
-                    <th className="p-3 opacity-70">Company</th>
-                    <th className="p-3 opacity-70">Phrase ID</th>
-                    <th className="p-3 opacity-70">Allocation</th>
-                    <th className="p-3 opacity-70">Lang</th>
-                    <th className="p-3 opacity-70">Status</th>
-                    <th className="p-3 opacity-70">Duration</th>
-                    <th className="p-3 opacity-70">Recorded At</th>
-                    <th className="p-3 opacity-70">Contributor</th>
-                    <th className="p-3 opacity-70">QA User</th>
-                    <th className="p-3 opacity-70">QA Reviewed</th>
-                    <th className="p-3 opacity-70 max-w-xs">QA Comment</th>
+                <thead className="bg-neutral-900/80 border-b border-neutral-800 text-neutral-400">
+                  <tr className="text-xs uppercase font-bold tracking-wider">
+                    <th className="p-3">Company</th>
+                    <th className="p-3">Phrase ID</th>
+                    <th className="p-3">Allocation</th>
+                    <th className="p-3">Lang</th>
+                    <th className="p-3">Status</th>
+                    <th className="p-3">Duration</th>
+                    <th className="p-3">Recorded At</th>
+                    <th className="p-3">Contributor</th>
+                    <th className="p-3">QA User</th>
+                    <th className="p-3">QA Reviewed</th>
+                    <th className="p-3 max-w-xs">QA Comment</th>
                   </tr>
                 </thead>
-                <tbody>
+                <tbody className="divide-y divide-neutral-800/60">
                   {filteredPhrases.map((p) => {
                     const assignedSpk = p.assigned_speaker_id || (p.status === 'pending' ? p.speaker_id : null);
 
                     return (
-                      <tr key={p._id} className="border-b border-neutral-100 dark:border-neutral-800 hover:bg-neutral-50 dark:hover:bg-neutral-800/50 transition-colors text-sm">
+                      <tr key={p._id} className="border-b border-neutral-800/60 hover:bg-neutral-800/50 transition-colors text-sm">
                         <td className="p-3 font-medium">
                           {(() => {
                             const comp = companiesList.find(c => c.name.toLowerCase() === (p.companyId || '').toLowerCase());
@@ -569,6 +574,7 @@ export default function AdminPhrases() {
                   )}
                 </tbody>
               </table>
+            </div>
             </div>
           </motion.div>
         );

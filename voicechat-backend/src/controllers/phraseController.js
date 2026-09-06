@@ -432,26 +432,64 @@ export async function getAvailablePhrase(req, res) {
     const user = req.user;
     if (user?.vendorId) {
       const { Vendor } = await import("../models/Vendor.js");
+      const { Company } = await import("../models/Company.js");
       const vendor = await Vendor.findById(user.vendorId).lean();
       const phraseProjects = (vendor?.assignedProjects || []).filter(p => p.category === "phrase" && p.isActive !== false);
       if (!vendor || phraseProjects.length === 0) {
         return res.json({ phrase: null, message: "No active phrase projects assigned to your vendor organization." });
       }
 
+      // Fetch all corresponding Company docs for these assigned phrase projects
+      const subIds = phraseProjects.map(p => p.subprojectId).filter(Boolean);
+      const validObjectIds = subIds.filter(id => mongoose.Types.ObjectId.isValid(id));
+      const assignedCompanies = await Company.find({
+        $or: [
+          { _id: { $in: validObjectIds } },
+          { name: { $in: phraseProjects.map(p => p.subprojectName) } }
+        ]
+      }).lean();
+
+      // Collect all companyId aliases, names, and IDs belonging to assigned projects
+      const companyIdentifiers = new Set();
+      phraseProjects.forEach(p => {
+        if (p.subprojectId) companyIdentifiers.add(String(p.subprojectId).toLowerCase().trim());
+        if (p.subprojectName) {
+          const raw = String(p.subprojectName).toLowerCase().trim();
+          companyIdentifiers.add(raw);
+          const clean = raw.replace(/\s*\([^)]*\)$/, "").trim();
+          if (clean) companyIdentifiers.add(clean);
+        }
+      });
+      assignedCompanies.forEach(c => {
+        companyIdentifiers.add(String(c._id).toLowerCase());
+        if (c.name) {
+          const nm = String(c.name).toLowerCase().trim();
+          companyIdentifiers.add(nm);
+          companyIdentifiers.add(`${nm}_downloaded`);
+        }
+        if (c.projectName) {
+          companyIdentifiers.add(String(c.projectName).toLowerCase().trim());
+        }
+      });
+
       if (resolvedProjectName && resolvedProjectName !== "Any") {
         const compTarget = String(resolvedProjectName).toLowerCase().trim();
         const cleanComp = compTarget.replace(/_downloaded$/, "").trim();
-        const matchedProj = phraseProjects.find(p => {
-          const pSubId = String(p.subprojectId || "").toLowerCase().trim();
-          const pSubName = String(p.subprojectName || "").toLowerCase().trim();
-          return pSubId === compTarget || pSubId === cleanComp || pSubName === compTarget || pSubName === cleanComp || pSubName.includes(compTarget) || compTarget.includes(pSubId);
-        });
-        if (!matchedProj) {
+
+        const isMatched = Array.from(companyIdentifiers).some(id => id === compTarget || id === cleanComp || id.includes(compTarget) || compTarget.includes(id));
+        if (!isMatched) {
           return res.json({ phrase: null, message: "This phrase project is not assigned to your vendor organization." });
         }
 
+        const matchedProj = phraseProjects.find(p => {
+          const pSubId = String(p.subprojectId || "").toLowerCase().trim();
+          const pSubName = String(p.subprojectName || "").toLowerCase().trim();
+          const cleanSub = pSubName.replace(/\s*\([^)]*\)$/, "").trim();
+          return pSubId === compTarget || pSubId === cleanComp || pSubName === compTarget || pSubName === cleanComp || cleanSub === compTarget || cleanSub === cleanComp;
+        }) || phraseProjects[0];
+
         // Language check for this project
-        if (matchedProj.assignedLanguages && matchedProj.assignedLanguages.length > 0) {
+        if (matchedProj?.assignedLanguages && matchedProj.assignedLanguages.length > 0) {
           const allowedLangs = matchedProj.assignedLanguages.map(l => String(l).toLowerCase().trim());
           if (language) {
             const reqLang = String(language).toLowerCase().trim();
@@ -463,7 +501,13 @@ export async function getAvailablePhrase(req, res) {
           }
         }
       } else {
-        // Project is "Any" or unspecified: restrict to assigned projects & their assigned languages
+        // Project is "Any" or unspecified: STRICTLY RESTRICT baseQuery to assigned companies & languages
+        const validIdList = Array.from(companyIdentifiers).filter(Boolean);
+        baseQuery.$or = [
+          { companyId: { $in: validIdList.flatMap(id => [id, new RegExp(`^${id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, "i")]) } },
+          { projectName: { $in: validIdList.flatMap(id => [id, new RegExp(`^${id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, "i")]) } }
+        ];
+
         const allAssignedLangs = [];
         phraseProjects.forEach(p => {
           if (p.assignedLanguages && p.assignedLanguages.length > 0) {
@@ -1021,17 +1065,52 @@ export async function submitPhraseRecording(req, res) {
     // Verify vendor assignment and language allocation
     if (req.user?.vendorId) {
       const { Vendor } = await import("../models/Vendor.js");
+      const { Company } = await import("../models/Company.js");
       const vendor = await Vendor.findById(req.user.vendorId).lean();
       const activeProjects = (vendor?.assignedProjects || []).filter((p) => p.category === "phrase" && p.isActive !== false);
+
+      const subIds = activeProjects.map(p => p.subprojectId).filter(Boolean);
+      const validObjectIds = subIds.filter(id => mongoose.Types.ObjectId.isValid(id));
+      const assignedCompanies = await Company.find({
+        $or: [
+          { _id: { $in: validObjectIds } },
+          { name: { $in: activeProjects.map(p => p.subprojectName) } }
+        ]
+      }).lean();
+
       const phraseComp = String(phrase.companyId || "").toLowerCase().trim();
       const cleanComp = phraseComp.replace(/_downloaded$/, "").trim();
       const phraseProj = String(phrase.projectName || "").toLowerCase().trim();
 
-      const matchedProj = activeProjects.find((p) => {
+      // Check if this user had locked or was served this phrase by the system
+      const isLockedBySelf = phrase.lockedBy && phrase.lockedBy.toString() === req.user._id.toString();
+
+      let matchedProj = activeProjects.find((p) => {
         const pSubId = String(p.subprojectId || "").toLowerCase().trim();
         const pSubName = String(p.subprojectName || "").toLowerCase().trim();
-        return pSubId === phraseComp || pSubId === cleanComp || pSubName === phraseComp || pSubName === cleanComp || pSubName === phraseProj || phraseProj.includes(pSubId) || pSubId.includes(phraseProj);
+        const cleanSub = pSubName.replace(/\s*\([^)]*\)$/, "").trim();
+
+        if (pSubId === phraseComp || pSubId === cleanComp || pSubName === phraseComp || pSubName === cleanComp || cleanSub === phraseComp || cleanSub === cleanComp) return true;
+        if (phraseProj && (pSubName === phraseProj || pSubName.includes(phraseProj) || cleanSub === phraseProj || phraseProj.includes(pSubId))) return true;
+
+        const comp = assignedCompanies.find(c => c._id.toString() === pSubId);
+        if (comp) {
+          const cName = String(comp.name || "").toLowerCase().trim();
+          const cProj = String(comp.projectName || "").toLowerCase().trim();
+          if (cName === phraseComp || cName === cleanComp) return true;
+          if (cProj && (cProj === phraseProj || cProj === phraseComp)) return true;
+        }
+        return false;
       });
+
+      // If the system itself locked/served this phrase to this user, accept and bind to matching active project
+      if (!matchedProj && isLockedBySelf) {
+        matchedProj = activeProjects.find(p => {
+          if (!p.assignedLanguages || p.assignedLanguages.length === 0) return true;
+          const phraseLang = String(phrase.language || "").toLowerCase().trim();
+          return p.assignedLanguages.map(l => String(l).toLowerCase().trim()).includes(phraseLang);
+        }) || activeProjects[0];
+      }
 
       if (!matchedProj) {
         fs.unlinkSync(req.file.path);
@@ -1190,6 +1269,49 @@ export async function submitPhraseRecording(req, res) {
       phrase.markModified('qcResult');
     }
     phrase.isTestPhrase = isTestPhrase;
+
+    // Snapshot active artist, studio, and project rates at the moment of recording
+    let phraseProjectRate = 25;
+    if (phrase.companyId) {
+      const { Company } = await import("../models/Company.js");
+      const cleanComp = String(phrase.companyId).replace(/_downloaded$/, "").trim();
+      const comp = await Company.findOne({
+        $or: [
+          { _id: mongoose.Types.ObjectId.isValid(phrase.companyId) ? phrase.companyId : null },
+          { name: phrase.companyId },
+          { name: cleanComp }
+        ]
+      }).lean();
+      if (comp && comp.hourlyPayout !== undefined && comp.hourlyPayout !== null) {
+        phraseProjectRate = Number(comp.hourlyPayout);
+      }
+    } else if (phrase.projectName) {
+      const { Project } = await import("../models/Project.js");
+      const proj = await Project.findOne({ name: phrase.projectName }).lean();
+      if (proj && proj.languageRates) {
+        const spec = proj.languageRates.find(r => r.languageCode === phrase.language?.toLowerCase());
+        if (spec) phraseProjectRate = Number(spec.hourlyPayout) || phraseProjectRate;
+      }
+    }
+
+    let snapshotArtistRate = phraseProjectRate;
+    let snapshotStudioRate = 0;
+
+    if (contributor) {
+      const { getArtistRateForProject } = await import("./vendorController.js");
+      const resolved = getArtistRateForProject(contributor, "phrase", phrase.companyId || phrase.projectName, phrase.language, phraseProjectRate);
+      if (contributor.vendorId || resolved.isProjectConfigured) {
+        snapshotArtistRate = resolved.artistRate;
+        snapshotStudioRate = resolved.studioRate;
+      } else {
+        snapshotArtistRate = phraseProjectRate;
+        snapshotStudioRate = 0;
+      }
+    }
+
+    phrase.artistRate = snapshotArtistRate;
+    phrase.studioRate = snapshotStudioRate;
+    phrase.projectRate = phraseProjectRate;
     
     await phrase.save();
 
@@ -1697,6 +1819,9 @@ export async function reviewPhrase(req, res) {
             duration: phrase.duration || 0,
             comment: comment || null,
             text: phrase.text,
+            artistRate: phrase.artistRate || null,
+            studioRate: phrase.studioRate || null,
+            projectRate: phrase.projectRate || null,
             rejectedAt: new Date()
           });
         } catch (rejErr) {
@@ -1729,6 +1854,9 @@ export async function reviewPhrase(req, res) {
       phrase.qcResult = null;
       phrase.lockedAt = null;
       phrase.lockedBy = null;
+      phrase.artistRate = null;
+      phrase.studioRate = null;
+      phrase.projectRate = null;
 
       phrase.qaLockedBy = null;
       phrase.qaLockedAt = null;
@@ -1889,6 +2017,9 @@ export async function bulkReviewPhrases(req, res) {
               duration: phrase.duration || 0,
               comment: comment || "Bulk Admin Rejection",
               text: phrase.text,
+              artistRate: phrase.artistRate || null,
+              studioRate: phrase.studioRate || null,
+              projectRate: phrase.projectRate || null,
               rejectedAt: now
             });
           } catch (rejErr) {
@@ -1921,6 +2052,9 @@ export async function bulkReviewPhrases(req, res) {
         phrase.qcResult = null;
         phrase.lockedAt = null;
         phrase.lockedBy = null;
+        phrase.artistRate = null;
+        phrase.studioRate = null;
+        phrase.projectRate = null;
         phrase.qaLockedBy = null;
         phrase.qaLockedAt = null;
 

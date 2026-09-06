@@ -224,7 +224,7 @@ export default function AdminCallApps() {
     }
 
     return (
-        <div className="min-h-screen bg-neutral-900 pt-16 md:pt-0 md:pl-64">
+        <div className="min-h-screen bg-neutral-950 text-neutral-100 pt-16 md:pt-0 md:pl-64">
             <AdminNav />
             <div className="max-w-7xl mx-auto px-4 md:px-6 py-6 md:py-12">
 
@@ -265,10 +265,11 @@ export default function AdminCallApps() {
                     <div className="text-center py-16 text-neutral-500">No applications found.</div>
                 ) : (
                     <>
-                        <div className="bg-neutral-800 border border-neutral-700 rounded-xl overflow-hidden">
-                            <div className="overflow-x-auto">
+                        <div className="relative overflow-hidden rounded-3xl border border-neutral-800 bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 shadow-xl">
+                            <div className="absolute top-0 right-0 w-64 h-64 bg-primary-500/5 rounded-full blur-3xl pointer-events-none" />
+                            <div className="overflow-x-auto relative z-10">
                                 <table className="w-full text-sm">
-                                    <thead className="bg-neutral-700">
+                                    <thead className="bg-neutral-900/80 border-b border-neutral-800">
                                         <tr>
                                             {["User", "Language", "Status", "Applied", "Recording", "Action"].map(h => (
                                                 <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-neutral-300 uppercase tracking-wider whitespace-nowrap">{h}</th>
@@ -389,7 +390,7 @@ export default function AdminCallApps() {
                                                                         return (
                                                                             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 animate-fade-in text-xs">
                                                                                 {/* Metrics Panel */}
-                                                                                <div className="bg-neutral-800/80 border border-neutral-700/60 rounded-xl p-4 space-y-4">
+                                                                                <div className="bg-neutral-900/90 border border-neutral-800 rounded-2xl p-4 space-y-4">
                                                                                     <div className="flex items-center justify-between border-b border-neutral-700 pb-2">
                                                                                         <span className="text-sm font-bold text-white uppercase tracking-wider">QC Analysis Metrics</span>
                                                                                         <button
@@ -431,8 +432,8 @@ export default function AdminCallApps() {
                                                                                     </div>
                                                                                 </div>
 
-                                                                                {/* Spectrogram Panel */}
-                                                                                <div className="bg-neutral-800/80 border border-neutral-700/60 rounded-xl p-4 flex flex-col justify-between">
+                                                                                {/* Spectrogram Preview */}
+                                                                                <div className="bg-neutral-900/90 border border-neutral-800 rounded-2xl p-4 flex flex-col justify-between">
                                                                                     <div className="text-sm font-bold text-white uppercase tracking-wider border-b border-neutral-700 pb-2 mb-3">
                                                                                         Nyquist Spectrogram (20Hz - 20kHz)
                                                                                     </div>
@@ -476,18 +477,18 @@ export default function AdminCallApps() {
                                     </tbody>
                                 </table>
                             </div>
-                        </div>
 
-                        {/* Footer */}
-                        <div className="flex items-center justify-between mt-4 text-sm text-neutral-400">
-                            <span>{total} total application{total !== 1 ? "s" : ""}</span>
-                            {totalPages > 1 && (
-                                <div className="flex gap-3">
-                                    <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1} className="px-3 py-1.5 bg-neutral-700 hover:bg-neutral-600 text-white rounded-lg text-xs transition-colors disabled:opacity-40">Prev</button>
-                                    <span className="py-1.5">Page {page} / {totalPages}</span>
-                                    <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages} className="px-3 py-1.5 bg-neutral-700 hover:bg-neutral-600 text-white rounded-lg text-xs transition-colors disabled:opacity-40">Next</button>
-                                </div>
-                            )}
+                            {/* Footer inside card */}
+                            <div className="bg-neutral-900/80 border-t border-neutral-800 px-6 py-4 flex items-center justify-between text-sm text-neutral-400 relative z-10">
+                                <span>{total} total application{total !== 1 ? "s" : ""}</span>
+                                {totalPages > 1 && (
+                                    <div className="flex items-center gap-3">
+                                        <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1} className="px-3 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 border border-neutral-700/80 rounded-xl text-xs font-semibold transition-all disabled:opacity-40">Prev</button>
+                                        <span className="py-1.5 text-xs text-neutral-300 font-medium">Page {page} of {totalPages}</span>
+                                        <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages} className="px-3 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 border border-neutral-700/80 rounded-xl text-xs font-semibold transition-all disabled:opacity-40">Next</button>
+                                    </div>
+                                )}
+                            </div>
                         </div>
                     </>
                 )}

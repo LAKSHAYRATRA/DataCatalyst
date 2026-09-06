@@ -3,6 +3,7 @@ import { Language } from "../models/Language.js";
 import { ScriptedLanguage } from "../models/ScriptedLanguage.js";
 import { Company } from "../models/Company.js";
 import { Phrase } from "../models/Phrase.js";
+import { getArtistRateForProject } from "./vendorController.js";
 
 // GET /api/projects
 export async function getProjects(req, res) {
@@ -116,7 +117,62 @@ export async function getRecommendedProjects(req, res) {
         return res.json({ success: true, projects: [] });
       }
 
+      // If studio contributor has specific project allocations in user.projectPayrates, filter strictly to them
+      const userProjectPayrates = Array.isArray(req.user.projectPayrates) ? req.user.projectPayrates : [];
+      const hasUserAllocations = vendor.isStudio && userProjectPayrates.length > 0;
+
       recommended = recommended.filter((proj) => {
+        if (hasUserAllocations) {
+          if (proj.type === "call") {
+            return userProjectPayrates.some(
+              (p) => p.category === "call" && (
+                (p.language || "").toLowerCase().trim() === (proj.code || "").toLowerCase().trim() ||
+                (p.language || "").toLowerCase().trim() === (proj.language || "").toLowerCase().trim() ||
+                (p.subprojectId || "").toLowerCase().trim() === (proj.code || "").toLowerCase().trim()
+              )
+            );
+          }
+          if (proj.type === "scripted_call") {
+            return userProjectPayrates.some(
+              (p) => p.category === "scripted_call" && (
+                (p.language || "").toLowerCase().trim() === (proj.code || "").toLowerCase().trim() ||
+                (p.language || "").toLowerCase().trim() === (proj.language || "").toLowerCase().trim() ||
+                (p.subprojectId || "").toLowerCase().trim() === (proj.code || "").toLowerCase().trim()
+              )
+            );
+          }
+          if (proj.type === "phrase") {
+            const compIdentifiers = [
+              String(proj.id || "").toLowerCase().trim(),
+              String(proj.code || "").toLowerCase().trim(),
+              String(proj.companyId || "").toLowerCase().trim(),
+              String(proj.projectName || "").toLowerCase().trim()
+            ].filter(Boolean);
+
+            const matchedUserProj = userProjectPayrates.find((p) => {
+              if (p.category !== "phrase") return false;
+              const subId = String(p.subprojectId || "").toLowerCase().trim();
+              const subName = String(p.subprojectName || "").toLowerCase().trim();
+              return compIdentifiers.some((id) => id === subId || id === subName || subId.includes(id) || id.includes(subId));
+            });
+
+            if (!matchedUserProj) return false;
+
+            if (matchedUserProj.language && matchedUserProj.language !== "all") {
+              const allowedLang = String(matchedUserProj.language).toLowerCase().trim();
+              const filteredLangs = (proj.languages || []).filter((l) => String(l).toLowerCase().trim() === allowedLang);
+              if (filteredLangs.length === 0 && (proj.languages || []).length > 0) return false;
+              if (filteredLangs.length > 0) {
+                proj.languages = filteredLangs;
+                proj.language = filteredLangs.map((l) => l.charAt(0).toUpperCase() + l.slice(1)).join(", ");
+              }
+            }
+            return true;
+          }
+          return false;
+        }
+
+        // Fallback: check general vendor active projects
         if (proj.type === "call") {
           return activeProjects.some(
             (p) => p.category === "call" && (p.languageCode || "").toLowerCase().trim() === (proj.code || "").toLowerCase().trim()
@@ -157,6 +213,16 @@ export async function getRecommendedProjects(req, res) {
         }
         return false;
       });
+
+      // Override hourlyPayout: Studio contributors only see the payrate their studio set
+      if (vendor.isStudio || hasUserAllocations) {
+        recommended.forEach((proj) => {
+          const rateRes = getArtistRateForProject(req.user, proj.type, proj.code || proj.companyId, proj.language, proj.hourlyPayout);
+          if (rateRes.isProjectConfigured || Number(req.user.perCallPayrate) > 0 || Number(req.user.hourlyPhrasePayrate) > 0) {
+            proj.hourlyPayout = rateRes.artistRate;
+          }
+        });
+      }
     }
 
     // If authenticated user is present, filter out projects user has applied for, or been rejected/blacklisted from

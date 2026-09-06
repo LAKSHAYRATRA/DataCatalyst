@@ -11,7 +11,10 @@ const phraseRejectionSchema = new mongoose.Schema(
     duration: { type: Number, default: 0 },
     comment: { type: String, default: null },
     rejectedAt: { type: Date, default: Date.now },
-    text: { type: String, default: null }
+    text: { type: String, default: null },
+    artistRate: { type: Number, default: null },
+    studioRate: { type: Number, default: null },
+    projectRate: { type: Number, default: null }
   },
   { timestamps: true }
 );

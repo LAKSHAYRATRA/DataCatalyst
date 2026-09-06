@@ -281,7 +281,7 @@ export default function AdminTopics() {
     });
 
     return (
-        <div className="min-h-screen bg-neutral-900 pt-16 md:pt-0 md:pl-64">
+        <div className="min-h-screen bg-neutral-950 text-neutral-100 pt-16 md:pt-0 md:pl-64">
             <AdminNav />
 
             {/* Content */}

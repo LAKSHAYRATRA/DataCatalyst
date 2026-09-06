@@ -184,7 +184,7 @@ export default function AdminCompanies() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-neutral-900 flex text-white">
+      <div className="min-h-screen bg-neutral-950 flex text-white">
         <AdminNav />
         <main className="flex-1 md:ml-64 p-8 flex items-center justify-center">
           <Loader2 className="w-8 h-8 animate-spin text-warning-500" />
@@ -194,35 +194,39 @@ export default function AdminCompanies() {
   }
 
   return (
-    <div className="min-h-screen bg-neutral-900 flex text-neutral-100 transition-colors duration-300">
+    <div className="min-h-screen bg-neutral-950 flex text-neutral-100 transition-colors duration-300">
       <AdminNav />
       <main className="flex-1 md:ml-64 p-6 md:p-10 max-w-7xl mx-auto">
         
         {/* Header */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8 bg-neutral-800/60 border border-neutral-700/60 p-6 rounded-2xl shadow-xl">
-          <div>
+        <div className="relative overflow-hidden rounded-3xl p-6 md:p-8 mb-8 shadow-xl border bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 border-neutral-800">
+          <div className="absolute top-0 right-0 w-64 h-64 bg-warning-500/5 rounded-full blur-3xl pointer-events-none" />
+          <div className="relative z-10">
             <h1 className="text-2xl md:text-3xl font-extrabold text-white flex items-center gap-3">
-              <Building2 className="w-7 h-7 text-warning-400" />
+              <div className="p-2.5 rounded-2xl bg-warning-500/10 text-warning-400 border border-warning-500/20">
+                <Building2 className="w-6 h-6" />
+              </div>
               <span>Company Phrase Configs</span>
             </h1>
-            <p className="text-neutral-400 text-sm mt-1">
+            <p className="text-neutral-400 text-sm mt-1.5 max-w-2xl">
               Select a project to configure payrates, sample requirements, naming patterns, and tags.
             </p>
           </div>
         </div>
 
         {/* Add New Company Card */}
-        <div className="bg-neutral-800/80 border border-neutral-700/70 p-6 rounded-2xl mb-8 shadow-xl">
-          <h2 className="text-sm font-bold text-white uppercase tracking-wider mb-4 flex items-center gap-2">
+        <div className="relative overflow-hidden rounded-3xl p-6 md:p-8 mb-8 shadow-xl border bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-amber-950/20 border-neutral-800 hover:border-warning-500/40 transition-all">
+          <div className="absolute top-0 right-0 w-48 h-48 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
+          <h2 className="text-sm font-bold text-white uppercase tracking-wider mb-4 flex items-center gap-2 relative z-10">
             <Plus className="w-4 h-4 text-warning-400" />
             <span>Create New Company Project</span>
           </h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 relative z-10">
             <div>
               <label className="block text-xs font-semibold text-neutral-300 mb-1">Company Internal Name / S3 Folder</label>
               <input 
                 type="text" 
-                className="w-full px-3.5 py-2.5 bg-neutral-900/90 border border-neutral-700 rounded-xl text-white text-sm focus:outline-none focus:ring-2 focus:ring-warning-500" 
+                className="w-full px-3.5 py-2.5 bg-neutral-950/90 border border-neutral-800 rounded-xl text-white text-sm focus:outline-none focus:ring-2 focus:ring-warning-500" 
                 placeholder="e.g. Acme_Corp" 
                 value={newCompanyName}
                 onChange={(e) => setNewCompanyName(e.target.value)}
@@ -232,7 +236,7 @@ export default function AdminCompanies() {
               <label className="block text-xs font-semibold text-neutral-300 mb-1">Project Display Name (Contributors)</label>
               <input 
                 type="text" 
-                className="w-full px-3.5 py-2.5 bg-neutral-900/90 border border-neutral-700 rounded-xl text-white text-sm focus:outline-none focus:ring-2 focus:ring-warning-500" 
+                className="w-full px-3.5 py-2.5 bg-neutral-950/90 border border-neutral-800 rounded-xl text-white text-sm focus:outline-none focus:ring-2 focus:ring-warning-500" 
                 placeholder="e.g. Acme Speech Project" 
                 value={newProjectName}
                 onChange={(e) => setNewProjectName(e.target.value)}
@@ -245,7 +249,7 @@ export default function AdminCompanies() {
                   type="number"
                   min="1"
                   max="20"
-                  className="w-full px-3.5 py-2.5 bg-neutral-900/90 border border-neutral-700 rounded-xl text-white text-sm font-mono font-bold focus:outline-none focus:ring-2 focus:ring-warning-500" 
+                  className="w-full px-3.5 py-2.5 bg-neutral-950/90 border border-neutral-800 rounded-xl text-white text-sm font-mono font-bold focus:outline-none focus:ring-2 focus:ring-warning-500" 
                   value={newSamples}
                   onChange={(e) => setNewSamples(e.target.value)}
                 />
@@ -287,20 +291,26 @@ export default function AdminCompanies() {
               <div 
                 key={company._id}
                 onClick={() => navigate(`/admin/companies/${company._id}/config`)}
-                className={`group bg-neutral-800/80 hover:bg-neutral-800 border rounded-2xl p-6 transition-all duration-300 shadow-lg hover:shadow-2xl hover:scale-[1.01] cursor-pointer flex flex-col justify-between ${
+                className={`relative overflow-hidden group rounded-3xl p-6 transition-all duration-300 shadow-xl border flex flex-col justify-between hover:scale-[1.01] cursor-pointer ${
                   company.isHidden 
-                    ? 'border-dashed border-rose-500/40 bg-rose-950/10' 
-                    : 'border-neutral-700/70 hover:border-warning-500/60'
+                    ? 'border-dashed border-rose-500/40 bg-gradient-to-br from-neutral-900 via-neutral-900/90 to-rose-950/30' 
+                    : company.isBoosted
+                    ? 'bg-gradient-to-br from-neutral-900 via-neutral-900/90 to-amber-950/30 border-amber-500/40 hover:border-amber-400/80 shadow-amber-500/5'
+                    : 'bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 border-neutral-800 hover:border-warning-500/50 shadow-lg'
                 }`}
               >
-                <div>
+                <div className={`absolute top-0 right-0 w-36 h-36 rounded-full blur-3xl pointer-events-none transition-all ${
+                  company.isHidden ? 'bg-rose-500/10' : company.isBoosted ? 'bg-amber-500/20 group-hover:bg-amber-500/30' : 'bg-warning-500/10 group-hover:bg-warning-500/20'
+                }`} />
+
+                <div className="relative z-10">
                   <div className="flex items-start justify-between gap-3 mb-4">
                     <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-neutral-700 to-neutral-900 border border-neutral-600 flex items-center justify-center group-hover:border-warning-500/50 transition-colors">
+                      <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-neutral-800 to-neutral-950 border border-neutral-700/80 flex items-center justify-center group-hover:border-warning-500/50 transition-colors shadow-md">
                         <Building2 className="w-5 h-5 text-warning-400" />
                       </div>
                       <div>
-                        <h3 className="text-base font-bold text-white group-hover:text-warning-300 transition-colors leading-tight">
+                        <h3 className="text-base font-extrabold text-white group-hover:text-warning-300 transition-colors leading-tight">
                           {company.projectName || company.name}
                         </h3>
                         <span className="text-xs text-neutral-400 font-mono block mt-0.5">
@@ -311,16 +321,16 @@ export default function AdminCompanies() {
 
                     <div className="flex items-center gap-1.5 flex-wrap">
                       {company.isBoosted && (
-                        <span className="text-[11px] bg-gradient-to-r from-amber-500/20 to-orange-500/20 text-amber-300 border border-amber-500/50 px-2 py-0.5 rounded-full font-extrabold flex items-center gap-1 shadow-sm">
+                        <span className="text-[10px] uppercase tracking-wider bg-gradient-to-r from-amber-500/20 to-orange-500/20 text-amber-300 border border-amber-500/50 px-2.5 py-0.5 rounded-full font-black flex items-center gap-1 shadow-sm animate-pulse">
                           🔥 Boosted
                         </span>
                       )}
                       {company.isHidden ? (
-                        <span className="text-[11px] bg-rose-900/50 text-rose-300 border border-rose-600/60 px-2 py-0.5 rounded-full font-bold flex items-center gap-1">
+                        <span className="text-[10px] uppercase tracking-wider bg-rose-900/50 text-rose-300 border border-rose-600/60 px-2 py-0.5 rounded-full font-bold flex items-center gap-1">
                           <EyeOff className="w-3 h-3" /> Hidden
                         </span>
                       ) : (
-                        <span className="text-[11px] bg-emerald-900/40 text-emerald-300 border border-emerald-600/50 px-2 py-0.5 rounded-full font-bold flex items-center gap-1">
+                        <span className="text-[10px] uppercase tracking-wider bg-emerald-950/60 text-emerald-300 border border-emerald-600/50 px-2 py-0.5 rounded-full font-bold flex items-center gap-1">
                           <Eye className="w-3 h-3" /> Active
                         </span>
                       )}
@@ -328,9 +338,9 @@ export default function AdminCompanies() {
                   </div>
 
                   {/* Config Highlights Grid */}
-                  <div className="grid grid-cols-2 gap-2 bg-neutral-900/60 border border-neutral-700/40 rounded-xl p-3 text-xs mb-4">
+                  <div className="grid grid-cols-2 gap-2 bg-neutral-950/80 border border-neutral-800/80 rounded-2xl p-3.5 text-xs mb-4">
                     <div>
-                      <span className="text-neutral-500 block text-[10px] uppercase font-bold flex items-center gap-1">
+                      <span className="text-neutral-400 block text-[10px] uppercase font-bold flex items-center gap-1">
                         <FileAudio className="w-3 h-3 text-warning-400" />
                         <span>Samples Req.</span>
                       </span>
@@ -340,17 +350,17 @@ export default function AdminCompanies() {
                     </div>
 
                     <div>
-                      <span className="text-neutral-500 block text-[10px] uppercase font-bold flex items-center gap-1">
+                      <span className="text-neutral-400 block text-[10px] uppercase font-bold flex items-center gap-1">
                         <DollarSign className="w-3 h-3 text-emerald-400" />
                         <span>Payrate</span>
                       </span>
-                      <span className="text-white font-bold font-mono text-sm">
+                      <span className="text-emerald-400 font-bold font-mono text-sm">
                         {company.hourlyPayout ? `$${company.hourlyPayout}/hr` : 'Default'}
                       </span>
                     </div>
 
                     <div>
-                      <span className="text-neutral-500 block text-[10px] uppercase font-bold flex items-center gap-1">
+                      <span className="text-neutral-400 block text-[10px] uppercase font-bold flex items-center gap-1">
                         <Clock className="w-3 h-3 text-neutral-400" />
                         <span>Max Limit</span>
                       </span>
@@ -360,7 +370,7 @@ export default function AdminCompanies() {
                     </div>
 
                     <div>
-                      <span className="text-neutral-500 block text-[10px] uppercase font-bold flex items-center gap-1">
+                      <span className="text-neutral-400 block text-[10px] uppercase font-bold flex items-center gap-1">
                         <Users className="w-3 h-3 text-neutral-400" />
                         <span>Frequency</span>
                       </span>
@@ -372,22 +382,22 @@ export default function AdminCompanies() {
                 </div>
 
                 {/* Card Actions & Footer */}
-                <div className="pt-3 border-t border-neutral-700/50 flex items-center justify-between">
+                <div className="pt-3.5 border-t border-neutral-800 flex items-center justify-between relative z-10">
                   <div className="flex items-center gap-2">
                     <button 
                       onClick={(e) => { e.stopPropagation(); navigate(`/admin/companies/${company._id}/phrase-workloads`); }}
-                      className="p-1.5 px-2.5 bg-neutral-700/80 hover:bg-neutral-700 text-neutral-300 hover:text-white rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors"
+                      className="p-1.5 px-3 bg-neutral-800 hover:bg-neutral-750 text-neutral-200 hover:text-white border border-neutral-700/60 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors"
                       title="View phrase workloads"
                     >
-                      <Layers className="w-3.5 h-3.5" />
+                      <Layers className="w-3.5 h-3.5 text-warning-400" />
                       <span>Workloads</span>
                     </button>
                     <button 
                       onClick={(e) => toggleBoostCompany(e, company._id, company.projectName || company.name, company.isBoosted, company.isHidden)}
-                      className={`p-1.5 px-2.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1 ${
+                      className={`p-1.5 px-3 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 border ${
                         company.isBoosted
-                          ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 hover:bg-amber-500/30'
-                          : 'bg-neutral-700/80 hover:bg-neutral-700 text-neutral-300 hover:text-white'
+                          ? 'bg-amber-500/20 text-amber-300 border-amber-500/40 hover:bg-amber-500/30'
+                          : 'bg-neutral-800 hover:bg-neutral-750 text-neutral-300 hover:text-white border-neutral-700/60'
                       }`}
                       title={company.isBoosted ? "Unboost from Dashboard" : "Boost & Recommend on Dashboard"}
                     >
@@ -395,10 +405,10 @@ export default function AdminCompanies() {
                     </button>
                     <button 
                       onClick={(e) => toggleHideCompany(e, company._id, company.name, company.isHidden)}
-                      className={`p-1.5 rounded-lg text-xs font-bold transition-colors ${
+                      className={`p-1.5 px-2 rounded-xl text-xs font-bold transition-colors border ${
                         company.isHidden 
-                          ? 'bg-emerald-900/60 hover:bg-emerald-800 text-emerald-200' 
-                          : 'bg-neutral-700/80 hover:bg-neutral-700 text-neutral-300'
+                          ? 'bg-emerald-900/60 hover:bg-emerald-800 text-emerald-200 border-emerald-700/50' 
+                          : 'bg-neutral-800 hover:bg-neutral-750 text-neutral-300 border-neutral-700/60'
                       }`}
                       title={company.isHidden ? "Unhide project" : "Hide project"}
                     >
@@ -406,7 +416,7 @@ export default function AdminCompanies() {
                     </button>
                     <button 
                       onClick={(e) => deleteCompany(e, company._id, company.name)}
-                      className="p-1.5 bg-neutral-700/80 hover:bg-rose-900/60 text-neutral-400 hover:text-rose-300 rounded-lg text-xs transition-colors"
+                      className="p-1.5 px-2 bg-neutral-800 hover:bg-rose-950/60 text-neutral-400 hover:text-rose-300 border border-neutral-700/60 hover:border-rose-700/60 rounded-xl text-xs transition-colors"
                       title="Delete company"
                     >
                       <Trash2 className="w-3.5 h-3.5" />

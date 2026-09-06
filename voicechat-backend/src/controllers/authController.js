@@ -37,6 +37,15 @@ export function formatUserResponse(user) {
     qaLanguageCodes: user.qaLanguageCodes || [],
     perCallPayrate: user.perCallPayrate !== undefined ? user.perCallPayrate : 0,
     hourlyPhrasePayrate: user.hourlyPhrasePayrate !== undefined ? user.hourlyPhrasePayrate : 0,
+    projectPayrates: (user.projectPayrates || []).map((p) => ({
+      category: p.category,
+      subprojectId: p.subprojectId,
+      subprojectName: p.subprojectName,
+      language: p.language,
+      artistRate: p.artistRate,
+      hourlyPayout: p.artistRate,
+      ...((user.isAdmin || user.isVendor) ? { projectRate: p.projectRate, studioRate: p.studioRate } : {})
+    })),
     dailyCallLimit: user.dailyCallLimit,
     accountStatus: user.accountStatus || "pending_intro",
     isDisabled: !!user.isDisabled,

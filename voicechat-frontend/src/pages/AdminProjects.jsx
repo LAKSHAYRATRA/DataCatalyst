@@ -117,7 +117,7 @@ export default function AdminProjects() {
     }
 
     return (
-        <div className="min-h-screen bg-neutral-900 pt-16 md:pt-0 md:pl-64">
+        <div className="min-h-screen bg-neutral-950 text-neutral-100 pt-16 md:pt-0 md:pl-64">
             <AdminNav />
             <div className="max-w-7xl mx-auto px-4 md:px-6 py-6 md:py-12">
 

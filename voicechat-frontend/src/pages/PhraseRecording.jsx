@@ -1097,15 +1097,16 @@ export default function PhraseRecording() {
             ← Back to Dashboard
           </button>
           <h1 className="text-3xl font-bold mb-2">Phrase Recording Studio</h1>
-          <p className="text-neutral-500 dark:text-neutral-400">Contribute your voice to high-quality AI training sets.</p>
+          <p className="text-neutral-400 text-sm">Contribute your voice to high-quality AI training sets.</p>
         </div>
-        <div className="bg-success-100 dark:bg-success-900/30 border border-success-200 dark:border-success-800 p-4 rounded-xl flex items-center gap-4">
-          <div className="bg-success-500 text-white p-3 rounded-full">
+        <div className="relative overflow-hidden bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 border border-neutral-800 p-5 rounded-3xl flex items-center gap-4 shadow-xl">
+          <div className="absolute top-0 right-0 w-24 h-24 bg-emerald-500/10 rounded-full blur-2xl pointer-events-none" />
+          <div className="bg-emerald-950/60 border border-emerald-800/60 text-emerald-400 p-3.5 rounded-2xl relative z-10 shadow-sm">
             <Clock className="w-6 h-6" />
           </div>
-          <div>
-            <p className="text-xs font-bold uppercase tracking-wider text-success-700 dark:text-success-400">Total Approved Time</p>
-            <p className="text-2xl font-mono font-bold text-success-800 dark:text-success-300">{formatTime(stats.totalSeconds)}</p>
+          <div className="relative z-10">
+            <p className="text-[10px] font-extrabold uppercase tracking-widest text-emerald-400">Total Approved Time</p>
+            <p className="text-2xl font-mono font-bold text-white mt-0.5">{formatTime(stats.totalSeconds)}</p>
           </div>
         </div>
       </motion.div>
@@ -1176,16 +1177,18 @@ export default function PhraseRecording() {
               transition={{ delay: 0.1 }}
               className="lg:col-span-2 space-y-6"
             >
-              <div className="card">
-                <h2 className="text-lg font-semibold mb-4">1. Fetch a Phrase</h2>
+              <div className="relative overflow-hidden rounded-3xl p-6 md:p-8 bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 border border-neutral-800 shadow-xl">
+                <div className="absolute top-0 right-0 w-36 h-36 bg-primary-500/10 rounded-full blur-3xl pointer-events-none" />
+                <div className="relative z-10">
+                <h2 className="text-xl font-black text-white mb-5 tracking-tight">1. Fetch a Phrase</h2>
                 
                 <div className="flex flex-col sm:flex-row gap-4 mb-4">
                   <div className="flex-1">
-                    <label className="block text-xs font-bold text-neutral-500 uppercase tracking-wider mb-2 flex items-center gap-2">
-                      <FolderGit2 className="w-4 h-4" /> Project
+                    <label className="block text-xs font-bold text-neutral-400 uppercase tracking-wider mb-2 flex items-center gap-2">
+                      <FolderGit2 className="w-4 h-4 text-primary-400" /> Project
                     </label>
                     <select 
-                      className="input w-full"
+                      className="input w-full bg-neutral-950/80 border-neutral-800 text-white rounded-2xl"
                       value={projectName} 
                       onChange={(e) => {
                         setProjectName(e.target.value);
@@ -1199,11 +1202,11 @@ export default function PhraseRecording() {
                   </div>
 
                   <div className="flex-1">
-                    <label className="block text-xs font-bold text-neutral-500 uppercase tracking-wider mb-2 flex items-center gap-2">
-                      <Mic className="w-4 h-4" /> Language
+                    <label className="block text-xs font-bold text-neutral-400 uppercase tracking-wider mb-2 flex items-center gap-2">
+                      <Mic className="w-4 h-4 text-primary-400" /> Language
                     </label>
                     <select 
-                      className="input w-full capitalize" 
+                      className="input w-full capitalize bg-neutral-950/80 border-neutral-800 text-white rounded-2xl" 
                       value={language} 
                       onChange={(e) => {
                         setLanguage(e.target.value);
@@ -1221,29 +1224,29 @@ export default function PhraseRecording() {
                       type="button"
                       onClick={() => setShowMicSettingsModal(true)}
                       disabled={loading || activeSlotId !== null}
-                      className="input w-full bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700 text-neutral-800 dark:text-neutral-200 font-semibold flex items-center justify-between transition-all"
+                      className="input w-full bg-neutral-950/80 hover:bg-neutral-850 border border-neutral-800 text-white font-semibold flex items-center justify-between transition-all rounded-2xl shadow-sm"
                       title="Configure Noise Gate, 5kHz Notch, De-Hiss, De-Esser & Gain Control"
                     >
                       <span className="flex items-center gap-1.5 truncate mr-1">
-                        <Settings className="w-4 h-4 text-primary-500 shrink-0" /> <span className="truncate">Mic & Audio DSP</span>
+                        <Settings className="w-4 h-4 text-primary-400 shrink-0" /> <span className="truncate">Mic & Audio DSP</span>
                       </span>
                       <div className="flex items-center gap-1 shrink-0">
                         {activeNotch5k && (
-                          <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-600 dark:text-emerald-400">
+                          <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400">
                             5k
                           </span>
                         )}
                         {activeDeHiss !== "off" && (
-                          <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-600 dark:text-cyan-400">
+                          <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-400">
                             {activeDeHiss}
                           </span>
                         )}
                         {activeDeEsser !== "off" && (
-                          <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-600 dark:text-purple-400">
+                          <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-400">
                             Ess
                           </span>
                         )}
-                        <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-primary-100 dark:bg-primary-900/40 text-primary-600 dark:text-primary-400">
+                        <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-primary-900/40 text-primary-400">
                           {activeNoiseGateDb}dB
                         </span>
                       </div>
@@ -1259,21 +1262,21 @@ export default function PhraseRecording() {
                     initial={{ opacity: 0, scale: 0.95 }}
                     animate={{ opacity: 1, scale: 1 }}
                     exit={{ opacity: 0, scale: 0.95 }}
-                    className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-2xl p-6 w-full max-w-lg shadow-2xl relative max-h-[90vh] overflow-y-auto"
+                    className="bg-neutral-900 border border-neutral-800 rounded-3xl p-6 w-full max-w-lg shadow-2xl relative max-h-[90vh] overflow-y-auto"
                   >
-                    <div className="flex items-center justify-between border-b border-neutral-200 dark:border-neutral-800 pb-4 mb-4">
+                    <div className="flex items-center justify-between border-b border-neutral-800 pb-4 mb-4">
                       <div className="flex items-center gap-3">
-                        <div className="bg-primary-500/10 text-primary-500 p-2 rounded-xl">
+                        <div className="bg-primary-500/10 text-primary-400 p-2 rounded-xl">
                           <Settings className="w-5 h-5" />
                         </div>
                         <div>
-                          <h3 className="font-bold text-lg text-neutral-900 dark:text-neutral-100">Audio DSP & Mic Settings</h3>
-                          <p className="text-xs text-neutral-500">Real-time filters, noise gate & gain</p>
+                          <h3 className="font-bold text-lg text-white">Audio DSP & Mic Settings</h3>
+                          <p className="text-xs text-neutral-400">Real-time filters, noise gate & gain</p>
                         </div>
                       </div>
                       <button 
                         onClick={() => setShowMicSettingsModal(false)}
-                        className="p-2 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200 rounded-lg transition-colors"
+                        className="p-2 text-neutral-400 hover:text-white rounded-lg transition-colors"
                       >
                         <X className="w-5 h-5" />
                       </button>
@@ -1281,12 +1284,12 @@ export default function PhraseRecording() {
 
                     <div className="mb-5">
                       {/* Noise Gate Section */}
-                      <div className="bg-neutral-50 dark:bg-neutral-800/60 p-3.5 rounded-xl border border-neutral-200 dark:border-neutral-700/60">
-                        <label className="block text-xs font-bold text-neutral-700 dark:text-neutral-300 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
+                      <div className="bg-neutral-950/70 p-3.5 rounded-2xl border border-neutral-800">
+                        <label className="block text-xs font-bold text-neutral-300 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
                           <Sliders className="w-3.5 h-3.5 text-warning-500" /> Noise Gate
                         </label>
                         <select 
-                          className="input w-full font-semibold text-xs py-2 border-warning-500/40 text-warning-700 dark:text-warning-300 bg-white dark:bg-neutral-800" 
+                          className="input w-full font-semibold text-xs py-2 border-neutral-700 text-warning-300 bg-neutral-900 rounded-xl" 
                           value={activeNoiseGateDb} 
                           onChange={(e) => handleAudioConfigChange({ noiseGateDb: e.target.value })}
                           disabled={loading || activeSlotId !== null}
@@ -1303,12 +1306,12 @@ export default function PhraseRecording() {
                     </div>
 
                     {/* Gain Control Section */}
-                    <div className="mb-5 bg-neutral-50 dark:bg-neutral-800/40 p-4 rounded-xl border border-neutral-200 dark:border-neutral-700/60">
+                    <div className="mb-5 bg-neutral-950/70 p-4 rounded-2xl border border-neutral-800">
                       <div className="flex items-center justify-between mb-2">
-                        <label className="block text-xs font-bold text-neutral-700 dark:text-neutral-300 uppercase tracking-wider flex items-center gap-2">
-                          <Volume2 className="w-4 h-4 text-success-500" /> Volume / Gain Control
+                        <label className="block text-xs font-bold text-neutral-300 uppercase tracking-wider flex items-center gap-2">
+                          <Volume2 className="w-4 h-4 text-emerald-400" /> Volume / Gain Control
                         </label>
-                        <span className={`text-xs font-mono font-bold px-2.5 py-0.5 rounded-full ${micGainPercent < 0 ? 'bg-error-100 dark:bg-error-900/30 text-error-600 dark:text-error-400' : micGainPercent > 0 ? 'bg-success-100 dark:bg-success-900/30 text-success-600 dark:text-success-400' : 'bg-neutral-200 dark:bg-neutral-700 text-neutral-700 dark:text-neutral-300'}`}>
+                        <span className={`text-xs font-mono font-bold px-2.5 py-0.5 rounded-full ${micGainPercent < 0 ? 'bg-error-900/30 text-error-400' : micGainPercent > 0 ? 'bg-emerald-900/30 text-emerald-400' : 'bg-neutral-800 text-neutral-300'}`}>
                           {micGainPercent > 0 ? `+${micGainPercent}%` : `${micGainPercent}%`} ({micGainMultiplier.toFixed(2)}x)
                         </span>
                       </div>
@@ -1320,7 +1323,7 @@ export default function PhraseRecording() {
                         value={micGainPercent}
                         onChange={(e) => handleMicGainPercentChange(e.target.value)}
                         disabled={loading || activeSlotId !== null}
-                        className="w-full h-2 bg-neutral-200 dark:bg-neutral-700 rounded-lg appearance-none cursor-pointer accent-success-500"
+                        className="w-full h-2 bg-neutral-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
                       />
                       <div className="flex justify-between text-[10px] text-neutral-400 font-mono font-semibold px-0.5 mt-1">
                         <span>-100% (Mute)</span>
@@ -1331,15 +1334,15 @@ export default function PhraseRecording() {
 
                     {/* LUFS Calibration Section */}
                     {enforceLufs !== false && (
-                      <div className="mb-5 p-4 rounded-2xl border border-primary-500/30 bg-primary-950/20 dark:bg-neutral-800/90 text-neutral-900 dark:text-white shadow-inner">
+                      <div className="mb-5 p-4 rounded-2xl border border-neutral-800 bg-neutral-950/90 text-white shadow-inner">
                         <div className="flex items-center justify-between mb-2">
-                          <label className="block text-xs font-bold text-primary-600 dark:text-primary-400 uppercase tracking-wider flex items-center gap-2">
-                            <Activity className="w-4 h-4 text-primary-500" /> Check LUFS (3s Calibration)
+                          <label className="block text-xs font-bold text-primary-400 uppercase tracking-wider flex items-center gap-2">
+                            <Activity className="w-4 h-4 text-primary-400" /> Check LUFS (3s Calibration)
                           </label>
-                          <span className="text-[10px] font-bold text-neutral-500 dark:text-neutral-300 font-mono px-2 py-0.5 rounded bg-primary-500/10 border border-primary-500/20">Target: -18 to -25 LUFS</span>
+                          <span className="text-[10px] font-bold text-neutral-300 font-mono px-2 py-0.5 rounded bg-primary-500/10 border border-primary-500/20">Target: -18 to -25 LUFS</span>
                         </div>
 
-                        <p className="text-xs text-neutral-600 dark:text-neutral-300 mb-3 font-medium">
+                        <p className="text-xs text-neutral-300 mb-3 font-medium">
                           Click below and speak naturally for 3 seconds to test your mic volume calibration with active DSP.
                         </p>
 
@@ -1369,12 +1372,12 @@ export default function PhraseRecording() {
                         {lufsResult && (
                           <div className={`mt-3 p-3 rounded-xl border flex items-center justify-between text-xs font-bold shadow-sm ${
                             lufsResult.status === "pass" 
-                              ? "bg-emerald-500/15 border-emerald-500/40 text-emerald-700 dark:text-emerald-300"
+                              ? "bg-emerald-500/15 border-emerald-500/40 text-emerald-300"
                               : lufsResult.status === "no_speech"
                               ? "bg-neutral-800 border-neutral-700 text-neutral-300"
                               : lufsResult.status === "too_loud"
-                              ? "bg-rose-500/15 border-rose-500/40 text-rose-700 dark:text-rose-300"
-                              : "bg-amber-500/15 border-amber-500/40 text-amber-700 dark:text-amber-300"
+                              ? "bg-rose-500/15 border-rose-500/40 text-rose-300"
+                              : "bg-amber-500/15 border-amber-500/40 text-amber-300"
                           }`}>
                             <span className="flex items-center gap-1.5 font-semibold">
                               {lufsResult.status === "pass" 
@@ -1396,7 +1399,7 @@ export default function PhraseRecording() {
                     <div className="flex justify-end pt-1">
                       <button 
                         onClick={() => setShowMicSettingsModal(false)}
-                        className="btn btn-primary w-full py-2.5 font-bold"
+                        className="btn btn-primary w-full py-2.5 font-bold rounded-xl"
                       >
                         Done & Apply Settings
                       </button>
@@ -1407,18 +1410,18 @@ export default function PhraseRecording() {
             </AnimatePresence>
 
             <div className="flex justify-end mb-4">
-               <Link to="/language-apply" className="text-sm font-medium text-primary-600 hover:text-primary-700">
+               <Link to="/language-apply" className="text-sm font-medium text-primary-400 hover:text-primary-300 transition-colors">
                  + Apply for New Project/Language
                </Link>
             </div>
 
-            <div className="flex items-center justify-between bg-primary-900/20 border border-primary-500/30 p-4 rounded-xl mb-4">
+            <div className="flex items-center justify-between bg-neutral-950/60 border border-neutral-800 p-4 rounded-2xl mb-4 shadow-inner">
               <div className="flex items-center gap-3">
-                <div className="bg-primary-500 p-2 rounded-lg text-white">
+                <div className="bg-primary-600 border border-primary-500 text-white p-2.5 rounded-xl shadow-md shadow-primary-600/20">
                   <DollarSign className="w-5 h-5" />
                 </div>
                 <div>
-                  <p className="text-xs font-bold text-primary-400 uppercase tracking-wider">Current Payrate</p>
+                  <p className="text-[10px] font-extrabold text-primary-400 uppercase tracking-wider">Current Payrate</p>
                   <p className="font-bold text-lg text-white">${currentPayrate.toFixed(2)} / hour</p>
                 </div>
               </div>
@@ -1426,7 +1429,7 @@ export default function PhraseRecording() {
 
             <div className="flex gap-4">
               <button 
-                className="btn btn-primary w-full"
+                className="btn btn-primary w-full py-3 rounded-2xl font-bold shadow-lg shadow-primary-600/20"
                 onClick={() => fetchFiveSlots(true)}
                 disabled={loading || activeSlotId !== null || (stats.dailyPhraseLimit !== -1 && stats.phrasesRecordedToday >= stats.dailyPhraseLimit)}
               >
@@ -1437,7 +1440,8 @@ export default function PhraseRecording() {
             {stats.dailyPhraseLimit !== -1 && stats.phrasesRecordedToday >= stats.dailyPhraseLimit && (
                 <p className="text-warning-500 mt-3 text-sm font-semibold">You have reached your daily phrase limit! Please come back tomorrow.</p>
             )}
-          </div>
+                </div>
+              </div>
 
           {/* 5 Independent Stationary Phrase Containers */}
           <div className="space-y-6">
@@ -1479,12 +1483,14 @@ export default function PhraseRecording() {
               return (
                 <div
                   key={`container_slot_${index}`}
-                  className="card border-l-4 border-l-primary-500 relative overflow-hidden transition-all duration-300"
+                  className="relative overflow-hidden rounded-3xl p-6 md:p-8 bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 border border-neutral-800 hover:border-neutral-700 shadow-xl transition-all duration-300 group"
                 >
+                  <div className="absolute top-0 right-0 w-36 h-36 bg-primary-500/10 rounded-full blur-3xl pointer-events-none group-hover:bg-primary-500/15 transition-all" />
+                  <div className="relative z-10">
                   {/* Phrase Number & Language Badge */}
-                  <div className="flex items-center justify-between border-b border-neutral-200 dark:border-neutral-800 pb-3 mb-4">
+                  <div className="flex items-center justify-between border-b border-neutral-800 pb-3 mb-4">
                     <div className="flex items-center gap-2">
-                      <span className="font-mono font-extrabold text-xs text-primary-600 dark:text-primary-400 bg-primary-500/10 border border-primary-500/20 px-2.5 py-1 rounded-lg">
+                      <span className="font-mono font-extrabold text-xs text-primary-400 bg-primary-500/10 border border-primary-500/20 px-2.5 py-1 rounded-xl">
                         Phrase #{index + 1}
                       </span>
                       {slot.isSubmitting && (
@@ -1495,18 +1501,18 @@ export default function PhraseRecording() {
                       )}
                     </div>
 
-                    <span className="bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider">
+                    <span className="bg-primary-900/30 text-primary-300 border border-primary-800/40 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider">
                       {phrase.language}
                     </span>
                   </div>
 
-                  <h2 className="text-xs font-bold uppercase tracking-wider opacity-60 mb-2">Read this text clearly:</h2>
-                  <div className="bg-neutral-50 dark:bg-neutral-800/80 p-5 rounded-xl border border-neutral-200 dark:border-neutral-700 mb-4">
-                    <p className="text-xl md:text-2xl leading-relaxed font-medium">"{phrase.text}"</p>
+                  <h2 className="text-xs font-bold uppercase tracking-wider text-neutral-400 mb-2">Read this text clearly:</h2>
+                  <div className="bg-neutral-950/90 p-6 rounded-2xl border border-neutral-800 mb-5 shadow-inner">
+                    <p className="text-xl md:text-2xl leading-relaxed font-semibold text-white">"{phrase.text}"</p>
                   </div>
 
                   {/* Metadata Tags */}
-                  <div className="flex flex-wrap items-center gap-3 mb-6 bg-neutral-50/50 dark:bg-neutral-900/50 p-3.5 rounded-lg text-xs">
+                  <div className="flex flex-wrap items-center gap-2 mb-6 bg-neutral-950/50 p-4 rounded-2xl text-xs border border-neutral-800/80">
                     {(() => {
                       const INTERNAL_KEYS = ['text', '_id', 'phraseid', 'companyid', 'projectname', 'language', 'status', 'createdat', 'updatedat', '__v', 'lockedat', 'lockedby', 'istestphrase', 'issample', 'needssecondqareview', 'isedited', 'originaltext', 'editedby', 'editedat', 'editedphrasestatus', 'audiofile', 'duration', 'lufs', 'recordedat', 'qaid', 'qacomment', 'reviewedat', 'qalockedby', 'qalockedat', 'qcresult', 'contributorid'];
 
@@ -1524,9 +1530,9 @@ export default function PhraseRecording() {
                         const val = getPhraseTagValue(phrase, tagKey);
                         if (val !== null && val !== undefined) {
                           renderedBadges.push(
-                            <div key={tagKey} className="bg-neutral-100 dark:bg-neutral-800 px-3 py-1.5 rounded-md border border-neutral-200/50 dark:border-neutral-700/50">
-                              <span className="block opacity-60 mb-0.5 uppercase tracking-wider text-[10px]">{tagKey}</span>
-                              <span className="font-semibold text-neutral-800 dark:text-neutral-200 capitalize">{val}</span>
+                            <div key={tagKey} className="bg-neutral-900/90 px-3.5 py-1.5 rounded-xl border border-neutral-800">
+                              <span className="block opacity-60 mb-0.5 uppercase tracking-wider text-[10px] text-neutral-400">{tagKey}</span>
+                              <span className="font-semibold text-neutral-200 capitalize">{val}</span>
                             </div>
                           );
                         }
@@ -1538,9 +1544,9 @@ export default function PhraseRecording() {
                           if (INTERNAL_KEYS.includes(k.toLowerCase())) continue;
                           if (!visibleKeys.some(vk => vk.toLowerCase() === k.toLowerCase())) {
                             renderedBadges.push(
-                              <div key={k} className="bg-neutral-100 dark:bg-neutral-800 px-3 py-1.5 rounded-md border border-neutral-200/50 dark:border-neutral-700/50">
-                                <span className="block opacity-60 mb-0.5 uppercase tracking-wider text-[10px]">{k}</span>
-                                <span className="font-semibold text-neutral-800 dark:text-neutral-200 capitalize">{String(v)}</span>
+                              <div key={k} className="bg-neutral-900/90 px-3.5 py-1.5 rounded-xl border border-neutral-800">
+                                <span className="block opacity-60 mb-0.5 uppercase tracking-wider text-[10px] text-neutral-400">{k}</span>
+                                <span className="font-semibold text-neutral-200 capitalize">{String(v)}</span>
                               </div>
                             );
                           }
@@ -1554,12 +1560,12 @@ export default function PhraseRecording() {
                   </div>
 
                   {/* Controls below Phrase Container */}
-                  <div className="flex flex-col md:flex-row items-center gap-4 border-t border-neutral-200 dark:border-neutral-800 pt-4">
+                  <div className="flex flex-col md:flex-row items-center gap-4 border-t border-neutral-800 pt-4">
                     {!slot.isRecording && !slot.audioUrl && (
                       <button
                         onClick={() => startRecordingSlot(slot.id)}
                         disabled={slot.isSubmitting || (activeSlotId !== null && activeSlotId !== slot.id)}
-                        className="btn btn-primary flex items-center justify-center gap-2 py-3 px-6 text-sm font-bold w-full md:w-auto"
+                        className="btn btn-primary flex items-center justify-center gap-2 py-3 px-6 text-sm font-bold w-full md:w-auto rounded-xl shadow-md shadow-primary-600/20"
                       >
                         <Mic className="w-4 h-4" /> Record
                       </button>
@@ -1584,24 +1590,24 @@ export default function PhraseRecording() {
                     {slot.audioUrl && !slot.isRecording && (
                       <div className="w-full space-y-3">
                         <div className="flex items-center justify-between">
-                          <span className="bg-success-100 dark:bg-success-900/40 text-success-700 dark:text-success-400 px-3 py-1 rounded-full text-xs font-semibold flex items-center gap-1.5">
+                          <span className="bg-emerald-900/40 text-emerald-300 border border-emerald-800/40 px-3 py-1 rounded-full text-xs font-semibold flex items-center gap-1.5">
                             <CheckCircle2 className="w-3.5 h-3.5" /> Recorded ({formatTime(slot.duration)})
                           </span>
 
                           {slot.recordedLufs !== null && enforceLufs !== false && (
                             <span className={`px-2.5 py-0.5 rounded-full text-xs font-mono font-bold border ${
                               slot.recordedLufs >= -25.0 && slot.recordedLufs <= -18.0
-                                ? "bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border-emerald-500/40"
+                                ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40"
                                 : slot.recordedLufs > -18.0
-                                ? "bg-rose-500/20 text-rose-700 dark:text-rose-300 border-rose-500/40"
-                                : "bg-amber-500/20 text-amber-700 dark:text-amber-300 border-amber-500/40"
+                                ? "bg-rose-500/20 text-rose-300 border-rose-500/40"
+                                : "bg-amber-500/20 text-amber-300 border-amber-500/40"
                             }`}>
                               {slot.recordedLufs} LUFS
                             </span>
                           )}
                         </div>
 
-                        <div className="bg-neutral-100 dark:bg-neutral-800 rounded-xl p-2">
+                        <div className="bg-neutral-950/80 border border-neutral-800 rounded-2xl p-3">
                           <audio src={slot.audioUrl} controls controlsList="nodownload noplaybackrate" className="w-full h-10" />
                         </div>
 
@@ -1625,7 +1631,7 @@ export default function PhraseRecording() {
                           <button
                             onClick={() => resetSlot(slot.id)}
                             disabled={slot.isSubmitting || slot.isAnalyzing}
-                            className="flex-1 py-2.5 px-3 border border-neutral-300 dark:border-neutral-700 hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-xl text-xs font-semibold text-neutral-700 dark:text-neutral-200 flex items-center justify-center gap-1.5 transition-colors disabled:opacity-50"
+                            className="flex-1 py-2.5 px-3 border border-neutral-700 hover:bg-neutral-800 rounded-xl text-xs font-semibold text-neutral-200 flex items-center justify-center gap-1.5 transition-colors disabled:opacity-50"
                           >
                             <RotateCcw className="w-4 h-4" /> Re-record
                           </button>
@@ -1649,7 +1655,7 @@ export default function PhraseRecording() {
                           <button
                             onClick={() => submitSlot(slot.id)}
                             disabled={slot.isSubmitting || slot.isAnalyzing}
-                            className={`flex-1 btn ${slot.submitError ? 'bg-amber-600 hover:bg-amber-500 text-white shadow-amber-600/20' : 'btn-primary'} flex items-center justify-center gap-1.5 py-2.5 px-3 text-xs font-semibold disabled:opacity-50 transition-all`}
+                            className={`flex-1 btn ${slot.submitError ? 'bg-amber-600 hover:bg-amber-500 text-white shadow-amber-600/20' : 'btn-primary'} flex items-center justify-center gap-1.5 py-2.5 px-3 text-xs font-semibold disabled:opacity-50 transition-all rounded-xl`}
                           >
                             {slot.isSubmitting ? (
                               <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
@@ -1668,6 +1674,7 @@ export default function PhraseRecording() {
                       </div>
                     )}
                   </div>
+                  </div>
                 </div>
               );
             })}
@@ -1683,58 +1690,62 @@ export default function PhraseRecording() {
           transition={{ delay: 0.2 }}
           className="lg:col-span-1"
         >
-          <div className="card h-full">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-neutral-500 dark:text-neutral-400 mb-3 border-b border-neutral-100 dark:border-neutral-800 pb-2">
-              My Submissions
+          <div className="relative overflow-hidden rounded-3xl p-6 bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 border border-neutral-800 shadow-xl h-full">
+            <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/10 rounded-full blur-2xl pointer-events-none" />
+            <div className="relative z-10">
+            <h3 className="text-xs font-extrabold uppercase tracking-wider text-neutral-400 mb-4 border-b border-neutral-800 pb-3 flex items-center justify-between">
+              <span>My Submissions</span>
+              <span className="text-[10px] font-mono text-primary-400 bg-primary-950/60 border border-primary-800/60 px-2 py-0.5 rounded-full">{stats.history.length}</span>
             </h3>
             
             {/* Approved & Pending Duration Counters */}
-            <div className="grid grid-cols-2 gap-2 mb-4 bg-neutral-50 dark:bg-neutral-800/60 p-3 rounded-xl border border-neutral-200/60 dark:border-neutral-700/60">
+            <div className="grid grid-cols-2 gap-2.5 mb-4 bg-neutral-950/80 p-3.5 rounded-2xl border border-neutral-800 shadow-inner">
               <div>
-                <span className="block text-[10px] font-bold text-success-600 dark:text-success-400 uppercase tracking-wider">Approved Duration</span>
-                <span className="font-mono font-bold text-sm text-neutral-900 dark:text-white">
+                <span className="block text-[10px] font-extrabold text-emerald-400 uppercase tracking-wider">Approved</span>
+                <span className="font-mono font-bold text-sm text-white">
                   {formatHHMMSS(approvedDurationSec)}
                 </span>
               </div>
               <div>
-                <span className="block text-[10px] font-bold text-warning-600 dark:text-warning-400 uppercase tracking-wider">Pending Duration</span>
-                <span className="font-mono font-bold text-sm text-neutral-900 dark:text-white">
+                <span className="block text-[10px] font-extrabold text-indigo-400 uppercase tracking-wider">Pending</span>
+                <span className="font-mono font-bold text-sm text-white">
                   {formatHHMMSS(pendingDurationSec)}
                 </span>
               </div>
             </div>
             
-            <div className="space-y-4 max-h-[600px] overflow-y-auto pr-2">
+            <div className="space-y-3 max-h-[600px] overflow-y-auto pr-1">
               {stats.history.map(item => (
-                <div key={item._id} className="p-4 rounded-lg border border-neutral-100 dark:border-neutral-800 bg-neutral-50/50 dark:bg-neutral-800/30">
-                  <div className="flex justify-between items-start mb-2">
-                    <span className="text-xs font-mono opacity-60 truncate mr-2 flex-1">"{item.text ? (item.text.length > 30 ? item.text.substring(0, 30) + '...' : item.text) : 'Phrase Recording'}"</span>
-                    <span className={`badge shrink-0 ${
+                <div key={item._id} className="p-3.5 rounded-2xl border border-neutral-800 bg-neutral-950/60 hover:bg-neutral-900/80 hover:border-neutral-700 transition-all shadow-sm">
+                  <div className="flex justify-between items-start mb-2 gap-2">
+                    <span className="text-xs font-mono text-neutral-300 truncate flex-1">"{item.text ? (item.text.length > 30 ? item.text.substring(0, 30) + '...' : item.text) : 'Phrase Recording'}"</span>
+                    <span className={`badge shrink-0 text-[10px] font-bold ${
                       item.status === 'approved' ? 'badge-success' : 
-                      item.status === 'rejected' ? 'badge-error' : 'badge-warning'
+                      item.status === 'rejected' ? 'badge-error' : 'bg-indigo-950 text-indigo-300 border border-indigo-800/60'
                     }`}>
-                      {item.status === 'recorded' || item.status === 'pending' ? 'Pending Review' : item.status}
+                      {item.status === 'recorded' || item.status === 'pending' ? 'Pending' : item.status}
                     </span>
                   </div>
-                  <div className="flex justify-between text-xs opacity-70">
+                  <div className="flex justify-between text-xs text-neutral-400 font-mono">
                     <span className="capitalize">{item.language}</span>
                     <span>{item.duration > 0 ? formatTime(item.duration) : '--'}</span>
                   </div>
                   {item.qaComment && (
-                    <div className={`mt-2 text-xs p-2.5 rounded-lg font-medium ${
-                      item.status === 'approved' ? 'text-success-800 dark:text-success-300 bg-success-50 dark:bg-success-950/40 border border-success-200/60 dark:border-success-800/60' :
-                      item.status === 'rejected' ? 'text-error-800 dark:text-error-300 bg-error-50 dark:bg-error-950/40 border border-error-200/60 dark:border-error-800/60' :
-                      'text-neutral-800 dark:text-neutral-200 bg-neutral-100 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700'
+                    <div className={`mt-2 text-xs p-2.5 rounded-xl font-medium ${
+                      item.status === 'approved' ? 'text-emerald-300 bg-emerald-950/40 border border-emerald-800/60' :
+                      item.status === 'rejected' ? 'text-rose-300 bg-rose-950/40 border border-rose-800/60' :
+                      'text-neutral-200 bg-neutral-900 border border-neutral-800'
                     }`}>
-                      <span className="font-bold block mb-0.5 uppercase tracking-wider text-[10px] opacity-80">Feedback Note:</span>
-                      <span className="italic font-medium">"{item.qaComment}"</span>
+                      <span className="font-bold block mb-0.5 uppercase tracking-wider text-[10px] opacity-80">Feedback:</span>
+                      <span className="italic">"{item.qaComment}"</span>
                     </div>
                   )}
                 </div>
               ))}
               {stats.history.length === 0 && (
-                <p className="text-center opacity-50 text-sm py-8">You haven't submitted any phrases yet.</p>
+                <p className="text-center text-neutral-500 text-sm py-8">You haven't submitted any phrases yet.</p>
               )}
+            </div>
             </div>
           </div>
         </motion.div>

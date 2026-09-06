@@ -449,8 +449,9 @@ export default function AdminScriptedLanguages() {
                 )}
 
                 {/* Filters & Active Language Controls */}
-                <div className="flex flex-wrap items-center justify-between gap-4 bg-neutral-800/60 border border-neutral-700/70 p-4 rounded-2xl">
-                    <div className="flex items-center gap-3 flex-1 min-w-[280px] max-w-md">
+                <div className="relative overflow-hidden rounded-3xl border border-neutral-800 bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 p-5 shadow-xl flex flex-wrap items-center justify-between gap-4">
+                    <div className="absolute top-0 right-0 w-64 h-64 bg-primary-500/5 rounded-full blur-3xl pointer-events-none" />
+                    <div className="flex items-center gap-3 flex-1 min-w-[280px] max-w-md relative z-10">
                         <div className="relative w-full">
                             <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-400" />
                             <input
@@ -517,13 +518,14 @@ export default function AdminScriptedLanguages() {
                         {filteredBaseLanguages.map((g) => (
                             <div
                                 key={g.slug}
-                                className={`p-5 rounded-2xl bg-neutral-800/50 border transition-all flex flex-col justify-between shadow-lg group hover:border-primary-500/60 ${
+                                className={`relative overflow-hidden rounded-3xl p-6 border transition-all duration-300 flex flex-col justify-between shadow-xl group ${
                                     g.enabled 
-                                        ? "border-neutral-700/80 hover:shadow-primary-500/10" 
-                                        : "border-neutral-800 opacity-70 bg-neutral-900/40"
+                                        ? "border-neutral-800 bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 hover:border-neutral-700 hover:shadow-2xl" 
+                                        : "border-neutral-800/80 bg-neutral-900/40 opacity-70 hover:opacity-100"
                                 }`}
                             >
-                                <div>
+                                <div className="absolute top-0 right-0 w-32 h-32 bg-primary-500/10 rounded-full blur-2xl pointer-events-none group-hover:bg-primary-500/15 transition-all" />
+                                <div className="relative z-10">
                                     {/* Card Top */}
                                     <div className="flex items-start justify-between gap-3 mb-3">
                                         <div>
@@ -652,8 +654,9 @@ export default function AdminScriptedLanguages() {
                 {/* Create / Edit Language Modal */}
                 {showModal && (
                     <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
-                        <div className="bg-neutral-900 border border-neutral-700 rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden animate-slide-up max-h-[90vh] flex flex-col">
-                            <div className="p-5 border-b border-neutral-800 flex items-center justify-between">
+                        <div className="relative overflow-hidden rounded-3xl border border-neutral-800 bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 w-full max-w-lg shadow-2xl animate-slide-up max-h-[90vh] flex flex-col">
+                            <div className="absolute top-0 right-0 w-48 h-48 bg-primary-500/5 rounded-full blur-2xl pointer-events-none" />
+                            <div className="p-5 border-b border-neutral-800 flex items-center justify-between relative z-10">
                                 <div className="flex items-center gap-2">
                                     <Radio className="w-5 h-5 text-primary-400" />
                                     <h2 className="text-lg font-bold text-white">
@@ -932,8 +935,9 @@ export default function AdminScriptedLanguages() {
                 {/* Summary / Contributors Modal */}
                 {summaryModalLang && (
                     <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
-                        <div className="bg-neutral-900 border border-neutral-700 rounded-2xl w-full max-w-2xl max-h-[85vh] flex flex-col shadow-2xl overflow-hidden animate-slide-up">
-                            <div className="p-5 border-b border-neutral-800 flex items-center justify-between bg-neutral-800/40">
+                        <div className="relative overflow-hidden rounded-3xl border border-neutral-800 bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 w-full max-w-2xl max-h-[85vh] flex flex-col shadow-2xl animate-slide-up">
+                            <div className="absolute top-0 right-0 w-48 h-48 bg-primary-500/5 rounded-full blur-2xl pointer-events-none" />
+                            <div className="p-5 border-b border-neutral-800 flex items-center justify-between bg-neutral-900/40 relative z-10">
                                 <div>
                                     <h2 className="text-lg font-bold text-white flex items-center gap-2">
                                         <span>{summaryModalLang.name}</span>

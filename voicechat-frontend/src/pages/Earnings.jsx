@@ -27,32 +27,47 @@ export default function Earnings() {
                     <p className="text-xl text-neutral-600 dark:text-neutral-400 max-w-2xl mx-auto leading-relaxed font-medium">Turn your spare time into real earnings by participating in our global audio training network. Getting paid has never been this simple.</p>
                 </motion.div>
 
-                <div className="grid md:grid-cols-3 gap-8 mb-16">
+                <div className="grid md:grid-cols-3 gap-6 mb-16">
                     <motion.div 
-                        whileHover={{ y: -10 }}
-                        className="bg-white dark:bg-neutral-900 p-8 rounded-[2rem] border border-neutral-200 dark:border-neutral-800 shadow-xl"
+                        whileHover={{ y: -6 }}
+                        className="relative overflow-hidden bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 p-8 rounded-3xl border border-neutral-800 hover:border-neutral-700 shadow-xl transition-all duration-300 group"
                     >
-                        <TrendingUp className="w-8 h-8 text-primary-600 dark:text-primary-400 mb-6" />
-                        <h3 className="text-2xl font-bold text-neutral-900 dark:text-white mb-4">Side Income</h3>
-                        <p className="text-neutral-500 dark:text-neutral-400">Participate in voice recording tasks during your free time. Perfect for earning supplementary income at standard project rates.</p>
+                        <div className="absolute top-0 right-0 w-32 h-32 bg-primary-500/10 rounded-full blur-2xl pointer-events-none group-hover:bg-primary-500/15 transition-all" />
+                        <div className="relative z-10">
+                            <div className="p-3.5 bg-primary-900/30 border border-primary-800/40 rounded-2xl w-fit mb-6">
+                                <TrendingUp className="w-8 h-8 text-primary-400" />
+                            </div>
+                            <h3 className="text-2xl font-black text-white mb-3 tracking-tight">Side Income</h3>
+                            <p className="text-neutral-400 text-sm leading-relaxed">Participate in voice recording tasks during your free time. Perfect for earning supplementary income at standard project rates.</p>
+                        </div>
                     </motion.div>
 
                     <motion.div 
-                        whileHover={{ y: -10 }}
-                        className="bg-white dark:bg-neutral-900 p-8 rounded-[2rem] border border-neutral-200 dark:border-neutral-800 shadow-xl"
+                        whileHover={{ y: -6 }}
+                        className="relative overflow-hidden bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 p-8 rounded-3xl border border-neutral-800 hover:border-neutral-700 shadow-xl transition-all duration-300 group"
                     >
-                        <Wallet className="w-8 h-8 text-success-600 dark:text-success-400 mb-6" />
-                        <h3 className="text-2xl font-bold text-neutral-900 dark:text-white mb-4">Monthly Payouts</h3>
-                        <p className="text-neutral-500 dark:text-neutral-400">Payments are processed on the 21st of every month. Once your tasks are completed and quality-checked, your funds are queued for the monthly cycle.</p>
+                        <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/10 rounded-full blur-2xl pointer-events-none group-hover:bg-emerald-500/15 transition-all" />
+                        <div className="relative z-10">
+                            <div className="p-3.5 bg-emerald-900/30 border border-emerald-800/40 rounded-2xl w-fit mb-6">
+                                <Wallet className="w-8 h-8 text-emerald-400" />
+                            </div>
+                            <h3 className="text-2xl font-black text-white mb-3 tracking-tight">Monthly Payouts</h3>
+                            <p className="text-neutral-400 text-sm leading-relaxed">Payments are processed on the 21st of every month. Once your tasks are completed and quality-checked, your funds are queued for the monthly cycle.</p>
+                        </div>
                     </motion.div>
 
                     <motion.div 
-                        whileHover={{ y: -10 }}
-                        className="bg-white dark:bg-neutral-900 p-8 rounded-[2rem] border border-neutral-200 dark:border-neutral-800 shadow-xl"
+                        whileHover={{ y: -6 }}
+                        className="relative overflow-hidden bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 p-8 rounded-3xl border border-neutral-800 hover:border-neutral-700 shadow-xl transition-all duration-300 group"
                     >
-                        <ShieldCheck className="w-8 h-8 text-indigo-600 dark:text-indigo-400 mb-6" />
-                        <h3 className="text-2xl font-bold text-neutral-900 dark:text-white mb-4">Transparent Tracking</h3>
-                        <p className="text-neutral-500 dark:text-neutral-400">Every recording you submit is logged transparently. Monitor your approval progress and pending earnings directly from your dashboard.</p>
+                        <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/10 rounded-full blur-2xl pointer-events-none group-hover:bg-indigo-500/15 transition-all" />
+                        <div className="relative z-10">
+                            <div className="p-3.5 bg-indigo-900/30 border border-indigo-800/40 rounded-2xl w-fit mb-6">
+                                <ShieldCheck className="w-8 h-8 text-indigo-400" />
+                            </div>
+                            <h3 className="text-2xl font-black text-white mb-3 tracking-tight">Transparent Tracking</h3>
+                            <p className="text-neutral-400 text-sm leading-relaxed">Every recording you submit is logged transparently. Monitor your approval progress and pending earnings directly from your dashboard.</p>
+                        </div>
                     </motion.div>
                 </div>
 
@@ -61,18 +76,20 @@ export default function Earnings() {
                     initial={{ opacity: 0, y: 20 }}
                     whileInView={{ opacity: 1, y: 0 }}
                     viewport={{ once: true }}
-                    className="bg-white dark:bg-neutral-900 p-8 rounded-[2rem] border border-neutral-200 dark:border-neutral-800 shadow-xl relative overflow-hidden"
+                    className="relative overflow-hidden bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 p-8 md:p-10 rounded-3xl border border-neutral-800 shadow-xl"
                 >
-                    <div className="absolute top-0 right-0 w-32 h-32 bg-primary-500/10 blur-[40px] rounded-full"></div>
-                    <h3 className="text-2xl font-bold text-neutral-900 dark:text-white mb-4">Indian Contributors Guidelines 🇮🇳</h3>
-                    <p className="text-neutral-600 dark:text-neutral-400 mb-6 leading-relaxed">
-                        To receive payouts seamlessly, Indian contributors must complete their <strong>PAN KYC verification</strong> on the platform.
-                    </p>
-                    <div className="bg-neutral-50 dark:bg-neutral-950 border border-neutral-200 dark:border-neutral-850 rounded-2xl p-6">
-                        <ul className="list-disc list-inside space-y-3 text-neutral-600 dark:text-neutral-400 font-medium">
-                            <li><strong>KYC Completed:</strong> Your TDS (Tax Deducted at Source) will be covered entirely by Voclara.</li>
-                            <li><strong>KYC Incomplete/Pending:</strong> A standard <strong>5% TDS deduction</strong> will be applied to your monthly earnings.</li>
-                        </ul>
+                    <div className="absolute top-0 right-0 w-48 h-48 bg-primary-500/10 rounded-full blur-3xl pointer-events-none" />
+                    <div className="relative z-10">
+                        <h3 className="text-2xl font-black text-white mb-3 tracking-tight">Indian Contributors Guidelines 🇮🇳</h3>
+                        <p className="text-neutral-400 mb-6 leading-relaxed text-sm">
+                            To receive payouts seamlessly, Indian contributors must complete their <strong className="text-white">PAN KYC verification</strong> on the platform.
+                        </p>
+                        <div className="bg-neutral-950/80 border border-neutral-800 rounded-2xl p-6">
+                            <ul className="list-disc list-inside space-y-3 text-neutral-300 text-sm font-medium">
+                                <li><strong className="text-white">KYC Completed:</strong> Your TDS (Tax Deducted at Source) will be covered entirely by Voclara.</li>
+                                <li><strong className="text-white">KYC Incomplete/Pending:</strong> A standard <strong className="text-rose-400">5% TDS deduction</strong> will be applied to your monthly earnings.</li>
+                            </ul>
+                        </div>
                     </div>
                 </motion.div>
             </main>

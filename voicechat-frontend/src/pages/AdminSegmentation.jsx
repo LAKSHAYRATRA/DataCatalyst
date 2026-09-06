@@ -255,7 +255,7 @@ export default function AdminSegmentation() {
   };
 
   return (
-    <div className="min-h-screen bg-neutral-900 pt-16 md:pt-0 md:pl-64 text-neutral-100">
+    <div className="min-h-screen bg-neutral-950 pt-16 md:pt-0 md:pl-64 text-neutral-100">
       <AdminNav />
 
       <div className="max-w-7xl mx-auto px-4 md:px-6 py-6 md:py-12 space-y-6">
@@ -268,8 +268,9 @@ export default function AdminSegmentation() {
           )}
 
           {/* Header */}
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-neutral-800 p-6 rounded-2xl border border-neutral-700 shadow-xl">
-            <div>
+          <div className="relative overflow-hidden rounded-3xl border border-neutral-800 bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 p-6 md:p-8 shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="absolute top-0 right-0 w-64 h-64 bg-primary-500/5 rounded-full blur-3xl pointer-events-none" />
+            <div className="relative z-10">
               <h1 className="text-2xl font-bold text-white flex items-center gap-3">
                 <span>✂️</span> Segmentation Pipeline & QA Review
               </h1>
@@ -279,15 +280,16 @@ export default function AdminSegmentation() {
             </div>
             <button
               onClick={() => loadSegmentationCalls(page)}
-              className="px-4 py-2 bg-neutral-700 hover:bg-neutral-600 text-neutral-200 rounded-xl text-sm font-semibold transition-all flex items-center gap-2 self-start md:self-auto"
+              className="px-4 py-2 bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 text-neutral-200 rounded-xl text-sm font-semibold transition-all flex items-center gap-2 self-start md:self-auto relative z-10"
             >
               🔄 Refresh Queue
             </button>
           </div>
 
           {/* Tab Navigation & Search Bar */}
-          <div className="bg-neutral-800 border border-neutral-700 rounded-xl p-4 flex flex-col md:flex-row items-center justify-between gap-4">
-            <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
+          <div className="relative overflow-hidden rounded-3xl border border-neutral-800 bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 p-4 md:p-5 shadow-xl flex flex-col md:flex-row items-center justify-between gap-4">
+            <div className="absolute top-0 right-0 w-64 h-64 bg-primary-500/5 rounded-full blur-3xl pointer-events-none" />
+            <div className="flex flex-wrap items-center gap-2 w-full md:w-auto relative z-10">
               {[
                 { id: "pending", label: "⏳ Pending QA" },
                 { id: "approved", label: "✓ Approved" },
@@ -337,22 +339,23 @@ export default function AdminSegmentation() {
           )}
 
           {/* Table Container */}
-          <div className="bg-neutral-800 rounded-2xl border border-neutral-700 shadow-xl overflow-hidden">
+          <div className="relative overflow-hidden rounded-3xl border border-neutral-800 bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 shadow-xl">
+            <div className="absolute top-0 right-0 w-64 h-64 bg-primary-500/5 rounded-full blur-3xl pointer-events-none" />
             {loading ? (
-              <div className="p-12 text-center text-neutral-400 flex flex-col items-center gap-3">
+              <div className="p-12 text-center text-neutral-400 flex flex-col items-center gap-3 relative z-10">
                 <div className="w-8 h-8 border-4 border-warning-400 border-t-transparent rounded-full animate-spin"></div>
                 <p>Loading Segmentation Calls...</p>
               </div>
             ) : calls.length === 0 ? (
-              <div className="p-12 text-center text-neutral-400">
+              <div className="p-12 text-center text-neutral-400 relative z-10">
                 <p className="text-lg font-semibold text-neutral-300">No calls found in {activeTab} tab</p>
                 <p className="text-sm mt-1">Select a different tab or check the All Segmentation tab.</p>
               </div>
             ) : (
-              <div className="overflow-x-auto">
+              <div className="overflow-x-auto relative z-10">
                 <table className="w-full text-left border-collapse">
                   <thead>
-                    <tr className="bg-neutral-900/60 border-b border-neutral-700 text-xs font-semibold text-neutral-400 uppercase tracking-wider">
+                    <tr className="bg-neutral-900/80 border-b border-neutral-800 text-xs font-semibold text-neutral-400 uppercase tracking-wider">
                       <th className="py-4 px-6">Call ID</th>
                       {activeTab === "logs" ? (
                         <>
@@ -516,20 +519,20 @@ export default function AdminSegmentation() {
 
             {/* Pagination footer */}
             {pages > 1 && (
-              <div className="p-4 bg-neutral-900/40 border-t border-neutral-700 flex items-center justify-between text-xs text-neutral-400">
+              <div className="p-4 bg-neutral-900/80 border-t border-neutral-800 flex items-center justify-between text-xs text-neutral-400 relative z-10">
                 <span>Page {page} of {pages} ({total} calls)</span>
-                <div className="flex gap-2">
+                <div className="flex items-center gap-2">
                   <button
                     disabled={page <= 1}
                     onClick={() => loadSegmentationCalls(page - 1)}
-                    className="px-3 py-1 bg-neutral-700 hover:bg-neutral-600 disabled:opacity-50 text-white rounded-lg"
+                    className="px-3 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 border border-neutral-700/80 disabled:opacity-40 rounded-xl text-xs font-semibold transition-all"
                   >
                     Previous
                   </button>
                   <button
                     disabled={page >= pages}
                     onClick={() => loadSegmentationCalls(page + 1)}
-                    className="px-3 py-1 bg-neutral-700 hover:bg-neutral-600 disabled:opacity-50 text-white rounded-lg"
+                    className="px-3 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 border border-neutral-700/80 disabled:opacity-40 rounded-xl text-xs font-semibold transition-all"
                   >
                     Next
                   </button>
@@ -542,10 +545,10 @@ export default function AdminSegmentation() {
         {/* Review Modal */}
         {selectedCall && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in" onClick={handleCloseReview}>
-          <div className="bg-neutral-850 border border-neutral-700 rounded-2xl max-w-5xl w-full max-h-[92vh] flex flex-col shadow-2xl overflow-hidden" onClick={(e) => e.stopPropagation()}>
-            
+          <div className="relative overflow-hidden rounded-3xl border border-neutral-800 bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 max-w-5xl w-full max-h-[92vh] flex flex-col shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="absolute top-0 right-0 w-64 h-64 bg-primary-500/5 rounded-full blur-3xl pointer-events-none" />
             {/* Modal Header */}
-            <div className="p-5 bg-neutral-800 border-b border-neutral-700 flex items-center justify-between">
+            <div className="p-5 bg-neutral-900/80 border-b border-neutral-800 flex items-center justify-between relative z-10">
               <div>
                 <div className="flex items-center gap-3">
                   <h2 className="text-lg md:text-xl font-bold text-white flex items-center gap-2">

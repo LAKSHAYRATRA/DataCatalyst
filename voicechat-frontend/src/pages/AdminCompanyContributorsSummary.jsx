@@ -352,7 +352,7 @@ export default function AdminCompanyContributorsSummary() {
   const selectedLangData = languages.find(l => l.code === selectedLangCode) || languages[0];
 
   return (
-    <div className="min-h-screen bg-neutral-900 flex text-white transition-colors duration-300">
+    <div className="min-h-screen bg-neutral-950 flex text-white transition-colors duration-300">
       <AdminNav />
       <main className="flex-1 md:ml-64 p-6 md:p-8 max-w-7xl mx-auto text-neutral-100">
         {/* Header Navigation */}
@@ -378,40 +378,41 @@ export default function AdminCompanyContributorsSummary() {
 
         {/* Whole Company Collection Overview Banner (Across All Languages) */}
         {company && (
-          <div className="bg-neutral-800/90 border border-neutral-700 rounded-2xl p-6 shadow-xl mb-8">
-            <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+          <div className="bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 border border-neutral-800 rounded-3xl p-6 shadow-xl relative overflow-hidden mb-8">
+            <div className="absolute top-0 right-0 w-80 h-80 bg-warning-500/5 rounded-full blur-3xl pointer-events-none" />
+            <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2 relative z-10">
               <Building2 className="w-5 h-5 text-warning-400" />
               Whole Company Collection Overview (All Languages)
             </h2>
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
-              <div className="bg-neutral-750 border border-neutral-700 p-3.5 rounded-xl">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4 relative z-10">
+              <div className="bg-gradient-to-br from-neutral-950 via-neutral-900 to-neutral-850 border border-neutral-800 p-4 rounded-2xl shadow-sm">
                 <span className="text-[11px] text-neutral-400 font-medium block">Total Collection Duration</span>
                 <span className="text-lg font-bold text-white mt-1 block">{formatSecs(company.totalSeconds)}</span>
                 <span className="text-[11px] text-neutral-400 font-normal mt-0.5 block">{(company.approvedCount || 0) + (company.rejectedCount || 0) + (company.pendingCount || 0)} total phrases</span>
               </div>
-              <div className="bg-neutral-750 border border-neutral-700 p-3.5 rounded-xl">
-                <span className="text-[11px] text-emerald-400 font-medium block">Approved Duration</span>
+              <div className="bg-gradient-to-br from-emerald-950/40 via-neutral-950 to-neutral-900 border border-emerald-500/30 p-4 rounded-2xl shadow-sm">
+                <span className="text-[11px] text-emerald-300 font-medium block">Approved Duration</span>
                 <span className="text-lg font-bold text-emerald-400 mt-1 block">{formatSecs(company.totalApprovedSeconds)}</span>
                 <span className="text-[11px] text-emerald-500/80 font-normal mt-0.5 block">{company.approvedCount || 0} phrases</span>
               </div>
-              <div className="bg-neutral-750 border border-neutral-700 p-3.5 rounded-xl">
-                <span className="text-[11px] text-red-400 font-medium block">Rejected Duration</span>
-                <span className="text-lg font-bold text-red-400 mt-1 block">{formatSecs(company.totalRejectedSeconds)}</span>
-                <span className="text-[11px] text-red-500/80 font-normal mt-0.5 block">{company.rejectedCount || 0} phrases</span>
+              <div className="bg-gradient-to-br from-rose-950/40 via-neutral-950 to-neutral-900 border border-rose-500/30 p-4 rounded-2xl shadow-sm">
+                <span className="text-[11px] text-rose-300 font-medium block">Rejected Duration</span>
+                <span className="text-lg font-bold text-rose-400 mt-1 block">{formatSecs(company.totalRejectedSeconds)}</span>
+                <span className="text-[11px] text-rose-500/80 font-normal mt-0.5 block">{company.rejectedCount || 0} phrases</span>
               </div>
-              <div className="bg-neutral-750 border border-neutral-700 p-3.5 rounded-xl">
-                <span className="text-[11px] text-amber-400 font-medium block">Pending Duration</span>
+              <div className="bg-gradient-to-br from-amber-950/40 via-neutral-950 to-neutral-900 border border-amber-500/30 p-4 rounded-2xl shadow-sm">
+                <span className="text-[11px] text-amber-300 font-medium block">Pending Duration</span>
                 <span className="text-lg font-bold text-amber-400 mt-1 block">{formatSecs(company.totalPendingSeconds)}</span>
                 <span className="text-[11px] text-amber-500/80 font-semibold mt-0.5 block">{company.pendingCount || 0} pending phrases</span>
               </div>
-              <div className="bg-neutral-750 border border-neutral-700 p-3.5 rounded-xl">
+              <div className="bg-gradient-to-br from-emerald-950/30 via-neutral-950 to-neutral-900 border border-emerald-500/30 p-4 rounded-2xl shadow-sm">
                 <span className="text-[11px] text-emerald-300 font-medium block">Approval Rate</span>
                 <span className="text-lg font-bold text-emerald-300 mt-1 block">{company.approvalRate ?? 0}%</span>
                 <span className="text-[11px] text-neutral-400 font-normal mt-0.5 block">Evaluated phrases</span>
               </div>
-              <div className="bg-neutral-750 border border-neutral-700 p-3.5 rounded-xl">
-                <span className="text-[11px] text-red-300 font-medium block">Rejection Rate</span>
-                <span className="text-lg font-bold text-red-300 mt-1 block">{company.rejectionRate ?? 0}%</span>
+              <div className="bg-gradient-to-br from-rose-950/30 via-neutral-950 to-neutral-900 border border-rose-500/30 p-4 rounded-2xl shadow-sm">
+                <span className="text-[11px] text-rose-300 font-medium block">Rejection Rate</span>
+                <span className="text-lg font-bold text-rose-300 mt-1 block">{company.rejectionRate ?? 0}%</span>
                 <span className="text-[11px] text-neutral-400 font-normal mt-0.5 block">Evaluated phrases</span>
               </div>
             </div>
@@ -419,12 +420,12 @@ export default function AdminCompanyContributorsSummary() {
         )}
 
         {loading ? (
-          <div className="bg-neutral-800 border border-neutral-700 rounded-2xl text-center py-20 shadow-xl">
+          <div className="bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 border border-neutral-800 rounded-3xl text-center py-20 shadow-xl">
             <Loader2 className="w-8 h-8 animate-spin text-warning-500 mx-auto mb-3" />
             <p className="text-neutral-400">Loading contributor summary data...</p>
           </div>
         ) : languages.length === 0 ? (
-          <div className="bg-neutral-800 border border-neutral-700 rounded-2xl text-center py-20 shadow-xl">
+          <div className="bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 border border-neutral-800 rounded-3xl text-center py-20 shadow-xl">
             <Users className="w-12 h-12 text-neutral-500 mx-auto mb-4" />
             <h3 className="text-xl font-semibold mb-2 text-white">No Workload Languages Found</h3>
             <p className="text-neutral-400 mb-6">
@@ -451,18 +452,18 @@ export default function AdminCompanyContributorsSummary() {
                         setUserTab("approved");
                         setUserSearch("");
                       }}
-                      className={`border transition-all cursor-pointer p-5 rounded-2xl shadow-lg flex flex-col justify-between ${
+                      className={`border transition-all cursor-pointer p-5 rounded-3xl shadow-xl flex flex-col justify-between relative overflow-hidden ${
                         isSelected 
-                          ? "bg-neutral-800 border-warning-500 ring-2 ring-warning-500/30" 
-                          : "bg-neutral-800/80 hover:bg-neutral-800 border-neutral-700 hover:border-neutral-600"
+                          ? "bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 border-warning-500 ring-2 ring-warning-500/30 shadow-warning-500/10" 
+                          : "bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 border-neutral-800 hover:border-neutral-700"
                       }`}
                     >
-                      <div>
+                      <div className="relative z-10">
                         <div className="flex items-center justify-between mb-3">
-                          <div className="w-10 h-10 rounded-xl bg-neutral-700 text-warning-400 flex items-center justify-center font-bold text-sm border border-neutral-600">
+                          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-neutral-800 to-neutral-900 text-warning-400 flex items-center justify-center font-bold text-sm border border-neutral-700 shadow-inner">
                             {lang.code.substring(0, 2).toUpperCase()}
                           </div>
-                          <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-neutral-900 border border-neutral-700 text-neutral-300 flex items-center gap-1">
+                          <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-neutral-950 border border-neutral-800 text-neutral-300 flex items-center gap-1">
                             <Users className="w-3.5 h-3.5 text-warning-400" />
                             {lang.summary.totalContributors} Contributors
                           </span>
@@ -479,21 +480,18 @@ export default function AdminCompanyContributorsSummary() {
                           <span className="px-2 py-0.5 rounded bg-emerald-950/80 text-emerald-300 border border-emerald-900/50 font-medium">
                             ✓ {lang.approvalRate}% Appr.
                           </span>
-                          <span className="px-2 py-0.5 rounded bg-red-950/80 text-red-300 border border-red-900/50 font-medium">
+                          <span className="px-2 py-0.5 rounded bg-rose-950/80 text-rose-300 border border-rose-900/50 font-medium">
                             ✕ {lang.rejectionRate}% Rej.
                           </span>
-                          <span className="px-2 py-0.5 rounded bg-blue-950/80 text-blue-300 border border-blue-900/50">
-                            ♂ {lang.summary.male}
-                          </span>
-                          <span className="px-2 py-0.5 rounded bg-pink-950/80 text-pink-300 border border-pink-900/50">
-                            ♀ {lang.summary.female}
+                          <span className="px-2 py-0.5 rounded bg-neutral-950 text-neutral-300 border border-neutral-800 font-medium">
+                            {lang.pendingCount} Pending
                           </span>
                         </div>
                       </div>
 
-                      <div className="mt-4 pt-3 border-t border-neutral-700/80 flex items-center justify-between text-xs font-semibold text-warning-400">
-                        <span>{isSelected ? "Active View" : "Select Language"}</span>
-                        <ChevronRight className={`w-4 h-4 transform transition-transform ${isSelected ? "rotate-90" : ""}`} />
+                      <div className="mt-4 pt-3 border-t border-neutral-800/80 flex items-center justify-between text-xs text-neutral-400 relative z-10">
+                        <span>Click to view demographics</span>
+                        <span className="text-warning-400 font-bold">{isSelected ? "Viewing ↓" : "View →"}</span>
                       </div>
                     </div>
                   );
@@ -503,8 +501,9 @@ export default function AdminCompanyContributorsSummary() {
 
             {/* Selected Language Demographics & Users Detail */}
             {selectedLangData && (
-              <div className="bg-neutral-800 border border-neutral-700 rounded-2xl p-6 shadow-2xl space-y-6">
-                <div className="flex flex-wrap items-center justify-between gap-4 border-b border-neutral-700 pb-4">
+              <div className="bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 border border-neutral-800 rounded-3xl p-6 md:p-8 shadow-2xl space-y-6 relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-96 h-96 bg-warning-500/5 rounded-full blur-3xl pointer-events-none" />
+                <div className="flex flex-wrap items-center justify-between gap-4 border-b border-neutral-800 pb-4 relative z-10">
                   <div>
                     <h2 className="text-xl font-bold text-white flex items-center gap-2">
                       <BarChart3 className="w-6 h-6 text-warning-500" />
@@ -518,43 +517,43 @@ export default function AdminCompanyContributorsSummary() {
                 </div>
 
                 {/* Demographics & Duration Overview Cards */}
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-                  <div className="bg-neutral-750 border border-neutral-700 p-3.5 rounded-xl">
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 relative z-10">
+                  <div className="bg-gradient-to-br from-neutral-950 via-neutral-900 to-neutral-850 border border-neutral-800 p-3.5 rounded-2xl shadow-sm">
                     <span className="text-[11px] text-neutral-400 font-medium block">Total Language Collection</span>
                     <div className="text-base font-bold text-white mt-1">{formatSecs(selectedLangData.summary?.totalSeconds || selectedLangData.totalSeconds)}</div>
                     <span className="text-[10px] text-neutral-400 font-normal block mt-0.5">{selectedLangData.phraseCount || 0} phrases</span>
                   </div>
-                  <div className="bg-neutral-750 border border-neutral-700 p-3.5 rounded-xl">
-                    <span className="text-[11px] text-emerald-400 font-medium block">Approved Duration</span>
+                  <div className="bg-gradient-to-br from-emerald-950/40 via-neutral-950 to-neutral-900 border border-emerald-500/30 p-3.5 rounded-2xl shadow-sm">
+                    <span className="text-[11px] text-emerald-300 font-medium block">Approved Duration</span>
                     <div className="text-base font-bold text-emerald-400 mt-1">{formatSecs(selectedLangData.summary?.approvedSeconds || selectedLangData.approvedSeconds)}</div>
                     <span className="text-[10px] text-emerald-500/80 font-normal block mt-0.5">{selectedLangData.summary?.approvedCount ?? selectedLangData.approvedCount ?? 0} phrases</span>
                   </div>
-                  <div className="bg-neutral-750 border border-neutral-700 p-3.5 rounded-xl">
-                    <span className="text-[11px] text-red-400 font-medium block">Rejected Duration</span>
+                  <div className="bg-gradient-to-br from-rose-950/40 via-neutral-950 to-neutral-900 border border-rose-500/30 p-3.5 rounded-2xl shadow-sm">
+                    <span className="text-[11px] text-rose-300 font-medium block">Rejected Duration</span>
                     <div className="text-base font-bold text-red-400 mt-1">{formatSecs(selectedLangData.summary?.rejectedSeconds || selectedLangData.rejectedSeconds)}</div>
                     <span className="text-[10px] text-red-500/80 font-normal block mt-0.5">{selectedLangData.summary?.rejectedCount ?? selectedLangData.rejectedCount ?? 0} phrases</span>
                   </div>
-                  <div className="bg-neutral-750 border border-neutral-700 p-3.5 rounded-xl">
-                    <span className="text-[11px] text-amber-400 font-medium block">Pending Duration</span>
+                  <div className="bg-gradient-to-br from-amber-950/40 via-neutral-950 to-neutral-900 border border-amber-500/30 p-3.5 rounded-2xl shadow-sm">
+                    <span className="text-[11px] text-amber-300 font-medium block">Pending Duration</span>
                     <div className="text-base font-bold text-amber-400 mt-1">{formatSecs(selectedLangData.summary?.pendingSeconds || selectedLangData.pendingSeconds)}</div>
                     <span className="text-[10px] text-amber-500/80 font-semibold block mt-0.5">{selectedLangData.summary?.pendingCount ?? selectedLangData.pendingCount ?? 0} pending phrases</span>
                   </div>
-                  <div className="bg-neutral-750 border border-neutral-700 p-3.5 rounded-xl">
+                  <div className="bg-gradient-to-br from-emerald-950/30 via-neutral-950 to-neutral-900 border border-emerald-500/30 p-3.5 rounded-2xl shadow-sm">
                     <span className="text-[11px] text-emerald-300 font-medium block">Approval Rate</span>
                     <div className="text-base font-bold text-emerald-300 mt-1">{selectedLangData.approvalRate ?? selectedLangData.summary?.approvalRate ?? 0}%</div>
                     <span className="text-[10px] text-neutral-400 font-normal block mt-0.5">Evaluated</span>
                   </div>
-                  <div className="bg-neutral-750 border border-neutral-700 p-3.5 rounded-xl">
-                    <span className="text-[11px] text-red-300 font-medium block">Rejection Rate</span>
+                  <div className="bg-gradient-to-br from-rose-950/30 via-neutral-950 to-neutral-900 border border-rose-500/30 p-3.5 rounded-2xl shadow-sm">
+                    <span className="text-[11px] text-rose-300 font-medium block">Rejection Rate</span>
                     <div className="text-base font-bold text-red-300 mt-1">{selectedLangData.rejectionRate ?? selectedLangData.summary?.rejectionRate ?? 0}%</div>
                     <span className="text-[10px] text-neutral-400 font-normal block mt-0.5">Evaluated</span>
                   </div>
                 </div>
 
                 {/* Gender & Age Breakdown */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 relative z-10">
                   {/* Gender Breakdown */}
-                  <div className="bg-neutral-750 border border-neutral-700 p-5 rounded-xl">
+                  <div className="bg-gradient-to-br from-neutral-950 via-neutral-900 to-neutral-850 border border-neutral-800 p-5 rounded-2xl shadow-sm">
                     <h3 className="text-sm font-bold text-neutral-200 uppercase tracking-wider mb-4">Gender Breakdown</h3>
                     <div className="space-y-3">
                       <div>
@@ -592,7 +591,7 @@ export default function AdminCompanyContributorsSummary() {
                   </div>
 
                   {/* Age Distribution */}
-                  <div className="bg-neutral-750 border border-neutral-700 p-5 rounded-xl">
+                  <div className="bg-gradient-to-br from-neutral-950 via-neutral-900 to-neutral-850 border border-neutral-800 p-5 rounded-2xl shadow-sm">
                     <h3 className="text-sm font-bold text-neutral-200 uppercase tracking-wider mb-4">Age Distribution</h3>
                     <div className="space-y-3">
                       <div>
@@ -710,10 +709,10 @@ export default function AdminCompanyContributorsSummary() {
                     }
 
                     return (
-                      <div className="border border-neutral-700 rounded-xl overflow-hidden bg-neutral-850">
+                      <div className="border border-neutral-800 rounded-3xl overflow-hidden bg-gradient-to-br from-neutral-950 via-neutral-900 to-neutral-850 shadow-2xl">
                         <div className="overflow-x-auto">
                           <table className="w-full text-xs">
-                            <thead className="bg-neutral-700 text-neutral-300 uppercase tracking-wider font-semibold">
+                            <thead className="bg-gradient-to-r from-neutral-800 to-neutral-850 text-neutral-300 uppercase tracking-wider font-semibold border-b border-neutral-800">
                               <tr>
                                 <th className="px-4 py-2.5 text-left">Speaker ID</th>
                                 <th className="px-4 py-2.5 text-left">Contributor</th>
@@ -874,7 +873,7 @@ export default function AdminCompanyContributorsSummary() {
             onClick={() => { setEditModalOpen(false); setEditingContributor(null); }}
           >
             <div 
-              className="bg-neutral-900 border border-neutral-700/80 rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden text-left text-white max-h-[90vh] flex flex-col"
+              className="bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 border border-neutral-750 rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden text-left text-white max-h-[90vh] flex flex-col"
               onClick={(e) => e.stopPropagation()}
             >
               {/* Header */}

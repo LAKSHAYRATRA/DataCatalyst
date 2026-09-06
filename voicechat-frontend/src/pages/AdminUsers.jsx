@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { apiGet, apiPostJson, apiPatchJson, apiDeleteJson } from "../lib/api.js";
 import AdminNav from "../components/AdminNav.jsx";
 import Swal from "sweetalert2";
+import { Key, Eye, EyeOff, Lock, RefreshCw } from "lucide-react";
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || (typeof window !== "undefined" && window.location.hostname !== "localhost" && window.location.hostname !== "127.0.0.1" ? "https://api.voclara.com" : "http://localhost:3001");
 
@@ -76,6 +77,55 @@ export default function AdminUsers() {
     const [jsonText, setJsonText] = useState("");
     const [jsonError, setJsonError] = useState("");
     const [jsonSaving, setJsonSaving] = useState(false);
+
+    // Password Editing States
+    const [passwordModalUser, setPasswordModalUser] = useState(null);
+    const [newPassword, setNewPassword] = useState("");
+    const [confirmPassword, setConfirmPassword] = useState("");
+    const [showPassword, setShowPassword] = useState(false);
+    const [passwordSaving, setPasswordSaving] = useState(false);
+    const [passwordError, setPasswordError] = useState("");
+
+    function openPasswordModal(u) {
+        setPasswordModalUser(u);
+        setNewPassword("");
+        setConfirmPassword("");
+        setShowPassword(false);
+        setPasswordError("");
+    }
+
+    async function handleSaveUserPassword(e) {
+        if (e) e.preventDefault();
+        setPasswordError("");
+        if (!newPassword || newPassword.trim().length < 6) {
+            setPasswordError("Password must be at least 6 characters long.");
+            return;
+        }
+        if (newPassword !== confirmPassword) {
+            setPasswordError("Passwords do not match.");
+            return;
+        }
+
+        setPasswordSaving(true);
+        try {
+            const uId = passwordModalUser._id || passwordModalUser.userId || passwordModalUser.id;
+            const res = await apiPatchJson(`/api/admin/users/${uId}/password`, {
+                newPassword: newPassword.trim()
+            });
+            Swal.fire({
+                title: "Password Updated!",
+                text: res.message || `Password has been changed successfully for ${passwordModalUser.username || passwordModalUser.email}.`,
+                icon: "success",
+                timer: 2500,
+                showConfirmButton: false
+            });
+            setPasswordModalUser(null);
+        } catch (err) {
+            setPasswordError(err.message || "Failed to update password");
+        } finally {
+            setPasswordSaving(false);
+        }
+    }
 
     const [error, setError] = useState("");
 
@@ -608,13 +658,14 @@ export default function AdminUsers() {
     const formatDate = (d) => new Date(d).toLocaleDateString();
 
     return (
-        <div className="min-h-screen bg-neutral-900 pt-16 md:pt-0 md:pl-64">
+        <div className="min-h-screen bg-neutral-950 text-neutral-100 pt-16 md:pt-0 md:pl-64">
             <AdminNav />
 
             {/* Reject Modal */}
             {rejectModal && (
-                <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
-                    <div className="bg-neutral-800 border border-neutral-700 rounded-2xl p-6 w-full max-w-md shadow-2xl">
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                    <div className="relative overflow-hidden rounded-3xl border border-neutral-800 bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 p-6 w-full max-w-md shadow-2xl">
+                        <div className="absolute top-0 right-0 w-32 h-32 bg-primary-500/5 rounded-full blur-2xl pointer-events-none" />
                         <h3 className="text-lg font-bold text-white mb-1">Reject User</h3>
                         <p className="text-sm text-neutral-400 mb-4">The user will see this message and can re-record.</p>
                         <textarea
@@ -642,7 +693,7 @@ export default function AdminUsers() {
                 </div>
             )}
 
-            <div className="max-w-7xl mx-auto px-4 md:px-6 py-6 md:py-12">
+            <div className="w-full max-w-[1720px] mx-auto px-4 md:px-8 py-6 md:py-10">
                 <div className="mb-6">
                     <h1 className="text-2xl md:text-3xl font-bold text-white mb-2">User Management</h1>
                     <p className="text-sm text-neutral-400">Review intro recordings and manage users</p>
@@ -695,8 +746,9 @@ export default function AdminUsers() {
                         ) : (
                             <div className="space-y-4">
                             {pending.map((user) => (
-                                <div key={user._id} className="bg-neutral-800 border border-neutral-700 rounded-2xl p-5">
-                                    <div className="flex flex-col md:flex-row md:items-start gap-4">
+                                <div key={user._id} className="relative overflow-hidden rounded-3xl border border-neutral-800 bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 p-6 shadow-xl">
+                                    <div className="absolute top-0 right-0 w-48 h-48 bg-primary-500/5 rounded-full blur-3xl pointer-events-none" />
+                                    <div className="flex flex-col md:flex-row md:items-start gap-4 relative z-10">
                                         {/* User info */}
                                         <div className="flex-1 space-y-1">
                                             <div className="flex items-center gap-2 flex-wrap">
@@ -818,6 +870,14 @@ export default function AdminUsers() {
                                                 >
                                                     📜 Send different agreement
                                                 </button>
+                                                <button
+                                                    onClick={() => openPasswordModal(user)}
+                                                    className="w-full py-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 text-xs font-semibold rounded-lg transition-colors flex items-center justify-center gap-1.5 mt-1 border border-amber-500/30"
+                                                    title="Change User Password"
+                                                >
+                                                    <Key className="w-3.5 h-3.5 text-amber-400" />
+                                                    Edit Password
+                                                </button>
                                             </div>
                                         </div>
                                     </div>
@@ -835,8 +895,9 @@ export default function AdminUsers() {
                             <div className="w-10 h-10 border-4 border-primary-200 border-t-primary-600 rounded-full animate-spin" />
                         </div>
                     ) : (
-                        <div className="bg-neutral-800 border border-neutral-700 rounded-xl overflow-hidden">
-                            <div className="px-4 py-3 flex flex-wrap gap-3 items-center justify-between border-b border-neutral-700">
+                        <div className="relative overflow-hidden rounded-3xl border border-neutral-800 bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 shadow-xl">
+                            <div className="absolute top-0 right-0 w-64 h-64 bg-primary-500/5 rounded-full blur-3xl pointer-events-none" />
+                            <div className="px-6 py-4 flex flex-wrap gap-3 items-center justify-between border-b border-neutral-800 bg-neutral-900/80 relative z-10">
                                 <div>
                                     <h2 className="text-base font-bold text-white">All Registered Contributors</h2>
                                 </div>
@@ -851,9 +912,9 @@ export default function AdminUsers() {
                                     <button type="submit" className="px-4 py-2 rounded-lg bg-warning-500 hover:bg-warning-600 text-sm font-semibold text-neutral-900 transition-colors">Search</button>
                                 </form>
                             </div>
-                            <div className="overflow-x-auto">
+                            <div className="overflow-x-auto relative z-10">
                                 <table className="w-full">
-                                    <thead className="bg-neutral-700">
+                                    <thead className="bg-neutral-900/60 border-b border-neutral-800">
                                         <tr>
                                             <th className="px-4 py-3 text-left text-xs font-medium text-neutral-300 uppercase tracking-wider">User</th>
                                             <th className="hidden md:table-cell px-4 py-3 text-left text-xs font-medium text-neutral-300 uppercase tracking-wider">Email</th>
@@ -969,6 +1030,14 @@ export default function AdminUsers() {
                                                             Edit Limits
                                                         </button>
                                                         <button
+                                                            onClick={() => openPasswordModal(user)}
+                                                            className="text-amber-400 hover:text-amber-300 font-medium bg-amber-400/10 hover:bg-amber-400/20 px-3 py-1.5 rounded transition-colors flex items-center gap-1.5"
+                                                            title="Change User Password"
+                                                        >
+                                                            <Key className="w-3.5 h-3.5" />
+                                                            Edit Password
+                                                        </button>
+                                                        <button
                                                             onClick={() => openJsonModal(user._id)}
                                                             className="text-primary-400 hover:text-primary-300 font-medium bg-primary-400/10 hover:bg-primary-400/20 px-3 py-1.5 rounded transition-colors">
                                                             Edit JSON
@@ -996,18 +1065,18 @@ export default function AdminUsers() {
                             </div>
 
                             {/* Pagination */}
-                            <div className="bg-neutral-700 px-4 py-4 flex flex-col sm:flex-row items-center justify-between gap-3">
-                                <div className="text-xs text-neutral-300">
+                            <div className="bg-neutral-900/80 border-t border-neutral-800 px-6 py-4 flex flex-col sm:flex-row items-center justify-between gap-3 relative z-10">
+                                <div className="text-xs text-neutral-400">
                                     Showing {((pagination.page - 1) * pagination.limit) + 1}–{Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total}
                                 </div>
-                                <div className="flex gap-2">
+                                <div className="flex items-center gap-2">
                                     <button onClick={() => setPagination(p => ({ ...p, page: p.page - 1 }))}
                                         disabled={pagination.page === 1}
-                                        className="px-3 py-1 bg-neutral-600 text-neutral-300 rounded hover:bg-neutral-500 disabled:opacity-50 text-xs">Previous</button>
-                                    <span className="px-3 py-1 text-neutral-300 text-xs">Page {pagination.page} of {pagination.pages}</span>
+                                        className="px-3 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 border border-neutral-700/80 rounded-xl disabled:opacity-40 text-xs font-semibold transition-all">Previous</button>
+                                    <span className="px-3 py-1.5 text-neutral-300 text-xs font-medium">Page {pagination.page} of {pagination.pages}</span>
                                     <button onClick={() => setPagination(p => ({ ...p, page: p.page + 1 }))}
                                         disabled={pagination.page >= pagination.pages}
-                                        className="px-3 py-1 bg-neutral-600 text-neutral-300 rounded hover:bg-neutral-500 disabled:opacity-50 text-xs">Next</button>
+                                        className="px-3 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 border border-neutral-700/80 rounded-xl disabled:opacity-40 text-xs font-semibold transition-all">Next</button>
                                 </div>
                             </div>
                         </div>
@@ -1020,8 +1089,9 @@ export default function AdminUsers() {
                             <div className="w-10 h-10 border-4 border-primary-200 border-t-primary-600 rounded-full animate-spin" />
                         </div>
                     ) : (
-                        <div className="bg-neutral-800 border border-neutral-700 rounded-xl overflow-hidden">
-                            <div className="px-4 py-3 flex flex-wrap gap-3 items-center justify-between border-b border-neutral-700">
+                        <div className="relative overflow-hidden rounded-3xl border border-neutral-800 bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 shadow-xl">
+                            <div className="absolute top-0 right-0 w-64 h-64 bg-primary-500/5 rounded-full blur-3xl pointer-events-none" />
+                            <div className="px-6 py-4 flex flex-wrap gap-3 items-center justify-between border-b border-neutral-800 bg-neutral-900/80 relative z-10">
                                 <div>
                                     <h2 className="text-base font-bold text-white">Fully Approved Contributors ({approvedUsers.length})</h2>
                                     <p className="text-xs text-neutral-400 mt-0.5">Account approved AND contributor agreement admin-approved.</p>
@@ -1145,6 +1215,14 @@ export default function AdminUsers() {
                                                                 Edit Limits
                                                             </button>
                                                             <button
+                                                                onClick={() => openPasswordModal({ _id: u.userId, username: u.username, firstname: u.name?.split(" ")[0] || "", lastname: u.name?.split(" ").slice(1).join(" ") || "", email: u.email })}
+                                                                className="px-3 py-1.5 rounded-md bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 text-xs font-medium flex items-center gap-1"
+                                                                title="Change User Password"
+                                                            >
+                                                                <Key className="w-3.5 h-3.5" />
+                                                                Edit Password
+                                                            </button>
+                                                            <button
                                                                 onClick={() => openJsonModal(u.userId)}
                                                                 className="px-3 py-1.5 rounded-md bg-primary-500/10 text-primary-400 hover:bg-primary-500/20 text-xs font-medium"
                                                             >
@@ -1193,8 +1271,10 @@ export default function AdminUsers() {
                 {tab === "qa" && (
                     <div className="space-y-6">
                         {/* Create QA User */}
-                        <div className="bg-neutral-800 border border-neutral-700 rounded-xl p-6">
-                            <h2 className="text-lg font-bold text-white mb-4">🛡 Create QA User</h2>
+                        <div className="relative overflow-hidden rounded-3xl border border-neutral-800 bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 p-6 md:p-8 shadow-xl">
+                            <div className="absolute top-0 right-0 w-64 h-64 bg-primary-500/5 rounded-full blur-3xl pointer-events-none" />
+                            <div className="relative z-10">
+                                <h2 className="text-lg font-bold text-white mb-4">🛡 Create QA User</h2>
                             {qaError && <div className="bg-red-900/50 border border-red-700 text-red-300 px-4 py-2 rounded-lg mb-4 text-sm">{qaError}</div>}
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
                                 {[["firstname", "First Name"], ["lastname", "Last Name"], ["email", "Email"], ["password", "Password"]].map(([field, label]) => (
@@ -1267,16 +1347,17 @@ export default function AdminUsers() {
                             </div>
                             <button
                                 onClick={createQaUser}
-                                disabled={qaCreating || languages.length === 0}
                                 className="px-5 py-2.5 bg-warning-600 hover:bg-warning-700 text-white font-semibold rounded-lg text-sm transition-colors disabled:opacity-50"
                             >
                                 {qaCreating ? "Creating…" : "+ Create QA User"}
                             </button>
+                            </div>
                         </div>
 
                         {/* QA Users list */}
-                        <div className="bg-neutral-800 border border-neutral-700 rounded-xl overflow-hidden">
-                            <div className="px-6 py-4 bg-neutral-700">
+                        <div className="relative overflow-hidden rounded-3xl border border-neutral-800 bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 shadow-xl">
+                            <div className="absolute top-0 right-0 w-64 h-64 bg-primary-500/5 rounded-full blur-3xl pointer-events-none" />
+                            <div className="px-6 py-4 bg-neutral-900/80 border-b border-neutral-800 relative z-10">
                                 <h2 className="text-base font-bold text-white">Existing QA Users ({qaUsers.length})</h2>
                             </div>
                             {qaLoading ? (
@@ -1334,6 +1415,14 @@ export default function AdminUsers() {
                                                         className="px-3 py-1 bg-neutral-600 hover:bg-neutral-500 text-white text-xs font-semibold rounded-lg transition-colors"
                                                     >
                                                         Edit
+                                                    </button>
+                                                    <button
+                                                        onClick={() => openPasswordModal(u)}
+                                                        className="px-3 py-1 bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/30 text-xs font-semibold rounded-lg transition-colors flex items-center gap-1"
+                                                        title="Change QA Reviewer Password"
+                                                    >
+                                                        <Key className="w-3 h-3 text-amber-400" />
+                                                        Edit Password
                                                     </button>
                                                     <button
                                                         onClick={() => deleteQaUser(u._id, `${u.firstname} ${u.lastname}`)}
@@ -1560,6 +1649,109 @@ export default function AdminUsers() {
                                 </button>
                             </div>
                         </div>
+                    </div>
+                </div>
+            )}
+            {/* ── Change Password Modal ── */}
+            {passwordModalUser && (
+                <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                    <div className="bg-neutral-900 border border-neutral-700/80 rounded-2xl p-6 w-full max-w-md shadow-2xl space-y-4">
+                        <div className="flex items-center gap-3 border-b border-neutral-800 pb-4">
+                            <div className="w-10 h-10 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-400">
+                                <Key className="w-5 h-5" />
+                            </div>
+                            <div>
+                                <h3 className="text-lg font-bold text-white">Change User Password</h3>
+                                <p className="text-xs text-neutral-400">
+                                    For <span className="font-semibold text-amber-300">@{passwordModalUser.username || passwordModalUser.email}</span>
+                                    {passwordModalUser.firstname && ` (${passwordModalUser.firstname} ${passwordModalUser.lastname || ""})`}
+                                </p>
+                            </div>
+                        </div>
+
+                        {passwordError && (
+                            <div className="p-3 bg-red-500/15 border border-red-500/30 text-red-300 text-xs rounded-xl flex items-center gap-2">
+                                <span>⚠️</span>
+                                <span>{passwordError}</span>
+                            </div>
+                        )}
+
+                        <form onSubmit={handleSaveUserPassword} className="space-y-4">
+                            <div>
+                                <label className="block text-xs font-semibold text-neutral-300 uppercase tracking-wider mb-1.5">
+                                    New Password
+                                </label>
+                                <div className="relative">
+                                    <input
+                                        type={showPassword ? "text" : "password"}
+                                        placeholder="Enter new password (min. 6 characters)"
+                                        value={newPassword}
+                                        onChange={(e) => setNewPassword(e.target.value)}
+                                        required
+                                        minLength={6}
+                                        autoFocus
+                                        className="w-full bg-neutral-800 border border-neutral-700 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-neutral-500 focus:outline-none focus:border-amber-500 pr-10"
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowPassword(!showPassword)}
+                                        className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-200"
+                                    >
+                                        {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div>
+                                <label className="block text-xs font-semibold text-neutral-300 uppercase tracking-wider mb-1.5">
+                                    Confirm New Password
+                                </label>
+                                <div className="relative">
+                                    <input
+                                        type={showPassword ? "text" : "password"}
+                                        placeholder="Re-enter new password"
+                                        value={confirmPassword}
+                                        onChange={(e) => setConfirmPassword(e.target.value)}
+                                        required
+                                        minLength={6}
+                                        className="w-full bg-neutral-800 border border-neutral-700 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-neutral-500 focus:outline-none focus:border-amber-500 pr-10"
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="text-[11px] text-neutral-400 flex items-center gap-1.5">
+                                <Lock className="w-3.5 h-3.5 text-neutral-500" />
+                                <span>The user will need to use this new password on their next login.</span>
+                            </div>
+
+                            <div className="flex gap-3 pt-2">
+                                <button
+                                    type="button"
+                                    onClick={() => setPasswordModalUser(null)}
+                                    disabled={passwordSaving}
+                                    className="flex-1 px-4 py-2.5 border border-neutral-700 hover:bg-neutral-800 text-neutral-300 rounded-xl text-sm font-semibold transition-colors disabled:opacity-50"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="submit"
+                                    disabled={passwordSaving || !newPassword || newPassword.length < 6}
+                                    className="flex-1 px-4 py-2.5 bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 text-white rounded-xl text-sm font-bold shadow-lg shadow-amber-900/30 transition-all disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer"
+                                >
+                                    {passwordSaving ? (
+                                        <>
+                                            <RefreshCw className="w-4 h-4 animate-spin" />
+                                            <span>Updating...</span>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Key className="w-4 h-4" />
+                                            <span>Save Password</span>
+                                        </>
+                                    )}
+                                </button>
+                            </div>
+                        </form>
                     </div>
                 </div>
             )}

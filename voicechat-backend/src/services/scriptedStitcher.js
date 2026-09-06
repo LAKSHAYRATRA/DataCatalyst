@@ -9,6 +9,8 @@ import { ScriptedSubmission } from "../models/ScriptedSubmission.js";
 import { ScriptedSubtopic } from "../models/ScriptedSubtopic.js";
 import { ScriptedLanguage } from "../models/ScriptedLanguage.js";
 import { Language } from "../models/Language.js";
+import { User } from "../models/User.js";
+import { getArtistRateForProject } from "../controllers/vendorController.js";
 
 const execAsync = promisify(exec);
 
@@ -215,8 +217,25 @@ export async function stitchScriptedPair(sub1, sub2) {
         ]);
         const hourlyRate = (sLang && Number(sLang.hourlyPayout) > 0) ? Number(sLang.hourlyPayout) : (Number(lang?.hourlyPayout) || 0);
 
-        const payoutUsdA = Math.round(((hourlyRate * durationMinutesA) / 60) * 100) / 100;
-        const payoutUsdB = Math.round(((hourlyRate * durationMinutesB) / 60) * 100) / 100;
+        let hourlyRateA = hourlyRate;
+        let hourlyRateB = hourlyRate;
+
+        const [userA, userB] = await Promise.all([
+            User.findById(sub1.userId).select("vendorId projectPayrates perCallPayrate isQA").lean(),
+            User.findById(sub2.userId).select("vendorId projectPayrates perCallPayrate isQA").lean()
+        ]);
+
+        if (userA?.vendorId && !userA?.isQA) {
+            const resA = getArtistRateForProject(userA, "scripted_call", langCode, langCode, hourlyRate);
+            if (resA.isProjectConfigured || Number(userA.perCallPayrate) > 0) hourlyRateA = resA.artistRate;
+        }
+        if (userB?.vendorId && !userB?.isQA) {
+            const resB = getArtistRateForProject(userB, "scripted_call", langCode, langCode, hourlyRate);
+            if (resB.isProjectConfigured || Number(userB.perCallPayrate) > 0) hourlyRateB = resB.artistRate;
+        }
+
+        const payoutUsdA = Math.round(((hourlyRateA * durationMinutesA) / 60) * 100) / 100;
+        const payoutUsdB = Math.round(((hourlyRateB * durationMinutesB) / 60) * 100) / 100;
 
         const now = new Date();
 

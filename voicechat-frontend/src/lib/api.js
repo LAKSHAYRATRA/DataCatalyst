@@ -1,10 +1,15 @@
 import { clearToken } from "./auth.js";
 
 const BASE = import.meta.env.VITE_BACKEND_URL || (typeof window !== "undefined" && window.location.hostname !== "localhost" && window.location.hostname !== "127.0.0.1" ? "https://api.voclara.com" : "http://localhost:3001");
+export const BASE_URL = BASE;
+
 
 export async function apiFetch(path, options = {}) {
   const headers = new Headers(options.headers || {});
-  const token = typeof window !== "undefined" ? localStorage.getItem("vc_token") : null;
+  const isVendorPath = path.startsWith("/api/vendor");
+  const token = typeof window !== "undefined"
+    ? (isVendorPath ? (localStorage.getItem("vc_vendor_token") || localStorage.getItem("vc_token")) : localStorage.getItem("vc_token"))
+    : null;
   if (token && !headers.has("Authorization")) {
     headers.set("Authorization", `Bearer ${token}`);
   }

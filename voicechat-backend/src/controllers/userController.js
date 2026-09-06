@@ -19,6 +19,7 @@ import ffmpegInstaller from "@ffmpeg-installer/ffmpeg";
 import { generateSignedAgreementPdf, AGREEMENT_VERSION } from "../services/agreementPdf.js";
 import { sendIntroSubmissionEmail, sendAgreementSignedEmail, sendProjectApplicationReceivedEmail } from "../util/emailService.js";
 import { formatUserResponse } from "./authController.js";
+import { getArtistRateForProject } from "./vendorController.js";
 
 ffmpeg.setFfmpegPath(ffmpegInstaller.path);
 
@@ -157,11 +158,34 @@ export async function getLanguages(req, res) {
       if (!vendor || callProjects.length === 0) {
         return res.json({ languages: [] });
       }
-      const allowedCodes = callProjects.map((p) => (p.languageCode || "").toLowerCase().trim()).filter(Boolean);
-      if (allowedCodes.length === 0) {
-        return res.json({ languages: [] });
+
+      const userProjectPayrates = Array.isArray(req.user.projectPayrates) ? req.user.projectPayrates : [];
+      const hasUserAllocations = vendor.isStudio && userProjectPayrates.length > 0;
+
+      if (hasUserAllocations) {
+        const allowedLangs = userProjectPayrates
+          .filter((p) => p.category === "call")
+          .map((p) => String(p.language || p.subprojectId || "").toLowerCase().trim())
+          .filter(Boolean);
+        langs = langs.filter((l) => allowedLangs.includes((l.code || "").toLowerCase().trim()));
+      } else {
+        const allowedCodes = callProjects.map((p) => (p.languageCode || "").toLowerCase().trim()).filter(Boolean);
+        if (allowedCodes.length === 0) {
+          return res.json({ languages: [] });
+        }
+        langs = langs.filter((l) => allowedCodes.includes((l.code || "").toLowerCase().trim()));
       }
-      langs = langs.filter((l) => allowedCodes.includes((l.code || "").toLowerCase().trim()));
+
+      // Studio contributor accounts see only the payrate their studio set
+      if (vendor.isStudio || hasUserAllocations) {
+        langs = langs.map((l) => {
+          const rateRes = getArtistRateForProject(req.user, "call", l.code, l.code, l.hourlyPayout);
+          return {
+            ...l,
+            hourlyPayout: (rateRes.isProjectConfigured || Number(req.user.perCallPayrate) > 0) ? rateRes.artistRate : l.hourlyPayout
+          };
+        });
+      }
     }
 
     if (req.user) {
@@ -206,11 +230,34 @@ export async function getScriptedLanguages(req, res) {
       if (!vendor || scriptedProjects.length === 0) {
         return res.json({ languages: [] });
       }
-      const allowedCodes = scriptedProjects.map((p) => (p.languageCode || "").toLowerCase().trim()).filter(Boolean);
-      if (allowedCodes.length === 0) {
-        return res.json({ languages: [] });
+
+      const userProjectPayrates = Array.isArray(req.user.projectPayrates) ? req.user.projectPayrates : [];
+      const hasUserAllocations = vendor.isStudio && userProjectPayrates.length > 0;
+
+      if (hasUserAllocations) {
+        const allowedLangs = userProjectPayrates
+          .filter((p) => p.category === "scripted_call")
+          .map((p) => String(p.language || p.subprojectId || "").toLowerCase().trim())
+          .filter(Boolean);
+        langs = langs.filter((l) => allowedLangs.includes((l.code || "").toLowerCase().trim()));
+      } else {
+        const allowedCodes = scriptedProjects.map((p) => (p.languageCode || "").toLowerCase().trim()).filter(Boolean);
+        if (allowedCodes.length === 0) {
+          return res.json({ languages: [] });
+        }
+        langs = langs.filter((l) => allowedCodes.includes((l.code || "").toLowerCase().trim()));
       }
-      langs = langs.filter((l) => allowedCodes.includes((l.code || "").toLowerCase().trim()));
+
+      // Studio contributor accounts see only the payrate their studio set
+      if (vendor.isStudio || hasUserAllocations) {
+        langs = langs.map((l) => {
+          const rateRes = getArtistRateForProject(req.user, "scripted_call", l.code, l.code, l.hourlyPayout);
+          return {
+            ...l,
+            hourlyPayout: (rateRes.isProjectConfigured || Number(req.user.perCallPayrate) > 0) ? rateRes.artistRate : l.hourlyPayout
+          };
+        });
+      }
     }
 
     res.json({ languages: langs });
@@ -277,9 +324,52 @@ export async function getMyLanguageApplications(req, res) {
         return res.json({ applications: [], isAdmin: false, isQA: false });
       }
 
+      const userProjectPayrates = Array.isArray(req.user.projectPayrates) ? req.user.projectPayrates : [];
+      const hasUserAllocations = vendor.isStudio && userProjectPayrates.length > 0;
+
       applications = applications.filter((app) => {
         const type = app.applicationType || (app.companyId ? "phrase" : "call");
         const lang = String(app.languageCode || app.language || "").trim().toLowerCase();
+
+        if (hasUserAllocations) {
+          if (type === "call") {
+            return userProjectPayrates.some(
+              (p) => p.category === "call" && (
+                (p.language || "").toLowerCase().trim() === lang ||
+                (p.subprojectId || "").toLowerCase().trim() === lang
+              )
+            );
+          }
+          if (type === "scripted_call") {
+            return userProjectPayrates.some(
+              (p) => p.category === "scripted_call" && (
+                (p.language || "").toLowerCase().trim() === lang ||
+                (p.subprojectId || "").toLowerCase().trim() === lang
+              )
+            );
+          }
+          if (type === "phrase") {
+            const compIdentifiers = [
+              String(app.companyId || "").toLowerCase().trim(),
+              String(app.projectName || "").toLowerCase().trim(),
+              String(app.cleanCompanyId || "").toLowerCase().trim(),
+              String(app.matchedCompanyDbId || "").toLowerCase().trim()
+            ].filter(Boolean);
+
+            const matchedUserProj = userProjectPayrates.find((p) => {
+              if (p.category !== "phrase") return false;
+              const subId = String(p.subprojectId || "").toLowerCase().trim();
+              const subName = String(p.subprojectName || "").toLowerCase().trim();
+              return compIdentifiers.some((id) => id === subId || id === subName || subId.includes(id) || id.includes(subId));
+            });
+            if (!matchedUserProj) return false;
+            if (matchedUserProj.language && matchedUserProj.language !== "all") {
+              return String(matchedUserProj.language).toLowerCase().trim() === lang;
+            }
+            return true;
+          }
+          return false;
+        }
 
         if (type === "call") {
           return activeProjects.some(

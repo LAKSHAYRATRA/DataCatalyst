@@ -59,8 +59,11 @@ import AdminQAPayments from "./pages/AdminQAPayments.jsx";
 import AdminAmbiguity from "./pages/AdminAmbiguity.jsx";
 import QaFlags from "./pages/QaFlags.jsx";
 import AdminVendors from "./pages/AdminVendors.jsx";
+import AdminVendorAnalytics from "./pages/AdminVendorAnalytics.jsx";
+import AdminVendorPayoutBreakdown from "./pages/AdminVendorPayoutBreakdown.jsx";
 import VendorLogin from "./pages/VendorLogin.jsx";
 import VendorPortal from "./pages/VendorPortal.jsx";
+import VendorProjectSquadSummary from "./pages/VendorProjectSquadSummary.jsx";
 import { getUserInfo, setUserInfo, clearToken } from "./lib/auth.js";
 import { apiGet, apiPatchJson } from "./lib/api.js";
 import { SystemCheckProvider } from "./context/SystemCheckContext.jsx";
@@ -571,6 +574,8 @@ export default function App() {
         <Route path="/admin/payouts" element={<RequireAdmin><AdminPayouts /></RequireAdmin>} />
         <Route path="/admin/payouts/:userId" element={<RequireAdmin><AdminPayoutUser /></RequireAdmin>} />
         <Route path="/admin/finances" element={<RequireAdmin><AdminFinances /></RequireAdmin>} />
+        <Route path="/admin/finances/vendors/:vendorId" element={<RequireAdmin><AdminVendorPayoutBreakdown /></RequireAdmin>} />
+        <Route path="/admin/vendors/:vendorId/payouts" element={<RequireAdmin><AdminVendorPayoutBreakdown /></RequireAdmin>} />
         <Route path="/admin/agreements" element={<RequireAdmin><AdminAgreements /></RequireAdmin>} />
         <Route path="/admin/pan-verification" element={<RequireAdmin><AdminPanVerification /></RequireAdmin>} />
         <Route path="/admin/qa" element={<RequireAdminOrQA><AdminQA /></RequireAdminOrQA>} />
@@ -609,9 +614,12 @@ export default function App() {
         <Route path="/admin/ambiguity" element={<RequireAdmin><AdminAmbiguity /></RequireAdmin>} />
         <Route path="/admin/media" element={<RequireAdmin><AdminMedia /></RequireAdmin>} />
         <Route path="/admin/vendors" element={<RequireAdmin><AdminVendors /></RequireAdmin>} />
+        <Route path="/admin/vendors/:id/analytics" element={<RequireAdmin><AdminVendorAnalytics /></RequireAdmin>} />
         <Route path="/vendor/login" element={<VendorLogin />} />
         <Route path="/vendor/dashboard" element={<VendorPortal />} />
         <Route path="/vendor/portal" element={<Navigate to="/vendor/dashboard" replace />} />
+        <Route path="/vendor/projects/:subprojectId/squad-summary" element={<VendorProjectSquadSummary />} />
+        <Route path="/vendor/projects/:subprojectId" element={<VendorProjectSquadSummary />} />
         <Route path="/vendor" element={<Navigate to="/vendor/dashboard" replace />} />
         <Route path="/language-apply" element={<RequireAuth><LanguageApply /></RequireAuth>} />
         <Route path="/phrases" element={<RequirePhraseAccess><PhraseRecording /></RequirePhraseAccess>} />
