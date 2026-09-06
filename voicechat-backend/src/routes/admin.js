@@ -8977,6 +8977,7 @@ router.get("/phrases/download-company", requireAuth(JWT_SECRET), async (req, res
 
                 for (const candidate of localCandidates) {
                     if (candidate && fs.existsSync(candidate)) {
+                        if (candidate.includes("orig_") || candidate.includes("phrases_backup")) continue;
                         try {
                             const fileStream = fs.createReadStream(candidate);
                             wavBuffer = await getWavBuffer(fileStream);

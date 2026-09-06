@@ -1981,6 +1981,7 @@ export async function streamPhraseAudio(req, res) {
         const searchDir = (dir) => {
           const items = fs.readdirSync(dir);
           for (const item of items) {
+            if (item.startsWith("orig_") || item === "phrases_backup") continue;
             const full = path.join(dir, item);
             if (fs.statSync(full).isDirectory()) {
               const subFound = searchDir(full);
@@ -2006,7 +2007,9 @@ export async function streamPhraseAudio(req, res) {
       res.setHeader("X-Content-Type-Options", "nosniff");
       res.setHeader("Content-Type", mimeType);
       res.setHeader("Accept-Ranges", "bytes");
-      res.setHeader("Cache-Control", "public, max-age=86400, immutable");
+      res.setHeader("Cache-Control", "private, no-cache, no-store, must-revalidate");
+      res.setHeader("Pragma", "no-cache");
+      res.setHeader("Expires", "0");
       return fs.createReadStream(foundPath).pipe(res);
     }
 
@@ -2028,7 +2031,9 @@ export async function streamPhraseAudio(req, res) {
         res.setHeader("ETag", s3Doc.ETag);
       }
       res.setHeader("Accept-Ranges", "bytes");
-      res.setHeader("Cache-Control", "public, max-age=86400, immutable");
+      res.setHeader("Cache-Control", "private, no-cache, no-store, must-revalidate");
+      res.setHeader("Pragma", "no-cache");
+      res.setHeader("Expires", "0");
       
       s3Doc.Body.on('error', (err) => {
           console.error('S3 Stream error (phrase recording):', err);
@@ -2390,7 +2395,8 @@ export async function trimPhraseAudio(req, res) {
     let localAudio = possiblePaths.find(p => fs.existsSync(p));
 
     if (!localAudio) {
-      const tempDownloadPath = path.join(os.tmpdir(), `phrase_trim_dl_${Date.now()}_${phraseId}.wav`);
+      const ext = path.extname(phrase.audioFile || "").toLowerCase() || ".wav";
+      const tempDownloadPath = path.join(os.tmpdir(), `phrase_trim_dl_${Date.now()}_${phraseId}${ext}`);
       try {
         const s3Resp = await s3Client.send(new GetObjectCommand({ Bucket: BUCKET_NAME, Key: phrase.audioFile }));
         const fileStream = fs.createWriteStream(tempDownloadPath);
@@ -2406,11 +2412,11 @@ export async function trimPhraseAudio(req, res) {
       }
     }
 
-    // 1. Backup original audio file and metrics if not backed up yet
+    // 1. Backup original raw audio file and metrics if not backed up yet
+    const companyFolder = phrase.companyId ? String(phrase.companyId).replace(/[^a-zA-Z0-9_\-\ ]/g, "").trim() : "No_Company";
     if (!phrase.originalAudioFile && phrase.audioFile) {
-      const companyFolder = phrase.companyId ? String(phrase.companyId).replace(/[^a-zA-Z0-9_\-\ ]/g, "").trim() : "No_Company";
-      const origKey = `phrases/${companyFolder}/orig_${path.basename(phrase.audioFile)}`;
-      const origLocalDir = path.join(process.cwd(), "uploads", "phrases", companyFolder);
+      const origKey = `phrases_backup/${companyFolder}/orig_${path.basename(phrase.audioFile)}`;
+      const origLocalDir = path.join(process.cwd(), "uploads", "phrases_backup", companyFolder);
       if (!fs.existsSync(origLocalDir)) fs.mkdirSync(origLocalDir, { recursive: true });
       const origLocalPath = path.join(process.cwd(), "uploads", origKey);
       
@@ -2420,6 +2426,25 @@ export async function trimPhraseAudio(req, res) {
         phrase.originalDuration = phrase.duration || trimDuration;
         phrase.originalLufs = phrase.lufs;
         phrase.wasAudioTrimmed = true;
+
+        if (s3Client && BUCKET_NAME) {
+          try {
+            const isFlacOrig = path.extname(origLocalPath).toLowerCase() === ".flac";
+            const backupStream = fs.createReadStream(origLocalPath);
+            const backupUpload = new Upload({
+              client: s3Client,
+              params: {
+                Bucket: BUCKET_NAME,
+                Key: origKey,
+                Body: backupStream,
+                ContentType: isFlacOrig ? "audio/flac" : "audio/wav"
+              }
+            });
+            await backupUpload.done();
+          } catch (bkS3Err) {
+            console.warn("Failed to upload backup audio to S3:", bkS3Err.message);
+          }
+        }
       } catch (bkErr) {
         console.warn("Failed to create local original audio backup:", bkErr.message);
       }
@@ -2429,37 +2454,73 @@ export async function trimPhraseAudio(req, res) {
     let sourceAudio = localAudio;
     if (phrase.originalAudioFile) {
       const origPath = path.join(process.cwd(), "uploads", phrase.originalAudioFile);
-      if (fs.existsSync(origPath)) sourceAudio = origPath;
+      if (fs.existsSync(origPath)) {
+        sourceAudio = origPath;
+      } else if (s3Client && BUCKET_NAME) {
+        const origDlPath = path.join(os.tmpdir(), `orig_dl_${Date.now()}_${path.basename(phrase.originalAudioFile)}`);
+        try {
+          const s3Orig = await s3Client.send(new GetObjectCommand({ Bucket: BUCKET_NAME, Key: phrase.originalAudioFile }));
+          const origFileStream = fs.createWriteStream(origDlPath);
+          await new Promise((resolve, reject) => {
+            s3Orig.Body.pipe(origFileStream);
+            s3Orig.Body.on("error", reject);
+            origFileStream.on("finish", resolve);
+            origFileStream.on("error", reject);
+          });
+          sourceAudio = origDlPath;
+        } catch (origS3Err) {
+          console.warn("Could not download original backup from S3, using current audio:", origS3Err.message);
+        }
+      }
     }
 
     const trimDuration = parseFloat((endSec - startSec).toFixed(2));
-    tempOutPath = path.join(os.tmpdir(), `trimmed_${Date.now()}_${phraseId}.wav`);
+    const isFlac = (phrase.audioFile || "").toLowerCase().endsWith(".flac");
+    const outputExt = isFlac ? ".flac" : ".wav";
+    tempOutPath = path.join(os.tmpdir(), `trimmed_${Date.now()}_${phraseId}${outputExt}`);
 
     await new Promise((resolve, reject) => {
-      ffmpeg(sourceAudio)
+      let ffmpegCmd = ffmpeg(sourceAudio)
         .setStartTime(startSec)
         .setDuration(trimDuration)
-        .audioCodec("pcm_s16le")
-        .audioFrequency(48000)
         .audioChannels(1)
+        .audioFrequency(48000);
+
+      if (isFlac) {
+        ffmpegCmd = ffmpegCmd.audioCodec("flac").outputOptions(["-sample_fmt s32"]);
+      } else {
+        ffmpegCmd = ffmpegCmd.audioCodec("pcm_s16le");
+      }
+
+      ffmpegCmd
         .output(tempOutPath)
         .on("end", resolve)
         .on("error", (err) => reject(new Error("FFmpeg trim failed: " + err.message)))
         .run();
     });
 
-    fs.copyFileSync(tempOutPath, localAudio);
+    // Overwrite primary local active path
+    const targetLocalUploadPath = path.join(process.cwd(), "uploads", phrase.audioFile);
+    const targetPhrasesDir = path.dirname(targetLocalUploadPath);
+    if (!fs.existsSync(targetPhrasesDir)) fs.mkdirSync(targetPhrasesDir, { recursive: true });
+    fs.copyFileSync(tempOutPath, targetLocalUploadPath);
 
-    if (phrase.audioFile && !fs.existsSync(path.join(process.cwd(), "uploads", phrase.audioFile))) {
+    // Also overwrite localAudio if it was at a different local path
+    if (localAudio && localAudio !== targetLocalUploadPath && !localAudio.startsWith(os.tmpdir())) {
+      try { fs.copyFileSync(tempOutPath, localAudio); } catch (e) {}
+    }
+
+    // ALWAYS re-upload trimmed audio to S3 under phrase.audioFile
+    if (phrase.audioFile && s3Client && BUCKET_NAME) {
       try {
-        const fileStream = fs.createReadStream(localAudio);
+        const fileStream = fs.createReadStream(tempOutPath);
         const upload = new Upload({
           client: s3Client,
           params: {
             Bucket: BUCKET_NAME,
             Key: phrase.audioFile,
             Body: fileStream,
-            ContentType: "audio/wav",
+            ContentType: isFlac ? "audio/flac" : "audio/wav",
           },
         });
         await upload.done();
@@ -2468,11 +2529,12 @@ export async function trimPhraseAudio(req, res) {
       }
     }
 
-    const newLufs = await calculateLufsFromAudioFile(localAudio);
+    const newLufs = await calculateLufsFromAudioFile(tempOutPath);
 
     phrase.duration = trimDuration;
     phrase.lufs = newLufs;
     phrase.wasAudioTrimmed = true;
+    phrase.updatedAt = new Date();
 
     const { verdict, comment } = req.body;
     const isQAOnly = req.user.isQA && !req.user.isAdmin;
@@ -2535,13 +2597,56 @@ export async function revertTrimAudio(req, res) {
     const origLocalPath = path.join(process.cwd(), "uploads", phrase.originalAudioFile);
     const activeLocalPath = path.join(process.cwd(), "uploads", phrase.audioFile);
 
-    if (fs.existsSync(origLocalPath) && fs.existsSync(activeLocalPath)) {
+    let restoredPath = null;
+    if (fs.existsSync(origLocalPath)) {
+      if (!fs.existsSync(path.dirname(activeLocalPath))) {
+        fs.mkdirSync(path.dirname(activeLocalPath), { recursive: true });
+      }
       fs.copyFileSync(origLocalPath, activeLocalPath);
+      restoredPath = activeLocalPath;
+    } else if (s3Client && BUCKET_NAME) {
+      try {
+        const s3Orig = await s3Client.send(new GetObjectCommand({ Bucket: BUCKET_NAME, Key: phrase.originalAudioFile }));
+        if (!fs.existsSync(path.dirname(activeLocalPath))) {
+          fs.mkdirSync(path.dirname(activeLocalPath), { recursive: true });
+        }
+        const fileStream = fs.createWriteStream(activeLocalPath);
+        await new Promise((resolve, reject) => {
+          s3Orig.Body.pipe(fileStream);
+          s3Orig.Body.on("error", reject);
+          fileStream.on("finish", resolve);
+          fileStream.on("error", reject);
+        });
+        restoredPath = activeLocalPath;
+      } catch (s3dlErr) {
+        console.warn("Could not download original backup from S3 during revert:", s3dlErr.message);
+      }
+    }
+
+    // Re-upload restored audio back to S3
+    if (restoredPath && s3Client && BUCKET_NAME && phrase.audioFile) {
+      try {
+        const isFlac = (phrase.audioFile || "").toLowerCase().endsWith(".flac");
+        const fileStream = fs.createReadStream(restoredPath);
+        const upload = new Upload({
+          client: s3Client,
+          params: {
+            Bucket: BUCKET_NAME,
+            Key: phrase.audioFile,
+            Body: fileStream,
+            ContentType: isFlac ? "audio/flac" : "audio/wav"
+          }
+        });
+        await upload.done();
+      } catch (s3UpErr) {
+        console.error("Failed to re-upload reverted audio to S3:", s3UpErr);
+      }
     }
 
     phrase.duration = phrase.originalDuration || phrase.duration;
     phrase.lufs = phrase.originalLufs !== null ? phrase.originalLufs : phrase.lufs;
     phrase.wasAudioTrimmed = false;
+    phrase.updatedAt = new Date();
 
     if (phrase.qcResult) {
       phrase.qcResult.freq = phrase.qcResult.freq || {};
@@ -2838,6 +2943,7 @@ export async function downloadSinglePhraseZip(req, res) {
 
     for (const candidate of localCandidates) {
       if (candidate && fs.existsSync(candidate)) {
+        if (candidate.includes("orig_") || candidate.includes("phrases_backup")) continue;
         try {
           const fileStream = fs.createReadStream(candidate);
           wavBuffer = await getWavBuffer(fileStream);

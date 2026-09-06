@@ -31,7 +31,7 @@ import { apiGet, apiPostJson, apiPatchJson } from '../lib/api';
 import { getUserInfo } from '../lib/auth';
 import SecureAudioPlayer from '../components/SecureAudioPlayer';
 import AdminNav from '../components/AdminNav.jsx';
-import InteractiveWaveformTrimmer, { preloadWaveformAudio } from '../components/InteractiveWaveformTrimmer.jsx';
+import InteractiveWaveformTrimmer, { preloadWaveformAudio, waveformCache } from '../components/InteractiveWaveformTrimmer.jsx';
 import SpectrogramViewer from '../components/SpectrogramViewer.jsx';
 
 function formatPhraseDate(dateVal, format = 'DD-MM-YYYY') {
@@ -276,6 +276,13 @@ export default function QaPhrases() {
       if (res && res.phrase) {
         const newStatus = res.phrase.status;
 
+        // Clear any decoded waveform cache for this phrase
+        for (const key of waveformCache.keys()) {
+          if (key.includes(trimmingPhrase._id)) {
+            waveformCache.delete(key);
+          }
+        }
+
         // If QA trimmed it or Admin approved/rejected, filter out of current view queue
         if (!isAdmin || verdict === 'approved' || verdict === 'rejected') {
           setQueue(prev => prev.filter(q => q._id !== trimmingPhrase._id));
@@ -285,6 +292,11 @@ export default function QaPhrases() {
             duration: res.duration,
             lufs: res.lufs,
             audioFile: res.phrase.audioFile,
+            originalAudioFile: res.phrase.originalAudioFile,
+            originalDuration: res.phrase.originalDuration,
+            originalLufs: res.phrase.originalLufs,
+            wasAudioTrimmed: true,
+            updatedAt: res.phrase.updatedAt || new Date().toISOString(),
             status: newStatus
           } : q));
         }
@@ -392,13 +404,20 @@ export default function QaPhrases() {
           return next;
         });
 
+        // Clear any decoded waveform cache for this phrase
+        for (const key of waveformCache.keys()) {
+          if (key.includes(phrase._id)) {
+            waveformCache.delete(key);
+          }
+        }
+
         // In-place replenishment: Replace ONLY this slot from the pre-rendered pool
         if (trimMode && slotIdx !== null && slotIdx !== undefined) {
           replenishSlotInDeck(slotIdx);
         }
 
         // Global queue update so stats and filters remain in sync
-        if (!isAdmin || verdict === 'approved' || verdict === 'rejected' || trimMode) {
+        if (!isAdmin || verdict === 'approved' || verdict === 'rejected') {
           setQueue(prev => prev.filter(q => q._id !== phrase._id));
         } else {
           setQueue(prev => prev.map(q => q._id === phrase._id ? {
@@ -406,10 +425,31 @@ export default function QaPhrases() {
             duration: res.duration,
             lufs: res.lufs,
             audioFile: res.phrase.audioFile,
+            originalAudioFile: res.phrase.originalAudioFile,
+            originalDuration: res.phrase.originalDuration,
+            originalLufs: res.phrase.originalLufs,
             status: newStatus,
-            wasAudioTrimmed: true
+            wasAudioTrimmed: true,
+            updatedAt: res.phrase.updatedAt || new Date().toISOString()
           } : q));
         }
+
+        // Also update deckState if phrase remains in deck
+        setDeckState(prev => ({
+          ...prev,
+          deck: prev.deck.map(d => d._id === phrase._id ? {
+            ...d,
+            duration: res.duration,
+            lufs: res.lufs,
+            audioFile: res.phrase.audioFile,
+            originalAudioFile: res.phrase.originalAudioFile,
+            originalDuration: res.phrase.originalDuration,
+            originalLufs: res.phrase.originalLufs,
+            status: newStatus,
+            wasAudioTrimmed: true,
+            updatedAt: res.phrase.updatedAt || new Date().toISOString()
+          } : d)
+        }));
 
         let msg = `Trimmed to ${res.duration}s!`;
         if (slotIdx !== null) msg += ` (Slot #${slotIdx + 1} replenished in place)`;
@@ -563,12 +603,21 @@ export default function QaPhrases() {
     try {
       const res = await apiPostJson(`/api/phrases/qa/revert-trim/${phraseId}`, {});
       if (res && res.phrase) {
+        for (const key of waveformCache.keys()) {
+          if (key.includes(phraseId)) {
+            waveformCache.delete(key);
+          }
+        }
+
         setQueue(prev => prev.map(q => q._id === phraseId ? {
           ...q,
           duration: res.duration,
           lufs: res.lufs,
           wasAudioTrimmed: false,
-          originalAudioFile: null
+          originalAudioFile: null,
+          originalDuration: null,
+          originalLufs: null,
+          updatedAt: res.phrase.updatedAt || new Date().toISOString()
         } : q));
 
         setDeckState(prev => ({
@@ -578,7 +627,10 @@ export default function QaPhrases() {
             duration: res.duration,
             lufs: res.lufs,
             wasAudioTrimmed: false,
-            originalAudioFile: null
+            originalAudioFile: null,
+            originalDuration: null,
+            originalLufs: null,
+            updatedAt: res.phrase.updatedAt || new Date().toISOString()
           } : q)
         }));
 
@@ -2236,7 +2288,7 @@ export default function QaPhrases() {
                           {showSpectrogram[p._id] && (
                             <div className="border-t border-neutral-800 pt-3">
                               <SpectrogramViewer
-                                audioUrl={`${import.meta.env.VITE_BACKEND_URL || "http://localhost:3001"}/api/phrases/${p._id}/audio`}
+                                audioUrl={`${import.meta.env.VITE_BACKEND_URL || "http://localhost:3001"}/api/phrases/${p._id}/audio?t=${new Date(p.updatedAt || p._id).getTime() || Date.now()}`}
                                 title={`Phrase ${p.phraseId || p._id} — Mel Spectrogram`}
                                 maxFreq={24000}
                                 gainDb={20}
@@ -2680,7 +2732,7 @@ export default function QaPhrases() {
                             <span className="opacity-50 font-mono text-xs">NO DOWNLOADING</span>
                           </h4>
                           <SecureAudioPlayer 
-                            url={`/api/phrases/${p._id}/audio`} 
+                            url={`/api/phrases/${p._id}/audio?t=${new Date(p.updatedAt || p._id).getTime() || Date.now()}`} 
                             requireFullListen={activeTab === 'recorded' && !isAdmin}
                             onFirstListenComplete={() => {
                               setListenedOnce(prev => ({ ...prev, [p._id]: true }));
@@ -2870,7 +2922,7 @@ export default function QaPhrases() {
                     {showSpectrogram[p._id] && (
                       <div className="border-t border-neutral-200 dark:border-neutral-700 pt-4 mb-4">
                         <SpectrogramViewer
-                          audioUrl={`${import.meta.env.VITE_BACKEND_URL || "http://localhost:3001"}/api/phrases/${p._id}/audio`}
+                          audioUrl={`${import.meta.env.VITE_BACKEND_URL || "http://localhost:3001"}/api/phrases/${p._id}/audio?t=${new Date(p.updatedAt || p._id).getTime() || Date.now()}`}
                           title={`Phrase ${p.phraseId || p._id} — Mel Spectrogram`}
                           maxFreq={24000}
                           gainDb={20}
