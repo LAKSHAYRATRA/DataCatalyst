@@ -1,6 +1,107 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { Play, Pause, Sparkles, Loader2 } from 'lucide-react';
 
+// Global shared AudioContext & in-memory decoded waveform cache
+let sharedAudioContext = null;
+function getSharedAudioContext() {
+  if (typeof window === "undefined") return null;
+  const AudioCtx = window.AudioContext || window.webkitAudioContext;
+  if (!AudioCtx) return null;
+  if (!sharedAudioContext || sharedAudioContext.state === "closed") {
+    sharedAudioContext = new AudioCtx();
+  }
+  return sharedAudioContext;
+}
+
+export const waveformCache = new Map();
+
+/**
+ * Preloads and pre-decodes audio waveform into waveformCache in the background.
+ * Returns the cached entry or null.
+ */
+export async function preloadWaveformAudio(audioUrl) {
+  if (!audioUrl) return null;
+  const BACKEND = import.meta.env.VITE_BACKEND_URL || "http://localhost:3001";
+  const fullUrl = String(audioUrl).startsWith("http") ? audioUrl : BACKEND + audioUrl;
+  if (waveformCache.has(fullUrl)) return waveformCache.get(fullUrl);
+
+  try {
+    let token = null;
+    try {
+      const cookies = document.cookie.split(";").map((c) => c.trim());
+      const vcCookie = cookies.find((c) => c.startsWith("vc_token="));
+      if (vcCookie) token = vcCookie.split("=")[1];
+      else token = localStorage.getItem("vc_token");
+    } catch (e) {}
+
+    const res = await fetch(fullUrl, {
+      credentials: "include",
+      headers: token ? { Authorization: `Bearer ${token}` } : {}
+    });
+    if (!res.ok) return null;
+    const arrayBuffer = await res.arrayBuffer();
+
+    const blob = new Blob([arrayBuffer], { type: res.headers.get("content-type") || "audio/wav" });
+    const bUrl = URL.createObjectURL(blob);
+
+    const audioCtx = getSharedAudioContext();
+    if (!audioCtx) return null;
+
+    const bufferCopy = arrayBuffer.slice(0);
+    const decodedBuffer = await audioCtx.decodeAudioData(bufferCopy);
+    if (!decodedBuffer) return null;
+
+    const fetchedDur = parseFloat((decodedBuffer.duration || 1).toFixed(2));
+    const channelData = decodedBuffer.getChannelData(0);
+
+    let maxVal = 0;
+    let sumSquares = 0;
+    const sampleStep = 4;
+    for (let i = 0; i < channelData.length; i += sampleStep) {
+      const abs = Math.abs(channelData[i]);
+      if (abs > maxVal) maxVal = abs;
+      sumSquares += abs * abs;
+    }
+    const countedSamples = Math.max(1, Math.floor(channelData.length / sampleStep));
+    const overallRms = Math.sqrt(sumSquares / countedSamples);
+    const estLufs = parseFloat((-0.691 + 10 * Math.log10(Math.max(1e-9, overallRms * overallRms))).toFixed(1));
+
+    let ampFactor = 1.0;
+    if (estLufs <= -35.0 || maxVal < 0.25) {
+      ampFactor = Math.min(8.0, Math.max(1.0, 0.82 / Math.max(0.015, maxVal)));
+    }
+
+    const numBars = 160;
+    const blockSize = Math.floor(channelData.length / numBars);
+    const peaks = new Float32Array(numBars);
+    const barStep = Math.max(1, Math.floor(blockSize / 32));
+    for (let i = 0; i < numBars; i++) {
+      const start = i * blockSize;
+      let max = 0;
+      for (let j = 0; j < blockSize; j += barStep) {
+        const val = Math.abs(channelData[start + j]);
+        if (val > max) max = val;
+      }
+      peaks[i] = Math.min(1.0, max * ampFactor);
+    }
+
+    const entry = {
+      bUrl,
+      fetchedDur,
+      channelData,
+      sampleRate: decodedBuffer.sampleRate,
+      estLufs,
+      maxVal,
+      ampFactor,
+      peaks
+    };
+    waveformCache.set(fullUrl, entry);
+    return entry;
+  } catch (e) {
+    return null;
+  }
+}
+
 export default function InteractiveWaveformTrimmer({
   audioUrl,
   duration,
@@ -55,20 +156,6 @@ export default function InteractiveWaveformTrimmer({
       }
     };
   }, [blobUrl]);
-
-// Global shared AudioContext & in-memory decoded waveform cache
-let sharedAudioContext = null;
-function getSharedAudioContext() {
-  if (typeof window === "undefined") return null;
-  const AudioCtx = window.AudioContext || window.webkitAudioContext;
-  if (!AudioCtx) return null;
-  if (!sharedAudioContext || sharedAudioContext.state === "closed") {
-    sharedAudioContext = new AudioCtx();
-  }
-  return sharedAudioContext;
-}
-
-const waveformCache = new Map();
 
   // 1. Single authenticated fetch & safe PCM decode with in-memory caching
   useEffect(() => {

@@ -31,7 +31,7 @@ import { apiGet, apiPostJson, apiPatchJson } from '../lib/api';
 import { getUserInfo } from '../lib/auth';
 import SecureAudioPlayer from '../components/SecureAudioPlayer';
 import AdminNav from '../components/AdminNav.jsx';
-import InteractiveWaveformTrimmer from '../components/InteractiveWaveformTrimmer.jsx';
+import InteractiveWaveformTrimmer, { preloadWaveformAudio } from '../components/InteractiveWaveformTrimmer.jsx';
 import SpectrogramViewer from '../components/SpectrogramViewer.jsx';
 
 function formatPhraseDate(dateVal, format = 'DD-MM-YYYY') {
@@ -120,7 +120,7 @@ export default function QaPhrases() {
   const [trimAudioUrl, setTrimAudioUrl] = useState(null);
   const trimAudioRef = useRef(null);
 
-  // Rapid Trim Mode States (Pipelined 10-waveforms sliding window inline trimmer)
+  // Rapid Trim Mode States (Fixed 10-Slot Deck with In-Place Replenishment & 10 Pre-Render Buffer)
   const [trimMode, setTrimMode] = useState(() => {
     try {
       return localStorage.getItem("dc_phrase_trim_mode") === "true";
@@ -130,13 +130,30 @@ export default function QaPhrases() {
   });
   const [phraseTrimTimes, setPhraseTrimTimes] = useState({});
   const [phraseTrimSaving, setPhraseTrimSaving] = useState({});
-  const [manualActiveWaveforms, setManualActiveWaveforms] = useState(new Set());
+  const [deckState, setDeckState] = useState({ deck: [], pool: [] });
+  const trimDeck = deckState.deck;
+  const trimPool = deckState.pool;
 
   const toggleTrimMode = () => {
     setTrimMode(prev => {
       const next = !prev;
       try { localStorage.setItem("dc_phrase_trim_mode", String(next)); } catch (e) {}
       return next;
+    });
+  };
+
+  // In-place replenishment: Replace ONLY this slot from the pre-rendered pool
+  const replenishSlotInDeck = (slotIdx) => {
+    setDeckState(prev => {
+      const nextPhrase = prev.pool.length > 0 ? prev.pool[0] : null;
+      const newPool = prev.pool.length > 0 ? prev.pool.slice(1) : [];
+      const newDeck = [...prev.deck];
+      if (nextPhrase) {
+        newDeck[slotIdx] = nextPhrase;
+      } else {
+        newDeck.splice(slotIdx, 1);
+      }
+      return { deck: newDeck, pool: newPool };
     });
   };
 
@@ -315,8 +332,8 @@ export default function QaPhrases() {
     }
   };
 
-  // Inline Rapid Trim Mode: Save Trim Handler
-  const handleSaveInlineTrim = async (phrase, verdict = null) => {
+  // Inline Rapid Trim Mode: Save Trim Handler with in-place slot replenishment
+  const handleSaveInlineTrim = async (phrase, verdict = null, slotIdx = null) => {
     if (!phrase) return;
     const current = phraseTrimTimes[phrase._id] || {
       start: 0,
@@ -340,6 +357,22 @@ export default function QaPhrases() {
       return;
     }
 
+    if (verdict === 'rejected') {
+      const result = await Swal.fire({
+        title: "Confirm Rejection",
+        text: `Are you sure you want to save trim and reject this phrase${slotIdx !== null ? ` (Slot #${slotIdx + 1})` : ''}?`,
+        icon: "warning",
+        showCancelButton: true,
+        confirmButtonText: "Yes, Trim & Reject",
+        cancelButtonText: "Cancel",
+        confirmButtonColor: "#e11d48",
+        cancelButtonColor: "#4b5563",
+        background: "#171717",
+        color: "#ffffff"
+      });
+      if (!result.isConfirmed) return;
+    }
+
     setPhraseTrimSaving(prev => ({ ...prev, [phrase._id]: true }));
     try {
       const res = await apiPostJson(`/api/phrases/qa/trim/${phrase._id}`, {
@@ -352,19 +385,19 @@ export default function QaPhrases() {
       if (res && res.phrase) {
         const newStatus = res.phrase.status;
 
-        // Clean up any audit comment & manual promotion state for this phrase
+        // Clean up any audit comment
         setComments(prev => {
           const next = { ...prev };
           delete next[phrase._id];
           return next;
         });
-        setManualActiveWaveforms(prev => {
-          const next = new Set(prev);
-          next.delete(phrase._id);
-          return next;
-        });
 
-        // In Trim Mode, we advance the pipeline: removing trimmed phrase pulls the next item in
+        // In-place replenishment: Replace ONLY this slot from the pre-rendered pool
+        if (trimMode && slotIdx !== null && slotIdx !== undefined) {
+          replenishSlotInDeck(slotIdx);
+        }
+
+        // Global queue update so stats and filters remain in sync
         if (!isAdmin || verdict === 'approved' || verdict === 'rejected' || trimMode) {
           setQueue(prev => prev.filter(q => q._id !== phrase._id));
         } else {
@@ -378,11 +411,12 @@ export default function QaPhrases() {
           } : q));
         }
 
-        let msg = `Trimmed to ${res.duration}s! (LUFS: ${res.lufs})`;
+        let msg = `Trimmed to ${res.duration}s!`;
+        if (slotIdx !== null) msg += ` (Slot #${slotIdx + 1} replenished in place)`;
         if (!isAdmin) {
-          msg = `Trimmed & moved to Edited Phrases! (${res.duration}s, LUFS: ${res.lufs})`;
+          msg = `Trimmed & moved to Edited Phrases! (${res.duration}s)`;
         } else if (verdict === 'approved') {
-          msg = `Trimmed & APPROVED! (${res.duration}s, LUFS: ${res.lufs})`;
+          msg = `Trimmed & APPROVED! (${res.duration}s)`;
         } else if (verdict === 'rejected') {
           msg = `Trimmed & REJECTED! (${res.duration}s)`;
         }
@@ -418,8 +452,35 @@ export default function QaPhrases() {
     }
   };
 
-  // Skip phrase in Trim Mode and move it to end of queue
-  const handleSkipInlineTrim = (phraseId) => {
+  // Skip phrase in Trim Mode and replenish that slot in place
+  const handleSkipInlineTrim = (phraseId, slotIdx = null) => {
+    if (trimMode && slotIdx !== null && slotIdx !== undefined && trimDeck[slotIdx]) {
+      setDeckState(prev => {
+        const currentItem = prev.deck[slotIdx];
+        if (!currentItem) return prev;
+        const nextPhrase = prev.pool.length > 0 ? prev.pool[0] : null;
+        const newPool = prev.pool.length > 0 ? [...prev.pool.slice(1), currentItem] : [currentItem];
+        const newDeck = [...prev.deck];
+        if (nextPhrase) {
+          newDeck[slotIdx] = nextPhrase;
+        }
+        return { deck: newDeck, pool: newPool };
+      });
+
+      Swal.fire({
+        toast: true,
+        position: "bottom-start",
+        icon: "info",
+        title: "Slot Skipped",
+        text: `Slot #${slotIdx + 1} replenished with next pre-rendered phrase`,
+        timer: 1500,
+        showConfirmButton: false,
+        background: "#171717",
+        color: "#ffffff"
+      });
+      return;
+    }
+
     setQueue(prev => {
       const idx = prev.findIndex(q => q._id === phraseId);
       if (idx === -1) return prev;
@@ -440,6 +501,64 @@ export default function QaPhrases() {
     });
   };
 
+  // Direct Review in Trim Deck: Replenishes that slot in-place
+  const handleReviewInDeck = async (phraseId, action, slotIdx = null) => {
+    if (action === 'reject') {
+      const result = await Swal.fire({
+        title: "Confirm Rejection",
+        text: `Are you sure you want to reject this phrase${slotIdx !== null ? ` (Slot #${slotIdx + 1})` : ''}?`,
+        icon: "warning",
+        showCancelButton: true,
+        confirmButtonText: "Yes, Reject",
+        cancelButtonText: "Cancel",
+        confirmButtonColor: "#e11d48",
+        cancelButtonColor: "#4b5563",
+        background: "#171717",
+        color: "#ffffff"
+      });
+      if (!result.isConfirmed) return;
+    }
+
+    setProcessing(phraseId);
+    try {
+      await apiPostJson(`/api/phrases/qa/review/${phraseId}`, { action, comment: comments[phraseId] || '' });
+      setComments(prev => { const next = { ...prev }; delete next[phraseId]; return next; });
+
+      if (slotIdx !== null && slotIdx !== undefined) {
+        replenishSlotInDeck(slotIdx);
+      }
+
+      setQueue(prev => prev.filter(q => q._id !== phraseId));
+
+      Swal.fire({
+        toast: true,
+        position: "bottom-start",
+        icon: action === 'approve' ? "success" : "warning",
+        title: action === 'approve' ? "Approved" : "Rejected",
+        text: slotIdx !== null ? `Slot #${slotIdx + 1} ${action}d and replenished in place` : `Phrase ${action}d`,
+        timer: 1500,
+        showConfirmButton: false,
+        background: "#171717",
+        color: "#ffffff"
+      });
+    } catch (err) {
+      console.error(err);
+      Swal.fire({
+        toast: true,
+        position: "bottom-start",
+        icon: "error",
+        title: "Action Failed",
+        text: err.message || "Failed to submit review",
+        timer: 3000,
+        showConfirmButton: false,
+        background: "#171717",
+        color: "#ffffff"
+      });
+    } finally {
+      setProcessing(null);
+    }
+  };
+
   const handleRevertTrim = async (phraseId) => {
     try {
       const res = await apiPostJson(`/api/phrases/qa/revert-trim/${phraseId}`, {});
@@ -451,6 +570,18 @@ export default function QaPhrases() {
           wasAudioTrimmed: false,
           originalAudioFile: null
         } : q));
+
+        setDeckState(prev => ({
+          ...prev,
+          deck: prev.deck.map(q => q._id === phraseId ? {
+            ...q,
+            duration: res.duration,
+            lufs: res.lufs,
+            wasAudioTrimmed: false,
+            originalAudioFile: null
+          } : q)
+        }));
+
         Swal.fire({
           icon: "success",
           title: "Trim Reverted!",
@@ -1167,6 +1298,34 @@ export default function QaPhrases() {
     filterMetaKey, filterMetaValue, filterSearch, filterDuration, filterLufs, filterTrimmed, qcData
   ]);
 
+  // Fixed 10-Slot Deck: Synchronize deck and remaining pool when Trim Mode starts or filters change
+  const activeFilterSig = `${activeTab}-${filterProject}-${filterLanguage}-${filterSpeaker}-${filterSearch}-${filterDuration}-${filterLufs}-${filterTrimmed}-${filterDateFrom}-${filterDateTo}`;
+  const lastFilterSigRef = useRef(activeFilterSig);
+
+  useEffect(() => {
+    if (!trimMode) return;
+    if (lastFilterSigRef.current !== activeFilterSig || trimDeck.length === 0) {
+      lastFilterSigRef.current = activeFilterSig;
+      setDeckState({
+        deck: displayedPhrases.slice(0, 10),
+        pool: displayedPhrases.slice(10)
+      });
+    }
+  }, [trimMode, activeFilterSig, displayedPhrases.length]);
+
+  // Background 10-Waveform Pre-renderer: Pre-decodes and caches the next 10 phrases behind the active deck
+  useEffect(() => {
+    if (!trimMode || !trimPool.length) return;
+    const next10 = trimPool.slice(0, 10);
+    const BACKEND = import.meta.env.VITE_BACKEND_URL || "http://localhost:3001";
+    next10.forEach((p, i) => {
+      const url = `${BACKEND}/api/phrases/${p._id}/audio?t=${p.updatedAt || p._id}`;
+      setTimeout(() => {
+        preloadWaveformAudio(url);
+      }, i * 150);
+    });
+  }, [trimMode, trimPool]);
+
   const paginatedPhrases = React.useMemo(() => {
     if (pageSize <= 0) return displayedPhrases;
     const start = (currentPage - 1) * pageSize;
@@ -1257,14 +1416,14 @@ export default function QaPhrases() {
                   ? "bg-gradient-to-r from-purple-600 via-indigo-600 to-purple-600 text-white border-purple-400 shadow-purple-600/30 ring-2 ring-purple-400/50 scale-102"
                   : "bg-neutral-200 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 border-neutral-300 dark:border-neutral-700 hover:border-purple-500/50 hover:text-purple-400"
               }`}
-              title="Toggle Rapid Trim Mode (renders interactive waveforms with 10-pipeline sliding window)"
+              title="Toggle Rapid Trim Mode (Fixed 10-slot deck with in-place replenishment)"
             >
               <Scissors className={`w-3.5 h-3.5 ${trimMode ? "text-amber-300" : ""}`} />
               <span>{trimMode ? "Trim Mode ON" : "Trim Mode"}</span>
               <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-full ${
                 trimMode ? "bg-black/40 text-purple-200 border border-purple-400/40" : "bg-neutral-300 dark:bg-neutral-700 text-neutral-600 dark:text-neutral-400"
               }`}>
-                {trimMode ? `${Math.min(10, displayedPhrases.length)} / ${displayedPhrases.length} Active` : "10 Pipeline"}
+                {trimMode ? `${trimDeck.length} Active • ${trimPool.length} Buffer` : "10-Slot Deck"}
               </span>
             </button>
           </div>
@@ -1733,9 +1892,9 @@ export default function QaPhrases() {
             )}
 
             {trimMode ? (
-              /* ─── RAPID TRIM MODE PIPELINE VIEW (10 ACTIVE WAVEFORMS SLIDING WINDOW) ─── */
+              /* ─── RAPID TRIM MODE: FIXED 10-SLOT IN-PLACE DECK ─── */
               <div className="space-y-6">
-                {/* Active Trim Pipeline Banner */}
+                {/* Active Trim Deck Banner */}
                 <div className="p-4 bg-gradient-to-r from-purple-950/70 via-indigo-950/50 to-neutral-900 border border-purple-500/40 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-xl">
                   <div className="flex items-center gap-3">
                     <div className="p-2.5 bg-purple-600/30 text-purple-300 rounded-xl border border-purple-500/40 shadow-sm">
@@ -1743,19 +1902,19 @@ export default function QaPhrases() {
                     </div>
                     <div>
                       <div className="flex items-center gap-2">
-                        <span className="text-sm font-black text-white">Rapid Trim Mode Active</span>
+                        <span className="text-sm font-black text-white">Fixed 10-Slot Rapid Deck</span>
                         <span className="text-[10px] font-mono font-bold px-2.5 py-0.5 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30">
-                          10 Active Waveforms (Sliding Pipeline)
+                          {trimDeck.length} Active Slots • {trimPool.length} in Buffer
                         </span>
                       </div>
                       <p className="text-xs text-neutral-300 mt-0.5">
-                        All {displayedPhrases.length} phrases loaded. Waveforms actively generated for the top 10 phrases. Trimming or passing phrase #1 automatically generates phrase #11.
+                        Only 10 fixed slots rendered on screen. Remaining {trimPool.length} phrases hidden and pre-rendered behind them. Trimming any slot replenishes it in-place without moving other slots.
                       </p>
                     </div>
                   </div>
                   <div className="flex items-center gap-3 self-end sm:self-center">
                     <span className="text-xs font-mono text-neutral-400">
-                      In Queue: <strong className="text-white">{displayedPhrases.length}</strong>
+                      Buffer Queue: <strong className="text-white">{trimPool.length}</strong>
                     </span>
                     <button
                       type="button"
@@ -1767,7 +1926,7 @@ export default function QaPhrases() {
                   </div>
                 </div>
 
-                {displayedPhrases.length === 0 ? (
+                {trimDeck.length === 0 ? (
                   <div className="text-center py-16 px-4 bg-neutral-900/40 border border-dashed border-neutral-800 rounded-2xl">
                     <CheckCircle2 className="w-12 h-12 text-emerald-400 mx-auto mb-3" />
                     <h3 className="text-base font-bold text-white">All Matching Phrases Trimmed!</h3>
@@ -1783,9 +1942,8 @@ export default function QaPhrases() {
                     </button>
                   </div>
                 ) : (
-                  <AnimatePresence mode="popLayout">
-                    {displayedPhrases.map((p, queueIdx) => {
-                      const isWaveformActive = queueIdx < 10 || manualActiveWaveforms.has(p._id);
+                  <div className="space-y-6">
+                    {trimDeck.map((p, slotIdx) => {
                       const trimState = phraseTrimTimes[p._id] || {
                         start: 0,
                         end: p.duration || 5
@@ -1798,101 +1956,16 @@ export default function QaPhrases() {
                       const originalDur = p.originalDuration || p.duration || 5;
                       const cutAmount = Math.max(0, (p.duration || originalDur) - trimmedDur);
 
-                      if (!isWaveformActive) {
-                        /* ─── QUEUED CARD (POSITION 11+ WAITING IN SLIDING PIPELINE) ─── */
-                        return (
-                          <motion.div
-                            key={p._id}
-                            layout
-                            initial={{ opacity: 0, y: 10 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            exit={{ opacity: 0, scale: 0.95, height: 0 }}
-                            className="bg-neutral-900/60 border border-neutral-800 hover:border-purple-500/40 rounded-2xl p-4 transition-all space-y-3"
-                          >
-                            <div className="flex flex-wrap items-center justify-between gap-2.5 pb-2.5 border-b border-neutral-800/80">
-                              <div className="flex flex-wrap items-center gap-2">
-                                <span className="w-6 h-6 rounded-full bg-neutral-800 text-neutral-400 font-mono font-bold text-xs flex items-center justify-center border border-neutral-700">
-                                  #{queueIdx + 1}
-                                </span>
-                                <span className="text-xs font-bold text-neutral-300 font-mono">
-                                  ID: {p.phraseId}
-                                </span>
-                                <span className="text-xs font-semibold capitalize bg-neutral-800 text-neutral-300 border border-neutral-700 px-2 py-0.5 rounded-md">
-                                  {p.language}
-                                </span>
-                                <span className="text-xs font-mono font-bold bg-amber-500/10 text-amber-300 border border-amber-500/30 px-2 py-0.5 rounded-md">
-                                  🎤 {getSpeakerId(p) || "Unassigned"}
-                                </span>
-                                {p.emotion && (
-                                  <span className="text-xs font-semibold px-2 py-0.5 rounded-md bg-pink-500/15 text-pink-300 border border-pink-500/30 flex items-center gap-1">
-                                    <span>🎭</span>
-                                    <span className="capitalize">{p.emotion}</span>
-                                  </span>
-                                )}
-                                {p.lufs !== undefined && p.lufs !== null && (
-                                  <span className="text-xs font-mono font-bold px-2 py-0.5 rounded-md bg-neutral-800 text-neutral-400 border border-neutral-700">
-                                    📊 {p.lufs} LUFS
-                                  </span>
-                                )}
-                                <span className="text-xs font-mono text-neutral-400">
-                                  ⏱ {p.duration || 5}s
-                                </span>
-                              </div>
-                              <div className="flex items-center gap-2">
-                                <button
-                                  type="button"
-                                  onClick={() => setManualActiveWaveforms(prev => new Set(prev).add(p._id))}
-                                  className="px-3 py-1 bg-purple-600/30 hover:bg-purple-600/50 text-purple-200 border border-purple-500/40 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 hover:scale-102 shadow-sm"
-                                  title="Immediately generate and mount interactive waveform for this phrase"
-                                >
-                                  <Zap className="w-3.5 h-3.5 text-amber-300" />
-                                  <span>Generate Waveform Now</span>
-                                </button>
-                              </div>
-                            </div>
-
-                            <div className="space-y-2">
-                              <p className="text-sm font-medium text-neutral-200 italic line-clamp-2 bg-neutral-950/40 p-2.5 rounded-xl border border-neutral-850">
-                                "{p.text}"
-                              </p>
-
-                              {(p.style || p.speed || p.intent || p.pitch || p.volume) && (
-                                <div className="flex flex-wrap items-center gap-2 text-xs opacity-75">
-                                  {p.style && <span className="text-neutral-400">Style: <strong className="text-neutral-300">{p.style}</strong></span>}
-                                  {p.intent && <span className="text-neutral-400">Intent: <strong className="text-neutral-300">{p.intent}</strong></span>}
-                                  {p.speed && <span className="text-neutral-400">Speed: <strong className="text-neutral-300">{p.speed}</strong></span>}
-                                  {p.pitch && <span className="text-neutral-400">Pitch: <strong className="text-neutral-300">{p.pitch}</strong></span>}
-                                  {p.volume && <span className="text-neutral-400">Volume: <strong className="text-neutral-300">{p.volume}</strong></span>}
-                                </div>
-                              )}
-
-                              <div className="flex items-center justify-between gap-3 bg-neutral-950/70 rounded-xl px-3.5 py-2.5 border border-purple-500/20">
-                                <div className="flex items-center gap-2 text-xs font-mono text-purple-300/80">
-                                  <Clock className="w-3.5 h-3.5 text-purple-400 animate-pulse flex-shrink-0" />
-                                  <span>Waveform Queued — will decode automatically when phrase #{Math.max(1, queueIdx + 1 - 10)} is completed</span>
-                                </div>
-                                <span className="text-[11px] font-mono text-neutral-500">Pipeline #{queueIdx + 1}</span>
-                              </div>
-                            </div>
-                          </motion.div>
-                        );
-                      }
-
-                      /* ─── ACTIVE WAVEFORM CARD (TOP 10 IN PIPELINE) ───────────────── */
                       return (
-                        <motion.div
-                          key={p._id}
-                          layout
-                          initial={{ opacity: 0, y: 15 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          exit={{ opacity: 0, scale: 0.95, height: 0 }}
+                        <div
+                          key={`deck-slot-${slotIdx}`}
                           className="bg-neutral-900/90 border border-purple-500/40 hover:border-purple-500/70 rounded-3xl p-5 sm:p-6 shadow-2xl relative space-y-4 transition-all"
                         >
-                          {/* Top Header Row with Batch Index */}
+                          {/* Slot Header Row with Slot Index & Details */}
                           <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-neutral-800">
                             <div className="flex flex-wrap items-center gap-2.5">
-                              <span className="w-6 h-6 rounded-full bg-purple-600 text-white font-mono font-bold text-xs flex items-center justify-center shadow-sm">
-                                #{queueIdx + 1}
+                              <span className="px-2.5 py-0.5 rounded-full bg-purple-600 text-white font-mono font-bold text-xs flex items-center justify-center shadow-sm">
+                                Slot #{slotIdx + 1}
                               </span>
                               <span className="text-sm font-bold text-white font-mono">
                                 ID: {p.phraseId}
@@ -1927,9 +2000,9 @@ export default function QaPhrases() {
                             {/* Quick Skip button */}
                             <button
                               type="button"
-                              onClick={() => handleSkipInlineTrim(p._id)}
+                              onClick={() => handleSkipInlineTrim(p._id, slotIdx)}
                               className="text-xs text-neutral-400 hover:text-white px-2.5 py-1 rounded-lg bg-neutral-800/60 hover:bg-neutral-800 border border-neutral-700/60 transition-colors flex items-center gap-1"
-                              title="Skip this phrase and push to end of queue"
+                              title="Skip this slot and replenish in-place from buffer"
                             >
                               <span>Skip for Later</span>
                               <ChevronRight className="w-3.5 h-3.5" />
@@ -1992,11 +2065,12 @@ export default function QaPhrases() {
                           {/* Live Interactive Waveform Trimmer */}
                           <div className="pt-1">
                             <InteractiveWaveformTrimmer
+                              key={p._id}
                               audioUrl={audioUrl}
                               duration={originalDur}
                               startTrimSec={startSec}
                               endTrimSec={endSec}
-                              loadDelay={Math.min(queueIdx * 80, 800)}
+                              loadDelay={0}
                               onTrimChange={(newStart, newEnd) => {
                                 setPhraseTrimTimes(prev => ({
                                   ...prev,
@@ -2267,7 +2341,7 @@ export default function QaPhrases() {
                             <div className="flex items-center gap-2">
                               <button
                                 type="button"
-                                onClick={() => handleSkipInlineTrim(p._id)}
+                                onClick={() => handleSkipInlineTrim(p._id, slotIdx)}
                                 className="py-2.5 px-4 bg-neutral-800 hover:bg-neutral-750 text-neutral-400 hover:text-white rounded-xl text-xs font-bold transition-colors"
                               >
                                 Skip for Later
@@ -2289,7 +2363,7 @@ export default function QaPhrases() {
                                 <>
                                   <button
                                     type="button"
-                                    onClick={() => handleReview(p._id, 'reject')}
+                                    onClick={() => handleReviewInDeck(p._id, 'reject', slotIdx)}
                                     disabled={processing === p._id || isSaving}
                                     className="py-2.5 px-3.5 bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 border border-rose-500/30 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 disabled:opacity-50 shadow-sm"
                                     title="Direct Reject phrase without trimming"
@@ -2298,7 +2372,7 @@ export default function QaPhrases() {
                                   </button>
                                   <button
                                     type="button"
-                                    onClick={() => handleSaveInlineTrim(p)}
+                                    onClick={() => handleSaveInlineTrim(p, null, slotIdx)}
                                     disabled={isSaving}
                                     className="py-2.5 px-5 bg-purple-600 hover:bg-purple-500 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 disabled:opacity-50 shadow-md shadow-purple-600/20 active:scale-95"
                                   >
@@ -2306,7 +2380,7 @@ export default function QaPhrases() {
                                   </button>
                                   <button
                                     type="button"
-                                    onClick={() => handleReview(p._id, 'approve')}
+                                    onClick={() => handleReviewInDeck(p._id, 'approve', slotIdx)}
                                     disabled={processing === p._id || isSaving}
                                     className="py-2.5 px-4 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 disabled:opacity-50 shadow-md shadow-emerald-600/20 active:scale-95"
                                     title="Direct Approve phrase"
@@ -2318,7 +2392,7 @@ export default function QaPhrases() {
                                 <>
                                   <button
                                     type="button"
-                                    onClick={() => handleReview(p._id, 'reject')}
+                                    onClick={() => handleReviewInDeck(p._id, 'reject', slotIdx)}
                                     disabled={processing === p._id || isSaving}
                                     className="py-2.5 px-3 bg-neutral-800 hover:bg-rose-950 text-rose-400 border border-neutral-700 hover:border-rose-500/50 rounded-xl text-xs font-bold transition-all flex items-center gap-1 disabled:opacity-50 shadow-sm"
                                     title="Reject phrase without trimming"
@@ -2327,7 +2401,7 @@ export default function QaPhrases() {
                                   </button>
                                   <button
                                     type="button"
-                                    onClick={() => handleSaveInlineTrim(p)}
+                                    onClick={() => handleSaveInlineTrim(p, null, slotIdx)}
                                     disabled={isSaving}
                                     className="py-2.5 px-3.5 bg-neutral-800 hover:bg-neutral-750 text-purple-300 border border-purple-500/30 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 disabled:opacity-50 active:scale-95 shadow-sm"
                                     title="Save trimmed audio while preserving current status"
@@ -2336,7 +2410,7 @@ export default function QaPhrases() {
                                   </button>
                                   <button
                                     type="button"
-                                    onClick={() => handleSaveInlineTrim(p, 'rejected')}
+                                    onClick={() => handleSaveInlineTrim(p, 'rejected', slotIdx)}
                                     disabled={isSaving}
                                     className="py-2.5 px-4 bg-rose-600/90 hover:bg-rose-600 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 disabled:opacity-50 shadow-md shadow-rose-600/20 active:scale-95"
                                   >
@@ -2344,7 +2418,7 @@ export default function QaPhrases() {
                                   </button>
                                   <button
                                     type="button"
-                                    onClick={() => handleSaveInlineTrim(p, 'approved')}
+                                    onClick={() => handleSaveInlineTrim(p, 'approved', slotIdx)}
                                     disabled={isSaving}
                                     className="py-2.5 px-4 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 disabled:opacity-50 shadow-md shadow-emerald-600/20 active:scale-95"
                                   >
@@ -2352,7 +2426,7 @@ export default function QaPhrases() {
                                   </button>
                                   <button
                                     type="button"
-                                    onClick={() => handleReview(p._id, 'approve')}
+                                    onClick={() => handleReviewInDeck(p._id, 'approve', slotIdx)}
                                     disabled={processing === p._id || isSaving}
                                     className="py-2.5 px-3 bg-emerald-950/60 hover:bg-emerald-900/80 text-emerald-300 border border-emerald-500/40 rounded-xl text-xs font-bold transition-all flex items-center gap-1 disabled:opacity-50 shadow-sm"
                                     title="Approve phrase directly"
@@ -2363,15 +2437,15 @@ export default function QaPhrases() {
                               )}
                             </div>
                           </div>
-                        </motion.div>
+                        </div>
                       );
                     })}
-                  </AnimatePresence>
+                  </div>
                 )}
 
-                {displayedPhrases.length > 10 && (
+                {trimDeck.length > 0 && (
                   <div className="text-center py-3 text-xs font-mono text-neutral-400 bg-neutral-900/60 border border-purple-500/30 rounded-xl shadow-sm">
-                    Showing <strong>{Math.min(10, displayedPhrases.length)}</strong> active waveforms in sliding pipeline (<strong>{Math.max(0, displayedPhrases.length - 10)}</strong> queued). Trimming or reviewing earlier phrases automatically generates waveforms for the next phrases in queue.
+                    Showing <strong>{trimDeck.length}</strong> active slots on screen (<strong>{trimPool.length}</strong> pre-rendered in buffer). Trimming any slot replenishes it in-place instantly without shifting other slots.
                   </div>
                 )}
               </div>
