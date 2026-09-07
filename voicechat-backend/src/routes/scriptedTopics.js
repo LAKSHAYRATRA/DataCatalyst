@@ -259,10 +259,12 @@ router.get("/enabled", async (req, res) => {
                         callActuallyStarted: true,
                         callStatus: "approved"
                     });
+                    // Only count fully-paired completed calls as pending towards target frequency quota
                     const pendingCount = await CallSession.countDocuments({
                         subtopicId: sub._id,
                         callActuallyStarted: true,
-                        callStatus: "pending"
+                        callStatus: "pending",
+                        endReason: { $ne: "scripted_pending_partner" }
                     });
                     const totalCompletedOrPaired = approvedCount + pendingCount;
                     const targetFrequency = sub.frequency !== undefined ? sub.frequency : (sub.maxCalls !== undefined ? sub.maxCalls : 3);
@@ -470,7 +472,8 @@ router.post("/claim", requireAuth(JWT_SECRET), async (req, res) => {
             const pendingCount = await CallSession.countDocuments({
                 subtopicId,
                 callActuallyStarted: true,
-                callStatus: "pending"
+                callStatus: "pending",
+                endReason: { $ne: "scripted_pending_partner" }
             });
             const totalCompletedOrPaired = approvedCount + pendingCount;
 
