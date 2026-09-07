@@ -148,16 +148,39 @@ export default function AdminScriptedCallsReview() {
         ? userInfo.qaLanguageCodes
         : (userInfo?.qaLanguageCode ? [userInfo.qaLanguageCode] : []);
 
-    const availableLanguagesList = isQaOnly
-        ? rawQaList
-        : (allLanguages.length > 0 ? allLanguages : (rawQaList.length > 0 ? rawQaList : ["english", "hindi", "marathi", "bengali", "tamil", "telugu", "gujarati", "kannada", "malayalam", "punjabi"]));
+    const availableLanguagesList = React.useMemo(() => {
+        if (isQaOnly && rawQaList.length > 0) {
+            return rawQaList.map(code => {
+                const found = allLanguages.find(l => l.code === String(code).toLowerCase());
+                return { code: String(code).toLowerCase(), name: found?.name || code };
+            });
+        }
+        if (allLanguages.length > 0) {
+            return allLanguages;
+        }
+        const fallback = ["english", "hindi", "marathi", "bengali", "tamil", "telugu", "gujarati", "kannada", "malayalam", "punjabi"];
+        return fallback.map(l => ({ code: l, name: l }));
+    }, [isQaOnly, rawQaList, allLanguages]);
+
+    const languageNameMap = React.useMemo(() => {
+        const map = {};
+        allLanguages.forEach(l => {
+            if (l.code) {
+                map[l.code.toLowerCase()] = l.name;
+            }
+        });
+        return map;
+    }, [allLanguages]);
 
     useEffect(() => {
         async function fetchLanguages() {
             try {
-                const data = await apiFetch("/api/admin/qa/languages");
+                const data = await apiFetch("/api/admin/scripted-languages");
                 if (data?.languages && Array.isArray(data.languages)) {
-                    setAllLanguages(data.languages.map(l => String(l.code || l.name || l).toLowerCase()));
+                    setAllLanguages(data.languages.map(l => ({
+                        code: String(l.code || l.name || l).toLowerCase(),
+                        name: l.name || l.language || l.code
+                    })));
                 }
             } catch {}
         }
@@ -1005,7 +1028,7 @@ export default function AdminScriptedCallsReview() {
                         >
                             <option value="">All Languages</option>
                             {availableLanguagesList.map(lang => (
-                                <option key={lang} value={lang} className="capitalize">{lang}</option>
+                                <option key={lang.code} value={lang.code} className="capitalize">{lang.name}</option>
                             ))}
                         </select>
                     )}
@@ -1122,7 +1145,7 @@ export default function AdminScriptedCallsReview() {
                                             </td>
                                             <td className="py-4 px-4">
                                                 <span className="capitalize font-bold text-neutral-300">
-                                                    {call.language || "English"}
+                                                    {languageNameMap[call.language?.toLowerCase()] || call.language || "English"}
                                                 </span>
                                             </td>
                                             <td className="py-4 px-4 font-mono text-neutral-300">

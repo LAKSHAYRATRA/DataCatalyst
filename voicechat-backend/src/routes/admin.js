@@ -1939,8 +1939,8 @@ qaCallRouter.get("/calls", async (req, res) => {
                 })
                 .populate("userA", "firstname lastname username email dob gender address locality regionalLanguage speaker_id")
                 .populate("userB", "firstname lastname username email dob gender address locality regionalLanguage speaker_id")
-                .populate("topicId", "title")
-                .populate("subtopicId", "title description instructions")
+                .populate(isScripted ? { path: "topicId", model: "ScriptedTopic", select: "title" } : { path: "topicId", select: "title" })
+                .populate(isScripted ? { path: "subtopicId", model: "ScriptedSubtopic", select: "title description instructions dialogueTurns" } : { path: "subtopicId", select: "title description instructions" })
                 .populate("reviewedBy", "firstname lastname email")
                 .sort({ createdAt: 1 });
 
@@ -1985,8 +1985,8 @@ qaCallRouter.get("/calls", async (req, res) => {
                         })
                         .populate("userA", "firstname lastname username email dob gender address locality regionalLanguage speaker_id")
                         .populate("userB", "firstname lastname username email dob gender address locality regionalLanguage speaker_id")
-                        .populate("topicId", "title")
-                        .populate("subtopicId", "title description instructions")
+                        .populate(isScripted ? { path: "topicId", model: "ScriptedTopic", select: "title" } : { path: "topicId", select: "title" })
+                        .populate(isScripted ? { path: "subtopicId", model: "ScriptedSubtopic", select: "title description instructions dialogueTurns" } : { path: "subtopicId", select: "title description instructions" })
                         .populate("reviewedBy", "firstname lastname email")
                         .sort({ createdAt: 1 });
                     }
@@ -1996,23 +1996,49 @@ qaCallRouter.get("/calls", async (req, res) => {
             }
         } else {
             if (selectedLanguage) {
-                filter.language = selectedLanguage;
+                if (isScripted) {
+                    const matchedScripted = await ScriptedLanguage.find({
+                        $or: [
+                            { code: selectedLanguage },
+                            { code: new RegExp(`^${selectedLanguage}$`, "i") },
+                            { language: new RegExp(`^${selectedLanguage}$`, "i") },
+                            { name: new RegExp(selectedLanguage, "i") }
+                        ]
+                    }).select("code").lean();
+                    const codes = new Set([selectedLanguage]);
+                    matchedScripted.forEach(l => {
+                        if (l.code) codes.add(l.code.toLowerCase());
+                    });
+                    filter.language = { $in: Array.from(codes) };
+                } else {
+                    filter.language = selectedLanguage;
+                }
             }
             if (status) {
                 filter.callStatus = status;
             }
         }
 
-        const [calls, total] = await Promise.all([
-            CallSession.find(filter)
-                .populate("userA", "firstname lastname username email dob gender address locality regionalLanguage speaker_id")
-                .populate("userB", "firstname lastname username email dob gender address locality regionalLanguage speaker_id")
+        let query = CallSession.find(filter)
+            .populate("userA", "firstname lastname username email dob gender address locality regionalLanguage speaker_id")
+            .populate("userB", "firstname lastname username email dob gender address locality regionalLanguage speaker_id")
+            .populate("reviewedBy", "firstname lastname email")
+            .sort({ createdAt: -1 })
+            .skip(skip)
+            .limit(limit);
+
+        if (isScripted) {
+            query = query
+                .populate({ path: "topicId", model: "ScriptedTopic", select: "title" })
+                .populate({ path: "subtopicId", model: "ScriptedSubtopic", select: "title description instructions dialogueTurns" });
+        } else {
+            query = query
                 .populate("topicId", "title")
-                .populate("subtopicId", "title description instructions")
-                .populate("reviewedBy", "firstname lastname email")
-                .sort({ createdAt: -1 })
-                .skip(skip)
-                .limit(limit),
+                .populate("subtopicId", "title description instructions");
+        }
+
+        const [calls, total] = await Promise.all([
+            query,
             CallSession.countDocuments(filter),
         ]);
 
