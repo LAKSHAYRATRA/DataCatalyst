@@ -81,7 +81,7 @@ export default function AdminNav() {
             scriptedCalls: ['/admin/scripted-calls-review', '/admin/scripted-qa', '/admin/scripted-call-apps', '/admin/scripted-languages', '/admin/scripted-topics'].some(p => path.startsWith(p)),
             transcription: ['/admin/segmentation', '/admin/transcription'].includes(path),
             users: ['/admin/users', '/admin/payouts', '/admin/finances', '/admin/pan-verification', '/admin/agreements', '/admin/vendors'].some(p => path.startsWith(p)),
-            phrases: ['/admin/qaphrase', '/admin/phrases', '/admin/language-apps', '/admin/projects', '/admin/companies', '/admin/phrases/downloads'].includes(path)
+            phrases: ['/admin/qaphrase', '/admin/phrases', '/admin/language-apps', '/admin/phrase-projects', '/admin/projects', '/admin/companies', '/admin/phrases/downloads'].some(p => path.startsWith(p))
         });
     }, [location.pathname]);
 
@@ -363,6 +363,15 @@ export default function AdminNav() {
                                                 className={`flex items-center px-3 py-2 rounded-lg text-xs font-semibold transition-all ${isActive('/admin/qaphrase') ? 'bg-neutral-800 text-warning-400 font-bold' : 'text-neutral-400 hover:text-white hover:bg-neutral-800/40'}`}>
                                                 <span>Phrases Review</span>
                                             </Link>
+                                            {isAdmin && (
+                                                <Link to="/admin/phrase-projects" onClick={() => setIsMobileMenuOpen(false)}
+                                                    className={`flex items-center px-3 py-2 rounded-lg text-xs font-semibold transition-all ${isActive('/admin/phrase-projects') || isActive('/admin/projects') ? 'bg-neutral-800 text-warning-400 font-bold' : 'text-neutral-400 hover:text-white hover:bg-neutral-800/40'}`}>
+                                                    <span className="flex items-center gap-1.5">
+                                                        <span>Scripted Phrase Projects</span>
+                                                        <span className="text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded bg-emerald-900/60 text-emerald-300 border border-emerald-700/50 leading-none">new</span>
+                                                    </span>
+                                                </Link>
+                                            )}
                                             {isAdmin && (
                                                 <Link to="/admin/phrases" onClick={() => setIsMobileMenuOpen(false)}
                                                     className={`flex items-center px-3 py-2 rounded-lg text-xs font-semibold transition-all ${isActive('/admin/phrases') ? 'bg-neutral-800 text-warning-400 font-bold' : 'text-neutral-400 hover:text-white hover:bg-neutral-800/40'}`}>

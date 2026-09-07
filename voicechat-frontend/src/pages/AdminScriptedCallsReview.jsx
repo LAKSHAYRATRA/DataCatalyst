@@ -57,8 +57,24 @@ async function apiPostJson(path, data = {}) {
     });
 }
 
-function StatusBadge({ status }) {
+function StatusBadge({ status, isHalf }) {
+    if (isHalf) {
+        return (
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-950/80 text-amber-300 border border-amber-600/60 shadow-sm">
+                <Clock className="w-3.5 h-3.5 text-amber-400" />
+                <span>Pending Completion</span>
+            </span>
+        );
+    }
     const s = (status || "pending").toLowerCase();
+    if (s === "not_recorded" || s === "not_recorded_yet" || s === "pending_partner") {
+        return (
+            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-neutral-800 text-neutral-400 border border-neutral-700 shadow-sm">
+                <Clock className="w-3.5 h-3.5 text-neutral-500" />
+                <span>Not Recorded Yet</span>
+            </span>
+        );
+    }
     if (s === "approved") {
         return (
             <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-950/70 text-emerald-300 border border-emerald-700/60 shadow-sm">
@@ -1068,7 +1084,9 @@ export default function AdminScriptedCallsReview() {
                                         </td>
                                     </tr>
                                 ) : (
-                                    calls.map((call) => (
+                                    calls.map((call) => {
+                                        const isHalf = !call.userA || !call.userB || call.recordingAStatus === "not_recorded" || call.recordingBStatus === "not_recorded" || call.endReason === "scripted_pending_partner";
+                                        return (
                                         <tr 
                                             key={call.callId} 
                                             className={`hover:bg-neutral-750/40 transition-colors ${selectedCallIds.includes(call.callId) ? "bg-primary-950/20" : ""}`}
@@ -1092,15 +1110,15 @@ export default function AdminScriptedCallsReview() {
                                             </td>
                                             <td className="py-4 px-4">
                                                 <div className="text-white font-semibold mb-1">
-                                                    {call.userA?.firstname || "Speaker A"} {call.userA?.lastname || ""}
+                                                    {call.userA ? `${call.userA?.firstname || ""} ${call.userA?.lastname || ""}`.trim() || call.userA?.username || "Speaker A" : "Not Recorded Yet"}
                                                 </div>
-                                                <StatusBadge status={call.recordingAStatus} />
+                                                <StatusBadge status={call.userA ? call.recordingAStatus : "not_recorded"} />
                                             </td>
                                             <td className="py-4 px-4">
                                                 <div className="text-white font-semibold mb-1">
-                                                    {call.userB?.firstname || "Speaker B"} {call.userB?.lastname || ""}
+                                                    {call.userB ? `${call.userB?.firstname || ""} ${call.userB?.lastname || ""}`.trim() || call.userB?.username || "Speaker B" : "Not Recorded Yet"}
                                                 </div>
-                                                <StatusBadge status={call.recordingBStatus} />
+                                                <StatusBadge status={call.userB ? call.recordingBStatus : "not_recorded"} />
                                             </td>
                                             <td className="py-4 px-4">
                                                 <span className="capitalize font-bold text-neutral-300">
@@ -1111,7 +1129,7 @@ export default function AdminScriptedCallsReview() {
                                                 {call.actualCallDuration ? `${call.actualCallDuration}s` : `${call.recordingADurationMinutes || 0} min`}
                                             </td>
                                             <td className="py-4 px-4">
-                                                <StatusBadge status={call.callStatus} />
+                                                <StatusBadge status={call.callStatus} isHalf={isHalf} />
                                             </td>
                                             <td className="py-4 px-4 text-right">
                                                 <button
@@ -1123,7 +1141,8 @@ export default function AdminScriptedCallsReview() {
                                                 </button>
                                             </td>
                                         </tr>
-                                    ))
+                                    );
+                                })
                                 )}
                             </tbody>
                         </table>
@@ -1243,57 +1262,74 @@ export default function AdminScriptedCallsReview() {
                                         </div>
                                     </div>
 
-                                    {/* Stereo Player */}
-                                    <div className="space-y-2 pt-1">
-                                        <div className="flex items-center gap-2">
-                                            <button
-                                                onClick={() => playAudio(reviewing.callId, "stereo")}
-                                                disabled={loadingAudio === `${reviewing.callId}_stereo`}
-                                                className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-neutral-750 hover:bg-neutral-700 font-semibold text-xs text-neutral-200 border border-neutral-600 transition-all disabled:opacity-50 cursor-pointer shadow-sm"
-                                            >
-                                                {loadingAudio === `${reviewing.callId}_stereo` ? (
-                                                    <div className="flex items-center gap-2">
-                                                        <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                                                        <span>Compiling & Loading Merged Audio...</span>
-                                                    </div>
-                                                ) : (
-                                                    <>
-                                                        <Play className="w-3.5 h-3.5 fill-current text-emerald-400" />
-                                                        <span>Play Full Merged Conversation</span>
-                                                        {dialogueData?.turns?.some(t => t.wasAudioTrimmed) && (
-                                                             <span className="text-[10px] px-2 py-0.5 rounded bg-indigo-900/80 text-indigo-300 border border-indigo-700/60 font-bold ml-1 flex items-center gap-1">
-                                                                <Scissors className="w-3 h-3 text-indigo-400" />
-                                                                Trimmed Parts Compiled
-                                                            </span>
-                                                        )}
-                                                    </>
-                                                )}
-                                            </button>
-
-                                            <button
-                                                type="button"
-                                                onClick={() => recompileAndPlay(reviewing.callId)}
-                                                disabled={loadingAudio === `${reviewing.callId}_stereo`}
-                                                className="px-3.5 py-2.5 rounded-xl bg-gradient-to-r from-amber-600/90 to-amber-700/90 hover:from-amber-500 hover:to-amber-600 text-white border border-amber-500/50 font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50 shadow-md hover:shadow-amber-500/20"
-                                                title="Re-stitch dual-track conversation from scratch with calibrated studio room tone and seamless zero-crossing micro-fades"
-                                            >
-                                                <RefreshCw className={`w-3.5 h-3.5 ${loadingAudio === `${reviewing.callId}_stereo` ? 'animate-spin' : ''}`} />
-                                                <span>Re-stitch Audio</span>
-                                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-950/80 text-amber-200 border border-amber-600/60 font-semibold uppercase tracking-wider hidden sm:inline">
-                                                    Studio Silence
-                                                </span>
-                                            </button>
+                                    {/* Stereo Player or Pending Completion Notice */}
+                                    {(!reviewing.userA || !reviewing.userB || reviewing.recordingAStatus === "not_recorded" || reviewing.recordingBStatus === "not_recorded" || reviewing.endReason === "scripted_pending_partner") ? (
+                                        <div className="p-4 rounded-2xl bg-amber-950/40 border border-amber-500/50 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                                            <div className="flex items-center gap-2.5 text-amber-200">
+                                                <Clock className="w-5 h-5 text-amber-400 shrink-0" />
+                                                <div>
+                                                    <span className="font-bold text-amber-300">Pending Completion (Half Recorded):</span>
+                                                    <p className="text-[11px] text-amber-200/80 mt-0.5">
+                                                        {reviewing.userA ? "Speaker 1 (Host) has submitted their verses. Awaiting Speaker 2 to complete." : "Speaker 2 (Guest) has submitted their verses. Awaiting Speaker 1 to complete."} You can listen to and review all submitted verses below.
+                                                    </p>
+                                                </div>
+                                            </div>
+                                            <span className="px-3 py-1 rounded-full bg-amber-900/60 text-amber-300 border border-amber-600/50 font-bold shrink-0 self-start sm:self-auto text-[11px]">
+                                                Pending Completion
+                                            </span>
                                         </div>
+                                    ) : (
+                                        <div className="space-y-2 pt-1">
+                                            <div className="flex items-center gap-2">
+                                                <button
+                                                    onClick={() => playAudio(reviewing.callId, "stereo")}
+                                                    disabled={loadingAudio === `${reviewing.callId}_stereo`}
+                                                    className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-neutral-750 hover:bg-neutral-700 font-semibold text-xs text-neutral-200 border border-neutral-600 transition-all disabled:opacity-50 cursor-pointer shadow-sm"
+                                                >
+                                                    {loadingAudio === `${reviewing.callId}_stereo` ? (
+                                                        <div className="flex items-center gap-2">
+                                                            <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                                            <span>Compiling & Loading Merged Audio...</span>
+                                                        </div>
+                                                    ) : (
+                                                        <>
+                                                            <Play className="w-3.5 h-3.5 fill-current text-emerald-400" />
+                                                            <span>Play Full Merged Conversation</span>
+                                                            {dialogueData?.turns?.some(t => t.wasAudioTrimmed) && (
+                                                                <span className="text-[10px] px-2 py-0.5 rounded bg-indigo-900/80 text-indigo-300 border border-indigo-700/60 font-bold ml-1 flex items-center gap-1">
+                                                                    <Scissors className="w-3 h-3 text-indigo-400" />
+                                                                    Trimmed Parts Compiled
+                                                                </span>
+                                                            )}
+                                                        </>
+                                                    )}
+                                                </button>
 
-                                        {audioUrls[`${reviewing.callId}_stereo`] && (
-                                            <audio
-                                                ref={el => audioRefs.current[`${reviewing.callId}_stereo`] = el}
-                                                src={audioUrls[`${reviewing.callId}_stereo`]}
-                                                controls
-                                                className="w-full h-8 mt-1"
-                                            />
-                                        )}
-                                    </div>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => recompileAndPlay(reviewing.callId)}
+                                                    disabled={loadingAudio === `${reviewing.callId}_stereo`}
+                                                    className="px-3.5 py-2.5 rounded-xl bg-gradient-to-r from-amber-600/90 to-amber-700/90 hover:from-amber-500 hover:to-amber-600 text-white border border-amber-500/50 font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50 shadow-md hover:shadow-amber-500/20"
+                                                    title="Re-stitch dual-track conversation from scratch with calibrated studio room tone and seamless zero-crossing micro-fades"
+                                                >
+                                                    <RefreshCw className={`w-3.5 h-3.5 ${loadingAudio === `${reviewing.callId}_stereo` ? 'animate-spin' : ''}`} />
+                                                    <span>Re-stitch Audio</span>
+                                                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-950/80 text-amber-200 border border-amber-600/60 font-semibold uppercase tracking-wider hidden sm:inline">
+                                                        Studio Silence
+                                                    </span>
+                                                </button>
+                                            </div>
+
+                                            {audioUrls[`${reviewing.callId}_stereo`] && (
+                                                <audio
+                                                    ref={el => audioRefs.current[`${reviewing.callId}_stereo`] = el}
+                                                    src={audioUrls[`${reviewing.callId}_stereo`]}
+                                                    controls
+                                                    className="w-full h-8 mt-1"
+                                                />
+                                            )}
+                                        </div>
+                                    )}
                                 </div>
 
                                 {/* Phrase-by-Phrase / Verse-by-Verse Review Stream */}
@@ -1403,7 +1439,12 @@ export default function AdminScriptedCallsReview() {
 
                                                             {/* Status Badge */}
                                                             <div>
-                                                                {turn.status === "approved" ? (
+                                                                {turn.status === "not_recorded" || !turn.audioUrl ? (
+                                                                    <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-neutral-800 text-neutral-400 border border-neutral-700">
+                                                                        <Clock className="w-3 h-3 text-neutral-500" />
+                                                                        <span>Not Recorded Yet</span>
+                                                                    </span>
+                                                                ) : turn.status === "approved" ? (
                                                                     <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-900/60 text-emerald-300 border border-emerald-600/50">
                                                                         <Check className="w-3 h-3" />
                                                                         <span>Marked Approved</span>
@@ -1445,92 +1486,99 @@ export default function AdminScriptedCallsReview() {
                                                                 </div>
                                                             )}
 
-                                                            {/* Audio Controls & Actions */}
-                                                            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pt-2 border-t border-neutral-700/40">
-                                                                {/* Audio Player with Native Browser Forward/Backward Controls */}
-                                                                <div className="flex-1 flex flex-col sm:flex-row sm:items-center gap-3">
-                                                                    {verseAudioBlobs[turnKey] ? (
-                                                                        <div className="flex items-center gap-2 w-full max-w-md">
-                                                                            <audio
-                                                                                src={verseAudioBlobs[turnKey]}
-                                                                                controls
-                                                                                autoPlay
-                                                                                className="w-full h-8 rounded-lg bg-neutral-900 border border-neutral-700"
-                                                                            />
-                                                                        </div>
-                                                                    ) : (
+                                                            {turn.status === "not_recorded" || !turn.audioUrl ? (
+                                                                <div className="pt-2 border-t border-neutral-700/40 flex items-center gap-2 text-xs text-neutral-400 italic">
+                                                                    <Clock className="w-3.5 h-3.5 text-neutral-500 shrink-0" />
+                                                                    <span>This speaker's verse has not been recorded yet. Awaiting partner submission.</span>
+                                                                </div>
+                                                            ) : (
+                                                                /* Audio Controls & Actions */
+                                                                <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pt-2 border-t border-neutral-700/40">
+                                                                    {/* Audio Player with Native Browser Forward/Backward Controls */}
+                                                                    <div className="flex-1 flex flex-col sm:flex-row sm:items-center gap-3">
+                                                                        {verseAudioBlobs[turnKey] ? (
+                                                                            <div className="flex items-center gap-2 w-full max-w-md">
+                                                                                <audio
+                                                                                    src={verseAudioBlobs[turnKey]}
+                                                                                    controls
+                                                                                    autoPlay
+                                                                                    className="w-full h-8 rounded-lg bg-neutral-900 border border-neutral-700"
+                                                                                />
+                                                                            </div>
+                                                                        ) : (
+                                                                            <button
+                                                                                onClick={() => playVerseAudio(turnKey, turn.audioUrl)}
+                                                                                disabled={isLoading}
+                                                                                className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg font-bold text-xs shadow-md transition-all cursor-pointer ${
+                                                                                    isS1
+                                                                                        ? "bg-primary-600 hover:bg-primary-500 text-white"
+                                                                                        : "bg-indigo-600 hover:bg-indigo-500 text-white"
+                                                                                }`}
+                                                                            >
+                                                                                {isLoading ? (
+                                                                                    <>
+                                                                                        <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                                                                        <span>Loading Player...</span>
+                                                                                    </>
+                                                                                ) : (
+                                                                                    <>
+                                                                                        <Play className="w-3.5 h-3.5 fill-white" />
+                                                                                        <span>Play Chunk ({turn.durationSec ? `${turn.durationSec.toFixed(1)}s` : 'Audio'})</span>
+                                                                                    </>
+                                                                                )}
+                                                                            </button>
+                                                                        )}
+
+                                                                    </div>
+
+                                                                    {/* Granular Approve & Reject Buttons */}
+                                                                    <div className="flex items-center gap-2 shrink-0">
                                                                         <button
-                                                                            onClick={() => playVerseAudio(turnKey, turn.audioUrl)}
-                                                                            disabled={isLoading}
-                                                                            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg font-bold text-xs shadow-md transition-all cursor-pointer ${
-                                                                                isS1
-                                                                                    ? "bg-primary-600 hover:bg-primary-500 text-white"
-                                                                                    : "bg-indigo-600 hover:bg-indigo-500 text-white"
+                                                                            onClick={() => handleApproveVerse(submissionId, turn.turnIndex)}
+                                                                            className={`flex items-center gap-1 px-3 py-1.5 rounded-lg font-bold text-xs shadow transition-all cursor-pointer ${
+                                                                                turn.status === "approved"
+                                                                                    ? "bg-emerald-600 text-white ring-2 ring-emerald-400"
+                                                                                    : "bg-neutral-700 hover:bg-emerald-600 text-neutral-200 hover:text-white"
                                                                             }`}
                                                                         >
-                                                                            {isLoading ? (
-                                                                                <>
-                                                                                    <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                                                                                    <span>Loading Player...</span>
-                                                                                </>
-                                                                            ) : (
-                                                                                <>
-                                                                                    <Play className="w-3.5 h-3.5 fill-white" />
-                                                                                    <span>Play Chunk ({turn.durationSec ? `${turn.durationSec.toFixed(1)}s` : 'Audio'})</span>
-                                                                                </>
-                                                                            )}
+                                                                            <Check className="w-3.5 h-3.5" />
+                                                                            <span>Approve</span>
                                                                         </button>
-                                                                    )}
 
-                                                                </div>
-
-                                                                {/* Granular Approve & Reject Buttons */}
-                                                                <div className="flex items-center gap-2 shrink-0">
-                                                                    <button
-                                                                        onClick={() => handleApproveVerse(submissionId, turn.turnIndex)}
-                                                                        className={`flex items-center gap-1 px-3 py-1.5 rounded-lg font-bold text-xs shadow transition-all cursor-pointer ${
-                                                                            turn.status === "approved"
-                                                                                ? "bg-emerald-600 text-white ring-2 ring-emerald-400"
-                                                                                : "bg-neutral-700 hover:bg-emerald-600 text-neutral-200 hover:text-white"
-                                                                        }`}
-                                                                    >
-                                                                        <Check className="w-3.5 h-3.5" />
-                                                                        <span>Approve</span>
-                                                                    </button>
-
-                                                                    <button
-                                                                        onClick={() => handleRejectVerse(submissionId, turn.turnIndex, turn.speakerLabel)}
-                                                                        className={`flex items-center gap-1 px-3 py-1.5 rounded-lg font-bold text-xs shadow transition-all cursor-pointer ${
-                                                                            turn.status === "rejected"
-                                                                                ? "bg-rose-600 text-white ring-2 ring-rose-400"
-                                                                                : "bg-neutral-700 hover:bg-rose-600 text-neutral-200 hover:text-white"
-                                                                        }`}
-                                                                    >
-                                                                        <X className="w-3.5 h-3.5" />
-                                                                        <span>Reject / Re-record</span>
-                                                                    </button>
-
-                                                                    <button
-                                                                        onClick={() => openTrimModal(turn)}
-                                                                        className="flex items-center gap-1 px-3 py-1.5 rounded-lg font-bold text-xs bg-purple-600/30 hover:bg-purple-600/50 text-purple-300 border border-purple-500/40 shadow transition-all cursor-pointer hover:text-white"
-                                                                        title="Trim Silence / Audio for this Turn"
-                                                                    >
-                                                                        <Scissors className="w-3.5 h-3.5" />
-                                                                        <span>Trim</span>
-                                                                    </button>
-
-                                                                    {turn.wasAudioTrimmed && (
                                                                         <button
-                                                                            onClick={() => handleRevertTrim(turn)}
-                                                                            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg font-bold text-xs bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white border border-neutral-600 shadow transition-all cursor-pointer"
-                                                                            title="Revert to Original Untrimmed Audio"
+                                                                            onClick={() => handleRejectVerse(submissionId, turn.turnIndex, turn.speakerLabel)}
+                                                                            className={`flex items-center gap-1 px-3 py-1.5 rounded-lg font-bold text-xs shadow transition-all cursor-pointer ${
+                                                                                turn.status === "rejected"
+                                                                                    ? "bg-rose-600 text-white ring-2 ring-rose-400"
+                                                                                    : "bg-neutral-700 hover:bg-rose-600 text-neutral-200 hover:text-white"
+                                                                            }`}
                                                                         >
-                                                                            <RotateCcw className="w-3.5 h-3.5" />
-                                                                            <span>Revert</span>
+                                                                            <X className="w-3.5 h-3.5" />
+                                                                            <span>Reject / Re-record</span>
                                                                         </button>
-                                                                    )}
+
+                                                                        <button
+                                                                            onClick={() => openTrimModal(turn)}
+                                                                            className="flex items-center gap-1 px-3 py-1.5 rounded-lg font-bold text-xs bg-purple-600/30 hover:bg-purple-600/50 text-purple-300 border border-purple-500/40 shadow transition-all cursor-pointer hover:text-white"
+                                                                            title="Trim Silence / Audio for this Turn"
+                                                                        >
+                                                                            <Scissors className="w-3.5 h-3.5" />
+                                                                            <span>Trim</span>
+                                                                        </button>
+
+                                                                        {turn.wasAudioTrimmed && (
+                                                                            <button
+                                                                                onClick={() => handleRevertTrim(turn)}
+                                                                                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg font-bold text-xs bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white border border-neutral-600 shadow transition-all cursor-pointer"
+                                                                                title="Revert to Original Untrimmed Audio"
+                                                                            >
+                                                                                <RotateCcw className="w-3.5 h-3.5" />
+                                                                                <span>Revert</span>
+                                                                            </button>
+                                                                        )}
+                                                                    </div>
                                                                 </div>
-                                                            </div>
+                                                            )}
                                                         </div>
                                                     </div>
                                                 );

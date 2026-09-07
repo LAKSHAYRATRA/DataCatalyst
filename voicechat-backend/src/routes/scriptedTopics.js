@@ -673,6 +673,27 @@ router.post("/submit-recording", requireAuth(JWT_SECRET), scriptedUpload.any(), 
             const s1Sub = role === "speaker1" ? newSubmission : matchingSubmission;
             const s2Sub = role === "speaker1" ? matchingSubmission : newSubmission;
 
+            // If matchingSubmission already had a single-speaker pending CallSession, reuse and link it
+            let existingCall = null;
+            if (matchingSubmission.callSessionId) {
+                existingCall = await CallSession.findById(matchingSubmission.callSessionId);
+            }
+            if (existingCall) {
+                s1Sub.callSessionId = existingCall._id;
+                s2Sub.callSessionId = existingCall._id;
+                await Promise.all([s1Sub.save(), s2Sub.save()]);
+
+                existingCall.userA = s1Sub.userId;
+                existingCall.userB = s2Sub.userId;
+                existingCall.endReason = "scripted_completed";
+                existingCall.recordingAStatus = "pending";
+                existingCall.recordingBStatus = "pending";
+                existingCall.recordingAFile = `${existingCall.callId}_A.wav`;
+                existingCall.recordingBFile = `${existingCall.callId}_B.wav`;
+                existingCall.mixedRecordingFile = `${existingCall.callId}_stereo.wav`;
+                await existingCall.save();
+            }
+
             stitchScriptedPair(s1Sub, s2Sub).catch(err => {
                 console.error("[ScriptedTopics] Async stitching failed:", err);
             });
@@ -683,6 +704,32 @@ router.post("/submit-recording", requireAuth(JWT_SECRET), scriptedUpload.any(), 
                 message: "Verses submitted successfully! Paired with matching partner."
             });
         }
+
+        // If no matching partner yet: create a single-speaker CallSession so it appears in Admin QA pending reviews with "Pending Completion"
+        const singleCallId = `scripted_${crypto.randomUUID()}`;
+        const isSpeaker1 = role === "speaker1";
+        const now = new Date();
+        const singleCall = new CallSession({
+            callId: singleCallId,
+            userA: isSpeaker1 ? userId : null,
+            userB: !isSpeaker1 ? userId : null,
+            topicId,
+            subtopicId,
+            language: language || "english",
+            startedAt: now,
+            endedAt: now,
+            actualCallStartedAt: now,
+            actualCallDuration: 0,
+            callActuallyStarted: true,
+            callStatus: "pending",
+            recordingAStatus: isSpeaker1 ? "pending" : "not_recorded",
+            recordingBStatus: !isSpeaker1 ? "pending" : "not_recorded",
+            endReason: "scripted_pending_partner"
+        });
+        await singleCall.save();
+
+        newSubmission.callSessionId = singleCall._id;
+        await newSubmission.save();
 
         res.json({
             success: true,
@@ -961,12 +1008,12 @@ router.get("/call-dialogue/:callId", async (req, res) => {
                     } : null,
                     submissionId: s1Sub?._id || null,
                     text: turn.speaker1 || v1Obj?.text || "",
-                    status: v1Obj?.status || "pending",
+                    status: v1Obj ? (v1Obj.status || "pending") : "not_recorded",
                     rejectionReason: v1Obj?.rejectionReason || null,
                     reviewNote: v1Obj?.reviewNote || null,
                     durationSec: v1Obj?.durationSec || 0,
                     wasAudioTrimmed: Boolean(v1Obj?.wasAudioTrimmed),
-                    audioUrl: s1Sub?._id ? `/api/scripted-topics/verse-audio/${s1Sub._id}/${idx}` : null
+                    audioUrl: (s1Sub?._id && v1Obj?.audioPath) ? `/api/scripted-topics/verse-audio/${s1Sub._id}/${idx}` : null
                 });
             }
 
@@ -984,12 +1031,12 @@ router.get("/call-dialogue/:callId", async (req, res) => {
                     } : null,
                     submissionId: s2Sub?._id || null,
                     text: turn.speaker2 || v2Obj?.text || "",
-                    status: v2Obj?.status || "pending",
+                    status: v2Obj ? (v2Obj.status || "pending") : "not_recorded",
                     rejectionReason: v2Obj?.rejectionReason || null,
                     reviewNote: v2Obj?.reviewNote || null,
                     durationSec: v2Obj?.durationSec || 0,
                     wasAudioTrimmed: Boolean(v2Obj?.wasAudioTrimmed),
-                    audioUrl: s2Sub?._id ? `/api/scripted-topics/verse-audio/${s2Sub._id}/${idx}` : null
+                    audioUrl: (s2Sub?._id && v2Obj?.audioPath) ? `/api/scripted-topics/verse-audio/${s2Sub._id}/${idx}` : null
                 });
             }
         });

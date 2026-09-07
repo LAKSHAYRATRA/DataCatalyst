@@ -47,6 +47,7 @@ import QaPhrases from "./pages/QaPhrases.jsx";
 import PhraseRecording from "./pages/PhraseRecording.jsx";
 import AdminMedia from "./pages/AdminMedia.jsx";
 import AdminProjects from "./pages/AdminProjects.jsx";
+import AdminScriptedPhraseProjects from "./pages/AdminScriptedPhraseProjects.jsx";
 import AdminCompanies from "./pages/AdminCompanies.jsx";
 import AdminCompanyConfig from "./pages/AdminCompanyConfig.jsx";
 import AdminCompanyUserCustomizations from "./pages/AdminCompanyUserCustomizations.jsx";
@@ -600,7 +601,9 @@ export default function App() {
         <Route path="/admin/scripted-languages/:langCode/subprojects" element={<RequireAdminOrQA><AdminScriptedLanguageSubprojects /></RequireAdminOrQA>} />
         <Route path="/admin/phrases" element={<RequireAdmin><AdminPhrases /></RequireAdmin>} />
         <Route path="/admin/phrases/downloads" element={<RequireAdmin><AdminPhraseDownloads /></RequireAdmin>} />
-        <Route path="/admin/projects" element={<RequireAdmin><AdminProjects /></RequireAdmin>} />
+        <Route path="/admin/phrase-projects" element={<RequireAdmin><AdminScriptedPhraseProjects /></RequireAdmin>} />
+        <Route path="/admin/projects" element={<RequireAdmin><AdminScriptedPhraseProjects /></RequireAdmin>} />
+        <Route path="/admin/languages-config" element={<RequireAdmin><AdminProjects /></RequireAdmin>} />
         <Route path="/admin/companies" element={<RequireAdmin><AdminCompanies /></RequireAdmin>} />
         <Route path="/admin/companies/:id/config" element={<RequireAdmin><AdminCompanyConfig /></RequireAdmin>} />
         <Route path="/admin/companies/:id/user-customizations" element={<RequireAdmin><AdminCompanyUserCustomizations /></RequireAdmin>} />

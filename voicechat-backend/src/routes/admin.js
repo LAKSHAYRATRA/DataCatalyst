@@ -8846,11 +8846,12 @@ router.get("/s3-download-wav", async (req, res) => {
 
 router.get("/phrases/download-company", requireAuth(JWT_SECRET), async (req, res) => {
     try {
-        const { company, type = "phrases" } = req.query;
-        if (!company) return res.status(400).json({ error: "Company name is required" });
+        const { company, project, projectName, type = "phrases" } = req.query;
+        const projectParam = (project || projectName || "").trim();
+        if (!company && !projectParam) return res.status(400).json({ error: "Company or Project name is required" });
 
-        // Normalize company name the same way it is stored in DB/S3
-        const companyFolder = company.replace(/[^a-zA-Z0-9_\-\ ]/g, "").trim();
+        // Normalize company / project name the same way it is stored in DB/S3
+        const companyFolder = (company || projectParam).replace(/[^a-zA-Z0-9_\-\ ]/g, "").trim();
 
         if (type === "approved_apps" || type === "all_apps") {
             // Find all matching users who applied for this company
@@ -8972,11 +8973,32 @@ router.get("/phrases/download-company", requireAuth(JWT_SECRET), async (req, res
                 `${companyFolder.toLowerCase()}_downloaded`
               ];
 
+        if (projectParam) {
+            const projectCompanies = await Company.find({
+                $or: [
+                    { projectName: { $regex: new RegExp(`^${projectParam.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')}$`, "i") } },
+                    { name: { $regex: new RegExp(`^${projectParam.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')}$`, "i") } }
+                ]
+            }).lean();
+            projectCompanies.forEach(c => {
+                targetCompanyIds.push(c.name);
+                targetCompanyIds.push(c.name.toLowerCase());
+                if (!isFreshOnly) {
+                    targetCompanyIds.push(`${c.name}_downloaded`);
+                    targetCompanyIds.push(`${c.name.toLowerCase()}_downloaded`);
+                }
+            });
+        }
+
         let phrasesQuery = {
-            companyId: { $in: targetCompanyIds },
+            $or: [
+                { companyId: { $in: targetCompanyIds } },
+                projectParam ? { projectName: { $regex: new RegExp(`^${projectParam.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')}$`, "i") } } : null
+            ].filter(Boolean),
             status: targetStatus,
             audioFile: { $ne: null }
         };
+
 
         const rawPhrases = await Phrase.find(phrasesQuery).populate("contributorId").lean();
 
@@ -9751,8 +9773,252 @@ router.post("/backfill-speaker-ids", async (req, res) => {
     }
 });
 
+// ===== SCRIPTED PHRASE PROJECTS & LANGUAGES HIERARCHY =====
+router.get("/phrase-projects/hierarchy", requireAuth(JWT_SECRET), async (req, res) => {
+    try {
+        // 1. Fetch all companies
+        const companies = await Company.find({}).sort({ name: 1 }).lean();
+
+        // 2. Fetch all known language display names from Language model
+        const callLangs = await Language.find({}).lean();
+        const langMap = {};
+        callLangs.forEach(l => {
+            if (l.code) langMap[l.code.toLowerCase().trim()] = l.name || l.code;
+        });
+
+        // 3. Aggregate all phrases (not archived) by companyId, projectName, language, status, and isDownloaded
+        const phraseStats = await Phrase.aggregate([
+            { $match: { isArchivedFromCompanyWorkload: { $ne: true } } },
+            {
+                $group: {
+                    _id: {
+                        companyId: "$companyId",
+                        projectName: "$projectName",
+                        language: { $toLower: "$language" },
+                        status: "$status",
+                        isDownloaded: { $ifNull: ["$isDownloaded", false] }
+                    },
+                    count: { $sum: 1 },
+                    totalDuration: { $sum: { $ifNull: ["$duration", 0] } },
+                    uniqueContributors: { $addToSet: "$contributorId" }
+                }
+            }
+        ]);
+
+        // Helper to normalize project names
+        // If two companies have the exact same projectName (e.g. "Falcon" or "Multi-Lang 5 Project"),
+        // or a company's name is used as projectName, group them together!
+        const projectsMap = new Map(); // normalizedKey -> projectObj
+        const companyToProjectKey = new Map(); // compName.toLowerCase() -> normKey
+
+        // Pre-populate projects from Company records
+        companies.forEach(comp => {
+            const rawProjectName = (comp.projectName || comp.name || "Default Project").trim();
+            const normKey = rawProjectName.toLowerCase();
+            const compName = (comp.name || "").trim();
+            const compKey = compName.toLowerCase();
+            const cleanCompKey = compKey.replace(/_downloaded$/, "");
+
+            companyToProjectKey.set(compKey, normKey);
+            companyToProjectKey.set(cleanCompKey, normKey);
+            if (comp._id) companyToProjectKey.set(String(comp._id).toLowerCase(), normKey);
+
+            if (!projectsMap.has(normKey)) {
+                projectsMap.set(normKey, {
+                    projectName: rawProjectName,
+                    normalizedKey: normKey,
+                    description: comp.description || "",
+                    hourlyPayout: comp.hourlyPayout || 0,
+                    companyIds: new Set(),
+                    companyNames: new Set(),
+                    languagesMap: new Map(), // langCode -> langStats
+                    activeContributorsSet: new Set()
+                });
+            }
+
+            const pObj = projectsMap.get(normKey);
+            if (compName) {
+                pObj.companyIds.add(compName);
+                pObj.companyNames.add(comp.projectName || compName);
+            }
+            if (comp.hourlyPayout && !pObj.hourlyPayout) {
+                pObj.hourlyPayout = comp.hourlyPayout;
+            }
+
+            // Register defined languages from company model
+            (comp.languages || []).forEach(l => {
+                const code = String(l).toLowerCase().trim();
+                if (!code) return;
+                if (!pObj.languagesMap.has(code)) {
+                    pObj.languagesMap.set(code, {
+                        code,
+                        name: langMap[code] || (code.charAt(0).toUpperCase() + code.slice(1)),
+                        totalPhrases: 0,
+                        approvedPhrases: 0,
+                        recordedPhrases: 0,
+                        pendingPhrases: 0,
+                        rejectedPhrases: 0,
+                        freshApproved: 0,
+                        approvedDurationSeconds: 0,
+                        totalDurationSeconds: 0,
+                        contributorsSet: new Set(),
+                        companyIds: new Set()
+                    });
+                }
+                if (compName) pObj.languagesMap.get(code).companyIds.add(compName);
+            });
+        });
+
+        // Now fold aggregated phrases into corresponding project
+        for (const item of phraseStats) {
+            const rawComp = String(item._id.companyId || "").trim();
+            const cleanComp = rawComp.replace(/_downloaded$/, "").toLowerCase();
+            const rawProj = String(item._id.projectName || "").trim();
+            const langCode = String(item._id.language || "other").trim().toLowerCase();
+            const status = item._id.status || "pending";
+            const isDownloaded = item._id.isDownloaded || rawComp.endsWith("_downloaded");
+
+            let normKey = null;
+            if (rawProj) {
+                normKey = rawProj.toLowerCase();
+            } else if (companyToProjectKey.has(cleanComp)) {
+                normKey = companyToProjectKey.get(cleanComp);
+            } else if (cleanComp) {
+                normKey = cleanComp;
+            } else {
+                normKey = "general phrases";
+            }
+
+            if (!projectsMap.has(normKey)) {
+                const displayTitle = rawProj || rawComp || "General Phrases";
+                projectsMap.set(normKey, {
+                    projectName: displayTitle,
+                    normalizedKey: normKey,
+                    description: "",
+                    hourlyPayout: 0,
+                    companyIds: new Set(),
+                    companyNames: new Set(),
+                    languagesMap: new Map(),
+                    activeContributorsSet: new Set()
+                });
+            }
+
+            const pObj = projectsMap.get(normKey);
+            if (rawComp) pObj.companyIds.add(rawComp);
+
+            if (!pObj.languagesMap.has(langCode)) {
+                pObj.languagesMap.set(langCode, {
+                    code: langCode,
+                    name: langMap[langCode] || (langCode.charAt(0).toUpperCase() + langCode.slice(1)),
+                    totalPhrases: 0,
+                    approvedPhrases: 0,
+                    recordedPhrases: 0,
+                    pendingPhrases: 0,
+                    rejectedPhrases: 0,
+                    freshApproved: 0,
+                    approvedDurationSeconds: 0,
+                    totalDurationSeconds: 0,
+                    contributorsSet: new Set(),
+                    companyIds: new Set()
+                });
+            }
+
+            const lObj = pObj.languagesMap.get(langCode);
+            if (rawComp) lObj.companyIds.add(rawComp);
+
+            const cnt = item.count || 0;
+            const dur = item.totalDuration || 0;
+
+            lObj.totalPhrases += cnt;
+            lObj.totalDurationSeconds += dur;
+
+            if (status === "approved") {
+                lObj.approvedPhrases += cnt;
+                lObj.approvedDurationSeconds += dur;
+                if (!isDownloaded) {
+                    lObj.freshApproved += cnt;
+                }
+            } else if (status === "recorded") {
+                lObj.recordedPhrases += cnt;
+            } else if (status === "rejected") {
+                lObj.rejectedPhrases += cnt;
+            } else {
+                lObj.pendingPhrases += cnt;
+            }
+
+            (item.uniqueContributors || []).filter(Boolean).forEach(cId => {
+                const idStr = String(cId);
+                lObj.contributorsSet.add(idStr);
+                pObj.activeContributorsSet.add(idStr);
+            });
+        }
+
+        // Convert Map to clean Array of project objects
+        const projects = Array.from(projectsMap.values()).map(p => {
+            const languages = Array.from(p.languagesMap.values()).map(l => ({
+                code: l.code,
+                name: l.name,
+                totalPhrases: l.totalPhrases,
+                approvedPhrases: l.approvedPhrases,
+                recordedPhrases: l.recordedPhrases,
+                pendingPhrases: l.pendingPhrases,
+                rejectedPhrases: l.rejectedPhrases,
+                freshApproved: l.freshApproved,
+                approvedDurationSeconds: Math.round(l.approvedDurationSeconds),
+                approvedDurationMinutes: Number((l.approvedDurationSeconds / 60).toFixed(1)),
+                approvedDurationHours: Number((l.approvedDurationSeconds / 3600).toFixed(2)),
+                totalDurationMinutes: Number((l.totalDurationSeconds / 60).toFixed(1)),
+                contributorCount: l.contributorsSet.size,
+                companyIds: Array.from(l.companyIds)
+            }));
+
+            // Sort languages by approved phrases (descending), then code
+            languages.sort((a, b) => b.approvedPhrases - a.approvedPhrases || b.totalPhrases - a.totalPhrases || a.code.localeCompare(b.code));
+
+            const totalPhrases = languages.reduce((acc, l) => acc + l.totalPhrases, 0);
+            const approvedPhrases = languages.reduce((acc, l) => acc + l.approvedPhrases, 0);
+            const recordedPhrases = languages.reduce((acc, l) => acc + l.recordedPhrases, 0);
+            const pendingPhrases = languages.reduce((acc, l) => acc + l.pendingPhrases, 0);
+            const rejectedPhrases = languages.reduce((acc, l) => acc + l.rejectedPhrases, 0);
+            const freshApproved = languages.reduce((acc, l) => acc + l.freshApproved, 0);
+            const approvedDurationSeconds = languages.reduce((acc, l) => acc + l.approvedDurationSeconds, 0);
+
+            const completionRate = totalPhrases > 0 ? Number(((approvedPhrases / totalPhrases) * 100).toFixed(1)) : 0;
+
+            return {
+                projectName: p.projectName,
+                normalizedKey: p.normalizedKey,
+                description: p.description,
+                hourlyPayout: p.hourlyPayout,
+                companyIds: Array.from(p.companyIds),
+                totalLanguages: languages.length,
+                languages,
+                totalPhrases,
+                approvedPhrases,
+                recordedPhrases,
+                pendingPhrases,
+                rejectedPhrases,
+                freshApproved,
+                approvedDurationMinutes: Number((approvedDurationSeconds / 60).toFixed(1)),
+                approvedDurationHours: Number((approvedDurationSeconds / 3600).toFixed(2)),
+                contributorCount: p.activeContributorsSet.size,
+                completionRate
+            };
+        });
+
+        // Filter out empty projects if any, sort by totalPhrases descending
+        projects.sort((a, b) => b.totalPhrases - a.totalPhrases || a.projectName.localeCompare(b.projectName));
+
+        res.json({ success: true, projects });
+    } catch (e) {
+        console.error("Error in phrase-projects/hierarchy:", e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
 // ===== PHRASE DOWNLOAD STATS =====
 router.get("/phrases/download-stats", requireAuth(JWT_SECRET), async (req, res) => {
+
     try {
         const stats = await Phrase.aggregate([
             { $match: { isArchivedFromCompanyWorkload: { $ne: true } } },

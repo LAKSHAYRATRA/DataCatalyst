@@ -3,8 +3,8 @@ import mongoose from "mongoose";
 const callSessionSchema = new mongoose.Schema(
   {
     callId: { type: String, required: true, unique: true },
-    userA: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
-    userB: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+    userA: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+    userB: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
     startedAt: { type: Date, required: true },
     endedAt: { type: Date },
     endReason: { type: String },
@@ -54,7 +54,7 @@ const callSessionSchema = new mongoose.Schema(
     // Individual recording statuses for separate approval
     recordingAStatus: {
       type: String,
-      enum: ['pending', 'approved', 'rejected'],
+      enum: ['pending', 'approved', 'rejected', 'not_recorded'],
       default: 'pending'
     },
     recordingAReviewNote: { type: String, default: null },
@@ -64,7 +64,7 @@ const callSessionSchema = new mongoose.Schema(
     recordingARejectionReason: { type: String, default: null },
     recordingBStatus: {
       type: String,
-      enum: ['pending', 'approved', 'rejected'],
+      enum: ['pending', 'approved', 'rejected', 'not_recorded'],
       default: 'pending'
     },
     recordingBReviewNote: { type: String, default: null },
