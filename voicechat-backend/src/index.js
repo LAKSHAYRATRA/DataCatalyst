@@ -54,6 +54,7 @@ import { CallSession } from "./models/CallSession.js";
 import { Subtopic } from "./models/Subtopic.js";
 import { Language } from "./models/Language.js";
 import { updateLimitAndBlacklist } from "./services/limitService.js";
+import { syncPendingScriptedSubmissions } from "./services/scriptedSync.js";
 
 // ─── Controllers ──────────────────────────────────────────────────────────────
 import {
@@ -1958,6 +1959,8 @@ try {
 
 import { startPurgeIntroRecordingsCron } from "./jobs/purgeIntroRecordings.js";
 startPurgeIntroRecordingsCron();
+
+syncPendingScriptedSubmissions().catch(err => console.error("Startup scripted sync error:", err));
 
 server.listen(PORT, "0.0.0.0", () => {
   console.log(`Backend listening on http://0.0.0.0:${PORT}`);

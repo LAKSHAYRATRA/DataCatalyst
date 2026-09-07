@@ -38,6 +38,7 @@ import ffmpegInstaller from "@ffmpeg-installer/ffmpeg";
 import { invokeAudioQC } from "../config/lambda.js";
 import { restitchScriptedCall } from "../services/scriptedStitcher.js";
 import { getArtistRateForProject } from "../controllers/vendorController.js";
+import { syncPendingScriptedSubmissions } from "../services/scriptedSync.js";
 
 ffmpeg.setFfmpegPath(ffmpegInstaller.path);
 
@@ -1897,6 +1898,10 @@ qaCallRouter.get("/calls", async (req, res) => {
         const status = req.query.status;
         const isScripted = req.query.mode === "scripted";
         const skip = (page - 1) * limit;
+
+        if (isScripted) {
+            await syncPendingScriptedSubmissions();
+        }
 
         const fifteenMinsAgo = new Date(Date.now() - 15 * 60 * 1000);
         const filter = { 
