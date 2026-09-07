@@ -762,12 +762,14 @@ export async function vendorLogin(req, res) {
 
     const token = signVendorToken({ vendorId: vendor._id }, process.env.JWT_SECRET);
 
-    // Set cookie
+    // Set cookie with cross-origin production configuration
+    const isProd = process.env.NODE_ENV === "production";
     res.cookie("vc_vendor_token", token, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
-      maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days
+      secure: isProd,
+      sameSite: isProd ? "none" : "lax",
+      maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+      path: "/",
     });
 
     res.json({
@@ -797,6 +799,18 @@ export async function vendorLogin(req, res) {
   } catch (err) {
     res.status(500).json({ error: "Vendor login failed: " + err.message });
   }
+}
+
+// ─── VENDOR PORTAL: Vendor Logout ─────────────────────────────────────────────
+export function vendorLogout(req, res) {
+  const isProd = process.env.NODE_ENV === "production";
+  res.clearCookie("vc_vendor_token", {
+    httpOnly: true,
+    secure: isProd,
+    sameSite: isProd ? "none" : "lax",
+    path: "/",
+  });
+  res.json({ ok: true, message: "Logged out successfully" });
 }
 
 // ─── VENDOR PORTAL: Current Vendor Profile & Live Quality Stats ───────────────

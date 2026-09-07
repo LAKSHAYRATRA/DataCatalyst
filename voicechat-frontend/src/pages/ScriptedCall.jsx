@@ -129,6 +129,18 @@ export default function ScriptedCall() {
     const [myApps, setMyApps] = useState([]);
     const [myReRecords, setMyReRecords] = useState([]);
 
+    // Missing 15s Room Silence Calibration States for Scripted Calls
+    const [userRoomSilence, setUserRoomSilence] = useState(null);
+    const [showSilenceModal, setShowSilenceModal] = useState(false);
+    const [silenceRecording, setSilenceRecording] = useState(false);
+    const [silenceSecondsLeft, setSilenceSecondsLeft] = useState(15);
+    const [silenceAudioBlob, setSilenceAudioBlob] = useState(null);
+    const [silenceAudioUrl, setSilenceAudioUrl] = useState(null);
+    const [silenceSubmitting, setSilenceSubmitting] = useState(false);
+    const silenceMediaRecorderRef = useRef(null);
+    const silenceAudioChunksRef = useRef([]);
+    const silenceTimerRef = useRef(null);
+
     // Direct Deep-Link to Scenario Studio from Dashboard Action Required Banner
     useEffect(() => {
         if (!urlSubtopicId || languages.length === 0 || hasAutoOpenedRef.current) return;
@@ -201,8 +213,19 @@ export default function ScriptedCall() {
                     apiGet("/api/language-applications/my").catch(() => ({ applications: [] })),
                     apiGet("/api/scripted-topics/my-rerecords").catch(() => ({ rerecords: [] }))
                 ]);
-                setMyApps(appsRes?.applications || []);
+                const apps = appsRes?.applications || [];
+                setMyApps(apps);
+                const userSilence = appsRes?.roomSilenceFile || null;
+                setUserRoomSilence(userSilence);
                 setMyReRecords(rerecordRes?.rerecords || []);
+
+                // SCRIPTED CALLS MANDATORY 15s SILENCE CHECK:
+                // If the contributor is approved for scripted calls, but their 15s room silence file is missing:
+                const hasApprovedScripted = apps.some(a => a.applicationType === 'scripted_call' && a.status === 'approved');
+                const hasSilenceRecorded = !!(userSilence || apps.some(a => a.applicationType === 'scripted_call' && a.roomSilenceFile));
+                if (hasApprovedScripted && !hasSilenceRecorded) {
+                    setShowSilenceModal(true);
+                }
             } catch (err) {
                 console.error("Failed to load user applications or rerecords:", err);
             }
@@ -224,6 +247,120 @@ export default function ScriptedCall() {
             setError(e.message);
         } finally {
             setLoading(false);
+        }
+    }
+
+    async function startSilenceRecording() {
+        try {
+            setSilenceAudioBlob(null);
+            setSilenceAudioUrl(null);
+            silenceAudioChunksRef.current = [];
+            setSilenceSecondsLeft(15);
+
+            const stream = await navigator.mediaDevices.getUserMedia({
+                audio: {
+                    echoCancellation: false,
+                    noiseSuppression: false,
+                    autoGainControl: false,
+                    channelCount: 1
+                }
+            });
+
+            const mime = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+                ? "audio/webm;codecs=opus"
+                : "audio/webm";
+            const mr = new MediaRecorder(stream, { mimeType: mime });
+            silenceMediaRecorderRef.current = mr;
+
+            mr.ondataavailable = (e) => {
+                if (e.data && e.data.size > 0) {
+                    silenceAudioChunksRef.current.push(e.data);
+                }
+            };
+
+            mr.onstop = () => {
+                stream.getTracks().forEach(t => t.stop());
+                const blob = new Blob(silenceAudioChunksRef.current, { type: mime });
+                setSilenceAudioBlob(blob);
+                setSilenceAudioUrl(URL.createObjectURL(blob));
+                setSilenceRecording(false);
+            };
+
+            mr.start(250);
+            setSilenceRecording(true);
+
+            let remaining = 15;
+            if (silenceTimerRef.current) clearInterval(silenceTimerRef.current);
+            silenceTimerRef.current = setInterval(() => {
+                remaining -= 1;
+                setSilenceSecondsLeft(remaining);
+                if (remaining <= 0) {
+                    clearInterval(silenceTimerRef.current);
+                    if (mr.state === "recording") {
+                        mr.stop();
+                    }
+                }
+            }, 1000);
+        } catch (err) {
+            Swal.fire({
+                icon: 'error',
+                title: 'Microphone Permission Needed',
+                text: err.message || 'Please enable microphone access to record 15s ambient room silence.',
+                confirmButtonColor: '#6366f1'
+            });
+        }
+    }
+
+    function cancelSilenceRecording() {
+        if (silenceTimerRef.current) clearInterval(silenceTimerRef.current);
+        if (silenceMediaRecorderRef.current && silenceMediaRecorderRef.current.state === "recording") {
+            try { silenceMediaRecorderRef.current.stop(); } catch (_) {}
+        }
+        setSilenceRecording(false);
+        setSilenceSecondsLeft(15);
+        setSilenceAudioBlob(null);
+        setSilenceAudioUrl(null);
+        silenceAudioChunksRef.current = [];
+    }
+
+    async function submitSilenceProfile() {
+        if (!silenceAudioBlob) return;
+        setSilenceSubmitting(true);
+        try {
+            const formData = new FormData();
+            formData.append("roomSilence", silenceAudioBlob, "room_silence.webm");
+            if (selectedLanguage?.code) {
+                formData.append("languageCode", selectedLanguage.code);
+            }
+
+            const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:3001";
+            const res = await fetch(`${BACKEND_URL}/api/language-applications/room-silence`, {
+                method: "POST",
+                credentials: "include",
+                body: formData
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || "Failed to upload room silence");
+
+            setUserRoomSilence(data.roomSilenceFile);
+            setMyApps(prev => prev.map(a => a.applicationType === 'scripted_call' ? { ...a, roomSilenceFile: data.roomSilenceFile } : a));
+            setShowSilenceModal(false);
+
+            Swal.fire({
+                icon: 'success',
+                title: 'Room Ambient Silence Calibrated!',
+                text: 'Your 15s room silence profile has been saved. You can now record scripted conversation turns seamlessly.',
+                confirmButtonColor: '#6366f1'
+            });
+        } catch (err) {
+            Swal.fire({
+                icon: 'error',
+                title: 'Submission Failed',
+                text: err.message,
+                confirmButtonColor: '#6366f1'
+            });
+        } finally {
+            setSilenceSubmitting(false);
         }
     }
 
@@ -784,6 +921,121 @@ export default function ScriptedCall() {
     return (
         <div className="min-h-screen bg-neutral-950 text-white pt-16 md:pt-0 md:pl-64 flex flex-col font-sans selection:bg-indigo-500/30 selection:text-indigo-200 transition-colors duration-300">
             <Nav />
+
+            {/* MANDATORY 15-SECOND ROOM AMBIENT SILENCE MODAL */}
+            {showSilenceModal && (
+                <div className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-xl flex items-center justify-center p-4">
+                    <div className="relative overflow-hidden rounded-3xl border-2 border-indigo-500/50 bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 w-full max-w-lg shadow-2xl animate-slide-up flex flex-col p-6 md:p-8 text-center space-y-6">
+                        <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
+                        
+                        {/* Header Badge & Title */}
+                        <div className="space-y-2 relative z-10">
+                            <div className="w-16 h-16 rounded-2xl bg-indigo-950/80 border border-indigo-700/60 text-indigo-400 flex items-center justify-center mx-auto shadow-inner">
+                                <Volume2 className="w-8 h-8 animate-pulse" />
+                            </div>
+                            <h2 className="text-xl md:text-2xl font-black text-white">
+                                15-Second Room Silence Required
+                            </h2>
+                            <p className="text-xs text-neutral-300 leading-relaxed max-w-md mx-auto">
+                                You are an approved Scripted Calls contributor! Before you record dialogue turns, our acoustic stitching engine requires <strong>15 seconds of your room ambient silence</strong> so turns blend naturally without synthetic cuts.
+                            </p>
+                        </div>
+
+                        {/* Instruction Box */}
+                        <div className="p-3.5 rounded-2xl bg-indigo-950/50 border border-indigo-800/50 text-left text-xs text-indigo-200 space-y-1 relative z-10">
+                            <div className="font-bold flex items-center gap-1.5 text-indigo-300">
+                                <AlertCircle className="w-4 h-4 shrink-0" />
+                                <span>How to record:</span>
+                            </div>
+                            <p className="text-[11px] text-neutral-400 leading-normal pl-5">
+                                Click record and remain completely silent for 15 seconds. Do not speak, whisper, or move your microphone.
+                            </p>
+                        </div>
+
+                        {/* 15s Timer Display */}
+                        <div className="flex flex-col items-center justify-center relative z-10">
+                            <div className={`w-32 h-32 rounded-full border-4 flex flex-col items-center justify-center transition-all ${
+                                silenceRecording 
+                                    ? "border-indigo-500 animate-pulse bg-indigo-950/30 shadow-lg shadow-indigo-500/20" 
+                                    : silenceAudioBlob 
+                                    ? "border-emerald-500 bg-emerald-950/30" 
+                                    : "border-neutral-700 bg-neutral-900"
+                            }`}>
+                                <span className={`text-3xl font-black font-mono ${
+                                    silenceRecording ? "text-indigo-400" : silenceAudioBlob ? "text-emerald-400" : "text-neutral-400"
+                                }`}>
+                                    {silenceRecording ? `${silenceSecondsLeft}s` : silenceAudioBlob ? "✓" : "15s"}
+                                </span>
+                                {silenceRecording && (
+                                    <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest mt-1">
+                                        Capturing
+                                    </span>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Audio Preview if Recorded */}
+                        {silenceAudioBlob && (
+                            <div className="space-y-2 relative z-10 animate-fade-in">
+                                <audio src={silenceAudioUrl} controls className="w-full h-9 rounded-lg" />
+                                <div className="flex items-center justify-center gap-1.5 text-xs text-emerald-400 font-bold">
+                                    <CheckCircle2 className="w-4 h-4" />
+                                    <span>15s Room Silence Profile Captured!</span>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Action Buttons */}
+                        <div className="space-y-3 relative z-10 pt-2">
+                            {!silenceRecording && !silenceAudioBlob && (
+                                <button
+                                    onClick={startSilenceRecording}
+                                    className="w-full py-3.5 px-6 rounded-2xl bg-indigo-600 hover:bg-indigo-500 active:scale-[0.98] text-white font-bold text-sm shadow-xl shadow-indigo-600/30 transition-all flex items-center justify-center gap-2 cursor-pointer"
+                                >
+                                    <Mic className="w-4 h-4" />
+                                    <span>🤫 Start 15s Room Silence Recording</span>
+                                </button>
+                            )}
+
+                            {silenceRecording && (
+                                <div className="flex items-center justify-center">
+                                    <div className="px-5 py-2.5 bg-neutral-900/90 border border-indigo-500/40 rounded-2xl flex items-center gap-2.5 text-indigo-300 font-semibold text-xs shadow-lg shadow-indigo-950/50">
+                                        <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-pulse" />
+                                        <span>Recording ambient silence... Please remain silent ({silenceSecondsLeft}s)</span>
+                                    </div>
+                                </div>
+                            )}
+
+                            {silenceAudioBlob && (
+                                <div className="flex flex-col sm:flex-row gap-3">
+                                    <button
+                                        onClick={cancelSilenceRecording}
+                                        disabled={silenceSubmitting}
+                                        className="py-3 px-4 rounded-xl border border-neutral-700 hover:bg-neutral-800 text-neutral-300 text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer disabled:opacity-50"
+                                    >
+                                        <RotateCcw className="w-3.5 h-3.5" />
+                                        <span>Re-record Silence</span>
+                                    </button>
+                                    <button
+                                        onClick={submitSilenceProfile}
+                                        disabled={silenceSubmitting}
+                                        className="flex-1 py-3 px-5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black shadow-lg shadow-emerald-600/25 flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-50"
+                                    >
+                                        {silenceSubmitting ? (
+                                            <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                        ) : (
+                                            <>
+                                                <span>Save Profile & Continue</span>
+                                                <span>→</span>
+                                            </>
+                                        )}
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
 
             <main className="flex-1 max-w-7xl w-full mx-auto p-4 md:p-8 space-y-6">
 

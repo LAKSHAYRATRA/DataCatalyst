@@ -93,6 +93,7 @@ import {
   updateProfileCompletion,
   updateMobileNumber,
   updateUserNoiseGate,
+  uploadUserRoomSilence,
 } from "./controllers/userController.js";
 
 import {
@@ -345,6 +346,12 @@ app.post(
   "/api/language-applications/noise-gate",
   requireAuth(JWT_SECRET),
   updateUserNoiseGate
+);
+app.post(
+  "/api/language-applications/room-silence",
+  requireAuth(JWT_SECRET),
+  langUpload.any(),
+  uploadUserRoomSilence
 );
 
 // Calls / history / payouts / feedback

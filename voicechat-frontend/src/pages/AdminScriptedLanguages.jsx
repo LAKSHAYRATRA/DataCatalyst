@@ -21,7 +21,13 @@ import {
     X,
     Filter,
     FolderKanban,
-    ArrowRight
+    ArrowRight,
+    BarChart3,
+    Globe,
+    RotateCcw,
+    CheckCircle,
+    Loader2,
+    Building2
 } from "lucide-react";
 import AdminNav from "../components/AdminNav.jsx";
 import Swal from "sweetalert2";
@@ -81,9 +87,17 @@ export default function AdminScriptedLanguages() {
     const [modalSaving, setModalSaving] = useState(false);
     const [modalError, setModalError] = useState("");
 
+    // Main View Tab: "languages" | "summary"
+    const [activeMainTab, setActiveMainTab] = useState("languages");
+    const [summaryOverview, setSummaryOverview] = useState(null);
+    const [summaryLanguages, setSummaryLanguages] = useState([]);
+    const [summaryLoading, setSummaryLoading] = useState(false);
+    const [selectedSummaryLangCode, setSelectedSummaryLangCode] = useState(null);
+    const [summaryUserTab, setSummaryUserTab] = useState("approved"); // "approved" | "pending" | "rejected"
+    const [summaryUserSearch, setSummaryUserSearch] = useState("");
+
     // Summary modal
     const [summaryModalLang, setSummaryModalLang] = useState(null);
-    const [summaryLoading, setSummaryLoading] = useState(false);
     const [summaryData, setSummaryData] = useState(null);
     const [activeModalType, setActiveModalType] = useState(null); // "summary" | "users"
     const [usersTab, setUsersTab] = useState("approved"); // "approved" | "pending"
@@ -320,21 +334,248 @@ export default function AdminScriptedLanguages() {
         }
     }
 
-    async function fetchSummary(lang, modalType = "summary") {
-        setSummaryModalLang(lang);
-        setActiveModalType(modalType);
+    async function loadFullSummary(preselectCode = null) {
         setSummaryLoading(true);
-        setSummaryData(null);
-        setUsersSearch("");
         try {
-            const data = await get(`/api/admin/scripted-languages/${lang._id}/contributors-summary`);
-            setSummaryData(data);
+            const data = await get("/api/admin/scripted-languages/all/contributors-summary");
+            setSummaryOverview(data.overview || null);
+            const langs = data.languages || [];
+            setSummaryLanguages(langs);
+            if (langs.length > 0) {
+                if (preselectCode) {
+                    const match = langs.find(l => 
+                        String(l.code).toLowerCase() === String(preselectCode).toLowerCase() ||
+                        String(l.name).toLowerCase() === String(preselectCode).toLowerCase() ||
+                        String(l._id) === String(preselectCode)
+                    );
+                    setSelectedSummaryLangCode(match ? match.code : langs[0].code);
+                } else if (!selectedSummaryLangCode) {
+                    setSelectedSummaryLangCode(langs[0].code);
+                }
+            }
         } catch (err) {
-            Swal.fire('Error', err.message, 'error');
-            setSummaryModalLang(null);
-            setActiveModalType(null);
+            Swal.fire({
+                icon: "error",
+                title: "Error Loading Summary",
+                text: err.message,
+                confirmButtonColor: "#ea580c"
+            });
         } finally {
             setSummaryLoading(false);
+        }
+    }
+
+    function switchToSummary(targetCode = null) {
+        setActiveMainTab("summary");
+        loadFullSummary(targetCode);
+    }
+
+    async function handleRemoveScriptedContributor(userObj, lang) {
+        const langName = lang?.name || "this scripted language";
+        const result = await Swal.fire({
+            title: "Remove Contributor?",
+            text: `Are you sure you want to remove ${userObj.firstname || userObj.username} from doing scripted calls for ${langName}? Doing so will change their application status to rejected and revoke their scripted call access.`,
+            icon: "warning",
+            showCancelButton: true,
+            confirmButtonColor: "#dc2626",
+            cancelButtonColor: "#475569",
+            confirmButtonText: "Yes, Remove Contributor",
+            background: "#1f2937",
+            color: "#fff"
+        });
+
+        if (result.isConfirmed) {
+            try {
+                await postJson(`/api/admin/scripted-languages/${lang._id}/remove-contributor`, {
+                    userId: userObj._id
+                });
+                Swal.fire({
+                    title: "Removed!",
+                    text: `${userObj.firstname || userObj.username} has been removed from ${langName}.`,
+                    icon: "success",
+                    background: "#1f2937",
+                    color: "#fff"
+                });
+                loadFullSummary(selectedSummaryLangCode);
+            } catch (e) {
+                Swal.fire({
+                    title: "Error",
+                    text: e.message,
+                    icon: "error",
+                    background: "#1f2937",
+                    color: "#fff"
+                });
+            }
+        }
+    }
+
+    async function handleResetScriptedContributor(userObj, lang) {
+        const langName = lang?.name || "this scripted language";
+        const result = await Swal.fire({
+            title: "Reset Application?",
+            text: `Are you sure you want to reset the scripted call application for ${userObj.firstname || userObj.username} for ${langName}? This will remove them from the rejected list and allow them to apply again.`,
+            icon: "question",
+            showCancelButton: true,
+            confirmButtonColor: "#2563eb",
+            cancelButtonColor: "#475569",
+            confirmButtonText: "Yes, Reset Application",
+            background: "#1f2937",
+            color: "#fff"
+        });
+
+        if (result.isConfirmed) {
+            try {
+                await postJson(`/api/admin/scripted-languages/${lang._id}/reset-contributor`, {
+                    userId: userObj._id
+                });
+                Swal.fire({
+                    title: "Reset!",
+                    text: `Application for ${userObj.firstname || userObj.username} has been reset. They can now apply again.`,
+                    icon: "success",
+                    background: "#1f2937",
+                    color: "#fff"
+                });
+                loadFullSummary(selectedSummaryLangCode);
+            } catch (e) {
+                Swal.fire({
+                    title: "Error",
+                    text: e.message,
+                    icon: "error",
+                    background: "#1f2937",
+                    color: "#fff"
+                });
+            }
+        }
+    }
+
+    async function handleUpdateAudioConfig(userObj, configData, lang) {
+        try {
+            await postJson("/api/admin/contributors/update-audio-config", {
+                userId: userObj._id,
+                applicationType: "scripted_call",
+                languageCode: lang.code,
+                noiseGateDb: parseInt(configData.noiseGateDb) || 0,
+                notch5kEnabled: configData.notch5kEnabled === true || configData.notch5kEnabled === "true",
+                deHissMode: configData.deHissMode || "off",
+                deEsserMode: configData.deEsserMode || "off"
+            });
+            const Toast = Swal.mixin({
+                toast: true,
+                position: "top-end",
+                showConfirmButton: false,
+                timer: 2500,
+                timerProgressBar: true,
+                background: "#1f2937",
+                color: "#fff"
+            });
+            Toast.fire({
+                icon: "success",
+                title: `Audio configurations updated for ${userObj.firstname || userObj.username}`
+            });
+            loadFullSummary(selectedSummaryLangCode);
+        } catch (e) {
+            Swal.fire({
+                title: "Error",
+                text: e.message,
+                icon: "error",
+                background: "#1f2937",
+                color: "#fff"
+            });
+        }
+    }
+
+    async function openEditAudioConfigModal(userObj, lang) {
+        const currentGate = userObj.noiseGateDb !== undefined ? userObj.noiseGateDb : 0;
+        const currentNotch = userObj.notch5kEnabled !== undefined ? userObj.notch5kEnabled : false;
+        const currentDeHiss = userObj.deHissMode || "off";
+        const currentDeEsser = userObj.deEsserMode || "off";
+        const langName = lang ? lang.name : "Scripted Calls";
+
+        const { value: formValues } = await Swal.fire({
+            title: "Edit Audio DSP Configurations",
+            html: `
+                <div class="text-left text-xs text-neutral-300 mb-4 space-y-1.5 bg-neutral-850 p-3.5 rounded-xl border border-neutral-700 shadow-inner">
+                    <div class="flex justify-between items-center"><strong class="text-white text-sm">${userObj.firstname} ${userObj.lastname}</strong> <span class="font-mono text-warning-400 font-bold">${userObj.speaker_id}</span></div>
+                    <div><strong class="text-neutral-400">Workload Scope:</strong> <span class="text-warning-400 font-semibold">Scripted Calls (${langName})</span></div>
+                    <div class="text-neutral-400 text-[11px] pt-1.5 border-t border-neutral-700/60 mt-1.5">
+                        Settings apply automatically to this contributor in real-time when recording for this scripted call workload.
+                    </div>
+                </div>
+
+                <div class="space-y-3.5 text-left text-xs">
+                    <div>
+                        <label class="block font-bold text-neutral-300 uppercase tracking-wider mb-1 flex items-center justify-between">
+                            <span>1. Noise Gate (dB)</span>
+                            <span class="text-[10px] font-normal text-neutral-400">Attenuates silence pauses</span>
+                        </label>
+                        <select id="swal-noise-gate" class="w-full bg-neutral-800 border border-neutral-600 rounded-lg p-2.5 text-white font-semibold focus:ring-2 focus:ring-warning-500">
+                            <option value="0" ${currentGate === 0 ? "selected" : ""}>0 dB (RAW / Disabled)</option>
+                            <option value="-6" ${currentGate === -6 ? "selected" : ""}>-6 dB (Light Attenuation)</option>
+                            <option value="-10" ${currentGate === -10 ? "selected" : ""}>-10 dB (Medium Attenuation)</option>
+                            <option value="-12" ${currentGate === -12 ? "selected" : ""}>-12 dB (Standard Attenuation)</option>
+                            <option value="-15" ${currentGate === -15 ? "selected" : ""}>-15 dB (Heavy Attenuation)</option>
+                            <option value="-18" ${currentGate === -18 ? "selected" : ""}>-18 dB (Maximum Attenuation)</option>
+                        </select>
+                    </div>
+
+                    <div>
+                        <label class="block font-bold text-neutral-300 uppercase tracking-wider mb-1 flex items-center justify-between">
+                            <span>2. 5 kHz Static Whine Filter</span>
+                            <span class="text-[10px] font-normal text-neutral-400">Removes USB 5kHz static line</span>
+                        </label>
+                        <select id="swal-notch5k" class="w-full bg-neutral-800 border border-neutral-600 rounded-lg p-2.5 text-white font-semibold focus:ring-2 focus:ring-warning-500">
+                            <option value="true" ${currentNotch ? "selected" : ""}>Enabled (Active Notch at 5000 Hz)</option>
+                            <option value="false" ${!currentNotch ? "selected" : ""}>Disabled (Off / Bypassed)</option>
+                        </select>
+                    </div>
+
+                    <div>
+                        <label class="block font-bold text-neutral-300 uppercase tracking-wider mb-1 flex items-center justify-between">
+                            <span>3. De-Hiss Filter (Air & Hiss)</span>
+                            <span class="text-[10px] font-normal text-neutral-400">High-shelf pre-amp noise cut</span>
+                        </label>
+                        <select id="swal-dehiss" class="w-full bg-neutral-800 border border-neutral-600 rounded-lg p-2.5 text-white font-semibold focus:ring-2 focus:ring-warning-500">
+                            <option value="off" ${currentDeHiss === "off" ? "selected" : ""}>Off (Full Spectrum)</option>
+                            <option value="14k" ${currentDeHiss === "14k" ? "selected" : ""}>14 kHz Cut (Gentle High-Shelf)</option>
+                            <option value="12k" ${currentDeHiss === "12k" ? "selected" : ""}>12 kHz Cut (Standard De-Hiss)</option>
+                            <option value="10k" ${currentDeHiss === "10k" ? "selected" : ""}>10 kHz Cut (Aggressive De-Hiss)</option>
+                            <option value="8k" ${currentDeHiss === "8k" ? "selected" : ""}>8 kHz Cut (Maximum De-Hiss)</option>
+                        </select>
+                    </div>
+
+                    <div>
+                        <label class="block font-bold text-neutral-300 uppercase tracking-wider mb-1 flex items-center justify-between">
+                            <span>4. De-Esser Filter (Sibilance Control)</span>
+                            <span class="text-[10px] font-normal text-neutral-400">Reduces harsh 's' and 'sh' sounds</span>
+                        </label>
+                        <select id="swal-deesser" class="w-full bg-neutral-800 border border-neutral-600 rounded-lg p-2.5 text-white font-semibold focus:ring-2 focus:ring-warning-500">
+                            <option value="off" ${currentDeEsser === "off" ? "selected" : ""}>Off (No De-Essing)</option>
+                            <option value="light" ${currentDeEsser === "light" ? "selected" : ""}>Light (-3 dB attenuation)</option>
+                            <option value="medium" ${currentDeEsser === "medium" ? "selected" : ""}>Medium (-6 dB attenuation)</option>
+                            <option value="strong" ${currentDeEsser === "strong" ? "selected" : ""}>Strong (-9 dB attenuation)</option>
+                        </select>
+                    </div>
+                </div>
+            `,
+            focusConfirm: false,
+            showCancelButton: true,
+            confirmButtonText: "Save Audio Configs",
+            cancelButtonText: "Cancel",
+            confirmButtonColor: "#f59e0b",
+            cancelButtonColor: "#475569",
+            background: "#171717",
+            color: "#ffffff",
+            preConfirm: () => {
+                const noiseGateDb = document.getElementById("swal-noise-gate").value;
+                const notch5kEnabled = document.getElementById("swal-notch5k").value;
+                const deHissMode = document.getElementById("swal-dehiss").value;
+                const deEsserMode = document.getElementById("swal-deesser").value;
+                return { noiseGateDb, notch5kEnabled, deHissMode, deEsserMode };
+            }
+        });
+
+        if (formValues) {
+            handleUpdateAudioConfig(userObj, formValues, lang);
         }
     }
 
@@ -448,205 +689,731 @@ export default function AdminScriptedLanguages() {
                     </div>
                 )}
 
-                {/* Filters & Active Language Controls */}
-                <div className="relative overflow-hidden rounded-3xl border border-neutral-800 bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 p-5 shadow-xl flex flex-wrap items-center justify-between gap-4">
-                    <div className="absolute top-0 right-0 w-64 h-64 bg-primary-500/5 rounded-full blur-3xl pointer-events-none" />
-                    <div className="flex items-center gap-3 flex-1 min-w-[280px] max-w-md relative z-10">
-                        <div className="relative w-full">
-                            <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-400" />
-                            <input
-                                type="text"
-                                placeholder="Search active scripted languages or subprojects..."
-                                value={searchQuery}
-                                onChange={(e) => setSearchQuery(e.target.value)}
-                                className="w-full pl-9 pr-4 py-2 bg-neutral-900/80 border border-neutral-700 rounded-xl text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-primary-500"
-                            />
-                        </div>
-                    </div>
-
-                    <div className="flex items-center gap-3">
-                        {/* Only Active Switch */}
-                        <label className="flex items-center gap-2 text-xs font-bold text-neutral-300 cursor-pointer select-none bg-neutral-900/80 border border-neutral-700 px-3 py-2 rounded-xl">
-                            <input
-                                type="checkbox"
-                                checked={showOnlyActive}
-                                onChange={(e) => setShowOnlyActive(e.target.checked)}
-                                className="rounded bg-neutral-800 border-neutral-600 text-primary-600 focus:ring-0 cursor-pointer"
-                            />
-                            <span>Show Only Active Languages</span>
-                        </label>
-
-                        <button
-                            onClick={load}
-                            disabled={loading}
-                            title="Refresh Languages"
-                            className="p-2 rounded-xl bg-neutral-900/80 hover:bg-neutral-700 text-neutral-300 hover:text-white border border-neutral-700 transition-all cursor-pointer"
-                        >
-                            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-                        </button>
-                    </div>
+                {/* View Mode Toggle: Configurations vs Summary */}
+                <div className="flex items-center gap-2 border-b border-neutral-800 pb-3">
+                    <button
+                        onClick={() => setActiveMainTab("languages")}
+                        className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm transition-all cursor-pointer ${
+                            activeMainTab === "languages"
+                                ? "bg-primary-600 text-white shadow-lg shadow-primary-500/20"
+                                : "bg-neutral-900 text-neutral-400 hover:text-white hover:bg-neutral-800 border border-neutral-800"
+                        }`}
+                    >
+                        <FolderKanban className="w-4 h-4" />
+                        <span>🗂️ Language Configurations</span>
+                    </button>
+                    <button
+                        onClick={() => switchToSummary()}
+                        className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm transition-all cursor-pointer ${
+                            activeMainTab === "summary"
+                                ? "bg-warning-500 text-neutral-950 shadow-lg shadow-warning-500/20 font-extrabold"
+                                : "bg-neutral-900 text-neutral-400 hover:text-white hover:bg-neutral-800 border border-neutral-800"
+                        }`}
+                    >
+                        <BarChart3 className="w-4 h-4" />
+                        <span>📊 Contributors & Demographics Summary</span>
+                        {summaryOverview && (
+                            <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-neutral-950 text-warning-400 border border-neutral-800 ml-1">
+                                {summaryOverview.totalContributors || 0} Contributors
+                            </span>
+                        )}
+                    </button>
                 </div>
 
-                {/* Base Languages List */}
-                {loading ? (
-                    <div className="flex flex-col items-center justify-center py-24 text-neutral-500">
-                        <div className="w-10 h-10 border-4 border-primary-500 border-t-transparent rounded-full animate-spin mb-4" />
-                        <p className="text-sm font-semibold">Loading Scripted Call Languages...</p>
-                    </div>
-                ) : filteredBaseLanguages.length === 0 ? (
-                    <div className="text-center py-20 border border-dashed border-neutral-800 rounded-2xl bg-neutral-900/40">
-                        <Radio className="w-12 h-12 text-neutral-600 mx-auto mb-3" />
-                        <h3 className="text-base font-bold text-neutral-300">
-                            {showOnlyActive ? "No Active Scripted Languages Found" : "No Languages Match Search"}
-                        </h3>
-                        <p className="text-xs text-neutral-500 mt-1 max-w-sm mx-auto mb-4">
-                            {showOnlyActive 
-                                ? "Currently there are no active languages enabled for scripted calls. Click below to add a language."
-                                : "Try clearing your search filter or add a new scripted language."
-                            }
-                        </p>
-                        <button
-                            onClick={openModal}
-                            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-primary-600 hover:bg-primary-500 text-white font-bold text-xs cursor-pointer"
-                        >
-                            <Plus className="w-3.5 h-3.5" />
-                            <span>Add New Language</span>
-                        </button>
-                    </div>
-                ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-                        {filteredBaseLanguages.map((g) => (
-                            <div
-                                key={g.slug}
-                                className={`relative overflow-hidden rounded-3xl p-6 border transition-all duration-300 flex flex-col justify-between shadow-xl group ${
-                                    g.enabled 
-                                        ? "border-neutral-800 bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 hover:border-neutral-700 hover:shadow-2xl" 
-                                        : "border-neutral-800/80 bg-neutral-900/40 opacity-70 hover:opacity-100"
-                                }`}
-                            >
-                                <div className="absolute top-0 right-0 w-32 h-32 bg-primary-500/10 rounded-full blur-2xl pointer-events-none group-hover:bg-primary-500/15 transition-all" />
-                                <div className="relative z-10">
-                                    {/* Card Top */}
-                                    <div className="flex items-start justify-between gap-3 mb-3">
-                                        <div>
-                                            <div className="flex items-center gap-2 flex-wrap">
-                                                <h3 className="font-extrabold text-white text-xl group-hover:text-primary-400 transition-colors">
-                                                    {g.baseName}
-                                                </h3>
-                                                <span className="text-xs font-mono px-2 py-0.5 rounded bg-neutral-900 text-neutral-400 border border-neutral-700">
-                                                    {g.slug}
-                                                </span>
-                                            </div>
-                                            <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-                                                <span className="text-[11px] font-bold text-primary-400 bg-primary-950/70 border border-primary-800/50 px-2 py-0.5 rounded-md flex items-center gap-1">
-                                                    <FolderKanban className="w-3 h-3" />
-                                                    <span>{g.subprojects.length} Scripted Subproject{g.subprojects.length !== 1 ? 's' : ''} ({g.activeCount} Active)</span>
-                                                </span>
-                                            </div>
-                                        </div>
+                {activeMainTab === "languages" && (
+                    <div className="space-y-6">
+                        {/* Filters & Active Language Controls */}
+                        <div className="relative overflow-hidden rounded-3xl border border-neutral-800 bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 p-5 shadow-xl flex flex-wrap items-center justify-between gap-4">
+                            <div className="absolute top-0 right-0 w-64 h-64 bg-primary-500/5 rounded-full blur-3xl pointer-events-none" />
+                            <div className="flex items-center gap-3 flex-1 min-w-[280px] max-w-md relative z-10">
+                                <div className="relative w-full">
+                                    <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-400" />
+                                    <input
+                                        type="text"
+                                        placeholder="Search active scripted languages or subprojects..."
+                                        value={searchQuery}
+                                        onChange={(e) => setSearchQuery(e.target.value)}
+                                        className="w-full pl-9 pr-4 py-2 bg-neutral-900/80 border border-neutral-700 rounded-xl text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-primary-500"
+                                    />
+                                </div>
+                            </div>
 
-                                        <button
-                                            onClick={() => toggleGroupEnable(g)}
-                                            disabled={saving === g.slug}
-                                            title={`Click to ${g.enabled ? 'disable' : 'activate'} all scripted subprojects for ${g.baseName}`}
-                                            className={`px-3 py-1 rounded-full text-xs font-extrabold uppercase tracking-wider flex items-center gap-1.5 transition-all cursor-pointer hover:scale-105 ${
-                                                g.enabled 
-                                                    ? "bg-emerald-900/60 text-emerald-300 border border-emerald-700/60 hover:bg-emerald-800/80" 
-                                                    : "bg-neutral-800 text-neutral-400 border border-neutral-700 hover:bg-neutral-700 hover:text-white"
-                                            }`}
-                                        >
-                                            <span className={`w-1.5 h-1.5 rounded-full ${g.enabled ? 'bg-emerald-400' : 'bg-neutral-500'}`} />
-                                            <span>{saving === g.slug ? "Updating..." : g.enabled ? "Active" : "Disabled"}</span>
-                                        </button>
-                                    </div>
+                            <div className="flex items-center gap-3">
+                                {/* Only Active Switch */}
+                                <label className="flex items-center gap-2 text-xs font-bold text-neutral-300 cursor-pointer select-none bg-neutral-900/80 border border-neutral-700 px-3 py-2 rounded-xl">
+                                    <input
+                                        type="checkbox"
+                                        checked={showOnlyActive}
+                                        onChange={(e) => setShowOnlyActive(e.target.checked)}
+                                        className="rounded bg-neutral-800 border-neutral-600 text-primary-600 focus:ring-0 cursor-pointer"
+                                    />
+                                    <span>Show Only Active Languages</span>
+                                </label>
 
-                                    {/* Subprojects Previews */}
-                                    <div className="mt-3 space-y-1.5">
-                                        <span className="text-[10px] uppercase font-bold text-neutral-500 tracking-wider">Configured Subprojects:</span>
-                                        <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto custom-scrollbar">
-                                            {g.subprojects.map(s => (
-                                                <span
-                                                    key={s._id}
-                                                    className={`text-[11px] px-2 py-1 rounded-lg border flex items-center gap-1 font-medium ${
-                                                        s.enabled 
-                                                            ? "bg-neutral-900/90 text-neutral-200 border-neutral-700" 
-                                                            : "bg-neutral-900/40 text-neutral-500 border-neutral-800"
+                                <button
+                                    onClick={load}
+                                    disabled={loading}
+                                    title="Refresh Languages"
+                                    className="p-2 rounded-xl bg-neutral-900/80 hover:bg-neutral-700 text-neutral-300 hover:text-white border border-neutral-700 transition-all cursor-pointer"
+                                >
+                                    <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Base Languages List */}
+                        {loading ? (
+                            <div className="flex flex-col items-center justify-center py-24 text-neutral-500">
+                                <div className="w-10 h-10 border-4 border-primary-500 border-t-transparent rounded-full animate-spin mb-4" />
+                                <p className="text-sm font-semibold">Loading Scripted Call Languages...</p>
+                            </div>
+                        ) : filteredBaseLanguages.length === 0 ? (
+                            <div className="text-center py-20 border border-dashed border-neutral-800 rounded-2xl bg-neutral-900/40">
+                                <Radio className="w-12 h-12 text-neutral-600 mx-auto mb-3" />
+                                <h3 className="text-base font-bold text-neutral-300">
+                                    {showOnlyActive ? "No Active Scripted Languages Found" : "No Languages Match Search"}
+                                </h3>
+                                <p className="text-xs text-neutral-500 mt-1 max-w-sm mx-auto mb-4">
+                                    {showOnlyActive 
+                                        ? "Currently there are no active languages enabled for scripted calls. Click below to add a language."
+                                        : "Try clearing your search filter or add a new scripted language."
+                                    }
+                                </p>
+                                <button
+                                    onClick={openModal}
+                                    className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-primary-600 hover:bg-primary-500 text-white font-bold text-xs cursor-pointer"
+                                >
+                                    <Plus className="w-3.5 h-3.5" />
+                                    <span>Add New Language</span>
+                                </button>
+                            </div>
+                        ) : (
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                                {filteredBaseLanguages.map((g) => (
+                                    <div
+                                        key={g.slug}
+                                        className={`relative overflow-hidden rounded-3xl p-6 border transition-all duration-300 flex flex-col justify-between shadow-xl group ${
+                                            g.enabled 
+                                                ? "border-neutral-800 bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 hover:border-neutral-700 hover:shadow-2xl" 
+                                                : "border-neutral-800/80 bg-neutral-900/40 opacity-70 hover:opacity-100"
+                                        }`}
+                                    >
+                                        <div className="absolute top-0 right-0 w-32 h-32 bg-primary-500/10 rounded-full blur-2xl pointer-events-none group-hover:bg-primary-500/15 transition-all" />
+                                        <div className="relative z-10">
+                                            {/* Card Top */}
+                                            <div className="flex items-start justify-between gap-3 mb-3">
+                                                <div>
+                                                    <div className="flex items-center gap-2 flex-wrap">
+                                                        <h3 className="font-extrabold text-white text-xl group-hover:text-primary-400 transition-colors">
+                                                            {g.baseName}
+                                                        </h3>
+                                                        <span className="text-xs font-mono px-2 py-0.5 rounded bg-neutral-900 text-neutral-400 border border-neutral-700">
+                                                            {g.slug}
+                                                        </span>
+                                                    </div>
+                                                    <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                                                        <span className="text-[11px] font-bold text-primary-400 bg-primary-950/70 border border-primary-800/50 px-2 py-0.5 rounded-md flex items-center gap-1">
+                                                            <FolderKanban className="w-3 h-3" />
+                                                            <span>{g.subprojects.length} Scripted Subproject{g.subprojects.length !== 1 ? 's' : ''} ({g.activeCount} Active)</span>
+                                                        </span>
+                                                    </div>
+                                                </div>
+
+                                                <button
+                                                    onClick={() => toggleGroupEnable(g)}
+                                                    disabled={saving === g.slug}
+                                                    title={`Click to ${g.enabled ? 'disable' : 'activate'} all scripted subprojects for ${g.baseName}`}
+                                                    className={`px-3 py-1 rounded-full text-xs font-extrabold uppercase tracking-wider flex items-center gap-1.5 transition-all cursor-pointer hover:scale-105 ${
+                                                        g.enabled 
+                                                            ? "bg-emerald-900/60 text-emerald-300 border border-emerald-700/60 hover:bg-emerald-800/80" 
+                                                            : "bg-neutral-800 text-neutral-400 border border-neutral-700 hover:bg-neutral-700 hover:text-white"
                                                     }`}
                                                 >
-                                                    <span className={`w-1.5 h-1.5 rounded-full ${s.enabled ? 'bg-emerald-400' : 'bg-neutral-600'}`} />
-                                                    <span className="truncate max-w-[170px]">{s.projectName || s.name}</span>
-                                                    {s.enableCallRoles && <span className="text-[10px] text-indigo-400">🎭</span>}
-                                                </span>
-                                            ))}
+                                                    <span className={`w-1.5 h-1.5 rounded-full ${g.enabled ? 'bg-emerald-400' : 'bg-neutral-500'}`} />
+                                                    <span>{saving === g.slug ? "Updating..." : g.enabled ? "Active" : "Disabled"}</span>
+                                                </button>
+                                            </div>
+
+                                            {/* Subprojects Previews */}
+                                            <div className="mt-3 space-y-1.5">
+                                                <span className="text-[10px] uppercase font-bold text-neutral-500 tracking-wider">Configured Subprojects:</span>
+                                                <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto custom-scrollbar">
+                                                    {g.subprojects.map(s => (
+                                                        <span
+                                                            key={s._id}
+                                                            className={`text-[11px] px-2 py-1 rounded-lg border flex items-center gap-1 font-medium ${
+                                                                s.enabled 
+                                                                    ? "bg-neutral-900/90 text-neutral-200 border-neutral-700" 
+                                                                    : "bg-neutral-900/40 text-neutral-500 border-neutral-800"
+                                                            }`}
+                                                        >
+                                                            <span className={`w-1.5 h-1.5 rounded-full ${s.enabled ? 'bg-emerald-400' : 'bg-neutral-600'}`} />
+                                                            <span className="truncate max-w-[170px]">{s.projectName || s.name}</span>
+                                                            {s.enableCallRoles && <span className="text-[10px] text-indigo-400">🎭</span>}
+                                                        </span>
+                                                    ))}
+                                                </div>
+                                            </div>
+
+                                            {/* Metrics Grid */}
+                                            <div className="grid grid-cols-2 gap-2 mt-4 p-3 bg-neutral-900/70 border border-neutral-800 rounded-xl text-xs">
+                                                <div>
+                                                    <span className="text-neutral-500 block text-[10px] uppercase font-bold">Hourly Payout</span>
+                                                    <span className="font-bold text-emerald-400 text-sm font-mono">
+                                                        ${g.maxPayout || 0} <span className="text-[10px] text-neutral-400 font-normal">/ hr</span>
+                                                    </span>
+                                                </div>
+                                                <div>
+                                                    <span className="text-neutral-500 block text-[10px] uppercase font-bold">Sample Rate</span>
+                                                    <span className="font-bold text-white text-xs font-mono">
+                                                        {g.sampleRate ? `${g.sampleRate / 1000} kHz` : "48 kHz"}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* Actions Footer */}
+                                        <div className="mt-5 pt-3 border-t border-neutral-700/60 flex flex-col gap-2">
+                                            <Link
+                                                to={`/admin/scripted-languages/${g.slug}/subprojects`}
+                                                className="w-full py-2.5 px-4 rounded-xl bg-primary-600 hover:bg-primary-500 text-white text-xs font-extrabold flex items-center justify-center gap-2 shadow-md transition-all cursor-pointer"
+                                            >
+                                                <FolderKanban className="w-4 h-4" />
+                                                <span>Manage Subprojects ({g.subprojects.length})</span>
+                                                <ArrowRight className="w-3.5 h-3.5" />
+                                            </Link>
+
+                                            <div className="flex items-center justify-between gap-2 pt-1">
+                                                <div className="flex items-center gap-1.5">
+                                                    <button
+                                                        onClick={() => switchToSummary(g.slug || g.code || g.baseName)}
+                                                        className="px-2.5 py-1 rounded-lg bg-neutral-700/60 hover:bg-neutral-700 text-neutral-300 hover:text-white text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
+                                                        title="View language collection statistics and demographics"
+                                                    >
+                                                        <Activity className="w-3.5 h-3.5 text-primary-400" />
+                                                        <span>Stats</span>
+                                                    </button>
+                                                    <button
+                                                        onClick={() => {
+                                                            switchToSummary(g.slug || g.code || g.baseName);
+                                                            setSummaryUserTab("approved");
+                                                        }}
+                                                        className="px-2.5 py-1 rounded-lg bg-neutral-700/60 hover:bg-neutral-700 text-neutral-300 hover:text-white text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
+                                                        title="View, remove, and manage contributors for this language"
+                                                    >
+                                                        <Users className="w-3.5 h-3.5 text-indigo-400" />
+                                                        <span>Contributors</span>
+                                                    </button>
+                                                </div>
+
+                                                <div className="flex items-center gap-1">
+                                                    <button
+                                                        onClick={() => openEditModal(g.baseRecord)}
+                                                        className="p-1.5 rounded-lg hover:bg-neutral-700 text-neutral-400 hover:text-white transition-colors cursor-pointer"
+                                                        title="Edit Language"
+                                                    >
+                                                        <Edit2 className="w-4 h-4" />
+                                                    </button>
+                                                    <button
+                                                        onClick={() => handleDelete(g.baseRecord)}
+                                                        className="p-1.5 rounded-lg hover:bg-rose-900/40 text-neutral-400 hover:text-rose-400 transition-colors cursor-pointer"
+                                                        title="Delete Language"
+                                                    >
+                                                        <Trash2 className="w-4 h-4" />
+                                                    </button>
+                                                </div>
+                                            </div>
                                         </div>
                                     </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                )}
 
-                                    {/* Metrics Grid */}
-                                    <div className="grid grid-cols-2 gap-2 mt-4 p-3 bg-neutral-900/70 border border-neutral-800 rounded-xl text-xs">
-                                        <div>
-                                            <span className="text-neutral-500 block text-[10px] uppercase font-bold">Hourly Payout</span>
-                                            <span className="font-bold text-emerald-400 text-sm font-mono">
-                                                ${g.maxPayout || 0} <span className="text-[10px] text-neutral-400 font-normal">/ hr</span>
-                                            </span>
-                                        </div>
-                                        <div>
-                                            <span className="text-neutral-500 block text-[10px] uppercase font-bold">Sample Rate</span>
-                                            <span className="font-bold text-white text-xs font-mono">
-                                                {g.sampleRate ? `${g.sampleRate / 1000} kHz` : "48 kHz"}
-                                            </span>
-                                        </div>
+                {/* CONTRIBUTORS & DEMOGRAPHICS SUMMARY VIEW */}
+                {activeMainTab === "summary" && (
+                    <div className="space-y-8 animate-fade-in">
+                        {/* Whole Scripted Calls Collection Overview */}
+                        {summaryOverview && (
+                            <div className="bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 border border-neutral-800 rounded-3xl p-6 shadow-xl relative overflow-hidden">
+                                <div className="absolute top-0 right-0 w-80 h-80 bg-warning-500/5 rounded-full blur-3xl pointer-events-none" />
+                                <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2 relative z-10">
+                                    <Building2 className="w-5 h-5 text-warning-400" />
+                                    Whole Scripted Calls Collection Overview (All Languages)
+                                </h2>
+                                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4 relative z-10">
+                                    <div className="bg-gradient-to-br from-neutral-950 via-neutral-900 to-neutral-850 border border-neutral-800 p-4 rounded-2xl shadow-sm">
+                                        <span className="text-[11px] text-neutral-400 font-medium block">Total Collection Duration</span>
+                                        <span className="text-lg font-bold text-white mt-1 block">{formatSecs(summaryOverview.totalSeconds)}</span>
+                                        <span className="text-[11px] text-neutral-400 font-normal mt-0.5 block">{summaryOverview.totalCount || 0} total calls / phrases</span>
                                     </div>
-                                </div>
-
-                                {/* Actions Footer */}
-                                <div className="mt-5 pt-3 border-t border-neutral-700/60 flex flex-col gap-2">
-                                    <Link
-                                        to={`/admin/scripted-languages/${g.slug}/subprojects`}
-                                        className="w-full py-2.5 px-4 rounded-xl bg-primary-600 hover:bg-primary-500 text-white text-xs font-extrabold flex items-center justify-center gap-2 shadow-md transition-all cursor-pointer"
-                                    >
-                                        <FolderKanban className="w-4 h-4" />
-                                        <span>Manage Subprojects ({g.subprojects.length})</span>
-                                        <ArrowRight className="w-3.5 h-3.5" />
-                                    </Link>
-
-                                    <div className="flex items-center justify-between gap-2 pt-1">
-                                        <div className="flex items-center gap-1.5">
-                                            <button
-                                                onClick={() => fetchSummary(g.baseRecord, "summary")}
-                                                className="px-2.5 py-1 rounded-lg bg-neutral-700/60 hover:bg-neutral-700 text-neutral-300 hover:text-white text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
-                                            >
-                                                <Activity className="w-3.5 h-3.5 text-primary-400" />
-                                                <span>Stats</span>
-                                            </button>
-                                            <button
-                                                onClick={() => fetchSummary(g.baseRecord, "users")}
-                                                className="px-2.5 py-1 rounded-lg bg-neutral-700/60 hover:bg-neutral-700 text-neutral-300 hover:text-white text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
-                                            >
-                                                <Users className="w-3.5 h-3.5 text-indigo-400" />
-                                                <span>Contributors</span>
-                                            </button>
-                                        </div>
-
-                                        <div className="flex items-center gap-1">
-                                            <button
-                                                onClick={() => openEditModal(g.baseRecord)}
-                                                className="p-1.5 rounded-lg hover:bg-neutral-700 text-neutral-400 hover:text-white transition-colors cursor-pointer"
-                                                title="Edit Language"
-                                            >
-                                                <Edit2 className="w-4 h-4" />
-                                            </button>
-                                            <button
-                                                onClick={() => handleDelete(g.baseRecord)}
-                                                className="p-1.5 rounded-lg hover:bg-rose-900/40 text-neutral-400 hover:text-rose-400 transition-colors cursor-pointer"
-                                                title="Delete Language"
-                                            >
-                                                <Trash2 className="w-4 h-4" />
-                                            </button>
-                                        </div>
+                                    <div className="bg-gradient-to-br from-emerald-950/40 via-neutral-950 to-neutral-900 border border-emerald-500/30 p-4 rounded-2xl shadow-sm">
+                                        <span className="text-[11px] text-emerald-300 font-medium block">Approved Duration</span>
+                                        <span className="text-lg font-bold text-emerald-400 mt-1 block">{formatSecs(summaryOverview.totalApprovedSeconds)}</span>
+                                        <span className="text-[11px] text-emerald-500/80 font-normal mt-0.5 block">{summaryOverview.approvedCount || 0} approved</span>
+                                    </div>
+                                    <div className="bg-gradient-to-br from-rose-950/40 via-neutral-950 to-neutral-900 border border-rose-500/30 p-4 rounded-2xl shadow-sm">
+                                        <span className="text-[11px] text-rose-300 font-medium block">Rejected Duration</span>
+                                        <span className="text-lg font-bold text-rose-400 mt-1 block">{formatSecs(summaryOverview.totalRejectedSeconds)}</span>
+                                        <span className="text-[11px] text-rose-500/80 font-normal mt-0.5 block">{summaryOverview.rejectedCount || 0} rejected</span>
+                                    </div>
+                                    <div className="bg-gradient-to-br from-amber-950/40 via-neutral-950 to-neutral-900 border border-amber-500/30 p-4 rounded-2xl shadow-sm">
+                                        <span className="text-[11px] text-amber-300 font-medium block">Pending Duration</span>
+                                        <span className="text-lg font-bold text-amber-400 mt-1 block">{formatSecs(summaryOverview.totalPendingSeconds)}</span>
+                                        <span className="text-[11px] text-amber-500/80 font-semibold mt-0.5 block">{summaryOverview.pendingCount || 0} pending</span>
+                                    </div>
+                                    <div className="bg-gradient-to-br from-emerald-950/30 via-neutral-950 to-neutral-900 border border-emerald-500/30 p-4 rounded-2xl shadow-sm">
+                                        <span className="text-[11px] text-emerald-300 font-medium block">Approval Rate</span>
+                                        <span className="text-lg font-bold text-emerald-300 mt-1 block">{summaryOverview.approvalRate ?? 0}%</span>
+                                        <span className="text-[11px] text-neutral-400 font-normal mt-0.5 block">Evaluated calls</span>
+                                    </div>
+                                    <div className="bg-gradient-to-br from-rose-950/30 via-neutral-950 to-neutral-900 border border-rose-500/30 p-4 rounded-2xl shadow-sm">
+                                        <span className="text-[11px] text-rose-300 font-medium block">Rejection Rate</span>
+                                        <span className="text-lg font-bold text-rose-300 mt-1 block">{summaryOverview.rejectionRate ?? 0}%</span>
+                                        <span className="text-[11px] text-neutral-400 font-normal mt-0.5 block">Evaluated calls</span>
                                     </div>
                                 </div>
                             </div>
-                        ))}
+                        )}
+
+                        {summaryLoading ? (
+                            <div className="bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 border border-neutral-800 rounded-3xl text-center py-20 shadow-xl">
+                                <Loader2 className="w-8 h-8 animate-spin text-warning-500 mx-auto mb-3" />
+                                <p className="text-neutral-400">Loading scripted calls contributor summary data...</p>
+                            </div>
+                        ) : summaryLanguages.length === 0 ? (
+                            <div className="bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 border border-neutral-800 rounded-3xl text-center py-20 shadow-xl">
+                                <Users className="w-12 h-12 text-neutral-500 mx-auto mb-4" />
+                                <h3 className="text-xl font-semibold mb-2 text-white">No Scripted Languages Found</h3>
+                                <p className="text-neutral-400 mb-6">
+                                    No scripted call recordings or contributor applications found yet.
+                                </p>
+                            </div>
+                        ) : (
+                            <div className="space-y-8">
+                                {/* Scripted Languages Cards */}
+                                <div>
+                                    <h2 className="text-lg font-semibold flex items-center gap-2 text-white mb-4">
+                                        <Globe className="w-5 h-5 text-warning-500" />
+                                        Scripted Languages ({summaryLanguages.length})
+                                    </h2>
+
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                                        {summaryLanguages.map((lang) => {
+                                            const isSelected = selectedSummaryLangCode === lang.code;
+                                            return (
+                                                <div
+                                                    key={lang.code}
+                                                    onClick={() => {
+                                                        setSelectedSummaryLangCode(lang.code);
+                                                        setSummaryUserTab("approved");
+                                                        setSummaryUserSearch("");
+                                                    }}
+                                                    className={`border transition-all cursor-pointer p-5 rounded-3xl shadow-xl flex flex-col justify-between relative overflow-hidden ${
+                                                        isSelected 
+                                                            ? "bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 border-warning-500 ring-2 ring-warning-500/30 shadow-warning-500/10" 
+                                                            : "bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 border-neutral-800 hover:border-neutral-700"
+                                                    }`}
+                                                >
+                                                    <div className="relative z-10">
+                                                        <div className="flex items-center justify-between mb-3">
+                                                            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-neutral-800 to-neutral-900 text-warning-400 flex items-center justify-center font-bold text-sm border border-neutral-700 shadow-inner">
+                                                                {lang.code.substring(0, 2).toUpperCase()}
+                                                            </div>
+                                                            <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-neutral-950 border border-neutral-800 text-neutral-300 flex items-center gap-1">
+                                                                <Users className="w-3.5 h-3.5 text-warning-400" />
+                                                                {lang.summary?.totalContributors || 0} Contributors
+                                                            </span>
+                                                        </div>
+
+                                                        <h3 className="text-lg font-bold text-white">
+                                                            {lang.name}
+                                                        </h3>
+                                                        <p className="text-xs text-neutral-400 mt-0.5">
+                                                            {lang.phraseCount || 0} Recorded Calls • <span className="text-emerald-400 font-medium">{formatSecs(lang.approvedSeconds)} Appr.</span>
+                                                        </p>
+
+                                                        <div className="flex flex-wrap gap-1.5 mt-3 text-[11px]">
+                                                            <span className="px-2 py-0.5 rounded bg-emerald-950/80 text-emerald-300 border border-emerald-900/50 font-medium">
+                                                                ✓ {lang.approvalRate}% Appr.
+                                                            </span>
+                                                            <span className="px-2 py-0.5 rounded bg-rose-950/80 text-rose-300 border border-rose-900/50 font-medium">
+                                                                ✕ {lang.rejectionRate}% Rej.
+                                                            </span>
+                                                            <span className="px-2 py-0.5 rounded bg-neutral-950 text-neutral-300 border border-neutral-800 font-medium">
+                                                                {lang.pendingCount} Pending
+                                                            </span>
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="mt-4 pt-3 border-t border-neutral-800/80 flex items-center justify-between text-xs text-neutral-400 relative z-10">
+                                                        <span>Click to view demographics</span>
+                                                        <span className="text-warning-400 font-bold">{isSelected ? "Viewing ↓" : "View →"}</span>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+
+                                {/* Selected Language Demographics & Contributor Detail */}
+                                {(() => {
+                                    const selectedLangData = summaryLanguages.find(l => l.code === selectedSummaryLangCode) || summaryLanguages[0] || null;
+                                    if (!selectedLangData) return null;
+
+                                    return (
+                                        <div className="bg-gradient-to-br from-neutral-900 via-neutral-900/95 to-neutral-850 border border-neutral-800 rounded-3xl p-6 md:p-8 shadow-2xl space-y-6 relative overflow-hidden">
+                                            <div className="absolute top-0 right-0 w-96 h-96 bg-warning-500/5 rounded-full blur-3xl pointer-events-none" />
+                                            <div className="flex flex-wrap items-center justify-between gap-4 border-b border-neutral-800 pb-4 relative z-10">
+                                                <div>
+                                                    <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                                                        <BarChart3 className="w-6 h-6 text-warning-500" />
+                                                        Demographics & Contributor Summary
+                                                        <span className="text-warning-400 font-semibold">— {selectedLangData.name}</span>
+                                                    </h2>
+                                                    <p className="text-xs text-neutral-400 mt-1">
+                                                        Showing detailed age, gender, and contributor user lists for {selectedLangData.name} in Scripted Calls.
+                                                    </p>
+                                                </div>
+                                            </div>
+
+                                            {/* Demographics & Duration Overview Cards */}
+                                            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 relative z-10">
+                                                <div className="bg-gradient-to-br from-neutral-950 via-neutral-900 to-neutral-850 border border-neutral-800 p-3.5 rounded-2xl shadow-sm">
+                                                    <span className="text-[11px] text-neutral-400 font-medium block">Total Language Collection</span>
+                                                    <div className="text-base font-bold text-white mt-1">{formatSecs(selectedLangData.summary?.totalSeconds || selectedLangData.totalSeconds)}</div>
+                                                    <span className="text-[10px] text-neutral-400 font-normal block mt-0.5">{selectedLangData.phraseCount || 0} calls</span>
+                                                </div>
+                                                <div className="bg-gradient-to-br from-emerald-950/40 via-neutral-950 to-neutral-900 border border-emerald-500/30 p-3.5 rounded-2xl shadow-sm">
+                                                    <span className="text-[11px] text-emerald-300 font-medium block">Approved Duration</span>
+                                                    <div className="text-base font-bold text-emerald-400 mt-1">{formatSecs(selectedLangData.summary?.approvedSeconds || selectedLangData.approvedSeconds)}</div>
+                                                    <span className="text-[10px] text-emerald-500/80 font-normal block mt-0.5">{selectedLangData.summary?.approvedCount ?? selectedLangData.approvedCount ?? 0} calls</span>
+                                                </div>
+                                                <div className="bg-gradient-to-br from-rose-950/40 via-neutral-950 to-neutral-900 border border-rose-500/30 p-3.5 rounded-2xl shadow-sm">
+                                                    <span className="text-[11px] text-rose-300 font-medium block">Rejected Duration</span>
+                                                    <div className="text-base font-bold text-red-400 mt-1">{formatSecs(selectedLangData.summary?.rejectedSeconds || selectedLangData.rejectedSeconds)}</div>
+                                                    <span className="text-[10px] text-red-500/80 font-normal block mt-0.5">{selectedLangData.summary?.rejectedCount ?? selectedLangData.rejectedCount ?? 0} calls</span>
+                                                </div>
+                                                <div className="bg-gradient-to-br from-amber-950/40 via-neutral-950 to-neutral-900 border border-amber-500/30 p-3.5 rounded-2xl shadow-sm">
+                                                    <span className="text-[11px] text-amber-300 font-medium block">Pending Duration</span>
+                                                    <div className="text-base font-bold text-amber-400 mt-1">{formatSecs(selectedLangData.summary?.pendingSeconds || selectedLangData.pendingSeconds)}</div>
+                                                    <span className="text-[10px] text-amber-500/80 font-semibold block mt-0.5">{selectedLangData.summary?.pendingCount ?? selectedLangData.pendingCount ?? 0} pending calls</span>
+                                                </div>
+                                                <div className="bg-gradient-to-br from-emerald-950/30 via-neutral-950 to-neutral-900 border border-emerald-500/30 p-4 rounded-2xl shadow-sm">
+                                                    <span className="text-[11px] text-emerald-300 font-medium block">Approval Rate</span>
+                                                    <div className="text-base font-bold text-emerald-300 mt-1">{selectedLangData.approvalRate ?? selectedLangData.summary?.approvalRate ?? 0}%</div>
+                                                    <span className="text-[10px] text-neutral-400 font-normal block mt-0.5">Evaluated</span>
+                                                </div>
+                                                <div className="bg-gradient-to-br from-rose-950/30 via-neutral-950 to-neutral-900 border border-rose-500/30 p-4 rounded-2xl shadow-sm">
+                                                    <span className="text-[11px] text-rose-300 font-medium block">Rejection Rate</span>
+                                                    <div className="text-base font-bold text-red-300 mt-1">{selectedLangData.rejectionRate ?? selectedLangData.summary?.rejectionRate ?? 0}%</div>
+                                                    <span className="text-[10px] text-neutral-400 font-normal block mt-0.5">Evaluated</span>
+                                                </div>
+                                            </div>
+
+                                            {/* Gender & Age Breakdown */}
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 relative z-10">
+                                                {/* Gender Breakdown */}
+                                                <div className="bg-gradient-to-br from-neutral-950 via-neutral-900 to-neutral-850 border border-neutral-800 p-5 rounded-2xl shadow-sm">
+                                                    <h3 className="text-sm font-bold text-neutral-200 uppercase tracking-wider mb-4">Gender Breakdown</h3>
+                                                    <div className="space-y-3">
+                                                        <div>
+                                                            <div className="flex justify-between text-xs mb-1">
+                                                                <span className="text-neutral-300 font-medium">Male</span>
+                                                                <span className="text-blue-400 font-semibold">
+                                                                    {selectedLangData.summary?.male || 0} ({selectedLangData.summary?.totalContributors > 0 ? Math.round(((selectedLangData.summary?.male || 0) / selectedLangData.summary.totalContributors) * 100) : 0}%)
+                                                                </span>
+                                                            </div>
+                                                            <div className="w-full bg-neutral-700 h-2 rounded-full overflow-hidden">
+                                                                <div className="bg-blue-500 h-full rounded-full" style={{ width: `${selectedLangData.summary?.totalContributors > 0 ? ((selectedLangData.summary?.male || 0) / selectedLangData.summary.totalContributors) * 100 : 0}%` }} />
+                                                            </div>
+                                                        </div>
+                                                        <div>
+                                                            <div className="flex justify-between text-xs mb-1">
+                                                                <span className="text-neutral-300 font-medium">Female</span>
+                                                                <span className="text-pink-400 font-semibold">
+                                                                    {selectedLangData.summary?.female || 0} ({selectedLangData.summary?.totalContributors > 0 ? Math.round(((selectedLangData.summary?.female || 0) / selectedLangData.summary.totalContributors) * 100) : 0}%)
+                                                                </span>
+                                                            </div>
+                                                            <div className="w-full bg-neutral-700 h-2 rounded-full overflow-hidden">
+                                                                <div className="bg-pink-500 h-full rounded-full" style={{ width: `${selectedLangData.summary?.totalContributors > 0 ? ((selectedLangData.summary?.female || 0) / selectedLangData.summary.totalContributors) * 100 : 0}%` }} />
+                                                            </div>
+                                                        </div>
+                                                        <div>
+                                                            <div className="flex justify-between text-xs mb-1">
+                                                                <span className="text-neutral-300 font-medium">Other / Unspecified</span>
+                                                                <span className="text-neutral-400 font-semibold">{selectedLangData.summary?.otherGender || 0}</span>
+                                                            </div>
+                                                            <div className="w-full bg-neutral-700 h-2 rounded-full overflow-hidden">
+                                                                <div className="bg-neutral-500 h-full rounded-full" style={{ width: `${selectedLangData.summary?.totalContributors > 0 ? ((selectedLangData.summary?.otherGender || 0) / selectedLangData.summary.totalContributors) * 100 : 0}%` }} />
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                {/* Age Distribution */}
+                                                <div className="bg-gradient-to-br from-neutral-950 via-neutral-900 to-neutral-850 border border-neutral-800 p-5 rounded-2xl shadow-sm">
+                                                    <h3 className="text-sm font-bold text-neutral-200 uppercase tracking-wider mb-4">Age Distribution</h3>
+                                                    <div className="space-y-3">
+                                                        <div>
+                                                            <div className="flex justify-between text-xs mb-1">
+                                                                <span className="text-neutral-300 font-medium">18 – 30 Years</span>
+                                                                <span className="text-warning-400 font-semibold">{selectedLangData.summary?.age_18_30 || 0} contributors</span>
+                                                            </div>
+                                                            <div className="w-full bg-neutral-700 h-2 rounded-full overflow-hidden">
+                                                                <div className="bg-warning-500 h-full rounded-full" style={{ width: `${selectedLangData.summary?.totalContributors > 0 ? ((selectedLangData.summary?.age_18_30 || 0) / selectedLangData.summary.totalContributors) * 100 : 0}%` }} />
+                                                            </div>
+                                                        </div>
+                                                        <div>
+                                                            <div className="flex justify-between text-xs mb-1">
+                                                                <span className="text-neutral-300 font-medium">30 – 45 Years</span>
+                                                                <span className="text-warning-400 font-semibold">{selectedLangData.summary?.age_30_45 || 0} contributors</span>
+                                                            </div>
+                                                            <div className="w-full bg-neutral-700 h-2 rounded-full overflow-hidden">
+                                                                <div className="bg-amber-500 h-full rounded-full" style={{ width: `${selectedLangData.summary?.totalContributors > 0 ? ((selectedLangData.summary?.age_30_45 || 0) / selectedLangData.summary.totalContributors) * 100 : 0}%` }} />
+                                                            </div>
+                                                        </div>
+                                                        <div>
+                                                            <div className="flex justify-between text-xs mb-1">
+                                                                <span className="text-neutral-300 font-medium">45 – 60 Years</span>
+                                                                <span className="text-warning-400 font-semibold">{selectedLangData.summary?.age_45_60 || 0} contributors</span>
+                                                            </div>
+                                                            <div className="w-full bg-neutral-700 h-2 rounded-full overflow-hidden">
+                                                                <div className="bg-orange-500 h-full rounded-full" style={{ width: `${selectedLangData.summary?.totalContributors > 0 ? ((selectedLangData.summary?.age_45_60 || 0) / selectedLangData.summary.totalContributors) * 100 : 0}%` }} />
+                                                            </div>
+                                                        </div>
+                                                        <div>
+                                                            <div className="flex justify-between text-xs mb-1">
+                                                                <span className="text-neutral-300 font-medium">60+ Years</span>
+                                                                <span className="text-warning-400 font-semibold">{selectedLangData.summary?.age_60_plus || 0} contributors</span>
+                                                            </div>
+                                                            <div className="w-full bg-neutral-700 h-2 rounded-full overflow-hidden">
+                                                                <div className="bg-red-500 h-full rounded-full" style={{ width: `${selectedLangData.summary?.totalContributors > 0 ? ((selectedLangData.summary?.age_60_plus || 0) / selectedLangData.summary.totalContributors) * 100 : 0}%` }} />
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            {/* Contributors User Lists Tab */}
+                                            <div className="pt-4 border-t border-neutral-700">
+                                                <div className="flex items-center justify-between border-b border-neutral-700 pb-3 mb-4 gap-4 flex-wrap">
+                                                    <div className="flex gap-2">
+                                                        <button
+                                                            onClick={() => setSummaryUserTab("approved")}
+                                                            className={`px-4 py-2 text-xs font-bold rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer ${
+                                                                summaryUserTab === "approved" ? "bg-emerald-600 text-white" : "bg-neutral-700 text-neutral-300 hover:bg-neutral-600"
+                                                            }`}
+                                                        >
+                                                            <CheckCircle className="w-3.5 h-3.5" />
+                                                            Approved Contributors ({selectedLangData.summary?.approvedUsers?.length || 0})
+                                                        </button>
+                                                        <button
+                                                            onClick={() => setSummaryUserTab("pending")}
+                                                            className={`px-4 py-2 text-xs font-bold rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer ${
+                                                                summaryUserTab === "pending" ? "bg-amber-600 text-white" : "bg-neutral-700 text-neutral-300 hover:bg-neutral-600"
+                                                            }`}
+                                                        >
+                                                            <Clock className="w-3.5 h-3.5" />
+                                                            Pending Contributors ({selectedLangData.summary?.pendingUsers?.length || 0})
+                                                        </button>
+                                                        <button
+                                                            onClick={() => setSummaryUserTab("rejected")}
+                                                            className={`px-4 py-2 text-xs font-bold rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer ${
+                                                                summaryUserTab === "rejected" ? "bg-red-600 text-white" : "bg-neutral-700 text-neutral-300 hover:bg-neutral-600"
+                                                            }`}
+                                                        >
+                                                            <XCircle className="w-3.5 h-3.5" />
+                                                            Rejected Contributors ({selectedLangData.summary?.rejectedUsers?.length || 0})
+                                                        </button>
+                                                    </div>
+
+                                                    <div className="relative min-w-[240px]">
+                                                        <Search className="w-4 h-4 text-neutral-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                                                        <input
+                                                            type="text"
+                                                            placeholder="Search by name, email, speaker_id..."
+                                                            value={summaryUserSearch}
+                                                            onChange={e => setSummaryUserSearch(e.target.value)}
+                                                            className="bg-neutral-700 border border-neutral-600 text-white placeholder-neutral-400 text-xs rounded-lg pl-9 pr-3 py-2 focus:outline-none focus:ring-2 focus:ring-warning-500 w-full"
+                                                        />
+                                                    </div>
+                                                </div>
+
+                                                {/* Table */}
+                                                {(() => {
+                                                    const list = summaryUserTab === "approved" 
+                                                        ? (selectedLangData.summary?.approvedUsers || [])
+                                                        : summaryUserTab === "pending" 
+                                                        ? (selectedLangData.summary?.pendingUsers || [])
+                                                        : (selectedLangData.summary?.rejectedUsers || []);
+                                                    const filtered = list.filter(u => {
+                                                        if (!summaryUserSearch.trim()) return true;
+                                                        const q = summaryUserSearch.toLowerCase();
+                                                        return (
+                                                            (u.firstname + " " + u.lastname).toLowerCase().includes(q) ||
+                                                            (u.username || "").toLowerCase().includes(q) ||
+                                                            (u.email || "").toLowerCase().includes(q) ||
+                                                            (u.speaker_id || "").toLowerCase().includes(q) ||
+                                                            (u.client_spk_id || "").toLowerCase().includes(q) ||
+                                                            (u.state || "").toLowerCase().includes(q) ||
+                                                            (u.vendorCode || u.vendorId?.vendorCode || "").toLowerCase().includes(q)
+                                                        );
+                                                    });
+
+                                                    if (filtered.length === 0) {
+                                                        return (
+                                                            <div className="text-center py-12 text-neutral-400 text-sm">
+                                                                No {summaryUserTab} contributors found for {selectedLangData.name}.
+                                                            </div>
+                                                        );
+                                                    }
+
+                                                    return (
+                                                        <div className="border border-neutral-800 rounded-3xl overflow-hidden bg-gradient-to-br from-neutral-950 via-neutral-900 to-neutral-850 shadow-2xl">
+                                                            <div className="overflow-x-auto">
+                                                                <table className="w-full text-xs">
+                                                                    <thead className="bg-gradient-to-r from-neutral-800 to-neutral-850 text-neutral-300 uppercase tracking-wider font-semibold border-b border-neutral-800">
+                                                                        <tr>
+                                                                            <th className="px-4 py-2.5 text-left">Speaker ID</th>
+                                                                            <th className="px-4 py-2.5 text-left">Contributor</th>
+                                                                            <th className="px-4 py-2.5 text-left">Approved Dur.</th>
+                                                                            <th className="px-4 py-2.5 text-left">Total Dur.</th>
+                                                                            <th className="px-4 py-2.5 text-left">Rejected Dur.</th>
+                                                                            <th className="px-4 py-2.5 text-left">Pending Dur.</th>
+                                                                            <th className="px-4 py-2.5 text-left">Appr. / Rej. %</th>
+                                                                            <th className="px-4 py-2.5 text-left">Status</th>
+                                                                            <th className="px-4 py-2.5 text-left">Audio DSP Configs</th>
+                                                                            <th className="px-4 py-2.5 text-right">Actions</th>
+                                                                        </tr>
+                                                                    </thead>
+                                                                    <tbody className="divide-y divide-neutral-700/80">
+                                                                        {filtered.map(u => (
+                                                                            <tr key={u._id} className="hover:bg-neutral-700/40">
+                                                                                <td className="px-4 py-2.5">
+                                                                                    <div className="font-mono text-warning-400 font-semibold">{u.speaker_id}</div>
+                                                                                    {u.client_spk_id ? (
+                                                                                        <div className="text-[10px] text-emerald-400 font-medium mt-0.5 flex items-center gap-1">
+                                                                                            <span className="text-neutral-400">Client ID:</span>
+                                                                                            <span className="font-mono font-bold bg-emerald-950/80 px-1 py-0.5 rounded border border-emerald-800/60">{u.client_spk_id}</span>
+                                                                                        </div>
+                                                                                    ) : (
+                                                                                        <div className="text-[10px] text-neutral-500 italic mt-0.5">No Client ID</div>
+                                                                                    )}
+                                                                                </td>
+                                                                                <td className="px-4 py-2.5 font-medium text-white">
+                                                                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                                                                        <span>{u.firstname} {u.lastname}</span>
+                                                                                        {(u.vendorCode || u.vendorId?.vendorCode) && (
+                                                                                            <span
+                                                                                                className="inline-flex items-center justify-center font-mono font-bold text-[10px] uppercase px-2 py-0.5 rounded-lg bg-neutral-900 border border-purple-500/50 text-purple-300 shadow-sm"
+                                                                                                title={`Vendor Code: ${u.vendorCode || u.vendorId?.vendorCode}`}
+                                                                                            >
+                                                                                                🏢 {u.vendorCode || u.vendorId?.vendorCode}
+                                                                                            </span>
+                                                                                        )}
+                                                                                    </div>
+                                                                                    <div className="text-[10px] text-neutral-400 font-normal">@{u.username}</div>
+                                                                                </td>
+                                                                                <td className="px-4 py-2.5 text-emerald-400 font-semibold">{formatSecs(u.approvedSeconds)} <span className="text-[10px] text-emerald-500/80 font-normal">({u.approvedCount || 0})</span></td>
+                                                                                <td className="px-4 py-2.5 text-white font-medium">{formatSecs(u.totalSeconds)}</td>
+                                                                                <td className="px-4 py-2.5 text-red-400 font-medium">{formatSecs(u.rejectedSeconds)} <span className="text-[10px] text-red-500/80 font-normal">({u.rejectedCount || 0})</span></td>
+                                                                                <td className="px-4 py-2.5 text-amber-400 font-medium">{formatSecs(u.pendingSeconds)} <span className="text-[10px] font-semibold text-amber-300">({u.pendingCount || 0} pending)</span></td>
+                                                                                <td className="px-4 py-2.5 font-medium font-mono text-xs">
+                                                                                    <span className="text-emerald-400">{Number(u.approvalRate || 0).toFixed(1)}%</span> / <span className="text-red-400">{Number(u.rejectionRate || 0).toFixed(1)}%</span>
+                                                                                </td>
+                                                                                <td className="px-4 py-2.5">
+                                                                                    {u.status === "approved" ? (
+                                                                                        <span className="px-2 py-0.5 bg-emerald-900/60 text-emerald-300 text-[10px] font-bold rounded-full">Approved</span>
+                                                                                    ) : u.status === "rejected" ? (
+                                                                                        <span className="px-2 py-0.5 bg-red-900/60 text-red-300 text-[10px] font-bold rounded-full">Rejected</span>
+                                                                                    ) : (
+                                                                                        <span className="px-2 py-0.5 bg-amber-900/60 text-amber-300 text-[10px] font-bold rounded-full">Pending</span>
+                                                                                    )}
+                                                                                </td>
+                                                                                <td className="px-4 py-2.5">
+                                                                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                                                                        <span className={`px-1.5 py-0.5 text-[10px] font-mono font-bold rounded border ${
+                                                                                            (u.noiseGateDb || 0) === 0 
+                                                                                                ? "bg-neutral-800 text-neutral-400 border-neutral-700" 
+                                                                                                : "bg-warning-950/80 text-warning-400 border-warning-700/60"
+                                                                                        }`} title="Noise Gate">
+                                                                                            Gate: {(u.noiseGateDb || 0) === 0 ? "RAW" : `${u.noiseGateDb}dB`}
+                                                                                        </span>
+
+                                                                                        <span className={`px-1.5 py-0.5 text-[10px] font-mono font-bold rounded border ${
+                                                                                            u.notch5kEnabled 
+                                                                                                ? "bg-emerald-950/80 text-emerald-400 border-emerald-700/60" 
+                                                                                                : "bg-neutral-800 text-neutral-400 border-neutral-700"
+                                                                                        }`} title="5kHz Whine / Static Notch Filter">
+                                                                                            5kHz: {u.notch5kEnabled ? "ON" : "OFF"}
+                                                                                        </span>
+
+                                                                                        <span className={`px-1.5 py-0.5 text-[10px] font-mono font-bold rounded border ${
+                                                                                            u.deHissMode && u.deHissMode !== "off"
+                                                                                                ? "bg-cyan-950/80 text-cyan-400 border-cyan-700/60" 
+                                                                                                : "bg-neutral-800 text-neutral-400 border-neutral-700"
+                                                                                        }`} title="De-Hiss Filter">
+                                                                                            Hiss: {u.deHissMode && u.deHissMode !== "off" ? u.deHissMode : "OFF"}
+                                                                                        </span>
+
+                                                                                        <span className={`px-1.5 py-0.5 text-[10px] font-mono font-bold rounded border ${
+                                                                                            u.deEsserMode && u.deEsserMode !== "off"
+                                                                                                ? "bg-purple-950/80 text-purple-400 border-purple-700/60" 
+                                                                                                : "bg-neutral-800 text-neutral-400 border-neutral-700"
+                                                                                        }`} title="De-Esser">
+                                                                                            Ess: {u.deEsserMode && u.deEsserMode !== "off" ? u.deEsserMode : "OFF"}
+                                                                                        </span>
+
+                                                                                        <button
+                                                                                            onClick={() => openEditAudioConfigModal(u, selectedLangData)}
+                                                                                            className="px-2 py-1 bg-neutral-700 hover:bg-neutral-600 text-warning-400 hover:text-warning-300 text-[11px] font-semibold rounded-lg transition-colors border border-neutral-600 flex items-center gap-1 shadow-sm ml-1 cursor-pointer"
+                                                                                            title="Edit Noise Gate, 5kHz Filter, De-Hisser & De-Esser"
+                                                                                        >
+                                                                                            <Sliders className="w-3 h-3" />
+                                                                                            Edit Configurations
+                                                                                        </button>
+                                                                                    </div>
+                                                                                </td>
+                                                                                <td className="px-4 py-2.5 text-right whitespace-nowrap">
+                                                                                    <div className="flex items-center justify-end gap-1.5">
+                                                                                        {summaryUserTab === "approved" && (
+                                                                                            <button
+                                                                                                onClick={() => handleRemoveScriptedContributor(u, selectedLangData)}
+                                                                                                className="px-2.5 py-1 bg-red-600/90 hover:bg-red-600 text-white text-[11px] font-bold rounded-lg transition-colors shadow-sm whitespace-nowrap cursor-pointer flex items-center gap-1"
+                                                                                                title="Remove contributor from scripted calls"
+                                                                                            >
+                                                                                                <Trash2 className="w-3 h-3" />
+                                                                                                <span>Remove Contributor</span>
+                                                                                            </button>
+                                                                                        )}
+                                                                                        {summaryUserTab === "rejected" && (
+                                                                                            <button
+                                                                                                onClick={() => handleResetScriptedContributor(u, selectedLangData)}
+                                                                                                className="px-2.5 py-1 bg-blue-600/90 hover:bg-blue-600 text-white text-[11px] font-bold rounded-lg transition-colors shadow-sm whitespace-nowrap inline-flex items-center gap-1 cursor-pointer"
+                                                                                                title="Reset application so user can re-apply"
+                                                                                            >
+                                                                                                <RotateCcw className="w-3 h-3" />
+                                                                                                <span>Reset Application</span>
+                                                                                            </button>
+                                                                                        )}
+                                                                                    </div>
+                                                                                </td>
+                                                                            </tr>
+                                                                        ))}
+                                                                    </tbody>
+                                                                </table>
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })()}
+                                            </div>
+                                        </div>
+                                    );
+                                })()}
+                            </div>
+                        )}
                     </div>
                 )}
             </div>

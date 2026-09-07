@@ -100,8 +100,8 @@ export default function AdminScriptedCallApps() {
         }
     }
 
-    async function playSample(userId, appId) {
-        const key = appId;
+    async function playSample(userId, appId, type = 'voice') {
+        const key = type === 'room_silence' ? `${appId}_silence` : appId;
         if (audioSrc[key]) {
             const audioEl = audioRefs.current[key];
             if (audioEl) {
@@ -119,7 +119,8 @@ export default function AdminScriptedCallApps() {
         if (loadingAudio[key]) return;
         setLoadingAudio(prev => ({ ...prev, [key]: true }));
         try {
-            const url = `${BASE}/api/language-applications/${userId}/${appId}/recording`;
+            const qs = type === 'room_silence' ? '?type=room_silence' : '';
+            const url = `${BASE}/api/language-applications/${userId}/${appId}/recording${qs}`;
             const audioBlob = await fetchDirectAudioBlob(url);
             const blobUrl = URL.createObjectURL(audioBlob);
             setAudioSrc(prev => ({ ...prev, [key]: blobUrl }));
@@ -137,13 +138,15 @@ export default function AdminScriptedCallApps() {
         }
     }
 
-    async function handleDownloadSingleApp(app) {
-        const key = app.appId;
+    async function handleDownloadSingleApp(app, type = 'voice') {
+        const key = type === 'room_silence' ? `${app.appId}_silence` : app.appId;
         const rawSpk = app.speaker_id || app.speakerId || `spk_${app.userId}`;
         const cleanSpk = String(rawSpk).replace(/[^a-zA-Z0-9_\-]/g, "");
         const rawName = [app.userFirstname, app.userLastname].filter(Boolean).join("_") || app.username || "applicant";
         const cleanName = String(rawName).trim().replace(/\s+/g, "_").replace(/[^a-zA-Z0-9_\-]/g, "");
-        const filename = `ScriptedCall_${cleanSpk}_${cleanName}.wav`;
+        const filename = type === 'room_silence'
+            ? `RoomSilence_${cleanSpk}_${cleanName}.wav`
+            : `ScriptedCall_${cleanSpk}_${cleanName}.wav`;
 
         if (audioSrc[key]) {
             const a = document.createElement("a");
@@ -157,7 +160,8 @@ export default function AdminScriptedCallApps() {
 
         setDownloadingApp(prev => ({ ...prev, [key]: true }));
         try {
-            const url = `${BASE}/api/language-applications/${app.userId}/${app.appId}/recording`;
+            const qs = type === 'room_silence' ? '?type=room_silence' : '';
+            const url = `${BASE}/api/language-applications/${app.userId}/${app.appId}/recording${qs}`;
             const wavBlob = await fetchAndConvertToWav(url);
             const blobUrl = URL.createObjectURL(wavBlob);
             setAudioSrc(prev => ({ ...prev, [key]: blobUrl }));
@@ -311,9 +315,13 @@ export default function AdminScriptedCallApps() {
 
                                     {/* Sample Audio Player */}
                                     <div className="mt-4 p-3 rounded-xl bg-neutral-900/60 border border-neutral-800">
+                                        <div className="text-[11px] font-bold text-neutral-400 mb-2 flex items-center gap-1.5">
+                                            <Radio className="w-3 h-3 text-indigo-400" />
+                                            <span>Phase 1: Audition Phrase</span>
+                                        </div>
                                         <div className="flex items-center justify-between gap-2">
                                             <button
-                                                onClick={() => playSample(app.userId, app.appId)}
+                                                onClick={() => playSample(app.userId, app.appId, 'voice')}
                                                 disabled={loadingAudio[app.appId]}
                                                 className="flex-1 flex items-center justify-center gap-2 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 font-bold text-xs text-white transition-all disabled:opacity-50"
                                             >
@@ -322,20 +330,20 @@ export default function AdminScriptedCallApps() {
                                                 ) : playingKey === app.appId ? (
                                                     <>
                                                         <Pause className="w-3.5 h-3.5 fill-white" />
-                                                        <span>Pause Sample</span>
+                                                        <span>Pause Audition</span>
                                                     </>
                                                 ) : (
                                                     <>
                                                         <Play className="w-3.5 h-3.5 fill-white" />
-                                                        <span>Play Intro Audio Sample</span>
+                                                        <span>Play Audition Phrase</span>
                                                     </>
                                                 )}
                                             </button>
 
                                             <button
-                                                onClick={() => handleDownloadSingleApp(app)}
+                                                onClick={() => handleDownloadSingleApp(app, 'voice')}
                                                 disabled={downloadingApp[app.appId]}
-                                                title="Download Sample Audio"
+                                                title="Download Audition Audio"
                                                 className="p-2 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white transition-colors"
                                             >
                                                 <Download className="w-4 h-4" />
@@ -350,6 +358,56 @@ export default function AdminScriptedCallApps() {
                                                 controls
                                                 className="w-full h-8 mt-2"
                                             />
+                                        )}
+
+                                        {/* Phase 2: 15s Room Silence Profile */}
+                                        {app.roomSilenceFile && (
+                                            <div className="mt-3 pt-3 border-t border-neutral-800/80">
+                                                <div className="text-[11px] font-bold text-teal-400 mb-2 flex items-center gap-1.5">
+                                                    <Volume2 className="w-3 h-3 text-teal-400" />
+                                                    <span>Phase 2: 15s Room Silence Profile</span>
+                                                </div>
+                                                <div className="flex items-center justify-between gap-2">
+                                                    <button
+                                                        onClick={() => playSample(app.userId, app.appId, 'room_silence')}
+                                                        disabled={loadingAudio[`${app.appId}_silence`]}
+                                                        className="flex-1 flex items-center justify-center gap-2 py-1.5 rounded-lg bg-teal-600/20 hover:bg-teal-600/30 text-teal-300 border border-teal-500/30 font-bold text-xs transition-all disabled:opacity-50"
+                                                    >
+                                                        {loadingAudio[`${app.appId}_silence`] ? (
+                                                            <div className="w-3.5 h-3.5 border-2 border-teal-300 border-t-transparent rounded-full animate-spin" />
+                                                        ) : playingKey === `${app.appId}_silence` ? (
+                                                            <>
+                                                                <Pause className="w-3.5 h-3.5 fill-teal-300" />
+                                                                <span>Pause Room Silence</span>
+                                                            </>
+                                                        ) : (
+                                                            <>
+                                                                <Play className="w-3.5 h-3.5 fill-teal-300" />
+                                                                <span>Play 15s Room Silence</span>
+                                                            </>
+                                                        )}
+                                                    </button>
+
+                                                    <button
+                                                        onClick={() => handleDownloadSingleApp(app, 'room_silence')}
+                                                        disabled={downloadingApp[`${app.appId}_silence`]}
+                                                        title="Download Room Silence Audio"
+                                                        className="p-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-teal-300 hover:text-white transition-colors"
+                                                    >
+                                                        <Download className="w-4 h-4" />
+                                                    </button>
+                                                </div>
+
+                                                {audioSrc[`${app.appId}_silence`] && (
+                                                    <audio
+                                                        ref={el => audioRefs.current[`${app.appId}_silence`] = el}
+                                                        src={audioSrc[`${app.appId}_silence`]}
+                                                        onEnded={() => setPlayingKey(null)}
+                                                        controls
+                                                        className="w-full h-8 mt-2"
+                                                    />
+                                                )}
+                                            </div>
                                         )}
                                     </div>
                                 </div>

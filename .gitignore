@@ -110,3 +110,7 @@ voicechat-backend/scripts/inspect_*.js
 voicechat-backend/scripts/upload_*.js
 voicechat-backend/scripts/generate_*.js
 voicechat-backend/scripts/check_*.js
+temp/
+voicechat-backend/temp/
+voicechat-backend/voicechat-backend/
+

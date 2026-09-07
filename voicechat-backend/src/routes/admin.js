@@ -7005,6 +7005,238 @@ router.delete("/scripted-languages/:id", async (req, res) => {
 router.get("/scripted-languages/:id/contributors-summary", async (req, res) => {
     try {
         const langParam = req.params.id;
+
+        if (langParam === "all" || langParam === "overview") {
+            const allScriptedLangs = await ScriptedLanguage.find().lean();
+            // Group by base language
+            const groupMap = new Map();
+            for (const l of allScriptedLangs) {
+                let baseName = (l.language || "").trim();
+                if (!baseName) {
+                    const match = l.name ? l.name.match(/\(([^)]+)\)$/) : null;
+                    baseName = match && match[1] ? match[1].trim() : (l.name || "").trim();
+                }
+                const key = baseName.toLowerCase();
+                if (!groupMap.has(key)) {
+                    groupMap.set(key, {
+                        baseName,
+                        primaryId: l._id,
+                        code: l.code || key,
+                        subprojects: []
+                    });
+                }
+                groupMap.get(key).subprojects.push(l);
+            }
+
+            // Fetch ALL scripted call sessions once for efficiency
+            const allScriptedSessions = await CallSession.find({
+                $or: [{ callId: /^scripted_/ }, { endReason: "scripted_completed" }]
+            }).select("userA userB language actualCallDuration duration recordingADurationMinutes recordingBDurationMinutes callStatus").lean();
+
+            // Fetch ALL scripted submissions once for efficiency
+            const allSubmissions = await ScriptedSubmission.find()
+                .select("userId language status verses").lean();
+
+            // Fetch ALL users with scripted_call applications once for efficiency
+            const allScriptedUsers = await User.find({
+                languageApplications: {
+                    $elemMatch: {
+                        applicationType: "scripted_call"
+                    }
+                }
+            }).select("firstname lastname email username gender dob locality address speaker_id noiseGateDb languageApplications createdAt vendorCode vendorId")
+            .populate("vendorId", "name vendorCode")
+            .lean();
+
+            let overallApprovedSeconds = 0;
+            let overallPendingSeconds = 0;
+            let overallRejectedSeconds = 0;
+            let overallApprovedCount = 0;
+            let overallPendingCount = 0;
+            let overallRejectedCount = 0;
+            const uniqueOverallContributors = new Set();
+
+            const languagesResult = [];
+
+            for (const [key, group] of groupMap.entries()) {
+                const subLangs = group.subprojects;
+                const validCodes = Array.from(new Set([
+                    group.baseName.toLowerCase().trim(),
+                    String(group.code || "").toLowerCase().trim(),
+                    ...subLangs.map(l => String(l.code || "").toLowerCase().trim()),
+                    ...subLangs.map(l => String(l.name || "").toLowerCase().trim())
+                ])).filter(Boolean);
+
+                const userRecordedSecsMap = new Map();
+                let langApprovedSec = 0;
+                let langPendingSec = 0;
+                let langRejectedSec = 0;
+                let langApprovedCount = 0;
+                let langPendingCount = 0;
+                let langRejectedCount = 0;
+
+                // Process CallSessions matching this language
+                for (const s of allScriptedSessions) {
+                    const sLang = String(s.language || "").toLowerCase().trim();
+                    if (!validCodes.some(c => sLang.includes(c) || c.includes(sLang))) continue;
+
+                    const durA = (Number(s.recordingADurationMinutes) || 0) * 60 || (Number(s.actualCallDuration || s.duration) || 0) / 2;
+                    const durB = (Number(s.recordingBDurationMinutes) || 0) * 60 || (Number(s.actualCallDuration || s.duration) || 0) / 2;
+
+                    if (s.userA) {
+                        const uKey = String(s.userA);
+                        if (!userRecordedSecsMap.has(uKey)) userRecordedSecsMap.set(uKey, { approvedSec: 0, pendingSec: 0, rejectedSec: 0, count: 0 });
+                        const st = userRecordedSecsMap.get(uKey);
+                        st.approvedSec += durA;
+                        st.count++;
+                    }
+                    if (s.userB) {
+                        const uKey = String(s.userB);
+                        if (!userRecordedSecsMap.has(uKey)) userRecordedSecsMap.set(uKey, { approvedSec: 0, pendingSec: 0, rejectedSec: 0, count: 0 });
+                        const st = userRecordedSecsMap.get(uKey);
+                        st.approvedSec += durB;
+                        st.count++;
+                    }
+
+                    langApprovedSec += (durA + durB);
+                    langApprovedCount += 2;
+                }
+
+                // Process Submissions matching this language
+                for (const sub of allSubmissions) {
+                    const subLang = String(sub.language || "").toLowerCase().trim();
+                    if (!validCodes.some(c => subLang.includes(c) || c.includes(subLang))) continue;
+
+                    const uKey = sub.userId ? String(sub.userId) : null;
+                    if (uKey && !userRecordedSecsMap.has(uKey)) userRecordedSecsMap.set(uKey, { approvedSec: 0, pendingSec: 0, rejectedSec: 0, count: 0 });
+                    const st = uKey ? userRecordedSecsMap.get(uKey) : null;
+
+                    (sub.verses || []).forEach(v => {
+                        const dur = Number(v.durationSec) || 0;
+                        if (v.status === "approved") {
+                            if (st) st.approvedSec += dur;
+                            langApprovedSec += dur;
+                            langApprovedCount++;
+                        } else if (v.status === "rejected") {
+                            if (st) st.rejectedSec = (st.rejectedSec || 0) + dur;
+                            langRejectedSec += dur;
+                            langRejectedCount++;
+                        } else {
+                            if (st) st.pendingSec = (st.pendingSec || 0) + dur;
+                            langPendingSec += dur;
+                            langPendingCount++;
+                        }
+                    });
+                }
+
+                // Process matching users
+                const items = [];
+                const seenUserIds = new Set();
+
+                for (const u of allScriptedUsers) {
+                    const matchingApp = (u.languageApplications || []).find(a => {
+                        if (a.applicationType !== "scripted_call") return false;
+                        const c = String(a.languageCode || "").toLowerCase().trim();
+                        return validCodes.includes(c);
+                    });
+
+                    const uKey = String(u._id);
+                    const stats = userRecordedSecsMap.get(uKey);
+
+                    if (!matchingApp && !stats) continue;
+                    if (seenUserIds.has(uKey)) continue;
+                    seenUserIds.add(uKey);
+                    uniqueOverallContributors.add(uKey);
+
+                    const appStatus = matchingApp ? matchingApp.status : (stats?.approvedSec > 0 ? "approved" : "pending");
+                    const approvedSeconds = Math.round(stats?.approvedSec || 0);
+                    const rejectedSeconds = Math.round(stats?.rejectedSec || 0);
+                    const pendingSeconds = Math.round(stats?.pendingSec || 0);
+                    const totalSeconds = approvedSeconds + rejectedSeconds + pendingSeconds;
+                    const approvalRate = totalSeconds > 0 ? Math.round((approvedSeconds / totalSeconds) * 100) : (appStatus === "approved" ? 100 : 0);
+                    const rejectionRate = totalSeconds > 0 ? Math.round((rejectedSeconds / totalSeconds) * 100) : (appStatus === "rejected" ? 100 : 0);
+
+                    items.push({
+                        user: u,
+                        appStatus,
+                        appliedAt: matchingApp?.appliedAt || u.createdAt || null,
+                        noiseGateDb: matchingApp?.noiseGateDb !== undefined ? matchingApp.noiseGateDb : (u.noiseGateDb || 0),
+                        approvedSeconds,
+                        rejectedSeconds,
+                        pendingSeconds,
+                        totalSeconds,
+                        approvedCount: stats?.count || 0,
+                        approvalRate,
+                        rejectionRate
+                    });
+                }
+
+                const demographics = calculateDemographics(items);
+
+                const langTotalSeconds = Math.round(langApprovedSec + langPendingSec + langRejectedSec);
+                const langTotalEvaluated = langApprovedCount + langRejectedCount;
+                const langApprRate = langTotalEvaluated > 0 ? Number(((langApprovedCount / langTotalEvaluated) * 100).toFixed(1)) : (demographics.totalContributors > 0 ? 100 : 0);
+                const langRejRate = langTotalEvaluated > 0 ? Number(((langRejectedCount / langTotalEvaluated) * 100).toFixed(1)) : 0;
+
+                overallApprovedSeconds += langApprovedSec;
+                overallPendingSeconds += langPendingSec;
+                overallRejectedSeconds += langRejectedSec;
+                overallApprovedCount += langApprovedCount;
+                overallPendingCount += langPendingCount;
+                overallRejectedCount += langRejectedCount;
+
+                languagesResult.push({
+                    _id: group.primaryId,
+                    code: group.code,
+                    name: group.baseName,
+                    phraseCount: langApprovedCount + langPendingCount + langRejectedCount,
+                    totalSeconds: langTotalSeconds,
+                    approvedSeconds: Math.round(langApprovedSec),
+                    rejectedSeconds: Math.round(langRejectedSec),
+                    pendingSeconds: Math.round(langPendingSec),
+                    approvedCount: langApprovedCount,
+                    rejectedCount: langRejectedCount,
+                    pendingCount: langPendingCount,
+                    approvalRate: langApprRate,
+                    rejectionRate: langRejRate,
+                    summary: {
+                        ...demographics,
+                        totalSeconds: langTotalSeconds,
+                        approvedSeconds: Math.round(langApprovedSec),
+                        rejectedSeconds: Math.round(langRejectedSec),
+                        pendingSeconds: Math.round(langPendingSec),
+                        approvalRate: langApprRate,
+                        rejectionRate: langRejRate,
+                        approvedCount: langApprovedCount,
+                        rejectedCount: langRejectedCount,
+                        pendingCount: langPendingCount
+                    }
+                });
+            }
+
+            const overallTotalSeconds = Math.round(overallApprovedSeconds + overallPendingSeconds + overallRejectedSeconds);
+            const overallTotalEvaluated = overallApprovedCount + overallRejectedCount;
+            const overallApprovalRate = overallTotalEvaluated > 0 ? Number(((overallApprovedCount / overallTotalEvaluated) * 100).toFixed(1)) : 0;
+            const overallRejectionRate = overallTotalEvaluated > 0 ? Number(((overallRejectedCount / overallTotalEvaluated) * 100).toFixed(1)) : 0;
+
+            return res.json({
+                overview: {
+                    totalSeconds: overallTotalSeconds,
+                    totalApprovedSeconds: Math.round(overallApprovedSeconds),
+                    totalRejectedSeconds: Math.round(overallRejectedSeconds),
+                    totalPendingSeconds: Math.round(overallPendingSeconds),
+                    totalCount: overallApprovedCount + overallPendingCount + overallRejectedCount,
+                    approvedCount: overallApprovedCount,
+                    rejectedCount: overallRejectedCount,
+                    pendingCount: overallPendingCount,
+                    approvalRate: overallApprovalRate,
+                    rejectionRate: overallRejectionRate,
+                    totalContributors: uniqueOverallContributors.size
+                },
+                languages: languagesResult
+            });
+        }
+
         let language = null;
         if (mongoose.Types.ObjectId.isValid(langParam)) {
             language = await ScriptedLanguage.findById(langParam).lean();

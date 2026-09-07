@@ -270,7 +270,7 @@ export async function getScriptedLanguages(req, res) {
 export async function getMyLanguageApplications(req, res) {
   try {
     const user = await User.findById(req.user._id)
-      .select("languageApplications")
+      .select("languageApplications roomSilenceFile")
       .lean();
     
     let applications = user?.languageApplications || [];
@@ -407,7 +407,7 @@ export async function getMyLanguageApplications(req, res) {
       });
     }
 
-    res.json({ applications, isAdmin: !!req.user.isAdmin, isQA: !!req.user.isQA });
+    res.json({ applications, roomSilenceFile: user?.roomSilenceFile || null, isAdmin: !!req.user.isAdmin, isQA: !!req.user.isQA });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -587,9 +587,17 @@ export async function submitLanguageApplication(req, res) {
     const sampleRecordingsList = [];
     let primaryRecordingRef = null;
 
-    // Process each uploaded sample file
-    for (let i = 0; i < uploadedFiles.length; i++) {
-      const f = uploadedFiles[i];
+    // For scripted calls, separate out roomSilence file if uploaded
+    const roomSilenceUpload = applicationType === "scripted_call"
+      ? uploadedFiles.find(f => f.fieldname === "roomSilence")
+      : null;
+    const speechFiles = (applicationType === "scripted_call" && roomSilenceUpload)
+      ? uploadedFiles.filter(f => f !== roomSilenceUpload)
+      : uploadedFiles;
+
+    // Process each uploaded speech sample file
+    for (let i = 0; i < speechFiles.length; i++) {
+      const f = speechFiles[i];
       let flacPath = f.path.replace(/\.[^/.]+$/, "") + ".flac";
       if (flacPath === f.path) {
         flacPath = f.path + "_converted.flac";
@@ -617,7 +625,7 @@ export async function submitLanguageApplication(req, res) {
       const ext = isFlac ? ".flac" : (path.extname(f.path) || ".wav");
 
       const meta = samplesMetadata[i] || {};
-      const sampleLabel = uploadedFiles.length > 1 ? `__sample_${i + 1}` : "";
+      const sampleLabel = speechFiles.length > 1 ? `__sample_${i + 1}` : "";
       const baseFileName = applicationType === "phrase"
         ? `${user.speaker_id}__${companyFolder}__${languageCode}${sampleLabel}${ext}`
         : applicationType === "scripted_call"
@@ -693,9 +701,80 @@ export async function submitLanguageApplication(req, res) {
       });
     }
 
+    // Process 15s Room Silence calibration if provided (Scripted Calls)
+    let roomSilenceRef = null;
+    if (roomSilenceUpload) {
+      let flacPath = roomSilenceUpload.path.replace(/\.[^/.]+$/, "") + ".flac";
+      if (flacPath === roomSilenceUpload.path) {
+        flacPath = roomSilenceUpload.path + "_silence.flac";
+      }
+
+      try {
+        await new Promise((resolve) => {
+          ffmpeg(roomSilenceUpload.path)
+            .audioChannels(1)
+            .audioCodec('flac')
+            .output(flacPath)
+            .on("end", resolve)
+            .on("error", (err) => {
+              console.warn("FFmpeg room silence conversion warning:", err.message);
+              resolve();
+            })
+            .run();
+        });
+      } catch (silenceErr) {
+        console.warn("FFmpeg exception in room silence:", silenceErr.message);
+      }
+
+      const finalSilencePath = fs.existsSync(flacPath) ? flacPath : roomSilenceUpload.path;
+      const isFlac = finalSilencePath.endsWith(".flac");
+      const ext = isFlac ? ".flac" : (path.extname(roomSilenceUpload.path) || ".wav");
+      const silenceFileName = `${user.speaker_id || user._id}__room_silence_${Date.now()}${ext}`;
+      const s3Key = `scripted-call-apps/${silenceFileName}`;
+
+      let s3Uploaded = false;
+      if (process.env.AWS_ACCESS_KEY_ID && process.env.S3_BUCKET_NAME) {
+        try {
+          const uploader = new Upload({
+            client: s3Client,
+            params: {
+              Bucket: BUCKET_NAME,
+              Key: s3Key,
+              Body: fs.createReadStream(finalSilencePath),
+              ContentType: isFlac ? "audio/flac" : "audio/wav",
+            },
+          });
+          await Promise.race([
+            uploader.done(),
+            new Promise((_, reject) => setTimeout(() => reject(new Error("S3 Upload Timeout")), 3000))
+          ]);
+          s3Uploaded = true;
+          roomSilenceRef = s3Key;
+        } catch (s3Err) {
+          console.warn("S3 upload failed for room silence, saving locally:", s3Err.message);
+        }
+      }
+
+      if (!s3Uploaded) {
+        const localDir = path.join(process.cwd(), "recordings", "language-apps");
+        if (!fs.existsSync(localDir)) {
+          fs.mkdirSync(localDir, { recursive: true });
+        }
+        const targetLocalPath = path.join(localDir, silenceFileName);
+        fs.copyFileSync(finalSilencePath, targetLocalPath);
+        roomSilenceRef = `local:${silenceFileName}`;
+      }
+
+      try { fs.unlinkSync(roomSilenceUpload.path); } catch (e) {}
+      if (finalSilencePath !== roomSilenceUpload.path) {
+        try { fs.unlinkSync(finalSilencePath); } catch (e) {}
+      }
+    }
+
     if (existing) {
       existing.status = "pending";
       existing.recordingFile = primaryRecordingRef;
+      if (roomSilenceRef) existing.roomSilenceFile = roomSilenceRef;
       existing.sampleRecordings = sampleRecordingsList;
       existing.appliedAt = new Date();
       existing.reviewedBy = null;
@@ -707,9 +786,14 @@ export async function submitLanguageApplication(req, res) {
         languageCode,
         status: "pending",
         recordingFile: primaryRecordingRef,
+        roomSilenceFile: roomSilenceRef || null,
         sampleRecordings: sampleRecordingsList,
         appliedAt: new Date(),
       });
+    }
+
+    if (roomSilenceRef) {
+      user.roomSilenceFile = roomSilenceRef;
     }
 
     await user.save();
@@ -722,7 +806,7 @@ export async function submitLanguageApplication(req, res) {
       console.error("Failed to send project application received email:", mailErr.message);
     }
 
-    res.json({ ok: true, message: "Application submitted", sampleCount: sampleRecordingsList.length });
+    res.json({ ok: true, message: "Application submitted", sampleCount: sampleRecordingsList.length, hasRoomSilence: !!roomSilenceRef });
   } catch (err) {
     console.error("Language app error:", err);
     uploadedFiles.forEach(f => { try { fs.unlinkSync(f.path); } catch (e) {} });
@@ -759,7 +843,9 @@ export async function streamLanguageRecording(req, res) {
   }
 
   let recordingTarget = application.recordingFile;
-  if (req.query.sampleIndex !== undefined && application.sampleRecordings && application.sampleRecordings.length > 0) {
+  if (req.query.type === 'room_silence' || req.query.roomSilence === 'true' || req.query.silence === '1') {
+    recordingTarget = application.roomSilenceFile;
+  } else if (req.query.sampleIndex !== undefined && application.sampleRecordings && application.sampleRecordings.length > 0) {
     const sIdx = Number(req.query.sampleIndex);
     const foundSample = application.sampleRecordings.find(s => s.sampleIndex === sIdx) || application.sampleRecordings[sIdx];
     if (foundSample && foundSample.recordingFile) {
@@ -1807,4 +1893,107 @@ export async function updateUserNoiseGate(req, res) {
 }
 
 export const updateUserAudioConfig = updateUserNoiseGate;
+
+// ─── POST /api/language-applications/room-silence ─────────────────────────
+export async function uploadUserRoomSilence(req, res) {
+  const uploadedFiles = req.files || [];
+  try {
+    const user = await User.findById(req.user._id);
+    if (!user) return res.status(404).json({ error: "User not found" });
+
+    const file = uploadedFiles[0];
+    if (!file) return res.status(400).json({ error: "No audio file provided" });
+
+    let flacPath = file.path.replace(/\.[^/.]+$/, "") + ".flac";
+    if (flacPath === file.path) {
+      flacPath = file.path + "_silence.flac";
+    }
+
+    try {
+      await new Promise((resolve) => {
+        ffmpeg(file.path)
+          .audioChannels(1)
+          .audioCodec('flac')
+          .output(flacPath)
+          .on("end", resolve)
+          .on("error", (err) => {
+            console.warn("FFmpeg room silence conversion warning:", err.message);
+            resolve();
+          })
+          .run();
+      });
+    } catch (silenceErr) {
+      console.warn("FFmpeg exception in room silence:", silenceErr.message);
+    }
+
+    const finalSilencePath = fs.existsSync(flacPath) ? flacPath : file.path;
+    const isFlac = finalSilencePath.endsWith(".flac");
+    const ext = isFlac ? ".flac" : (path.extname(file.path) || ".wav");
+    const silenceFileName = `${user.speaker_id || user._id}__room_silence_${Date.now()}${ext}`;
+    const s3Key = `scripted-call-apps/${silenceFileName}`;
+
+    let s3Uploaded = false;
+    let roomSilenceRef = null;
+    if (process.env.AWS_ACCESS_KEY_ID && process.env.S3_BUCKET_NAME) {
+      try {
+        const uploader = new Upload({
+          client: s3Client,
+          params: {
+            Bucket: BUCKET_NAME,
+            Key: s3Key,
+            Body: fs.createReadStream(finalSilencePath),
+            ContentType: isFlac ? "audio/flac" : "audio/wav",
+          },
+        });
+        await Promise.race([
+          uploader.done(),
+          new Promise((_, reject) => setTimeout(() => reject(new Error("S3 Upload Timeout")), 3000))
+        ]);
+        s3Uploaded = true;
+        roomSilenceRef = s3Key;
+      } catch (s3Err) {
+        console.warn("S3 upload failed for room silence, saving locally:", s3Err.message);
+      }
+    }
+
+    if (!s3Uploaded) {
+      const localDir = path.join(process.cwd(), "recordings", "language-apps");
+      if (!fs.existsSync(localDir)) {
+        fs.mkdirSync(localDir, { recursive: true });
+      }
+      const targetLocalPath = path.join(localDir, silenceFileName);
+      fs.copyFileSync(finalSilencePath, targetLocalPath);
+      roomSilenceRef = `local:${silenceFileName}`;
+    }
+
+    try { fs.unlinkSync(file.path); } catch (e) {}
+    if (finalSilencePath !== file.path) {
+      try { fs.unlinkSync(finalSilencePath); } catch (e) {}
+    }
+
+    const languageCode = String(req.body.languageCode || "").toLowerCase().trim();
+
+    // Attach to user profile
+    user.roomSilenceFile = roomSilenceRef;
+
+    // Attach to matching scripted_call applications
+    if (user.languageApplications) {
+      user.languageApplications.forEach(app => {
+        if (app.applicationType === "scripted_call") {
+          if (!languageCode || String(app.languageCode).toLowerCase().trim() === languageCode) {
+            app.roomSilenceFile = roomSilenceRef;
+          }
+        }
+      });
+      user.markModified("languageApplications");
+    }
+
+    await user.save();
+    return res.json({ ok: true, message: "Room silence recorded and calibrated successfully", roomSilenceFile: roomSilenceRef });
+  } catch (err) {
+    console.error("Upload room silence error:", err);
+    uploadedFiles.forEach(f => { try { fs.unlinkSync(f.path); } catch (e) {} });
+    return res.status(500).json({ error: err.message });
+  }
+}
 

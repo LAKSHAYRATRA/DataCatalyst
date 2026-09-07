@@ -138,6 +138,11 @@ export default function LanguageApply() {
     const [rawPcm, setRawPcm] = useState(null);
     const [recordedLufs, setRecordedLufs] = useState(null);
     const [enforceLufs, setEnforceLufs] = useState(true);
+    const [scriptedStep, setScriptedStep] = useState(1); // 1 = Phrase Audition, 2 = 15s Room Silence Calibration
+    const [roomSilenceBlob, setRoomSilenceBlob] = useState(null);
+    const [roomSilenceUrl, setRoomSilenceUrl] = useState(null);
+    const [roomSilenceRawPcm, setRoomSilenceRawPcm] = useState(null);
+    const [roomSilenceLufs, setRoomSilenceLufs] = useState(null);
 
     const [showAnalysis, setShowAnalysis] = useState(false);
     const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -474,10 +479,11 @@ export default function LanguageApply() {
             workletNode.connect(gain);
             gain.connect(audioCtx.destination);
             
+            const maxDuration = (applicationType === 'scripted_call' && scriptedStep === 2) ? 15 : MAX_SEC;
             setRecording(true);
-            setSecondsLeft(MAX_SEC);
+            setSecondsLeft(maxDuration);
 
-            let secs = MAX_SEC;
+            let secs = maxDuration;
             timerRef.current = setInterval(() => {
                 secs--;
                 setSecondsLeft(secs);
@@ -513,21 +519,79 @@ export default function LanguageApply() {
             combined.set(arr, offset);
             offset += arr.length;
         }
-        setRawPcm(combined);
+
         let lufs = null;
         if (combined.length > 0) {
             lufs = calculateEbuR128Lufs(combined, currentRate);
         }
-        setRecordedLufs(lufs);
+
         const blob = encodeWAV(combined, currentRate, 1);
-        setAudioBlob(blob);
-        setAudioUrl(URL.createObjectURL(blob));
+
+        if (applicationType === 'scripted_call' && scriptedStep === 2) {
+            setRoomSilenceRawPcm(combined);
+            setRoomSilenceLufs(lufs);
+            setRoomSilenceBlob(blob);
+            setRoomSilenceUrl(URL.createObjectURL(blob));
+        } else {
+            setRawPcm(combined);
+            setRecordedLufs(lufs);
+            setAudioBlob(blob);
+            setAudioUrl(URL.createObjectURL(blob));
+        }
         setRecording(false);
     }
 
+    function handleCancelSilenceRecording() {
+        clearInterval(timerRef.current);
+        if (workletNodeRef.current) {
+            workletNodeRef.current.disconnect();
+            workletNodeRef.current = null;
+        }
+        if (audioCtxRef.current) {
+            audioCtxRef.current.close().catch(() => {});
+            audioCtxRef.current = null;
+        }
+        if (streamRef.current) {
+            streamRef.current.getTracks().forEach(t => t.stop());
+            streamRef.current = null;
+        }
+        chunksRef.current = [];
+        setRecording(false);
+        setRoomSilenceBlob(null);
+        setRoomSilenceUrl(null);
+        setRoomSilenceRawPcm(null);
+        setRoomSilenceLufs(null);
+        setSecondsLeft(15);
+    }
+
     async function submit() {
-        if (!audioBlob || !selectedLanguage) return;
-        if (applicationType === 'phrase' && !selectedCompany) return;
+        if (applicationType === 'scripted_call') {
+            if (!audioBlob) {
+                Swal.fire({
+                    icon: "warning",
+                    title: "Step 1 Incomplete",
+                    text: "Please record your sample scripted dialogue phrase first.",
+                    background: "#171717",
+                    color: "#ffffff"
+                });
+                setScriptedStep(1);
+                return;
+            }
+            if (!roomSilenceBlob) {
+                Swal.fire({
+                    icon: "warning",
+                    title: "Step 2 Incomplete",
+                    text: "Please record the 15 seconds of clean room silence calibration before submitting.",
+                    background: "#171717",
+                    color: "#ffffff"
+                });
+                setScriptedStep(2);
+                return;
+            }
+        } else {
+            if (!audioBlob || !selectedLanguage) return;
+            if (applicationType === 'phrase' && !selectedCompany) return;
+        }
 
         // Strict LUFS Verification for Phrase Studio Applications (-18.0 to -25.0 LUFS)
         if (applicationType === 'phrase' && enforceLufs !== false) {
@@ -587,7 +651,10 @@ export default function LanguageApply() {
             }
             form.append("languageCode", selectedLanguage);
 
-            if (applicationType === 'phrase' && samplePhrases.length > 1) {
+            if (applicationType === 'scripted_call') {
+                form.append("recording", audioBlob, `app_scripted_${selectedLanguage}.wav`);
+                form.append("roomSilence", roomSilenceBlob, `app_scripted_room_silence_${selectedLanguage}.wav`);
+            } else if (applicationType === 'phrase' && samplePhrases.length > 1) {
                 const allRecordings = {
                     ...sampleRecordings,
                     [sampleIndex]: { pcm: rawPcm, blob: audioBlob, url: audioUrl, lufs: recordedLufs }
@@ -964,6 +1031,11 @@ export default function LanguageApply() {
                                                             const promptText = (foundLang?.testPhrase || "").trim() || "Please read this sample scripted dialogue clearly and naturally into the microphone to verify audio quality.";
                                                             setSamplePhrase({ text: promptText });
                                                             setSamplePhrases([{ text: promptText, phraseId: `scripted_test_${selectedLanguage}` }]);
+                                                            setScriptedStep(1);
+                                                            setRoomSilenceBlob(null);
+                                                            setRoomSilenceUrl(null);
+                                                            setRoomSilenceRawPcm(null);
+                                                            setRoomSilenceLufs(null);
                                                             setPhase("record");
                                                             setAudioBlob(null);
                                                             setAudioUrl(null);
@@ -997,7 +1069,7 @@ export default function LanguageApply() {
                         <div className="absolute top-0 right-0 w-48 h-48 bg-primary-500/10 rounded-full blur-3xl pointer-events-none" />
                         <div className="relative z-10">
                         <div className="flex items-center justify-between mb-3">
-                            <h2 className="text-xl font-black text-white tracking-tight">Record Sample: {applicationType === 'phrase' ? (companies.find(c => c.name === selectedCompany)?.projectName || selectedCompany) : ''} {selectedLanguage && `(${selectedLanguage})`}</h2>
+                            <h2 className="text-xl font-black text-white tracking-tight">Record Sample: {applicationType === 'phrase' ? (companies.find(c => c.name === selectedCompany)?.projectName || selectedCompany) : applicationType === 'scripted_call' ? 'Scripted Dialogue' : ''} {selectedLanguage && `(${selectedLanguage})`}</h2>
                             <div className="flex items-center gap-3">
                                 {applicationType === 'phrase' && (
                                     <button 
@@ -1012,14 +1084,72 @@ export default function LanguageApply() {
                                         </span>
                                     </button>
                                 )}
-                                <button onClick={() => { stopRecording(); setPhase("select"); }} className="text-sm text-neutral-500 hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-white transition-colors">
+                                <button onClick={() => { 
+                                    stopRecording(); 
+                                    setPhase("select"); 
+                                    setScriptedStep(1); 
+                                    setRoomSilenceBlob(null);
+                                    setRoomSilenceUrl(null);
+                                }} className="text-sm text-neutral-500 hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-white transition-colors">
                                     ← Change
                                 </button>
                             </div>
                         </div>
-                        <p className="text-sm text-neutral-500 dark:text-neutral-400 mb-7">
-                            {applicationType === 'phrase' ? 'Read the sample phrase below naturally.' : 'Please record a brief introductory message speaking naturally in this language.'} Recording auto-stops when time runs out.
+                        <p className="text-sm text-neutral-500 dark:text-neutral-400 mb-6">
+                            {applicationType === 'phrase' 
+                                ? 'Read the sample phrase below naturally.' 
+                                : applicationType === 'scripted_call' 
+                                ? (scriptedStep === 1 ? 'Phase 1: Read the audition script naturally into the microphone.' : 'Phase 2: Stay completely silent & motionless for 15 seconds to calibrate room tone.') 
+                                : 'Please record a brief introductory message speaking naturally in this language.'
+                            } Recording auto-stops when time runs out.
                         </p>
+
+                        {/* 2-Phase Application Stepper Tabs for Scripted Calls */}
+                        {applicationType === 'scripted_call' && (
+                            <div className="mb-6 bg-neutral-950/80 border border-neutral-800/80 p-1.5 rounded-2xl flex items-center gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        if (!recording) {
+                                            setScriptedStep(1);
+                                            setSecondsLeft(MAX_SEC);
+                                        }
+                                    }}
+                                    disabled={recording}
+                                    className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 ${
+                                        scriptedStep === 1
+                                            ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/30"
+                                            : audioBlob
+                                            ? "bg-emerald-950/40 text-emerald-300 border border-emerald-800/40 hover:bg-emerald-900/40"
+                                            : "text-neutral-400 hover:text-white"
+                                    }`}
+                                >
+                                    <span className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-mono font-black bg-black/40">1</span>
+                                    <span>Phrase Audition {audioBlob ? "✓" : ""}</span>
+                                </button>
+                                <span className="text-neutral-600 text-xs font-bold">→</span>
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        if (!recording && audioBlob) {
+                                            setScriptedStep(2);
+                                            setSecondsLeft(15);
+                                        }
+                                    }}
+                                    disabled={recording || !audioBlob}
+                                    className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 ${
+                                        scriptedStep === 2
+                                            ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/30"
+                                            : roomSilenceBlob
+                                            ? "bg-emerald-950/40 text-emerald-300 border border-emerald-800/40 hover:bg-emerald-900/40"
+                                            : "text-neutral-500 opacity-60 cursor-not-allowed"
+                                    }`}
+                                >
+                                    <span className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-mono font-black bg-black/40">2</span>
+                                    <span>15s Room Silence {roomSilenceBlob ? "✓" : ""}</span>
+                                </button>
+                            </div>
+                        )}
 
                         {/* Mic Settings Popup Modal */}
                         <AnimatePresence>
@@ -1219,19 +1349,45 @@ export default function LanguageApply() {
                             </div>
                         )}
 
-                        {/* Scripted Call Test Phrase Box */}
-                        {applicationType === 'scripted_call' && samplePhrase && (
+                        {/* Scripted Call Test Phrase Box (Step 1) */}
+                        {applicationType === 'scripted_call' && scriptedStep === 1 && samplePhrase && (
                             <div className="bg-neutral-950/80 border border-neutral-800 p-6 rounded-3xl mb-5 space-y-3 shadow-inner">
                                 <div className="flex items-center gap-2 text-indigo-400 text-xs font-bold uppercase tracking-wider">
                                     <Radio className="w-4 h-4" />
-                                    <span>Scripted Call Test Phrase ({selectedLanguage})</span>
+                                    <span>Scripted Call Audition Script ({selectedLanguage})</span>
                                 </div>
                                 <p className="text-lg md:text-xl font-semibold text-white leading-relaxed whitespace-pre-wrap">
                                     "{samplePhrase.text}"
                                 </p>
                                 <p className="text-xs text-neutral-400">
-                                    Please read the above script line naturally into your microphone to verify your tone, pronunciation, and clarity.
+                                    Please read the above script line naturally into your microphone to verify your pronunciation and tone.
                                 </p>
+                            </div>
+                        )}
+
+                        {/* Scripted Call Room Silence Calibration Box (Step 2) */}
+                        {applicationType === 'scripted_call' && scriptedStep === 2 && (
+                            <div className="bg-gradient-to-br from-indigo-950/40 via-neutral-900 to-neutral-950 border border-indigo-500/40 p-6 rounded-3xl mb-5 space-y-3 shadow-xl text-left">
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-2 text-indigo-400 text-xs font-bold uppercase tracking-wider">
+                                        <Radio className="w-4 h-4 animate-pulse" />
+                                        <span>Phase 2: 15-Second Room Ambient Silence</span>
+                                    </div>
+                                    <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-indigo-900/60 text-indigo-300 border border-indigo-700/50">
+                                        Calibration
+                                    </span>
+                                </div>
+                                <h3 className="text-base font-bold text-white">
+                                    Record 15 Seconds of Clean Room Ambient Tone
+                                </h3>
+                                <div className="p-3.5 rounded-2xl bg-indigo-950/50 border border-indigo-500/20 text-xs text-neutral-300 space-y-1.5">
+                                    <p className="font-bold text-indigo-200">
+                                        ⚠️ Stay completely silent & motionless for all 15 seconds.
+                                    </p>
+                                    <p className="text-neutral-400 leading-relaxed text-[11px]">
+                                        • Do NOT speak, whisper, cough, shift in your chair, or tap the mic.
+                                    </p>
+                                </div>
                             </div>
                         )}
 
@@ -1254,13 +1410,13 @@ export default function LanguageApply() {
                                                  return userCustomizations.some(uk => uk.toLowerCase() === key.toLowerCase());
                                              }
                                              return true;
-                                        })
-                                        .map(([key, val]) => (
-                                            <div key={key}>
-                                                <span className="block text-xs uppercase opacity-60 mb-1">{key.replace(/_/g, ' ')}</span>
-                                                <span className="font-medium">{val}</span>
-                                            </div>
-                                        ))
+                                         })
+                                         .map(([key, val]) => (
+                                             <div key={key}>
+                                                 <span className="block text-xs uppercase opacity-60 mb-1">{key.replace(/_/g, ' ')}</span>
+                                                 <span className="font-medium">{val}</span>
+                                             </div>
+                                         ))
                                     }
                                     {samplePhrase.instructions && <div className="col-span-2 md:col-span-3 mt-2"><span className="block text-xs uppercase opacity-60 mb-1">Notes</span><p className="text-xs border-l-2 border-primary-300 pl-3">{samplePhrase.instructions}</p></div>}
                                 </div>
@@ -1269,140 +1425,236 @@ export default function LanguageApply() {
 
                         {/* Timer Ring */}
                         <div className="flex justify-center mb-7">
-                            <div className={`w-32 h-32 rounded-full border-4 flex flex-col items-center justify-center transition-all ${recording ? "border-error-500 animate-pulse" : audioBlob ? "border-success-500" : "border-neutral-200 dark:border-neutral-800"}`}>
-                                <span className={`text-2xl font-bold ${recording ? "text-error-600" : audioBlob ? "text-success-600" : "text-neutral-500 dark:text-neutral-400"}`}>
-                                    {audioBlob ? "✓" : fmt(recording ? secondsLeft : MAX_SEC)}
+                            <div className={`w-32 h-32 rounded-full border-4 flex flex-col items-center justify-center transition-all ${
+                                recording ? "border-indigo-500 animate-pulse" : (applicationType === 'scripted_call' && scriptedStep === 2 ? roomSilenceBlob : audioBlob) ? "border-success-500" : "border-neutral-200 dark:border-neutral-800"
+                            }`}>
+                                <span className={`text-2xl font-bold ${
+                                    recording ? "text-indigo-400" : (applicationType === 'scripted_call' && scriptedStep === 2 ? roomSilenceBlob : audioBlob) ? "text-success-600" : "text-neutral-500 dark:text-neutral-400"
+                                }`}>
+                                    {(applicationType === 'scripted_call' && scriptedStep === 2)
+                                        ? (roomSilenceBlob ? "✓" : (recording ? `${secondsLeft}s` : "15s"))
+                                        : (audioBlob ? "✓" : fmt(recording ? secondsLeft : MAX_SEC))
+                                    }
                                 </span>
-                                {recording && <span className="text-xs text-error-400 mt-0.5">recording</span>}
+                                {recording && (
+                                    <span className="text-xs text-indigo-400 mt-0.5">
+                                        {applicationType === 'scripted_call' && scriptedStep === 2 ? "silence capture" : "recording"}
+                                    </span>
+                                )}
                             </div>
                         </div>
 
                         {/* Controls */}
                         <div className="flex flex-col items-center gap-4">
-                            {!recording && !audioBlob && (
-                                <button onClick={startRecording} className="btn-primary px-8 py-3 text-base font-semibold flex items-center gap-2">
-                                    🎙️ Start Recording
-                                </button>
-                            )}
-                            {recording && (
-                                <button onClick={stopRecording} className="px-8 py-3 bg-error-600 hover:bg-error-700 text-white font-semibold rounded-xl transition-colors flex items-center gap-2">
-                                    ⏹ Stop
-                                </button>
-                            )}
-                            {audioBlob && (
+                            {/* STEP 2 CONTROLS (Room Silence) */}
+                            {applicationType === 'scripted_call' && scriptedStep === 2 ? (
                                 <>
-                                    <audio src={audioUrl} controls className="w-full rounded-lg" controlsList="nodownload noplaybackrate" onContextMenu={(e) => e.preventDefault()} />
-                                    
-                                    {applicationType === 'phrase' && recordedLufs !== null && enforceLufs !== false && (
-                                        <div className={`w-full p-3.5 rounded-xl border flex items-center justify-between text-xs font-bold shadow-sm ${
-                                            recordedLufs >= -25.0 && recordedLufs <= -18.0
-                                                ? "bg-emerald-500/15 border-emerald-500/40 text-emerald-700 dark:text-emerald-300"
-                                                : recordedLufs > -18.0
-                                                ? "bg-rose-500/15 border-rose-500/40 text-rose-700 dark:text-rose-300"
-                                                : "bg-amber-500/15 border-amber-500/40 text-amber-700 dark:text-amber-300"
-                                        }`}>
-                                            <span className="flex items-center gap-1.5 font-semibold">
-                                                {recordedLufs >= -25.0 && recordedLufs <= -18.0
-                                                    ? "✓ Loudness Calibration Passed (-18 to -25 LUFS)"
-                                                    : recordedLufs > -18.0
-                                                    ? "⚠️ Loudness Too High (Reduce Mic Gain & Re-record)"
-                                                    : "⚠️ Loudness Too Low (Increase Mic Gain & Re-record)"
-                                                }
-                                            </span>
-                                            <span className="font-mono text-sm font-black px-2.5 py-0.5 rounded bg-neutral-900 text-white">
-                                                {recordedLufs} LUFS
-                                            </span>
-                                        </div>
-                                    )}
-
-                                    {/* Mel-Spectrogram & AI Static Noise Inspection */}
-                                    {showAnalysis && (
-                                        <div className="w-full pt-1 mb-2">
-                                            <SpectrogramViewer
-                                                audioUrl={audioUrl}
-                                                title={`Audition Spectrogram · ${applicationType === 'phrase' ? `Sample #${sampleIndex + 1}` : 'Voice Test'}`}
-                                                height={160}
-                                                autoRunAudit={true}
-                                                onAuditCompleted={(audit) => {
-                                                    setIsAnalyzing(false);
-                                                    setAiAudit(audit);
-                                                }}
-                                            />
-                                        </div>
-                                    )}
-
-                                    <div className="flex gap-2.5 w-full">
-                                        {sampleIndex > 0 && applicationType === 'phrase' && samplePhrases.length > 1 && (
-                                             <button
-                                                 onClick={handlePrevSample}
-                                                 disabled={recording || loading || isAnalyzing}
-                                                 className="px-3.5 py-2.5 border border-neutral-300 dark:border-neutral-700 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-800 rounded-xl text-xs font-semibold transition-colors disabled:opacity-50"
-                                             >
-                                                 ← Prev
-                                             </button>
-                                        )}
-                                        <button
-                                            type="button"
-                                            onClick={() => { 
-                                                setAudioBlob(null); 
-                                                setAudioUrl(null); 
-                                                setRecordedLufs(null); 
-                                                setRawPcm(null); 
-                                                setShowAnalysis(false);
-                                                setIsAnalyzing(false);
-                                                setAiAudit(null);
-                                            }}
-                                            disabled={loading || isAnalyzing}
-                                            className="flex-1 py-2.5 px-3 border border-neutral-300 dark:border-neutral-700 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-800 rounded-xl text-xs font-semibold transition-colors flex items-center justify-center gap-1.5 disabled:opacity-50"
-                                        >
-                                            <RotateCcw className="w-3.5 h-3.5" /> Re-record
+                                    {!recording && !roomSilenceBlob && (
+                                        <button onClick={startRecording} className="btn-primary px-8 py-3 text-base font-semibold flex items-center gap-2 shadow-lg shadow-indigo-600/20">
+                                            🤫 Record 15s Room Silence
                                         </button>
-
-                                        <button
-                                            type="button"
-                                            onClick={() => {
-                                                setShowAnalysis(true);
-                                                setIsAnalyzing(true);
-                                            }}
-                                            disabled={loading || isAnalyzing || !!aiAudit}
-                                            className="flex-1 py-2.5 px-3 bg-indigo-600 hover:bg-indigo-500 active:scale-[0.98] text-white rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all shadow-sm shadow-indigo-600/20 disabled:opacity-50"
-                                        >
-                                            {isAnalyzing ? (
-                                                <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                                            ) : aiAudit ? (
-                                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-300" />
-                                            ) : (
-                                                <Sparkles className="w-3.5 h-3.5 text-indigo-200" />
+                                    )}
+                                    {recording && (
+                                        <div className="flex items-center justify-center">
+                                            <div className="px-5 py-2.5 bg-neutral-900/90 border border-indigo-500/40 rounded-2xl flex items-center gap-2.5 text-indigo-300 font-semibold text-xs shadow-lg shadow-indigo-950/50">
+                                                <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-pulse" />
+                                                <span>Recording ambient tone... Please remain silent ({secondsLeft}s left)</span>
+                                            </div>
+                                        </div>
+                                    )}
+                                    {roomSilenceBlob && (
+                                        <>
+                                            <audio src={roomSilenceUrl} controls className="w-full rounded-lg" controlsList="nodownload noplaybackrate" onContextMenu={(e) => e.preventDefault()} />
+                                            <div className="w-full p-3.5 rounded-xl bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 text-xs font-bold flex items-center justify-between shadow-sm">
+                                                <span className="flex items-center gap-2">
+                                                    <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                                                    Room Ambient Silence Captured (15s)
+                                                </span>
+                                                <span className="text-[10px] font-mono uppercase bg-neutral-900 px-2 py-0.5 rounded text-emerald-300 border border-emerald-500/30">Calibrated</span>
+                                            </div>
+                                            <div className="flex gap-2.5 w-full">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setScriptedStep(1);
+                                                        setSecondsLeft(MAX_SEC);
+                                                    }}
+                                                    disabled={loading}
+                                                    className="flex-1 py-2.5 px-3 border border-neutral-700 text-neutral-300 hover:bg-neutral-800 rounded-xl text-xs font-semibold transition-colors flex items-center justify-center gap-1.5"
+                                                >
+                                                    ← Back to Step 1
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setRoomSilenceBlob(null);
+                                                        setRoomSilenceUrl(null);
+                                                        setRoomSilenceRawPcm(null);
+                                                        setRoomSilenceLufs(null);
+                                                        setSecondsLeft(15);
+                                                    }}
+                                                    disabled={loading}
+                                                    className="flex-1 py-2.5 px-3 border border-neutral-700 text-neutral-300 hover:bg-neutral-800 rounded-xl text-xs font-semibold transition-colors flex items-center justify-center gap-1.5"
+                                                >
+                                                    <RotateCcw className="w-3.5 h-3.5" /> Re-record Silence
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={submit}
+                                                    disabled={loading}
+                                                    className="flex-1 btn-primary py-2.5 px-3 text-xs font-bold flex items-center justify-center gap-1.5 shadow-lg shadow-indigo-600/30"
+                                                >
+                                                    {loading ? "Submitting..." : "Submit Application"}
+                                                </button>
+                                            </div>
+                                        </>
+                                    )}
+                                </>
+                            ) : (
+                                /* STEP 1 / GENERAL CONTROLS (Phrase / Voice Audition) */
+                                <>
+                                    {!recording && !audioBlob && (
+                                        <button onClick={startRecording} className="btn-primary px-8 py-3 text-base font-semibold flex items-center gap-2">
+                                            🎙️ Start Recording
+                                        </button>
+                                    )}
+                                    {recording && (
+                                        <button onClick={stopRecording} className="px-8 py-3 bg-error-600 hover:bg-error-700 text-white font-semibold rounded-xl transition-colors flex items-center gap-2">
+                                            ⏹ Stop
+                                        </button>
+                                    )}
+                                    {audioBlob && (
+                                        <>
+                                            <audio src={audioUrl} controls className="w-full rounded-lg" controlsList="nodownload noplaybackrate" onContextMenu={(e) => e.preventDefault()} />
+                                            
+                                            {applicationType === 'phrase' && recordedLufs !== null && enforceLufs !== false && (
+                                                <div className={`w-full p-3.5 rounded-xl border flex items-center justify-between text-xs font-bold shadow-sm ${
+                                                    recordedLufs >= -25.0 && recordedLufs <= -18.0
+                                                        ? "bg-emerald-500/15 border-emerald-500/40 text-emerald-700 dark:text-emerald-300"
+                                                        : recordedLufs > -18.0
+                                                        ? "bg-rose-500/15 border-rose-500/40 text-rose-700 dark:text-rose-300"
+                                                        : "bg-amber-500/15 border-amber-500/40 text-amber-700 dark:text-amber-300"
+                                                }`}>
+                                                    <span className="flex items-center gap-1.5 font-semibold">
+                                                        {recordedLufs >= -25.0 && recordedLufs <= -18.0
+                                                            ? "✓ Loudness Calibration Passed (-18 to -25 LUFS)"
+                                                            : recordedLufs > -18.0
+                                                            ? "⚠️ Loudness Too High (Reduce Mic Gain & Re-record)"
+                                                            : "⚠️ Loudness Too Low (Increase Mic Gain & Re-record)"
+                                                        }
+                                                    </span>
+                                                    <span className="font-mono text-sm font-black px-2.5 py-0.5 rounded bg-neutral-900 text-white">
+                                                        {recordedLufs} LUFS
+                                                    </span>
+                                                </div>
                                             )}
-                                            {isAnalyzing ? 'Analyzing...' : aiAudit ? 'Analyzed' : 'Analyze'}
-                                        </button>
 
-                                        {applicationType === 'phrase' && samplePhrases.length > 1 && sampleIndex < samplePhrases.length - 1 ? (
-                                            <button
-                                                type="button"
-                                                onClick={() => {
-                                                    setShowAnalysis(false);
-                                                    setIsAnalyzing(false);
-                                                    setAiAudit(null);
-                                                    handleNextSample();
-                                                }}
-                                                disabled={!audioBlob || loading || isAnalyzing}
-                                                className="flex-1 btn-primary py-2.5 px-3 text-xs font-semibold disabled:opacity-50 flex items-center justify-center gap-1.5"
-                                            >
-                                                <span>Next ({sampleIndex + 2}/{samplePhrases.length})</span>
-                                                <span>→</span>
-                                            </button>
-                                        ) : (
-                                            <button
-                                                type="button"
-                                                onClick={submit}
-                                                disabled={loading || isAnalyzing}
-                                                className="flex-1 btn-primary py-2.5 px-3 text-xs font-semibold disabled:opacity-50"
-                                            >
-                                                {loading ? "Submitting…" : samplePhrases.length > 1 ? `Submit (${samplePhrases.length} Samples)` : "Submit Application"}
-                                            </button>
-                                        )}
-                                    </div>
+                                            {/* Mel-Spectrogram & AI Static Noise Inspection */}
+                                            {showAnalysis && (
+                                                <div className="w-full pt-1 mb-2">
+                                                    <SpectrogramViewer
+                                                        audioUrl={audioUrl}
+                                                        title={`Audition Spectrogram · ${applicationType === 'phrase' ? `Sample #${sampleIndex + 1}` : 'Voice Test'}`}
+                                                        height={160}
+                                                        autoRunAudit={true}
+                                                        onAuditCompleted={(audit) => {
+                                                            setIsAnalyzing(false);
+                                                            setAiAudit(audit);
+                                                        }}
+                                                    />
+                                                </div>
+                                            )}
+
+                                            <div className="flex gap-2.5 w-full">
+                                                {sampleIndex > 0 && applicationType === 'phrase' && samplePhrases.length > 1 && (
+                                                     <button
+                                                         onClick={handlePrevSample}
+                                                         disabled={recording || loading || isAnalyzing}
+                                                         className="px-3.5 py-2.5 border border-neutral-300 dark:border-neutral-700 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-800 rounded-xl text-xs font-semibold transition-colors disabled:opacity-50"
+                                                     >
+                                                         ← Prev
+                                                     </button>
+                                                )}
+                                                <button
+                                                    type="button"
+                                                    onClick={() => { 
+                                                        setAudioBlob(null); 
+                                                        setAudioUrl(null); 
+                                                        setRecordedLufs(null); 
+                                                        setRawPcm(null); 
+                                                        setShowAnalysis(false);
+                                                        setIsAnalyzing(false);
+                                                        setAiAudit(null);
+                                                    }}
+                                                    disabled={loading || isAnalyzing}
+                                                    className="flex-1 py-2.5 px-3 border border-neutral-300 dark:border-neutral-700 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-800 rounded-xl text-xs font-semibold transition-colors flex items-center justify-center gap-1.5 disabled:opacity-50"
+                                                >
+                                                    <RotateCcw className="w-3.5 h-3.5" /> Re-record
+                                                </button>
+
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setShowAnalysis(true);
+                                                        setIsAnalyzing(true);
+                                                    }}
+                                                    disabled={loading || isAnalyzing || !!aiAudit}
+                                                    className="flex-1 py-2.5 px-3 bg-indigo-600 hover:bg-indigo-500 active:scale-[0.98] text-white rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all shadow-sm shadow-indigo-600/20 disabled:opacity-50"
+                                                >
+                                                    {isAnalyzing ? (
+                                                        <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                                    ) : aiAudit ? (
+                                                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-300" />
+                                                    ) : (
+                                                        <Sparkles className="w-3.5 h-3.5 text-indigo-200" />
+                                                    )}
+                                                    {isAnalyzing ? 'Analyzing...' : aiAudit ? 'Analyzed' : 'Analyze'}
+                                                </button>
+
+                                                {applicationType === 'scripted_call' ? (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            setShowAnalysis(false);
+                                                            setIsAnalyzing(false);
+                                                            setAiAudit(null);
+                                                            setScriptedStep(2);
+                                                            setSecondsLeft(15);
+                                                        }}
+                                                        disabled={loading || isAnalyzing}
+                                                        className="flex-1 btn-primary py-2.5 px-3 text-xs font-bold flex items-center justify-center gap-1.5 shadow-md shadow-indigo-600/30"
+                                                    >
+                                                        <span>Next: Room Silence (15s)</span>
+                                                        <span>→</span>
+                                                    </button>
+                                                ) : applicationType === 'phrase' && samplePhrases.length > 1 && sampleIndex < samplePhrases.length - 1 ? (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            setShowAnalysis(false);
+                                                            setIsAnalyzing(false);
+                                                            setAiAudit(null);
+                                                            handleNextSample();
+                                                        }}
+                                                        disabled={!audioBlob || loading || isAnalyzing}
+                                                        className="flex-1 btn-primary py-2.5 px-3 text-xs font-semibold disabled:opacity-50 flex items-center justify-center gap-1.5"
+                                                    >
+                                                        <span>Next ({sampleIndex + 2}/{samplePhrases.length})</span>
+                                                        <span>→</span>
+                                                    </button>
+                                                ) : (
+                                                    <button
+                                                        type="button"
+                                                        onClick={submit}
+                                                        disabled={loading || isAnalyzing}
+                                                        className="flex-1 btn-primary py-2.5 px-3 text-xs font-semibold disabled:opacity-50"
+                                                    >
+                                                        {loading ? "Submitting…" : samplePhrases.length > 1 ? `Submit (${samplePhrases.length} Samples)` : "Submit Application"}
+                                                    </button>
+                                                )}
+                                            </div>
+                                        </>
+                                    )}
                                 </>
                             )}
                         </div>

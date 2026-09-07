@@ -129,6 +129,7 @@ const userSchema = new mongoose.Schema(
         languageCode: { type: String, required: true, lowercase: true, trim: true },
         status: { type: String, enum: ["pending", "approved", "rejected", "blacklisted"], default: "pending" },
         recordingFile: { type: String, default: null },
+        roomSilenceFile: { type: String, default: null },
         sampleRecordings: [{ type: mongoose.Schema.Types.Mixed, default: [] }],
         appliedAt: { type: Date, default: Date.now },
         reviewedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
@@ -147,6 +148,9 @@ const userSchema = new mongoose.Schema(
     deHissMode: { type: String, enum: ["off", "14k", "12k", "10k", "8k"], default: "off" },
     deEsserMode: { type: String, enum: ["off", "light", "medium", "strong"], default: "off" },
     
+    // Ambient room tone calibration file (specifically for scripted dialogues & speech stitching)
+    roomSilenceFile: { type: String, default: null },
+
     // Speaker ID (e.g. spk_1, spk_2, ...)
     speaker_id: { type: String, unique: true, sparse: true, default: null },
 

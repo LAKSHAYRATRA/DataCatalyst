@@ -826,8 +826,18 @@ export default function AdminScriptedCallsReview() {
                 const el = audioRefs.current[key];
                 if (el) el.play().catch(() => {});
             }, 100);
+
+            Swal.fire({
+                icon: "success",
+                title: "Re-stitched Successfully!",
+                text: "Audio re-calibrated with studio-grade room tone and zero-crossing micro-fades.",
+                timer: 2200,
+                showConfirmButton: false,
+                background: "#18181b",
+                color: "#fff"
+            });
         } catch (err) {
-            Swal.fire('Recompile Error', err.message || 'Failed to compile merged audio', 'error');
+            Swal.fire('Re-stitch Error', err.message || 'Failed to re-stitch audio', 'error');
         } finally {
             setLoadingAudio(null);
         }
@@ -1213,6 +1223,16 @@ export default function AdminScriptedCallsReview() {
                                                 </button>
                                             )}
                                             <button
+                                                type="button"
+                                                onClick={() => recompileAndPlay(reviewing.callId)}
+                                                disabled={loadingAudio === `${reviewing.callId}_stereo`}
+                                                className="px-3.5 py-1.5 rounded-lg bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-500 hover:to-amber-600 border border-amber-500/50 font-bold text-xs text-white shadow-md transition-all disabled:opacity-50 flex items-center gap-1.5"
+                                                title="Re-stitch dual-track audio with calibrated studio room tone and seamless zero-crossing micro-fades"
+                                            >
+                                                <RefreshCw className={`w-3.5 h-3.5 ${loadingAudio === `${reviewing.callId}_stereo` ? 'animate-spin' : ''}`} />
+                                                <span>Re-stitch (Studio Silence)</span>
+                                            </button>
+                                            <button
                                                 onClick={() => handleApproveEntireCall(reviewing.callId)}
                                                 disabled={actionLoading === "call_all"}
                                                 className="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 font-bold text-xs text-white shadow-md transition-all disabled:opacity-50 flex items-center gap-1.5"
@@ -1241,7 +1261,7 @@ export default function AdminScriptedCallsReview() {
                                                         <Play className="w-3.5 h-3.5 fill-current text-emerald-400" />
                                                         <span>Play Full Merged Conversation</span>
                                                         {dialogueData?.turns?.some(t => t.wasAudioTrimmed) && (
-                                                            <span className="text-[10px] px-2 py-0.5 rounded bg-indigo-900/80 text-indigo-300 border border-indigo-700/60 font-bold ml-1 flex items-center gap-1">
+                                                             <span className="text-[10px] px-2 py-0.5 rounded bg-indigo-900/80 text-indigo-300 border border-indigo-700/60 font-bold ml-1 flex items-center gap-1">
                                                                 <Scissors className="w-3 h-3 text-indigo-400" />
                                                                 Trimmed Parts Compiled
                                                             </span>
@@ -1254,11 +1274,14 @@ export default function AdminScriptedCallsReview() {
                                                 type="button"
                                                 onClick={() => recompileAndPlay(reviewing.callId)}
                                                 disabled={loadingAudio === `${reviewing.callId}_stereo`}
-                                                className="px-3 py-2.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white border border-neutral-600 font-semibold text-xs flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50 shadow-sm"
-                                                title="Re-compile dual-track conversation from scratch with latest trimmed turn audio"
+                                                className="px-3.5 py-2.5 rounded-xl bg-gradient-to-r from-amber-600/90 to-amber-700/90 hover:from-amber-500 hover:to-amber-600 text-white border border-amber-500/50 font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50 shadow-md hover:shadow-amber-500/20"
+                                                title="Re-stitch dual-track conversation from scratch with calibrated studio room tone and seamless zero-crossing micro-fades"
                                             >
                                                 <RefreshCw className={`w-3.5 h-3.5 ${loadingAudio === `${reviewing.callId}_stereo` ? 'animate-spin' : ''}`} />
-                                                <span className="hidden sm:inline">Recompile Audio</span>
+                                                <span>Re-stitch Audio</span>
+                                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-950/80 text-amber-200 border border-amber-600/60 font-semibold uppercase tracking-wider hidden sm:inline">
+                                                    Studio Silence
+                                                </span>
                                             </button>
                                         </div>
 

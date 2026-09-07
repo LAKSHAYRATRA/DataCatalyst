@@ -2,6 +2,7 @@ import express from "express";
 import { requireVendorAuth } from "../auth.js";
 import {
   vendorLogin,
+  vendorLogout,
   getVendorMe,
   getVendorCommunity,
   getVendorProjects,
@@ -23,8 +24,9 @@ import {
 const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET;
 
-// Public vendor login
+// Public vendor login & logout
 router.post("/login", vendorLogin);
+router.post("/logout", vendorLogout);
 
 // Protected vendor portal endpoints
 router.get("/me", requireVendorAuth(JWT_SECRET), getVendorMe);

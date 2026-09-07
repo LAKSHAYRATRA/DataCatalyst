@@ -8,7 +8,7 @@ export async function apiFetch(path, options = {}) {
   const headers = new Headers(options.headers || {});
   const isVendorPath = path.startsWith("/api/vendor");
   const token = typeof window !== "undefined"
-    ? (isVendorPath ? (localStorage.getItem("vc_vendor_token") || localStorage.getItem("vc_token")) : localStorage.getItem("vc_token"))
+    ? (isVendorPath ? localStorage.getItem("vc_vendor_token") : localStorage.getItem("vc_token"))
     : null;
   if (token && !headers.has("Authorization")) {
     headers.set("Authorization", `Bearer ${token}`);
@@ -29,12 +29,20 @@ export async function apiFetch(path, options = {}) {
 
     // Handle session expiration or unauthorized access
     if (res.status === 401 || body?.error === "session_expired" || body?.error === "unauthorized") {
-      await clearToken();
-      const publicPaths = ["/", "/login", "/signup", "/forgot-password", "/reset-password", "/earnings", "/community", "/about", "/terms", "/privacy", "/support", "/vendor/login"];
-      if (!publicPaths.includes(window.location.pathname)) {
-        if (window.location.pathname.startsWith("/vendor")) {
+      const isVendorReq = path.startsWith("/api/vendor") || (typeof window !== "undefined" && window.location.pathname.startsWith("/vendor"));
+      if (isVendorReq) {
+        localStorage.removeItem("vc_vendor_token");
+        localStorage.removeItem("vc_vendor_info");
+        try {
+          await fetch(`${BASE}/api/vendor/logout`, { method: "POST", credentials: "include" });
+        } catch {}
+        if (typeof window !== "undefined" && window.location.pathname !== "/vendor/login") {
           window.location.href = "/vendor/login";
-        } else {
+        }
+      } else {
+        await clearToken();
+        const publicPaths = ["/", "/login", "/signup", "/forgot-password", "/reset-password", "/earnings", "/community", "/about", "/terms", "/privacy", "/support", "/vendor/login"];
+        if (typeof window !== "undefined" && !publicPaths.includes(window.location.pathname)) {
           window.location.href = "/login";
         }
       }

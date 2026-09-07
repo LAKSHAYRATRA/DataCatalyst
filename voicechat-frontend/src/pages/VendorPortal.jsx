@@ -150,9 +150,12 @@ export default function VendorPortal() {
     setTimeout(() => setCopiedRefId(null), 2000);
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
     localStorage.removeItem("vc_vendor_token");
     localStorage.removeItem("vc_vendor_info");
+    try {
+      await fetch(`${BASE_URL}/api/vendor/logout`, { method: "POST", credentials: "include" });
+    } catch (_) {}
     navigate("/vendor/login");
   };
 
@@ -511,7 +514,7 @@ export default function VendorPortal() {
     setDownloadingAgreement(true);
 
     try {
-      const token = localStorage.getItem("vc_vendor_token") || localStorage.getItem("vc_token");
+      const token = localStorage.getItem("vc_vendor_token");
       const url = `${BASE_URL}/api/vendor/agreement-pdf${token ? `?token=${encodeURIComponent(token)}` : ""}`;
 
       const res = await fetch(url, {
