@@ -113,4 +113,6 @@ voicechat-backend/scripts/check_*.js
 temp/
 voicechat-backend/temp/
 voicechat-backend/voicechat-backend/
-
+AGENTS.md
+agents.md
+.agents/
