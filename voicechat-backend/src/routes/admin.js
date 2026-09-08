@@ -39,6 +39,7 @@ import { invokeAudioQC } from "../config/lambda.js";
 import { restitchScriptedCall } from "../services/scriptedStitcher.js";
 import { getArtistRateForProject } from "../controllers/vendorController.js";
 import { syncPendingScriptedSubmissions } from "../services/scriptedSync.js";
+import { compilePartialScriptedCall } from "../services/partialScriptedStitcher.js";
 
 ffmpeg.setFfmpegPath(ffmpegInstaller.path);
 
@@ -3768,6 +3769,359 @@ qaCallRouter.post("/scripted/call/:callId/submit-review", async (req, res) => {
     }
 });
 
+// Stream/Listen to compiled partial scripted call (without partner gaps)
+qaCallRouter.get("/scripted/call/:callId/partial-audio", async (req, res) => {
+    try {
+        const { callId } = req.params;
+        const force = req.query.force === "true";
+        const { filePath } = await compilePartialScriptedCall(callId, force);
+
+        if (!fs.existsSync(filePath)) {
+            return res.status(404).json({ error: "Compiled partial audio file not found" });
+        }
+
+        const stat = fs.statSync(filePath);
+        const total = stat.size;
+
+        if (req.headers.range) {
+            const parts = req.headers.range.replace(/bytes=/, "").split("-");
+            const start = parseInt(parts[0], 10);
+            const end = parts[1] ? parseInt(parts[1], 10) : total - 1;
+            const chunksize = end - start + 1;
+            res.writeHead(206, {
+                "Content-Range": `bytes ${start}-${end}/${total}`,
+                "Accept-Ranges": "bytes",
+                "Content-Length": chunksize,
+                "Content-Type": "audio/wav"
+            });
+            fs.createReadStream(filePath, { start, end }).pipe(res);
+        } else {
+            res.writeHead(200, {
+                "Content-Length": total,
+                "Content-Type": "audio/wav",
+                "Accept-Ranges": "bytes"
+            });
+            fs.createReadStream(filePath).pipe(res);
+        }
+    } catch (err) {
+        console.error("[partial-audio error]:", err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Download compiled partial scripted call WAV (without partner gaps)
+qaCallRouter.get("/scripted/call/:callId/download-partial", async (req, res) => {
+    try {
+        const { callId } = req.params;
+        const force = req.query.force === "true";
+        const { filePath, role } = await compilePartialScriptedCall(callId, force);
+
+        if (!fs.existsSync(filePath)) {
+            return res.status(404).json({ error: "Compiled partial audio file not found" });
+        }
+
+        res.download(filePath, `${callId}_partial_${role}.wav`);
+    } catch (err) {
+        console.error("[download-partial error]:", err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Download Single Scripted Call Bundle as ZIP (verses/, transcripts/, transcript.txt, speaker_metadata.json, full_audio/)
+qaCallRouter.get(["/scripted/call/:callId/download-bundle", "/scripted/call/:callId/download-zip"], async (req, res) => {
+    try {
+        const { callId } = req.params;
+        const call = await CallSession.findOne({ callId })
+            .populate("userA")
+            .populate("userB")
+            .populate("topicId")
+            .populate("subtopicId")
+            .lean();
+
+        if (!call) {
+            return res.status(404).json({ error: "Scripted call not found." });
+        }
+
+        // Submissions
+        let [s1Sub, s2Sub] = await Promise.all([
+            ScriptedSubmission.findOne({ callSessionId: call._id, role: "speaker1" }).lean(),
+            ScriptedSubmission.findOne({ callSessionId: call._id, role: "speaker2" }).lean()
+        ]);
+
+        if (!s1Sub || !s2Sub) {
+            const subtopicId = call.subtopicId || s1Sub?.subtopicId || s2Sub?.subtopicId;
+            if (subtopicId) {
+                if (!s1Sub && call.userA) {
+                    s1Sub = await ScriptedSubmission.findOne({
+                        subtopicId,
+                        userId: call.userA._id || call.userA,
+                        status: { $ne: "cancelled" }
+                    }).lean();
+                }
+                if (!s2Sub && call.userB) {
+                    s2Sub = await ScriptedSubmission.findOne({
+                        subtopicId,
+                        userId: call.userB._id || call.userB,
+                        status: { $ne: "cancelled" }
+                    }).lean();
+                }
+            }
+        }
+
+        // Subtopic
+        const subtopicId = s1Sub?.subtopicId || s2Sub?.subtopicId || call.subtopicId;
+        let subtopic = null;
+        if (subtopicId) {
+            subtopic = await ScriptedSubtopic.findById(subtopicId).lean();
+        }
+
+        // Company reference
+        let companyReference = "";
+        if (call.language) {
+            const sLang = await ScriptedLanguage.findOne({
+                $or: [
+                    { code: String(call.language).toLowerCase().trim() },
+                    { name: call.language }
+                ]
+            }).select("companyName").lean();
+            if (sLang?.companyName) companyReference = sLang.companyName;
+        }
+
+        let ZipArchive;
+        try {
+            const archiverModule = await import("archiver");
+            ZipArchive = archiverModule.ZipArchive || archiverModule.default?.ZipArchive;
+            if (!ZipArchive) {
+                const { createRequire } = await import("module");
+                const require = createRequire(import.meta.url);
+                ZipArchive = require("archiver").ZipArchive;
+            }
+        } catch (err) {
+            console.error("Archiver error:", err);
+            return res.status(500).json({ error: "Server missing 'archiver' dependency: " + err.message });
+        }
+
+        const zipFilename = `${callId}_bundle_${new Date().toISOString().slice(0, 10)}.zip`;
+        res.setHeader("Content-Type", "application/zip");
+        res.setHeader("Content-Disposition", `attachment; filename="${zipFilename}"`);
+
+        const archive = new ZipArchive({ zlib: { level: 0 } });
+        archive.on("error", (err) => {
+            console.error("[Scripted Bundle Download] Archiver Error:", err);
+        });
+        archive.pipe(res);
+
+        // Helper to locate verse on disk
+        function resolveVerseAudio(rawPath) {
+            if (!rawPath) return null;
+            const cleanRaw = String(rawPath).replace(/^local:/, "").trim();
+            const base = path.basename(cleanRaw);
+            const cwd = process.cwd();
+            const candidates = [
+                cleanRaw,
+                path.resolve(cleanRaw),
+                path.join(cwd, cleanRaw),
+                path.join(cwd, "uploads", cleanRaw),
+                path.join(cwd, "uploads", "scripted_temp", base),
+                path.join(cwd, "uploads", base),
+                path.join(cwd, "recordings", cleanRaw),
+                path.join(cwd, "recordings", base)
+            ];
+            return candidates.find(c => fs.existsSync(c) && fs.statSync(c).isFile()) || null;
+        }
+
+        // Helper to convert audio to 48kHz mono WAV Buffer
+        function getWavBufferFromAudio(filePath) {
+            return new Promise((resolve) => {
+                const pLocal = resolveVerseAudio(filePath);
+                if (!pLocal) return resolve(null);
+                const p = spawn("ffmpeg", ["-y", "-i", pLocal, "-ac", "1", "-ar", "48000", "-c:a", "pcm_s16le", "-f", "wav", "pipe:1"]);
+                const chunks = [];
+                p.stdout.on("data", c => chunks.push(c));
+                p.stderr.on("data", () => {});
+                p.on("close", code => {
+                    if (code === 0) resolve(Buffer.concat(chunks));
+                    else resolve(fs.readFileSync(pLocal));
+                });
+                p.on("error", () => resolve(fs.readFileSync(pLocal)));
+            });
+        }
+
+        const rawTurns = subtopic?.dialogueTurns || [];
+        const maxTurns = Math.max(s1Sub?.verses?.length || 0, s2Sub?.verses?.length || 0, rawTurns.length);
+        const dialogueTurns = [];
+
+        // Append each recorded verse into verses/
+        for (let i = 0; i < maxTurns; i++) {
+            const v1 = s1Sub?.verses?.find(v => Number(v.turnIndex) === i);
+            const v2 = s2Sub?.verses?.find(v => Number(v.turnIndex) === i);
+
+            if (v1 && v1.audioPath) {
+                const wavBuf = await getWavBufferFromAudio(v1.audioPath);
+                if (wavBuf) {
+                    const fname = `verses/turn_${String(i + 1).padStart(2, "0")}_speaker1.wav`;
+                    archive.append(wavBuf, { name: fname });
+                    dialogueTurns.push({
+                        turn_index: i,
+                        speaker_role: "speaker1",
+                        speaker_label: "Speaker 1 (Host)",
+                        speaker_id: call.userA?.speaker_id || `spk_${call.userA?._id || "1"}`,
+                        text: v1.text || rawTurns[i]?.speaker1 || "",
+                        duration_sec: v1.durationSec || +(Math.max(0, (wavBuf.length - 44) / (48000 * 2)).toFixed(2)),
+                        audio_file: fname,
+                        status: v1.status || "approved"
+                    });
+                }
+            }
+
+            if (v2 && v2.audioPath) {
+                const wavBuf = await getWavBufferFromAudio(v2.audioPath);
+                if (wavBuf) {
+                    const fname = `verses/turn_${String(i + 1).padStart(2, "0")}_speaker2.wav`;
+                    archive.append(wavBuf, { name: fname });
+                    dialogueTurns.push({
+                        turn_index: i,
+                        speaker_role: "speaker2",
+                        speaker_label: "Speaker 2 (Guest)",
+                        speaker_id: call.userB?.speaker_id || `spk_${call.userB?._id || "2"}`,
+                        text: v2.text || rawTurns[i]?.speaker2 || "",
+                        duration_sec: v2.durationSec || +(Math.max(0, (wavBuf.length - 44) / (48000 * 2)).toFixed(2)),
+                        audio_file: fname,
+                        status: v2.status || "approved"
+                    });
+                }
+            }
+        }
+
+        // Add transcripts/<callId>.json and transcript.json
+        const transcriptObj = {
+            call_id: call.callId,
+            language: call.language || "english",
+            topic: call.topicId?.title || "",
+            scenario: subtopic?.title || "",
+            scenario_description: subtopic?.description || "",
+            instructions: subtopic?.instructions || "",
+            created_at: call.startedAt || call.createdAt,
+            speaker_channels: {
+                ch1_left: {
+                    speaker_id: call.userA?.speaker_id || `spk_${call.userA?._id || "1"}`,
+                    role: "Speaker 1 (Host)",
+                    name: `${call.userA?.firstname || ""} ${call.userA?.lastname || ""}`.trim() || call.userA?.username || "Speaker 1"
+                },
+                ch2_right: {
+                    speaker_id: call.userB?.speaker_id || `spk_${call.userB?._id || "2"}`,
+                    role: "Speaker 2 (Guest)",
+                    name: `${call.userB?.firstname || ""} ${call.userB?.lastname || ""}`.trim() || call.userB?.username || "Speaker 2"
+                }
+            },
+            dialogue_turns: dialogueTurns
+        };
+        if (companyReference) transcriptObj.company_reference = companyReference;
+
+        archive.append(JSON.stringify(transcriptObj, null, 2), { name: `transcripts/${call.callId}.json` });
+        archive.append(JSON.stringify(transcriptObj, null, 2), { name: "transcript.json" });
+
+        // Add human readable transcript.txt
+        const scriptHeader = [
+            "==================================================================",
+            `SCRIPTED CONVERSATION TRANSCRIPT: ${call.callId}`,
+            `LANGUAGE: ${call.language || "english"}`,
+            `SCENARIO: ${subtopic?.title || "Scripted Scenario"}`,
+            `DATE: ${new Date(call.startedAt || Date.now()).toLocaleString()}`,
+            "==================================================================",
+            ""
+        ].join("\n");
+
+        const scriptBody = dialogueTurns.map(t => 
+            `[Turn ${String(t.turn_index + 1).padStart(2, "0")}] ${t.speaker_label} (${t.speaker_id}):\n${t.text}`
+        ).join("\n\n");
+
+        archive.append(scriptHeader + scriptBody + "\n", { name: "transcript.txt" });
+
+        // Add speaker_metadata.json
+        const speakersMap = {};
+        function buildSpeakerDoc(user, spkIdOverride) {
+            if (!user) return null;
+            const spkId = String(user.speaker_id || spkIdOverride || `spk_${user._id}`).trim();
+            let age = "unknown";
+            if (user.dob) {
+                const dobDate = new Date(user.dob);
+                const today = new Date();
+                let calcAge = today.getFullYear() - dobDate.getFullYear();
+                const m = today.getMonth() - dobDate.getMonth();
+                if (m < 0 || (m === 0 && today.getDate() < dobDate.getDate())) calcAge--;
+                age = calcAge;
+            }
+            return {
+                speaker_id: spkId,
+                gender: user.gender || "unknown",
+                age,
+                native_language: user.regionalLanguage || "unknown",
+                accent: user.accent || "unknown",
+                dialect: user.dialect || "unknown",
+                locality: user.locality || "unknown",
+                state: user.address?.state || "unknown",
+                city: user.address?.city || "unknown",
+                pincode: user.address?.pincode || "unknown",
+                microphone_brand: user.microphoneBrand || "unknown",
+                microphone_model: user.microphoneModel || "unknown",
+                recording_environment: "indoor_room",
+                consent_provided: true,
+                consent_platform: "voclara.com"
+            };
+        }
+
+        if (call.userA) speakersMap[call.userA._id] = buildSpeakerDoc(call.userA, call.userA.speaker_id);
+        if (call.userB) speakersMap[call.userB._id] = buildSpeakerDoc(call.userB, call.userB.speaker_id);
+        archive.append(JSON.stringify(Object.values(speakersMap).filter(Boolean), null, 2), { name: "speaker_metadata.json" });
+
+        // Add full audio (stitched stereo or compiled partial) if exists
+        const isPartial = call.endReason === "scripted_pending_partner" || !call.userA || !call.userB || call.recordingAStatus === "not_recorded" || call.recordingBStatus === "not_recorded";
+        if (isPartial) {
+            try {
+                const partialRes = await compilePartialScriptedCall(call.callId);
+                if (partialRes?.filePath && fs.existsSync(partialRes.filePath)) {
+                    archive.append(fs.readFileSync(partialRes.filePath), { name: `full_audio/${path.basename(partialRes.filePath)}` });
+                }
+            } catch (pErr) {
+                console.warn(`[scripted-download-bundle] Partial compile notice:`, pErr.message);
+            }
+        } else {
+            const stereoPath = path.join(process.cwd(), "recordings", `${call.callId}_stereo.wav`);
+            if (fs.existsSync(stereoPath)) {
+                archive.append(fs.readFileSync(stereoPath), { name: `full_audio/${call.callId}_stereo.wav` });
+            }
+        }
+
+        // Add README.txt
+        const manifestTxt = [
+            "==================================================================",
+            `Voclara Scripted Call Dataset Bundle: ${call.callId}`,
+            "==================================================================",
+            "",
+            "Included Files & Directories:",
+            "  verses/                - Individually recorded WAV audio files for every dialogue verse",
+            "  transcripts/           - Machine-readable JSON transcript (<callId>.json and transcript.json)",
+            "  transcript.txt         - Human-readable dialogue script with speaker turn metadata",
+            "  speaker_metadata.json  - Contributor demographic, regional & hardware specifications",
+            "  full_audio/            - Stitched continuous conversation audio (dual-channel stereo or partial)",
+            "",
+            `Total recorded verses : ${dialogueTurns.length}`,
+            `Language               : ${call.language || "english"}`,
+            `Topic / Scenario       : ${subtopic?.title || "Scripted Scenario"}`,
+            "=================================================================="
+        ].join("\n");
+        archive.append(manifestTxt, { name: "README.txt" });
+
+        await archive.finalize();
+    } catch (err) {
+        console.error("[scripted-download-bundle error]:", err);
+        if (!res.headersSent) {
+            res.status(500).json({ error: err.message });
+        }
+    }
+});
+
 // Batch Download Scripted Calls as Combined ZIP (audio/, transcripts/, speaker_metadata.json, info.txt)
 qaCallRouter.post("/scripted/download-batch", async (req, res) => {
     try {
@@ -4009,17 +4363,30 @@ qaCallRouter.post("/scripted/download-batch", async (req, res) => {
             archive.append(JSON.stringify(transcriptObj, null, 2), { name: `transcripts/${call.callId}.json` });
 
             // Stream Audio Files into audio/
-            const audioFilesToFetch = [
-                call.mixedRecordingFile || `${call.callId}_stereo.wav`,
-                call.recordingAFile || `${call.callId}_A.wav`,
-                call.recordingBFile || `${call.callId}_B.wav`
-            ];
+            const isPartial = call.endReason === "scripted_pending_partner" || !call.userA || !call.userB || call.recordingAStatus === "not_recorded" || call.recordingBStatus === "not_recorded";
+            if (isPartial) {
+                try {
+                    const partialRes = await compilePartialScriptedCall(call.callId);
+                    if (partialRes?.filePath && fs.existsSync(partialRes.filePath)) {
+                        const partialBuf = fs.readFileSync(partialRes.filePath);
+                        archive.append(partialBuf, { name: `audio/${path.basename(partialRes.filePath)}` });
+                    }
+                } catch (pErr) {
+                    console.warn(`[scripted-download-batch] Error compiling partial audio for ${call.callId}:`, pErr.message);
+                }
+            } else {
+                const audioFilesToFetch = [
+                    call.mixedRecordingFile || `${call.callId}_stereo.wav`,
+                    call.recordingAFile || `${call.callId}_A.wav`,
+                    call.recordingBFile || `${call.callId}_B.wav`
+                ];
 
-            for (const itemFile of audioFilesToFetch) {
-                if (itemFile) {
-                    const buf = await fetchAudioBuffer(itemFile);
-                    if (buf) {
-                        archive.append(buf, { name: `audio/${path.basename(itemFile)}` });
+                for (const itemFile of audioFilesToFetch) {
+                    if (itemFile) {
+                        const buf = await fetchAudioBuffer(itemFile);
+                        if (buf) {
+                            archive.append(buf, { name: `audio/${path.basename(itemFile)}` });
+                        }
                     }
                 }
             }

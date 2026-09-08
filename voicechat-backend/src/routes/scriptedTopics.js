@@ -3,6 +3,7 @@ import multer from "multer";
 import fs from "fs";
 import path from "path";
 import jwt from "jsonwebtoken";
+import { spawn } from "child_process";
 import { ScriptedTopic } from "../models/ScriptedTopic.js";
 import { ScriptedSubtopic } from "../models/ScriptedSubtopic.js";
 import { ScriptedSubmission } from "../models/ScriptedSubmission.js";
@@ -800,6 +801,29 @@ router.get("/verse-audio/:submissionId/:turnIndex", async (req, res) => {
 
         const ext = path.extname(verse.audioPath).toLowerCase();
         const contentType = ext === ".webm" ? "audio/webm" : (ext === ".mp3" ? "audio/mpeg" : (ext === ".ogg" ? "audio/ogg" : "audio/wav"));
+
+        // If direct download requested (?download=true)
+        if (req.query.download === "true") {
+            const turnNum = String(Number(turnIndex) + 1).padStart(2, "0");
+            const callIdPrefix = req.query.callId ? `${req.query.callId}_` : "";
+            const dlFileName = `${callIdPrefix}turn_${turnNum}_${sub.role || "speaker"}.wav`;
+
+            // If audio file is not already WAV, convert to standard 48kHz mono WAV on-the-fly
+            if (ext !== ".wav") {
+                res.setHeader("Content-Disposition", `attachment; filename="${dlFileName}"`);
+                res.setHeader("Content-Type", "audio/wav");
+                const ffmpegProc = spawn("ffmpeg", ["-y", "-i", verse.audioPath, "-ac", "1", "-ar", "48000", "-c:a", "pcm_s16le", "-f", "wav", "pipe:1"]);
+                ffmpegProc.stdout.pipe(res);
+                ffmpegProc.on("error", (err) => {
+                    console.error("[verse-audio download stream error]:", err);
+                });
+                return;
+            } else {
+                res.setHeader("Content-Disposition", `attachment; filename="${dlFileName}"`);
+                res.setHeader("Content-Type", "audio/wav");
+                return fs.createReadStream(verse.audioPath).pipe(res);
+            }
+        }
 
         const stat = fs.statSync(verse.audioPath);
         const fileSize = stat.size;
